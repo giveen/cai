@@ -12,20 +12,23 @@ from cai.agents.guardrails import get_security_guardrails
 
 # Core tools
 # For threat intel analysis, we might need web search and potentially others.
-# Assuming 'make_web_search_with_explanation' is sufficient for now,
-# similar to how it's used in the web pentester agent.
+# Similar to web pentester agent, conditionally include web search when API key is available.
 from cai.tools.web.search_web import make_web_search_with_explanation
 
 load_dotenv()
 model_name = os.getenv("CAI_MODEL", "alias1")
 
 # Load prompt (expects placement under src/cai/prompts/)
-threat_intel_system_prompt = load_prompt_template("prompts/threat_intel_agent.md")
+threat_intel_system_prompt = load_prompt_template("prompts/threat_intel_system_prompt.md")
 
 # Assemble tools with minimal, high-signal set
 tools = [
-    make_web_search_with_explanation,
+    # Add core tools here if needed
 ]
+
+# Conditionally add web search helper when available
+if os.getenv("PERPLEXITY_API_KEY"):
+    tools.append(make_web_search_with_explanation)
 
 # Security guardrails to dampen prompt-injection from untrusted web content
 input_guardrails, output_guardrails = get_security_guardrails()
