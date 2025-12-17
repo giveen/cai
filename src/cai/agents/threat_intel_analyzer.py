@@ -14,6 +14,7 @@ from cai.agents.guardrails import get_security_guardrails
 # For threat intel analysis, we might need web search and potentially others.
 # Similar to web pentester agent, conditionally include web search when API key is available.
 from cai.tools.web.search_web import make_web_search_with_explanation
+from cai.tools.mitre_attack_data import fetch_mitre_attack_group_info, search_mitre_attack_groups
 
 load_dotenv()
 model_name = os.getenv("CAI_MODEL", "alias1")
@@ -23,7 +24,9 @@ threat_intel_system_prompt = load_prompt_template("prompts/threat_intel_system_p
 
 # Assemble tools with minimal, high-signal set
 tools = [
-    # Add core tools here if needed
+    fetch_mitre_attack_group_info,
+    search_mitre_attack_groups,
+    # Add other core tools here if needed
 ]
 
 # Conditionally add web search helper when available
