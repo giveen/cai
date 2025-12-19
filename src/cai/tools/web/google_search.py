@@ -7,9 +7,37 @@ This module provides functions to perform Google searches in two modes:
 """
 import os
 import requests
+import time
 from typing import List, Optional, Dict, Tuple
 from dotenv import load_dotenv
 from cai.sdk.agents import function_tool
+
+
+class LRUCache:
+    def __init__(self, max_size=128, ttl=3600):  # 1 hour TTL
+        self.cache = {}
+        self.max_size = max_size
+        self.ttl = ttl
+    
+    def get(self, key):
+        if key in self.cache:
+            value, timestamp = self.cache[key]
+            if time.time() - timestamp < self.ttl:
+                return value
+            else:
+                del self.cache[key]
+        return None
+    
+    def put(self, key, value):
+        if len(self.cache) >= self.max_size:
+            # Remove oldest item (simple LRU implementation)
+            oldest_key = next(iter(self.cache))
+            del self.cache[oldest_key]
+        self.cache[key] = (value, time.time())
+
+
+# Global cache instance
+_search_cache = LRUCache(max_size=128, ttl=3600)
 
 
 def google_search(query: str, num_results: int = 10) -> str:
@@ -24,6 +52,14 @@ def google_search(query: str, num_results: int = 10) -> str:
         str: A formatted string containing URLs, titles, and snippets from 
         the search results.
     """
+    # Create cache key from parameters
+    cache_key = f"{query}_{num_results}_regular"
+    
+    # Check cache first
+    cached_result = _search_cache.get(cache_key)
+    if cached_result is not None:
+        return cached_result
+    
     results = _perform_search(query, num_results, is_dork=False)
     formatted_results = ""
     
@@ -32,6 +68,8 @@ def google_search(query: str, num_results: int = 10) -> str:
         formatted_results += f"URL: {result['url']}\n"
         formatted_results += f"Snippet: {result['snippet']}\n\n"
     
+    # Cache the result
+    _search_cache.put(cache_key, formatted_results)
     return formatted_results
 
 
