@@ -16,7 +16,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests  # type: ignore

@@ -66,7 +66,6 @@ class HistoryCommand(Command):
     def handle_control_panel(self) -> bool:
         """Show a control panel view of all agents and their message counts."""
         try:
-            from cai.sdk.agents.models.openai_chatcompletions import get_all_agent_histories
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
             from cai.repl.commands.parallel import PARALLEL_CONFIGS
             from cai.agents import get_available_agents
@@ -341,7 +340,7 @@ class HistoryCommand(Command):
                     }.get(role, "white")
                     agent_branch.add(f"[{role_style}]{role}[/{role_style}]: {count}")
             else:
-                agent_branch.add(f"[dim]No messages yet[/dim]")
+                agent_branch.add("[dim]No messages yet[/dim]")
         
         console.print(tree)
         console.print(f"\n[bold]Total messages across all agents: {total_messages}[/bold]")
@@ -546,7 +545,7 @@ class HistoryCommand(Command):
                 agent_id = AGENT_MANAGER.get_id_by_name(agent_name) or "Unknown"
             
             console.print(Panel(
-                f"[yellow]No conversation history yet[/yellow]",
+                "[yellow]No conversation history yet[/yellow]",
                 title=f"[cyan]{agent_name} [{agent_id}][/cyan]",
                 border_style="blue"
             ))

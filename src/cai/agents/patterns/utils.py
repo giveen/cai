@@ -4,8 +4,11 @@ Utility functions for working with patterns.
 Provides helper functions to convert patterns to parallel configurations
 and integrate with the CAI execution system.
 """
+from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import List, Union
+
+from .pattern import Pattern
 from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
 from cai.agents import get_available_agents
 
@@ -22,7 +25,7 @@ def pattern_to_parallel_configs(pattern: Union['Pattern', str]) -> List[Parallel
         ValueError: If pattern is not a parallel pattern or pattern not found
     """
     # Import here to avoid circular imports
-    from .pattern import Pattern, PatternType
+    from .pattern import PatternType
     from . import get_pattern
     
     # Handle string pattern names

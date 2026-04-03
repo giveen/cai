@@ -9,7 +9,6 @@ from typing import Callable, Dict
 from openai import AsyncOpenAI
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from cai.sdk.agents.logger import logger
 
 
 def create_generic_agent_factory(

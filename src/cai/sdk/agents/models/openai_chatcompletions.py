@@ -67,9 +67,8 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_input_param import FunctionCallOutput, ItemReference, Message
 from openai.types.responses.response_usage import OutputTokensDetails
-from wasabi import color
 
-from cai.sdk.agents.simple_agent_manager import SimpleAgentManager, AGENT_MANAGER
+from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
 from cai.sdk.agents.run_to_jsonl import get_session_recorder
 from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
@@ -930,8 +929,6 @@ class OpenAIChatCompletionsModel(Model):
                             ):
                                 tool_call_info = self._converter.recent_tool_calls[call_id]
                                 if "start_time" in tool_call_info:
-                                    import time
-
                                     time_since_execution = (
                                         time.time() - tool_call_info["start_time"]
                                     )
@@ -963,8 +960,6 @@ class OpenAIChatCompletionsModel(Model):
                             ):
                                 tool_call_info = self._converter.recent_tool_calls[call_id]
                                 if "start_time" in tool_call_info:
-                                    import time
-
                                     time_since_execution = (
                                         time.time() - tool_call_info["start_time"]
                                     )
@@ -1063,8 +1058,6 @@ class OpenAIChatCompletionsModel(Model):
                         self._converter.recent_tool_calls = {}
 
                     # Store the tool call by ID for later reference
-                    import time
-
                     self._converter.recent_tool_calls[tool_call.id] = {
                         "name": tool_call.function.name,
                         "arguments": tool_call.function.arguments,
@@ -1104,7 +1097,7 @@ class OpenAIChatCompletionsModel(Model):
                     # Verificar si ya existe un mensaje tool con este call_id en message_history
                     tool_msg_exists = any(
                         msg.get("role") == "tool" and msg.get("tool_call_id") == call_id
-                        for msg in message_history
+                        for msg in self.message_history
                     )
 
                     if not tool_msg_exists:
@@ -3308,20 +3301,14 @@ class OpenAIChatCompletionsModel(Model):
                         max_tokens = int(match3.group(1))
                         used_tokens = int(match3.group(2))
                         print(f"🎯 Requested: {used_tokens:,} tokens (max: {max_tokens:,})")
-                    elif 'estimated_input_tokens' in locals():
-                        print(f"📊 Estimated tokens: ~{estimated_input_tokens:,}")
-                        # Get model's max tokens
-                        model_max = self._get_model_max_tokens(str(self.model))
-                        print(f"🎯 Model limit: {model_max:,} tokens")
-                    
                     print("\n💡 Quick fixes:")
                     print("  • /flush - Clear conversation history")
                     print("  • /compact - Manually compact context")
                     print("  • /model <larger-model> - Switch to model with more context")
-                    
+
                     raise
-            else:
-                raise e
+                else:
+                    raise e
 
     async def _fetch_response_litellm_openai(
         self,
@@ -3984,7 +3971,7 @@ class _Converter:
             elif isinstance(c, dict) and c.get("type") == "input_file":
                 raise UserError("📄 File uploads not supported - Use image URLs or text content")
             else:
-                raise UserError(f"❓ Unrecognized content type - Expected 'input_text' or 'input_image'")
+                raise UserError("❓ Unrecognized content type - Expected 'input_text' or 'input_image'")
         return out
 
     def items_to_messages(

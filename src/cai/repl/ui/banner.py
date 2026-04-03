@@ -6,7 +6,6 @@ import os
 import glob
 import logging
 import sys
-from configparser import ConfigParser
 
 # Third-party imports
 import requests  # pylint: disable=import-error

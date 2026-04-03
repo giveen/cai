@@ -246,15 +246,3 @@ def create_pattern(
 
 # Import utility functions
 from .utils import is_swarm_pattern
-
-# Import core pattern classes
-from .pattern import Pattern, PatternType
-
-# Import factory functions for creating patterns
-from .pattern import (
-    parallel_pattern,
-    swarm_pattern,
-    hierarchical_pattern,
-    sequential_pattern,
-    conditional_pattern
-)

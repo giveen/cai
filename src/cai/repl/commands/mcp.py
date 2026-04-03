@@ -66,7 +66,7 @@ from rich.markdown import Markdown
 from rich.table import Table
 
 # Local imports
-from cai.agents import get_agent_by_name, get_available_agents
+from cai.agents import get_available_agents
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.mcp import (
     MCPServer,
@@ -1298,11 +1298,11 @@ Example: `/mcp add burp 13`
                     try:
                         # Use empty input for testing
                         result = await server.call_tool(test_tool.name, {})
-                        console.print(f"[green]✓ Tool invocation successful[/green]")
+                        console.print("[green]✓ Tool invocation successful[/green]")
                         if result and result.content:
                             console.print(f"[dim]Result preview: {str(result.content[0])[:100]}...[/dim]")
                     except Exception as tool_error:
-                        console.print(f"[yellow]⚠ Tool test failed (this is normal for tools requiring input)[/yellow]")
+                        console.print("[yellow]⚠ Tool test failed (this is normal for tools requiring input)[/yellow]")
                         console.print(f"[dim]Error: {str(tool_error)[:100]}[/dim]")
                 
                 # Test 3: Test reconnection

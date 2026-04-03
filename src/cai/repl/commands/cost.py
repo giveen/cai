@@ -9,7 +9,6 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.columns import Columns
-from rich.progress import Progress, BarColumn, TextColumn
 from rich import box
 
 from cai.repl.commands.base import Command, register_command
@@ -132,7 +131,7 @@ class CostCommand(Command):
             total_tokens = input_tokens + output_tokens
             
             lines.append("")
-            lines.append(f"[bold]Tokens Used:[/bold]")
+            lines.append("[bold]Tokens Used:[/bold]")
             lines.append(f"  Input:  {input_tokens:,}")
             lines.append(f"  Output: {output_tokens:,}")
             lines.append(f"  Total:  {total_tokens:,}")
@@ -169,7 +168,7 @@ class CostCommand(Command):
         total_tokens = input_tokens + output_tokens
         
         lines.append("")
-        lines.append(f"[bold]Total Tokens:[/bold]")
+        lines.append("[bold]Total Tokens:[/bold]")
         lines.append(f"  Input:  {input_tokens:,}")
         lines.append(f"  Output: {output_tokens:,}")
         lines.append(f"  Total:  {total_tokens:,}")
@@ -504,7 +503,7 @@ class CostCommand(Command):
         completed_sessions = len(sessions) - active_sessions
         total_session_cost = sum(s.get("total_cost", 0) for s in sessions)
         
-        console.print(f"\n[bold]Session Statistics:[/bold]")
+        console.print("\n[bold]Session Statistics:[/bold]")
         console.print(f"  Total Sessions: {len(sessions)}")
         console.print(f"  Active Sessions: {active_sessions}")
         console.print(f"  Completed Sessions: {completed_sessions}")
@@ -522,7 +521,6 @@ class CostCommand(Command):
             console.print("[yellow]Usage tracking is disabled[/yellow]")
             return True
         
-        from pathlib import Path
         usage_file = Path.home() / ".cai" / "usage.json"
         
         if not usage_file.exists():
@@ -535,7 +533,7 @@ class CostCommand(Command):
         total_cost = totals.get("total_cost", 0)
         total_sessions = totals.get("total_sessions", 0)
         
-        console.print(f"\n[bold red]Warning:[/bold red] This will reset all usage statistics!")
+        console.print("\n[bold red]Warning:[/bold red] This will reset all usage statistics!")
         console.print(f"Current totals: ${total_cost:.6f} across {total_sessions} sessions")
         
         # Require explicit confirmation

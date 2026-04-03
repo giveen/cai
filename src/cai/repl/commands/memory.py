@@ -13,7 +13,6 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.tree import Tree
 
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.models.openai_chatcompletions import (
@@ -481,7 +480,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 border_style="green"
             ))
         else:
-            console.print(f"[red]✗ Failed to save memory[/red]")
+            console.print("[red]✗ Failed to save memory[/red]")
             
         return True
     
@@ -561,7 +560,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         summary = memory_content.strip()
         
         if not summary:
-            console.print(f"[red]Error: Memory file is empty[/red]")
+            console.print("[red]Error: Memory file is empty[/red]")
             return False
         
         # Get memory ID from the path or identifier
@@ -622,7 +621,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             if len(target_agents) > 1:
                 console.print(f"\n[bold green]Successfully applied memory to {success_count}/{len(target_agents)} agents[/bold green]")
         else:
-            console.print(f"[red]Failed to apply memory to any agents[/red]")
+            console.print("[red]Failed to apply memory to any agents[/red]")
         
         return True
     
@@ -1081,7 +1080,8 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             
             # Ask if user wants to clear history
             clear = console.input("\nClear agent history after compaction? (y/N): ")
-            if clear.lower() == 'y':
+            preserve_history = clear.lower() != 'y'
+            if not preserve_history:
                 self._clear_agent_history(agent_name)
                 console.print(f"[green]✓ Cleared history for {agent_name}[/green]")
             
@@ -1409,7 +1409,6 @@ This session is being continued from a previous conversation that ran out of con
             # Get the current agent instance and its history
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
             from cai.agents import get_agent_by_name, get_available_agents
-            import os
             
             # ALWAYS skip reload when in parallel mode
             # Parallel agents are already configured and reloading causes duplicate registrations

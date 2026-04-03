@@ -38,9 +38,6 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
 )
 
 
-from cai.tools.reconnaissance.shodan import shodan_search
-from cai.tools.web.google_search import google_search
-from cai.tools.misc.reasoning import think  # pylint: disable=import-error
 from cai.agents.dfir import dfir_agent
 
 load_dotenv()

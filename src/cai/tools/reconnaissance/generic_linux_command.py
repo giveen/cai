@@ -2,10 +2,7 @@
 This is used to create a generic linux command.
 """
 import os
-import time
 import uuid
-import subprocess
-import sys
 import re
 import unicodedata
 from cai.tools.common import (run_command, run_command_async,
@@ -13,7 +10,6 @@ from cai.tools.common import (run_command, run_command_async,
                               get_session_output,
                               terminate_session)  # pylint: disable=import-error # noqa E501
 from cai.sdk.agents import function_tool
-from wasabi import color  # pylint: disable=import-error
 
 
 def detect_unicode_homographs(text: str) -> tuple[bool, str]:

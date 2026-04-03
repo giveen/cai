@@ -5,9 +5,8 @@ Automatically runs on first launch if ~/.cai doesn't exist.
 """
 
 import os
-import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from rich.console import Console
 from rich.panel import Panel

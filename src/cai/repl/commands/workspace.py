@@ -7,16 +7,11 @@ environments.
 import os
 import json
 import subprocess
-import datetime
-import time
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional
 
 # Third-party imports
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.markdown import Markdown
-import rich.box
 
 # Local imports
 from cai.repl.commands.base import Command, register_command

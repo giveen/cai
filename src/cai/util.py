@@ -441,7 +441,6 @@ class CostTracker:
         # Also update the global usage tracker when session cost changes
         # This ensures consistency between COST_TRACKER and GLOBAL_USAGE_TRACKER
         try:
-            from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
             # We don't have model/token details here, so just update the cost
             # The tokens should have been tracked separately
             # This is just a safety net to ensure costs are consistent
@@ -975,8 +974,7 @@ def visualize_agent_graph(start_agent):
         all_tools = getattr(agent, "tools", [])
         
         # Import necessary modules for MCP checking
-        from cai.repl.commands.mcp import get_mcp_tools_for_agent, _GLOBAL_MCP_SERVERS
-        from cai.sdk.agents.tool import FunctionTool
+        from cai.repl.commands.mcp import get_mcp_tools_for_agent
         
         # Separate regular tools from MCP tools
         regular_tools = []
@@ -2718,7 +2716,6 @@ def cli_print_tool_output(
                 from rich.console import Console
                 from rich.live import Live
                 from rich.panel import Panel
-                from rich.text import Text
 
                 # Create the header, content, and panel
                 # Pass the original 'args' (dict or string) to _create_tool_panel_content for formatting
@@ -2795,7 +2792,7 @@ def cli_print_tool_output(
                             if execution_info and execution_info.get("is_final", False):
                                 # Debug output
                                 if os.getenv("CAI_DEBUG_STREAMING"):
-                                    print(f"\n[DEBUG] Final update check:")
+                                    print("\n[DEBUG] Final update check:")
                                     print(f"  output: {repr(output[:50])}...")
                                     print(f"  initial_output: {repr(panel_info.get('initial_output', '')[:50])}...")
                                     print(f"  outputs_equal: {output == panel_info.get('initial_output', '')}")
@@ -3014,9 +3011,8 @@ def cli_print_tool_output(
     # Standard tool output display for non-streaming or when rich is not available
     try:
         from rich.box import ROUNDED
-        from rich.console import Console, Group
+        from rich.console import Console
         from rich.panel import Panel
-        from rich.text import Text
 
         # Create a console for output
         console = Console(theme=theme)

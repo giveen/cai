@@ -490,7 +490,7 @@ class GraphCommand(Command):
                         # Compact box representation with turn number (except for user)
                         if turn_number == 0 or role == "User":
                             # No turn number for user messages
-                            graph_lines.append(f"[cyan]● User[/cyan]")
+                            graph_lines.append("[cyan]● User[/cyan]")
                         else:
                             turn_prefix = f"[bold red][{turn_number}][/bold red] "
                             
@@ -727,7 +727,6 @@ class GraphCommand(Command):
                                     if extra_info:
                                         panel_content += extra_info
                                         
-                                    from rich.panel import Panel
                                     panel = Panel(
                                         panel_content,
                                         expand=False,
@@ -774,7 +773,6 @@ class GraphCommand(Command):
         """Show a unified timeline view of all agent interactions."""
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
         from rich.table import Table
-        import datetime
         
         all_histories = AGENT_MANAGER.get_all_histories()
         

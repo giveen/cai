@@ -6,13 +6,11 @@ when agents interact with untrusted external content (web pages, server response
 """
 
 import re
-from typing import Any, Union
+from typing import Any
 from pydantic import BaseModel
 from cai.sdk.agents import (
     Agent,
     GuardrailFunctionOutput,
-    InputGuardrailTripwireTriggered,
-    OutputGuardrailTripwireTriggered,
     RunContextWrapper,
     Runner,
     TResponseInputItem,
@@ -423,7 +421,7 @@ async def command_execution_guardrail(
                     return GuardrailFunctionOutput(
                         output_info={
                             "action": "blocked",
-                            "reason": f"Blocked attempt to decode base64 that contains dangerous command"
+                            "reason": "Blocked attempt to decode base64 that contains dangerous command"
                         },
                         tripwire_triggered=True
                     )
@@ -449,7 +447,7 @@ async def command_execution_guardrail(
                         return GuardrailFunctionOutput(
                             output_info={
                                 "action": "blocked",
-                                "reason": f"Blocked attempt to decode base32 that contains dangerous command or environment variable exfiltration"
+                                "reason": "Blocked attempt to decode base32 that contains dangerous command or environment variable exfiltration"
                             },
                             tripwire_triggered=True
                         )

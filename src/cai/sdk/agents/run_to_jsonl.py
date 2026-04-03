@@ -14,7 +14,7 @@ import pytz  # pylint: disable=import-error
 import uuid  # Add uuid import
 from cai.util import get_active_time, get_idle_time
 import atexit
-from typing import List, Dict, Tuple
+from typing import List, Dict
 
 # Global recorder instance for session-wide logging
 _session_recorder = None

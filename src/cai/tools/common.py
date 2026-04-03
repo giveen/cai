@@ -10,11 +10,10 @@ import pty
 import signal
 import time
 import uuid
-import sys
 import shlex
 import select
 from wasabi import color  # pylint: disable=import-error
-from cai.util import format_time, start_active_timer, stop_active_timer, start_idle_timer, stop_idle_timer, cli_print_tool_output
+from cai.util import start_active_timer, stop_active_timer, start_idle_timer, stop_idle_timer, cli_print_tool_output
 
 
 # Instead of direct import
@@ -616,7 +615,7 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         return timeout_msg
     except FileNotFoundError:
          # Handle case where ssh or sshpass isn't installed
-         error_msg = f"'sshpass' or 'ssh' command not found. Ensure they are installed and in PATH." # noqa E501
+         error_msg = "'sshpass' or 'ssh' command not found. Ensure they are installed and in PATH." # noqa E501
          print(color(error_msg, fg="red"))
          return error_msg
     except Exception as e:  # pylint: disable=broad-except
@@ -843,7 +842,6 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             # In streaming mode, the Live panels are handled by the streaming system
             if streaming_enabled and is_parallel:
                 # Display the completed tool output
-                from cai.util import cli_print_tool_output
                 
                 # Calculate execution time
                 execution_time = time.time() - process_start_time
@@ -1126,7 +1124,6 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
             
             # Only display if we're in streaming mode AND parallel mode
             if streaming_enabled and is_parallel:
-                from cai.util import cli_print_tool_output
                 
                 # Calculate execution time
                 execution_time = time.time() - start_time
@@ -1334,7 +1331,6 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             # Only display if we're in streaming mode AND parallel mode
             if streaming_enabled and is_parallel:
                 # Display the completed tool output
-                from cai.util import cli_print_tool_output
                 
                 # Calculate execution time
                 execution_time = time.time() - process_start_time
@@ -1702,7 +1698,6 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             }
             
             # Display the session input and its result using cli_print_tool_output
-            from cai.util import cli_print_tool_output
             cli_print_tool_output(
                 tool_name="generic_linux_command",
                 args=session_args,

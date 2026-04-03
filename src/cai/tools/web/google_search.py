@@ -7,9 +7,8 @@ This module provides functions to perform Google searches in two modes:
 """
 import os
 import requests
-from typing import List, Optional, Dict, Tuple
+from typing import List, Dict
 from dotenv import load_dotenv
-from cai.sdk.agents import function_tool
 
 
 def google_search(query: str, num_results: int = 10) -> str:

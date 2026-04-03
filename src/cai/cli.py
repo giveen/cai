@@ -253,7 +253,6 @@ warnings.filterwarnings("ignore", message=".*connector:.*")
 warnings.filterwarnings("ignore", message=".*connections:.*")
 
 # Also configure Python's warning system to be less verbose
-import sys
 if not sys.warnoptions:
     warnings.simplefilter("ignore", RuntimeWarning)
     warnings.simplefilter("ignore", ResourceWarning)  # Also ignore ResourceWarnings
@@ -262,7 +261,6 @@ if not sys.warnoptions:
 def suppress_aiohttp_warnings():
     """Suppress aiohttp specific warnings about unclosed sessions."""
     try:
-        import aiohttp
         # Suppress aiohttp warnings about unclosed sessions
         aiohttp_logger = logging.getLogger("aiohttp")
         aiohttp_logger.setLevel(logging.ERROR)  # Only show errors, not warnings
@@ -283,7 +281,6 @@ def suppress_aiohttp_warnings():
 suppress_aiohttp_warnings()
 
 # OpenAI imports
-from openai import AsyncOpenAI
 from rich.console import Console
 
 from cai import is_pentestperf_available
@@ -307,12 +304,10 @@ from cai.repl.ui.prompt import get_user_input
 from cai.repl.ui.toolbar import get_toolbar_with_refresh
 
 # CAI SDK imports
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, Runner, set_tracing_disabled
+from cai.sdk.agents import Runner, set_tracing_disabled
 from cai.sdk.agents.items import ToolCallOutputItem
 from cai.sdk.agents.exceptions import OutputGuardrailTripwireTriggered, InputGuardrailTripwireTriggered
 from cai.sdk.agents.models.openai_chatcompletions import (
-    get_agent_message_history,
-    get_all_agent_histories,
     ContextCompactedError,
 )
 # Import handled where needed to avoid circular imports
@@ -1167,7 +1162,7 @@ def run_cai_cli(
                         
                         # Clean up any streaming resources created by this agent's tools
                         try:
-                            from cai.util import finish_tool_streaming, cli_print_tool_output, _LIVE_STREAMING_PANELS
+                            from cai.util import finish_tool_streaming, cli_print_tool_output
                             
                             # In parallel mode, we need to update the final status of panels
                             if hasattr(cli_print_tool_output, "_streaming_sessions"):
@@ -1412,7 +1407,7 @@ def run_cai_cli(
             # Process the conversation with the agent - with parallel execution if enabled
             if parallel_count > 1:
                 # Parallel execution mode (always non-streaming)
-                async def run_agent_instance(instance_number, conversation_context):
+                async def _run_simple_parallel_agent(instance_number, conversation_context):
                     """Run a single agent instance with its own complete context"""
                     try:
                         # Create a fresh agent instance with unique name to ensure complete isolation
@@ -1472,7 +1467,7 @@ def run_cai_cli(
                     """Process multiple parallel agent executions"""
                     # Create tasks for each instance
                     tasks = [
-                        run_agent_instance(i, conversation_input) for i in range(parallel_count)
+                        _run_simple_parallel_agent(i, conversation_input) for i in range(parallel_count)
                     ]
 
                     # Wait for all to complete, no matter if some fail

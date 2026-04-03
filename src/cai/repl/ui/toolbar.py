@@ -6,7 +6,6 @@ import os
 import socket
 import platform
 import threading
-import time
 import subprocess
 import shutil
 from functools import lru_cache
