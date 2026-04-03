@@ -1902,7 +1902,7 @@ def cli_print_agent_messages(
     if (isinstance(parsed_message, str) and 
         hasattr(start_tool_streaming, "_parallel_execute_code_agents") and
         any(parallel_agent in parsed_message for parallel_agent in start_tool_streaming._parallel_execute_code_agents if parallel_agent) and
-        token_info and token_info.get("agent_name") not in start_tool_streaming._parallel_execute_code_agents):
+        agent_name not in start_tool_streaming._parallel_execute_code_agents):
         # This is the main agent displaying output from a parallel agent that used execute_code
         # Check if it contains execute_code output patterns (code blocks)
         if "```" in parsed_message and any(pattern in parsed_message.lower() for pattern in ["package main", "def ", "function", "import ", "class "]):

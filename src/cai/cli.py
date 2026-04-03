@@ -319,6 +319,7 @@ from cai.sdk.agents.models.openai_chatcompletions import (
 from cai.sdk.agents.run_to_jsonl import get_session_recorder
 from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
 from cai.sdk.agents.stream_events import RunItemStreamEvent
+from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
 
 # CAI utility imports
 from cai.util import (
@@ -1637,11 +1638,11 @@ def run_cai_cli(
                         reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
                         
                         # Use red color for the warning message
-                        print(f"\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
+                        print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
                         print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
                         print(f"\033[91mReason: {reason}\033[0m")
-                        print(f"\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                        print(f"\033[96mYou can continue the conversation with a different request.\033[0m\n")
+                        print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
+                        print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
                         
                         # Continue the conversation loop instead of crashing
                         continue
@@ -1672,11 +1673,11 @@ def run_cai_cli(
                                 reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
                                 
                                 # Use red color for the warning message
-                                print(f"\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
+                                print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
                                 print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
                                 print(f"\033[91mReason: {reason}\033[0m")
-                                print(f"\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                                print(f"\033[96mYou can continue the conversation with a different request.\033[0m\n")
+                                print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
+                                print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
                                 
                                 # Close the loop and continue the conversation loop
                                 new_loop.close()
@@ -1718,19 +1719,19 @@ def run_cai_cli(
                                 reason = e.guardrail_result.output.output_info.get("reason", reason)
                         
                         # Use red color for the warning message
-                        print(f"\n\033[91m🛡️  INPUT SECURITY GUARDRAIL TRIGGERED\033[0m")
+                        print("\n\033[91m🛡️  INPUT SECURITY GUARDRAIL TRIGGERED\033[0m")
                         print(f"\033[91mReason: {reason}\033[0m")
-                        print(f"\033[93mYour input was blocked for security reasons.\033[0m")
+                        print("\033[93mYour input was blocked for security reasons.\033[0m")
                         
                         # Check if this is likely due to conversation history
                         if "base64" in reason.lower() or "pattern" in reason.lower():
-                            print(f"\n\033[96mThis may be due to malicious content in the conversation history.\033[0m")
-                            print(f"\033[96mOptions:\033[0m")
-                            print(f"  1. Type \033[92m/clear\033[0m to clear the conversation history")
-                            print(f"  2. Type \033[92m/config set 26 false\033[0m to temporarily disable guardrails")
-                            print(f"  3. Type \033[92m/exit\033[0m to exit CAI")
+                            print("\n\033[96mThis may be due to malicious content in the conversation history.\033[0m")
+                            print("\033[96mOptions:\033[0m")
+                            print("  1. Type \033[92m/clear\033[0m to clear the conversation history")
+                            print("  2. Type \033[92m/config set 26 false\033[0m to temporarily disable guardrails")
+                            print("  3. Type \033[92m/exit\033[0m to exit CAI")
                         else:
-                            print(f"\033[96mPlease rephrase your request or try a different approach.\033[0m\n")
+                            print("\033[96mPlease rephrase your request or try a different approach.\033[0m\n")
                         
                         # Continue the conversation loop instead of crashing
                         continue
@@ -1740,11 +1741,11 @@ def run_cai_cli(
                         reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
                         
                         # Use red color for the warning message
-                        print(f"\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
+                        print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
                         print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
                         print(f"\033[91mReason: {reason}\033[0m")
-                        print(f"\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                        print(f"\033[96mYou can continue the conversation with a different request.\033[0m\n")
+                        print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
+                        print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
                         
                         # Continue the conversation loop instead of crashing
                         continue
