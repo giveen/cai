@@ -50,12 +50,20 @@ import os
 import pkgutil
 from typing import Dict
 
-from dotenv import load_dotenv  # pylint: disable=import-error # noqa: E501
+try:
+    from dotenv import load_dotenv  # pylint: disable=import-error # noqa: E501
+except Exception:
+    def load_dotenv(*args, **kwargs):  # noop when python-dotenv is not installed
+        return False
 
 # Load .env file from current directory before importing agents
 # This ensures that .env files in the user's working directory are loaded
 # even when CAI is installed from PyPI
-load_dotenv(override=True)  # override=True ensures env vars from .env take precedence
+try:
+    load_dotenv(override=True)  # override=True ensures env vars from .env take precedence
+except Exception:
+    # If loading the .env fails for any reason, continue without failing import
+    pass
 
 # Local application imports
 from cai.agents.flag_discriminator import flag_discriminator, transfer_to_flag_discriminator
