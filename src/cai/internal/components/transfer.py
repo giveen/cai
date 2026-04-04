@@ -4,7 +4,8 @@ System data transfer utilities
 import os
 import tempfile
 import shutil
-import requests
+import asyncio
+from cai.httpx_utils import post_file_with_retries
 from typing import Optional, Dict, Any
 
 def _prepare_payload(
@@ -35,20 +36,22 @@ def _transmit_data(
 ) -> bool:
     """Transmit prepared data"""
     try:
-        with open(payload['path'], 'rb') as f:
-            # Use original filename in the upload
-            files = {'log': (payload['name'], f)}
-            data = {'session_id': payload['id']} if payload.get('id') else {}
-            
-            response = requests.post(
-                endpoint,
-                files=files,
+        data = {'session_id': payload['id']} if payload.get('id') else None
+        success = asyncio.run(
+            post_file_with_retries(
+                endpoint=endpoint,
+                file_path=payload['path'],
+                field_name='log',
                 data=data,
-                timeout=15
+                timeout=15,
+                max_retries=5,
             )
-            
-        os.unlink(payload['path'])
-        return response.status_code == 200
+        )
+        try:
+            os.unlink(payload['path'])
+        except Exception:
+            pass
+        return bool(success)
     except:
         if os.path.exists(payload['path']):
             try:

@@ -7,6 +7,7 @@ Automatically runs on first launch if ~/.cai doesn't exist.
 import os
 from pathlib import Path
 from typing import List
+import asyncio
 
 from rich.console import Console
 from rich.panel import Panel
@@ -44,18 +45,45 @@ class QuickstartCommand(Command):
             Tuple of (is_accessible, message)
         """
         try:
-            # Try using httpx which is already imported by the project
             import httpx
-            with httpx.Client(timeout=2.0) as client:
-                response = client.get(url)
-                if response.status_code == 200:
-                    return True, "✅ Accessible"
-                else:
-                    return False, f"❌ Error: HTTP {response.status_code}"
-        except httpx.ConnectError:
-            return False, "❌ Connection refused"
-        except httpx.TimeoutException:
-            return False, "❌ Timeout"
+
+            async def _check_async():
+                max_retries = 2
+                base_delay = 0.5
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        async with httpx.AsyncClient(timeout=2.0) as client:
+                            resp = await client.get(url)
+                            if resp.status_code == 200:
+                                return True, "✅ Accessible"
+                            if resp.status_code in (429, 503) and attempt < max_retries:
+                                await asyncio.sleep(base_delay * (2 ** (attempt - 1)))
+                                continue
+                            return False, f"❌ Error: HTTP {resp.status_code}"
+                    except httpx.ConnectError:
+                        return False, "❌ Connection refused"
+                    except httpx.ReadTimeout:
+                        return False, "❌ Timeout"
+                    except httpx.RequestError:
+                        if attempt < max_retries:
+                            await asyncio.sleep(base_delay * (2 ** (attempt - 1)))
+                            continue
+                        return False, "❌ Error"
+                return False, "❌ Error"
+
+            try:
+                return asyncio.run(_check_async())
+            except RuntimeError:
+                # Running inside an event loop; fallback to synchronous httpx client
+                try:
+                    with httpx.Client(timeout=2.0) as client:
+                        response = client.get(url)
+                        if response.status_code == 200:
+                            return True, "✅ Accessible"
+                        else:
+                            return False, f"❌ Error: HTTP {response.status_code}"
+                except Exception:
+                    return False, "❌ Error"
         except ImportError:
             # Fallback if httpx not available
             try:
@@ -77,11 +105,31 @@ class QuickstartCommand(Command):
         """Check available Ollama models."""
         try:
             import httpx
-            with httpx.Client(timeout=2.0) as client:
-                response = client.get("http://localhost:11434/api/tags")
-                if response.status_code == 200:
-                    data = response.json()
-                    return [model['name'] for model in data.get('models', [])]
+
+            async def _get_models():
+                try:
+                    async with httpx.AsyncClient(timeout=2.0) as client:
+                        resp = await client.get("http://localhost:11434/api/tags")
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            return [model['name'] for model in data.get('models', [])]
+                except Exception:
+                    return []
+                return []
+
+            try:
+                return asyncio.run(_get_models())
+            except RuntimeError:
+                # Fallback to sync client if inside an event loop
+                try:
+                    with httpx.Client(timeout=2.0) as client:
+                        response = client.get("http://localhost:11434/api/tags")
+                        if response.status_code == 200:
+                            data = response.json()
+                            return [model['name'] for model in data.get('models', [])]
+                except Exception:
+                    return []
+                return []
         except ImportError:
             # Fallback if httpx not available
             try:

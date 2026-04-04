@@ -16,7 +16,14 @@ from typing import TYPE_CHECKING, Any, Literal, cast, overload
 import uuid
 import litellm
 import tiktoken
-from openai import NOT_GIVEN, AsyncOpenAI, AsyncStream, NotGiven
+try:
+    from openai import NOT_GIVEN, OpenAI as AsyncOpenAI, AsyncStream, NotGiven
+except Exception:  # pragma: no cover - optional OpenAI SDK
+    NOT_GIVEN = None
+    AsyncOpenAI = None
+    AsyncStream = None
+    NotGiven = None
+import httpx
 
 # Create custom InputTokensDetails class since it's not available in current OpenAI version
 from openai._models import BaseModel
@@ -448,6 +455,10 @@ class OpenAIChatCompletionsModel(Model):
         # DEPRECATED: Still maintain backward compatibility with ACTIVE_MODEL_INSTANCES
         # TODO: Remove this after updating all dependent code
         ACTIVE_MODEL_INSTANCES[(self._display_name, self.agent_id)] = weakref.ref(self)
+        # Resume support for interrupted streams
+        self._last_stream_request = None
+        self._last_stream_partial = ""
+        self._resume_available = False
     
     def get_full_display_name(self) -> str:
         """Get the full display name including ID."""
@@ -565,6 +576,86 @@ class OpenAIChatCompletionsModel(Model):
 
     def _non_null_or_not_given(self, value: Any) -> Any:
         return value if value is not None else NOT_GIVEN
+
+    async def _execute_model_call_with_retries(
+        self,
+        call_coro_factory,
+        max_retries: int = 5,
+        base_delay: float = 1.0,
+        max_delay: float = 60.0,
+    ):
+        """
+        Execute an async call factory with retries for transient errors.
+
+        call_coro_factory: callable returning a coroutine when invoked.
+        Retries on httpx network errors and on HTTP 429/503 responses and litellm RateLimitError.
+        """
+        attempt = 0
+        import random
+        import re
+
+        while True:
+            try:
+                return await call_coro_factory()
+            except Exception as e:  # noqa: BLE001 - broad handling for many provider libs
+                attempt += 1
+
+                # Determine if the error is retryable (429 / 503 / network / rate limit)
+                retriable = False
+                retry_delay = None
+
+                try:
+                    if isinstance(e, httpx.HTTPStatusError):
+                        status = e.response.status_code if e.response is not None else None
+                        if status in (429, 503):
+                            retriable = True
+                            if e.response is not None:
+                                ra = e.response.headers.get("Retry-After")
+                                if ra:
+                                    try:
+                                        retry_delay = int(ra)
+                                    except Exception:
+                                        pass
+                    elif isinstance(e, httpx.RequestError):
+                        retriable = True
+                except Exception:
+                    # Fall back to other heuristics below
+                    pass
+
+                # Handle LiteLLM/OpenAI RateLimitError heuristics
+                try:
+                    if not retriable and hasattr(litellm, "exceptions") and isinstance(e, litellm.exceptions.RateLimitError):
+                        retriable = True
+                        err_str = str(e)
+                        m = re.search(r'retry[_-]?after[:\s]+(\d+)', err_str, re.IGNORECASE)
+                        if m:
+                            retry_delay = int(m.group(1))
+                        else:
+                            m2 = re.search(r'wait\s+(\d+)\s+seconds?', err_str, re.IGNORECASE)
+                            if m2:
+                                retry_delay = int(m2.group(1))
+                except Exception:
+                    pass
+
+                # Basic string heuristics for other providers
+                if not retriable:
+                    es = str(e).lower()
+                    if "rate limit" in es or "429" in es or "too many requests" in es or "503" in es or "service unavailable" in es:
+                        retriable = True
+
+                if not retriable or attempt > max_retries:
+                    # Not retryable or exhausted retries: re-raise
+                    raise
+
+                # Compute exponential backoff with small jitter
+                if retry_delay is None:
+                    retry_delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+                    retry_delay = retry_delay + random.uniform(0, 0.1 * retry_delay)
+
+                logger.debug(
+                    f"Model call transient error (attempt {attempt}/{max_retries}), retrying after {retry_delay:.1f}s: {e}"
+                )
+                await asyncio.sleep(retry_delay)
 
     async def get_response(
         self,
@@ -1461,6 +1552,22 @@ class OpenAIChatCompletionsModel(Model):
                     stream=True,
                 )
 
+                # Save last-stream request so we can "resume" if the user interrupts.
+                try:
+                    self._last_stream_request = {
+                        "system_instructions": system_instructions,
+                        "input": input,
+                        "model_settings": model_settings,
+                        "tools": tools,
+                        "output_schema": output_schema,
+                        "handoffs": handoffs,
+                        "tracing": tracing,
+                    }
+                    self._last_stream_partial = ""
+                    self._resume_available = False
+                except Exception:
+                    pass
+
                 usage: CompletionUsage | None = None
                 state = _StreamingState()
 
@@ -2030,6 +2137,13 @@ class OpenAIChatCompletionsModel(Model):
                 except KeyboardInterrupt:
                     # Handle interruption during streaming
                     stream_interrupted = True
+                    # Save partial content and request so the user can resume later
+                    try:
+                        self._last_stream_partial = streaming_text_buffer
+                        self._resume_available = True
+                    except Exception:
+                        pass
+
                     print("\n[Streaming interrupted by user]", file=sys.stderr)
 
                     # Let the exception propagate after cleanup
@@ -2512,6 +2626,14 @@ class OpenAIChatCompletionsModel(Model):
                     self.agent_name,
                 )
 
+                # Clear any saved resume-state since the stream completed successfully
+                try:
+                    self._last_stream_request = None
+                    self._last_stream_partial = ""
+                    self._resume_available = False
+                except Exception:
+                    pass
+
                 # Stop active timer and start idle timer when streaming is complete
                 stop_active_timer()
                 start_idle_timer()
@@ -2611,6 +2733,49 @@ class OpenAIChatCompletionsModel(Model):
                 pass
 
             # Stream cleanup completed
+
+    async def resume_last_stream(self) -> AsyncIterator[TResponseStreamEvent]:
+        """Resume the most recently interrupted stream if available.
+
+        Returns an async iterator of stream events identical to calling
+        `stream_response` with a continuation prompt appended to the original input.
+        """
+        if not getattr(self, "_resume_available", False) or not getattr(self, "_last_stream_request", None):
+            raise AgentsException("No resumable stream available")
+
+        req = self._last_stream_request
+        partial = getattr(self, "_last_stream_partial", "") or ""
+
+        # Construct a continuation prompt that asks the model to continue the previous output
+        continuation_text = (
+            "Please continue the previous response. Previous partial output:\n\n" + partial
+        )
+
+        original_input = req.get("input")
+        if isinstance(original_input, str):
+            new_input = original_input + "\n\n" + continuation_text
+        else:
+            # Append a user message to continue
+            new_input = list(original_input) + [{"role": "user", "content": continuation_text}]
+
+        # Clear resume state to avoid accidental reuse
+        try:
+            self._resume_available = False
+            self._last_stream_partial = ""
+            self._last_stream_request = None
+        except Exception:
+            pass
+
+        # Delegate to standard streaming API
+        return self.stream_response(
+            req.get("system_instructions"),
+            new_input,
+            req.get("model_settings"),
+            req.get("tools"),
+            req.get("output_schema"),
+            req.get("handoffs"),
+            req.get("tracing"),
+        )
 
     @overload
     async def _fetch_response(
@@ -3068,6 +3233,52 @@ class OpenAIChatCompletionsModel(Model):
                 print(f"💤 Waiting {retry_delay}s before retry... (Rate limit protection)")
                 await asyncio.sleep(retry_delay)  # Use async sleep instead of time.sleep
                 continue  # Retry the request
+            except httpx.HTTPStatusError as e:
+                # Handle HTTP status errors from underlying HTTP client (e.g., 429 / 503)
+                status = None
+                try:
+                    status = e.response.status_code if e.response is not None else None
+                except Exception:
+                    status = None
+
+                if status in (429, 503):
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        print(f"\n❌ Rate limit or server overload after {max_retries} retries")
+                        raise
+
+                    # Try to honor Retry-After header if present
+                    retry_delay = None
+                    try:
+                        if e.response is not None:
+                            ra = e.response.headers.get("Retry-After")
+                            if ra:
+                                retry_delay = int(ra)
+                    except Exception:
+                        retry_delay = None
+
+                    if retry_delay is None:
+                        import random
+
+                        retry_delay = min(300, 60 * retry_count) + random.randint(0, 10)
+
+                    print(f"\n⏳ HTTP {status} - retrying in {retry_delay}s (attempt {retry_count}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    # Non-retryable HTTP status - re-raise
+                    raise
+            except httpx.RequestError as e:
+                # Network-level error - retry with backoff
+                retry_count += 1
+                if retry_count >= max_retries:
+                    raise
+                import random
+
+                retry_delay = min(300, 2 ** retry_count) + random.uniform(0, 0.1 * (2 ** retry_count))
+                logger.debug(f"Network error during model call, retrying in {retry_delay:.1f}s: {e}")
+                await asyncio.sleep(retry_delay)
+                continue  # Retry
                 
             except litellm.exceptions.BadRequestError as e:
                 error_msg = str(e)

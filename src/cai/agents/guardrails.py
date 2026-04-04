@@ -19,7 +19,7 @@ from cai.sdk.agents import (
     OpenAIChatCompletionsModel
 )
 try:
-    from openai import AsyncOpenAI
+    from openai import OpenAI as AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 import os

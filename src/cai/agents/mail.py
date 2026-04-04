@@ -4,7 +4,7 @@ Mail Agent module for checking email configuration security.
 """
 import os
 try:
-    from openai import AsyncOpenAI
+    from openai import OpenAI as AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 

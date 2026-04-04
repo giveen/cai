@@ -26,7 +26,10 @@ from cai.sdk.agents.models.openai_chatcompletions import (
 from cai.sdk.agents import Agent, Runner
 from cai.repl.commands.parallel import PARALLEL_CONFIGS
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-from openai import AsyncOpenAI
+try:
+    from openai import OpenAI as AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
 
 # Import get_compact_model function - imported later to avoid circular import
 def get_compact_model():

@@ -6,7 +6,14 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from openai import NOT_GIVEN, APIStatusError, AsyncOpenAI, AsyncStream, NotGiven
+try:
+    from openai import NOT_GIVEN, APIStatusError, OpenAI as AsyncOpenAI, AsyncStream, NotGiven
+except Exception:  # pragma: no cover - optional OpenAI SDK
+    NOT_GIVEN = None
+    APIStatusError = Exception
+    AsyncOpenAI = None
+    AsyncStream = None
+    NotGiven = None
 from openai.types import ChatModel
 from openai.types.responses import (
     Response,

@@ -9,7 +9,7 @@ except Exception:
     return False
 
 try:
-  from openai import AsyncOpenAI
+  from openai import OpenAI as AsyncOpenAI
 except Exception:
   AsyncOpenAI = None
 

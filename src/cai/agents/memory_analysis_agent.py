@@ -7,9 +7,27 @@ except Exception:
         return False
 
 try:
-    from openai import AsyncOpenAI
+    from openai import OpenAI as AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
+    
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
+from cai.util import load_prompt_template  # Add this import
+from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
+    run_ssh_command_with_credentials
+)
+    
+from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
+    generic_linux_command
+)
+    
+from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
+    make_web_search_with_explanation,
+)
+    
+from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
+    execute_code
+)
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
 from cai.util import load_prompt_template  # Add this import
