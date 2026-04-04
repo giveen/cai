@@ -4,8 +4,11 @@ querying and adding data to vector databases.
 """
 import os
 import uuid
+import logging
 from cai.rag.vector_db import QdrantConnector
 from cai.sdk.agents import function_tool
+
+logger = logging.getLogger(__name__)
 
 # CTF BASED MEMORY
 collection_name = os.getenv('CAI_MEMORY_COLLECTION', "default")
@@ -37,10 +40,11 @@ def query_memory(query: str, top_k: int = 3, **kwargs) -> str:  # pylint: disabl
         if not results:
             return "No documents found in memory."
 
-        return results
+        return str(results)
 
-    except Exception:  # pylint: disable=broad-exception-caught
-        return results
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.exception("Error querying memory")
+        return f"Error querying memory: {e.__class__.__name__}: {str(e)}"
 
 @function_tool
 def add_to_memory_episodic(texts: str, step: int = 0, **kwargs) -> str:  # pylint: disable=unused-argument,line-too-long # noqa: E501
@@ -58,8 +62,8 @@ def add_to_memory_episodic(texts: str, step: int = 0, **kwargs) -> str:  # pylin
         qdrant = QdrantConnector()
         try:
             qdrant.create_collection(collection_name)
-        except Exception:  # nosec # pylint: disable=broad-exception-caught
-            pass
+        except Exception as e:  # nosec # pylint: disable=broad-exception-caught
+            logger.debug("create_collection failed (episodic): %s", e)
 
         success = qdrant.add_points(
             id_point=step,
@@ -73,7 +77,8 @@ def add_to_memory_episodic(texts: str, step: int = 0, **kwargs) -> str:  # pylin
         return "Failed to add documents to vector database"
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        return f"Error adding documents to vector database: {str(e)}"
+        logger.exception("Error adding documents to vector database (episodic)")
+        return f"Error adding documents to vector database: {e.__class__.__name__}: {str(e)}"
 
 @function_tool
 def add_to_memory_semantic(texts: str, step: int = 0, **kwargs) -> str:  # pylint: disable=unused-argument,line-too-long # noqa: E501
@@ -95,8 +100,8 @@ def add_to_memory_semantic(texts: str, step: int = 0, **kwargs) -> str:  # pylin
         qdrant = QdrantConnector()
         try:
             qdrant.create_collection("_all_")
-        except Exception:  # nosec # pylint: disable=broad-exception-caught
-            pass
+        except Exception as e:  # nosec # pylint: disable=broad-exception-caught
+            logger.debug("create_collection failed (semantic): %s", e)
 
         success = qdrant.add_points(
             id_point=doc_id,
@@ -110,4 +115,5 @@ def add_to_memory_semantic(texts: str, step: int = 0, **kwargs) -> str:  # pylin
         return "Failed to add documents to vector database"
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        return f"Error adding documents to vector database: {str(e)}"
+        logger.exception("Error adding documents to vector database (semantic)")
+        return f"Error adding documents to vector database: {e.__class__.__name__}: {str(e)}"

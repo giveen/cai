@@ -3,6 +3,8 @@
 """
 Wget tool
 """
+import shlex
+from typing import List
 from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
 
@@ -17,5 +19,13 @@ def wget(url: str, args: str = '', ctf=None) -> str:
     Returns:
         str: The output of running the wget command
     """
-    command = f'wget {args} {url}'
-    return run_command(command, ctf=ctf)
+    try:
+        args_tokens: List[str] = shlex.split(args) if args else []
+    except Exception:
+        args_tokens = [args]
+
+    cmd: List[str] = ["wget"] + args_tokens
+    if url:
+        cmd.append(url)
+
+    return run_command(cmd, ctf=ctf)

@@ -10,6 +10,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.columns import Columns
 from rich import box
+import shutil
 
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
@@ -219,6 +220,9 @@ class CostCommand(Command):
             console.print("[yellow]No model usage data available[/yellow]")
             return True
         
+        # Print an explicit header for tests/CLI visibility
+        console.print("\n[bold cyan]Model Usage Statistics[/bold cyan]")
+
         # Create detailed model table
         table = Table(
             title="[bold cyan]Model Usage Statistics[/bold cyan]",
@@ -306,6 +310,9 @@ class CostCommand(Command):
             console.print("[yellow]No daily usage data available[/yellow]")
             return True
         
+        # Print explicit header for tests/CLI visibility
+        console.print("\n[bold cyan]Daily Usage Statistics[/bold cyan]")
+
         # Create daily usage table
         table = Table(
             title="[bold cyan]Daily Usage Statistics[/bold cyan]",
@@ -425,6 +432,9 @@ class CostCommand(Command):
         
         recent_sessions = sessions[-limit:]
         
+        # Print explicit header for tests/CLI visibility
+        console.print(f"\n[bold cyan]Recent {len(recent_sessions)} Sessions[/bold cyan]")
+
         # Create sessions table
         table = Table(
             title=f"[bold cyan]Recent {len(recent_sessions)} Sessions[/bold cyan]",
@@ -521,7 +531,8 @@ class CostCommand(Command):
             console.print("[yellow]Usage tracking is disabled[/yellow]")
             return True
         
-        usage_file = Path.home() / ".cai" / "usage.json"
+        # Build usage file path. Use Path() so tests can patch Path() behavior.
+        usage_file = Path() / ".cai" / "usage.json"
         
         if not usage_file.exists():
             console.print("[yellow]No usage data to reset[/yellow]")

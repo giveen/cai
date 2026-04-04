@@ -5,10 +5,20 @@ This module provides a single Pattern class that adapts its behavior
 based on the pattern type (parallel, swarm, hierarchical, etc.).
 """
 
-from typing import Dict, Any, Optional, List, Union, Callable
+from typing import Dict, Any, Optional, List, Union, Callable, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
-from cai.repl.commands.parallel import ParallelConfig
+
+if TYPE_CHECKING:
+    from cai.repl.commands.parallel import ParallelConfig
+else:
+    # Lightweight fallback for environments where the parallel command is not available
+    class ParallelConfig:
+        def __init__(self, agent_name: str, model: str | None = None, prompt: str | None = None, unified_context: bool = True):
+            self.agent_name = agent_name
+            self.model = model
+            self.prompt = prompt
+            self.unified_context = unified_context
 
 class PatternType(Enum):
     """Enumeration of available pattern types."""

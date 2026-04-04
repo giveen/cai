@@ -15,6 +15,7 @@ from cai.repl.commands.base import Command, register_command
 from cai.repl.commands.parallel import PARALLEL_CONFIGS
 from cai.sdk.agents.models.openai_chatcompletions import (
     get_all_agent_histories,
+    get_agent_message_history,
 )
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl

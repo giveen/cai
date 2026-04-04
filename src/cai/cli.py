@@ -348,8 +348,6 @@ if is_pentestperf_available() and os.getenv("CTF_NAME", None):
 global START_TIME
 START_TIME = time.time()
 
-set_tracing_disabled(True)
-
 
 def update_agent_models_recursively(agent, new_model, visited=None):
     """
@@ -442,6 +440,13 @@ def run_cai_cli(
     # Holds a user message to replay on the next iteration without prompting
     # the user — set by auto-compact so the agent continues its current task.
     _post_compact_input: str | None = None
+    # Last raw user input captured so auto-compact replay and ContextCompactedError
+    # handlers can reference it reliably even in parallel mode.
+    _last_user_input: str = ""
+    # When a user interrupts execution (KeyboardInterrupt), set this flag so
+    # the subsequent loop iteration will not auto-compact immediately
+    # (avoids losing data when a user pauses/resumes the session).
+    _skip_auto_compact_after_interrupt = False
     console = Console()
     last_model = os.getenv("CAI_MODEL", "alias1")
     last_agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
@@ -731,6 +736,13 @@ def run_cai_cli(
         except KeyboardInterrupt:
             # Print newline to ensure clean prompt display after interrupt
             print()
+
+            # Mark that the user interrupted execution so we skip the next
+            # automatic compaction cycle to avoid losing data.
+            _skip_auto_compact_after_interrupt = True
+            # Mark that the user interrupted execution so we skip the next
+            # automatic compaction cycle to avoid losing data.
+            _skip_auto_compact_after_interrupt = True
 
             def format_time(seconds):
                 mins, secs = divmod(int(seconds), 60)
@@ -1782,7 +1794,12 @@ def run_cai_cli(
             # many tool-call rounds per single user input — are handled correctly.
             _support_model = os.getenv("CAI_SUPPORT_MODEL")
             _support_interval_raw = os.getenv("CAI_SUPPORT_INTERVAL")
-            if _support_model and _support_interval_raw:
+            # Skip auto-compact when running multiple parallel agents to avoid
+            # queuing a single "last user input" for replay across many instances.
+            # Rely on model-level ContextCompactedError handling in parallel mode.
+            # Honor the CAI_AUTO_COMPACT flag so users can fully disable auto-compaction.
+            _auto_compact_enabled = os.getenv("CAI_AUTO_COMPACT", "true").lower() != "false"
+            if _auto_compact_enabled and not _skip_auto_compact_after_interrupt and parallel_count <= 1 and _support_model and _support_interval_raw:
                 try:
                     _support_interval = int(_support_interval_raw)
                     if _support_interval > 0:
@@ -1831,6 +1848,17 @@ def run_cai_cli(
                 except (ValueError, Exception) as _e:
                     # Always show auto-compact errors so they are never silently lost.
                     console.print(f"[red]Auto-compact error: {_e}[/red]")
+            elif _auto_compact_enabled and _skip_auto_compact_after_interrupt:
+                # Skip a single scheduled auto-compact immediately after a user
+                # KeyboardInterrupt to avoid losing data the user intended to
+                # inspect or pause for. Reset the flag and continue.
+                _skip_auto_compact_after_interrupt = False
+                try:
+                    console.print(
+                        "[dim yellow]Auto-compact skipped due to recent interrupt; resuming.[/dim yellow]"
+                    )
+                except Exception:
+                    pass
 
             # Stop measuring active time and start measuring idle time again
             stop_active_timer()
@@ -1996,6 +2024,17 @@ def main():
     # Ensure the agent and all its handoff agents use the current model
     current_model = os.getenv("CAI_MODEL", "alias1")
     update_agent_models_recursively(agent, current_model)
+
+    # Disable tracing for interactive CLI runs to avoid sending traces to
+    # the backend while users run commands locally. Do this only when the
+    # CLI is actually started (not on import) so tests and imports do not
+    # inadvertently disable tracing for the whole process.
+    try:
+        set_tracing_disabled(True)
+    except Exception:
+        # If tracing API isn't available for some reason, ignore to avoid
+        # breaking the CLI startup.
+        pass
 
     # Run the CLI with the selected agent and optional initial prompt
     run_cai_cli(agent, initial_prompt=initial_prompt)

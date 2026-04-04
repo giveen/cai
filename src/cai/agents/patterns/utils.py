@@ -9,7 +9,12 @@ from __future__ import annotations
 from typing import List, Union
 
 from .pattern import Pattern
-from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
+try:
+    from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
+except Exception:
+    ParallelConfig = None
+    PARALLEL_CONFIGS = None
+
 from cai.agents import get_available_agents
 
 def pattern_to_parallel_configs(pattern: Union['Pattern', str]) -> List[ParallelConfig]:
@@ -51,6 +56,10 @@ def apply_pattern_to_parallel_command(pattern: Union['Pattern', str]) -> None:
     """
     configs = pattern_to_parallel_configs(pattern)
     
+    # If the parallel command subsystem is not available, raise a clear error
+    if PARALLEL_CONFIGS is None:
+        raise RuntimeError("Parallel command subsystem is not available in this environment")
+
     # Clear existing configs and apply pattern configs
     PARALLEL_CONFIGS.clear()
     PARALLEL_CONFIGS.extend(configs)

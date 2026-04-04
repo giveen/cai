@@ -7,7 +7,11 @@ try:
 except Exception:
     AsyncOpenAI = None
 
-from . import _config
+try:
+    from . import _config
+except Exception:  # pragma: no cover - optional OpenAI-backed config
+    _config = None
+
 from .agent import Agent, ToolsToFinalOutputFunction, ToolsToFinalOutputResult
 from .agent_output import AgentOutputSchema
 from .computer import AsyncComputer, Button, Computer, Environment
@@ -29,24 +33,47 @@ from .guardrail import (
     output_guardrail,
 )
 from .handoffs import Handoff, HandoffInputData, HandoffInputFilter, handoff
-from .items import (
-    HandoffCallItem,
-    HandoffOutputItem,
-    ItemHelpers,
-    MessageOutputItem,
-    ModelResponse,
-    ReasoningItem,
-    RunItem,
-    ToolCallItem,
-    ToolCallOutputItem,
-    TResponseInputItem,
-)
+try:
+    from .items import (
+        HandoffCallItem,
+        HandoffOutputItem,
+        ItemHelpers,
+        MessageOutputItem,
+        ModelResponse,
+        ReasoningItem,
+        RunItem,
+        ToolCallItem,
+        ToolCallOutputItem,
+        TResponseInputItem,
+    )
+except Exception:  # pragma: no cover - items may depend on optional OpenAI types
+    HandoffCallItem = None
+    HandoffOutputItem = None
+    ItemHelpers = None
+    MessageOutputItem = None
+    ModelResponse = None
+    ReasoningItem = None
+    RunItem = None
+    ToolCallItem = None
+    ToolCallOutputItem = None
+    TResponseInputItem = None
 from .lifecycle import AgentHooks, RunHooks
 from .model_settings import ModelSettings
 from .models.interface import Model, ModelProvider, ModelTracing
-from .models.openai_chatcompletions import OpenAIChatCompletionsModel
-from .models.openai_provider import OpenAIProvider
-from .models.openai_responses import OpenAIResponsesModel
+try:
+    from .models.openai_chatcompletions import OpenAIChatCompletionsModel
+except Exception:  # pragma: no cover - OpenAI models optional
+    OpenAIChatCompletionsModel = None
+
+try:
+    from .models.openai_provider import OpenAIProvider
+except Exception:  # pragma: no cover - OpenAI provider optional
+    OpenAIProvider = None
+
+try:
+    from .models.openai_responses import OpenAIResponsesModel
+except Exception:  # pragma: no cover - OpenAI responses optional
+    OpenAIResponsesModel = None
 from .result import RunResult, RunResultStreaming
 from .run import RunConfig, Runner
 from .run_context import RunContextWrapper, TContext
@@ -56,16 +83,26 @@ from .stream_events import (
     RunItemStreamEvent,
     StreamEvent,
 )
-from .tool import (
-    ComputerTool,
-    FileSearchTool,
-    FunctionTool,
-    FunctionToolResult,
-    Tool,
-    WebSearchTool,
-    default_tool_error_function,
-    function_tool,
-)
+try:
+    from .tool import (
+        ComputerTool,
+        FileSearchTool,
+        FunctionTool,
+        FunctionToolResult,
+        Tool,
+        WebSearchTool,
+        default_tool_error_function,
+        function_tool,
+    )
+except Exception:  # pragma: no cover - tool module may require OpenAI types
+    ComputerTool = None
+    FileSearchTool = None
+    FunctionTool = None
+    FunctionToolResult = None
+    Tool = None
+    WebSearchTool = None
+    default_tool_error_function = None
+    function_tool = None
 from .tracing import (
     AgentSpanData,
     CustomSpanData,

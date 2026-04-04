@@ -6,15 +6,32 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Union, overload
 
-from openai.types.responses.file_search_tool_param import Filters, RankingOptions
-from openai.types.responses.web_search_tool_param import UserLocation
-from pydantic import ValidationError
+from typing import TYPE_CHECKING, Any
+if TYPE_CHECKING:
+    from openai.types.responses.file_search_tool_param import Filters, RankingOptions
+    from openai.types.responses.web_search_tool_param import UserLocation
+    from pydantic import ValidationError
+else:
+    # Runtime fallbacks when optional packages are missing
+    Filters = Any
+    RankingOptions = Any
+    UserLocation = Any
+    class ValidationError(Exception):
+        pass
 from typing_extensions import Concatenate, ParamSpec
 
 from . import _debug
 from .computer import AsyncComputer, Computer
 from .exceptions import ModelBehaviorError
-from .function_schema import DocstringStyle, function_schema
+try:
+    from .function_schema import DocstringStyle, function_schema
+except Exception:  # pragma: no cover - optional docstring parsing support
+    from typing import Any
+
+    DocstringStyle = Any
+
+    def function_schema(*args, **kwargs):
+        raise RuntimeError("function_schema is unavailable because optional dependencies are missing")
 from .items import RunItem
 from .logger import logger
 from .run_context import RunContextWrapper

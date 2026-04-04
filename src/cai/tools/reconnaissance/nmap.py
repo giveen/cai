@@ -1,9 +1,11 @@
 """
 Here are the nmap tools.
 """
-
+import shlex
+from typing import List
 from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
+
 
 @function_tool
 def nmap(args: str, target: str, ctf=None) -> str:
@@ -17,5 +19,13 @@ def nmap(args: str, target: str, ctf=None) -> str:
     Returns:
         str: The output of running the nmap command
     """
-    command = f'nmap {args} {target}'
-    return run_command(command, ctf=ctf)
+    try:
+        args_tokens: List[str] = shlex.split(args) if args else []
+    except Exception:
+        args_tokens = [args]
+
+    cmd: List[str] = ["nmap"] + args_tokens
+    if target:
+        cmd.append(target)
+
+    return run_command(cmd, ctf=ctf)

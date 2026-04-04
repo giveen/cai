@@ -114,7 +114,6 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
                 if Agent is not None and isinstance(attr, Agent) and not attr_name.startswith("_"):
-                    # agent_name = attr_name.replace("_agent", "")
                     agent_name = attr_name
                     if agent_name not in agents_to_display:
                         agents_to_display[agent_name] = attr
@@ -143,6 +142,45 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                 # Extract module name from the full import path
                 module_short_name = name.split('.')[-1]
                 print(f"Error importing {module_short_name}: {e}")
+
+    # If we found no agents by importing (likely because optional deps are missing),
+    # try a static analysis pass over the agents/ package to discover agent names
+    if not agents_to_display:
+        agents_dir = os.path.dirname(__file__)
+
+        class _PseudoAgent:
+            def __init__(self, name, description=""):
+                self.name = name
+                self.description = description
+                self.instructions = None
+                self.tools = []
+                self.handoffs = []
+                self.model = None
+                self.output_type = None
+
+        import re
+
+        for fname in os.listdir(agents_dir):
+            if not fname.endswith('.py') or fname == '__init__.py':
+                continue
+            path = os.path.join(agents_dir, fname)
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            except Exception:
+                continue
+
+            # Look for assignments like `foo_agent = Agent(`
+            for match in re.finditer(r"([a-zA-Z0-9_]+_agent)\s*=\s*Agent\s*\(", text):
+                agent_name = match.group(1)
+                if agent_name not in agents_to_display:
+                    agents_to_display[agent_name] = _PseudoAgent(agent_name)
+
+            # Also look for pattern dicts with a "name" key
+            for match in re.finditer(r"['\"]name['\"]\s*:\s*['\"]([a-zA-Z0-9_\- ]+)['\"]", text):
+                pattern_name = match.group(1).replace(' ', '_')
+                if pattern_name not in agents_to_display:
+                    agents_to_display[pattern_name] = _PseudoAgent(pattern_name)
 
     # Add all patterns (parallel, swarm, etc.) as pseudo-agents
     try:

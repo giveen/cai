@@ -5,22 +5,54 @@ import copy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, Union
 
-from openai.types.responses import (
-    Response,
-    ResponseComputerToolCall,
-    ResponseFileSearchToolCall,
-    ResponseFunctionToolCall,
-    ResponseFunctionWebSearch,
-    ResponseInputItemParam,
-    ResponseOutputItem,
-    ResponseOutputMessage,
-    ResponseOutputRefusal,
-    ResponseOutputText,
-    ResponseStreamEvent,
-)
-from openai.types.responses.response_input_item_param import ComputerCallOutput, FunctionCallOutput
-from openai.types.responses.response_reasoning_item import ResponseReasoningItem
-from pydantic import BaseModel
+if TYPE_CHECKING:
+    from openai.types.responses import (
+        Response,
+        ResponseComputerToolCall,
+        ResponseFileSearchToolCall,
+        ResponseFunctionToolCall,
+        ResponseFunctionWebSearch,
+        ResponseInputItemParam,
+        ResponseOutputItem,
+        ResponseOutputMessage,
+        ResponseOutputRefusal,
+        ResponseOutputText,
+        ResponseStreamEvent,
+    )
+    from openai.types.responses.response_input_item_param import ComputerCallOutput, FunctionCallOutput
+    from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+else:
+    # Fallback types when `openai` is not installed. These are only used at runtime
+    # for type-agnostic operations (e.g., agent discovery) and should not be relied on
+    # for full model behavior. Use TYPE_CHECKING imports for accurate typing.
+    Response = dict
+    ResponseComputerToolCall = dict
+    ResponseFileSearchToolCall = dict
+    ResponseFunctionToolCall = dict
+    ResponseFunctionWebSearch = dict
+    ResponseInputItemParam = dict
+    ResponseOutputItem = dict
+    ResponseOutputMessage = dict
+    ResponseOutputRefusal = dict
+    ResponseOutputText = dict
+    ResponseStreamEvent = dict
+    ComputerCallOutput = dict
+    FunctionCallOutput = dict
+    ResponseReasoningItem = dict
+try:
+    from pydantic import BaseModel
+except Exception:
+    # Minimal fallback for BaseModel when pydantic is not installed.
+    class BaseModel:  # pragma: no cover - fallback for environments without pydantic
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def model_dump(self, *args, **kwargs):
+            return {}
+
+        @classmethod
+        def model_json_schema(cls):
+            return {}
 from typing_extensions import TypeAlias
 
 from .exceptions import AgentsException, ModelBehaviorError
