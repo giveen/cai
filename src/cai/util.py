@@ -1615,6 +1615,7 @@ def _create_token_display(
     model,
     interaction_cost=None,
     total_cost=None,
+    include_context: bool = True,
 ) -> Text:
     # Standardize model name
     model_name = get_model_name(model)
@@ -1661,24 +1662,25 @@ def _create_token_display(
     tokens_text.append("Session: ", style="bold magenta")
     tokens_text.append(f"${COST_TRACKER.session_total_cost:.4f}", style="bold magenta")
 
-    # Context usage
-    tokens_text.append(" | ", style="dim")
-    context_pct = interaction_input_tokens / get_model_input_tokens(model_name) * 100
-    tokens_text.append("Context: ", style="bold")
-    tokens_text.append(f"{context_pct:.1f}% ", style="bold")
+    # Context usage (optional)
+    if include_context:
+        tokens_text.append(" | ", style="dim")
+        context_pct = interaction_input_tokens / get_model_input_tokens(model_name) * 100
+        tokens_text.append("Context: ", style="bold")
+        tokens_text.append(f"{context_pct:.1f}% ", style="bold")
 
-    # Context indicator
-    if context_pct < 50:
-        indicator = "🟩"
-        color_local = "green"
-    elif context_pct < 80:
-        indicator = "🟨"
-        color_local = "yellow"
-    else:
-        indicator = "🟥"
-        color_local = "red"
+        # Context indicator
+        if context_pct < 50:
+            indicator = "🟩"
+            color_local = "green"
+        elif context_pct < 80:
+            indicator = "🟨"
+            color_local = "yellow"
+        else:
+            indicator = "🟥"
+            color_local = "red"
 
-    tokens_text.append(f"{indicator}", style=color_local)
+        tokens_text.append(f"{indicator}", style=color_local)
 
     return tokens_text
 
@@ -2539,6 +2541,7 @@ def finish_agent_streaming(context, final_stats=None):
                     model_name,  # string model name!
                     interaction_cost,
                     total_cost,
+                    include_context=False,
                 )
 
                 # Crear una línea de tokens compacta para el streaming

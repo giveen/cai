@@ -366,7 +366,7 @@ cai
 /mcp load http://localhost:9876/sse burp
 
 # Add MCP tools to agent
-/mcp add-to-agent <agent_name> burp
+/mcp add burp <agent_name>
 
 # Set up virtualized environment
 /virtualization create ubuntu:latest
