@@ -117,8 +117,24 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                     agent_name = attr_name
                     if agent_name not in agents_to_display:
                         agents_to_display[agent_name] = attr
-        except (ImportError, AttributeError):
-            pass
+        except Exception as e:
+            # Handle missing API key errors gracefully
+            error_str = str(e)
+            module_short_name = name.split('.')[-1]
+            if (
+                "OPENAI_API_KEY" in error_str
+                or "Missing OpenAI API Key" in error_str
+                or "openai.api_key" in error_str
+                or "No API key" in error_str
+            ):
+                print(f"Skipping {module_short_name} - skipped: Missing OpenAI API Key.")
+                print("Set the OPENAI_API_KEY environment variable to enable it.")
+            elif isinstance(e, (ImportError, AttributeError)):
+                # Ignore standard import errors
+                pass
+            else:
+                # Log other unexpected errors
+                print(f"Error importing {module_short_name}: {e}")
 
     # Also check the patterns subdirectory
     patterns_path = os.path.join(os.path.dirname(__file__), "patterns")
@@ -138,10 +154,23 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                         agent_name = attr_name
                         if agent_name not in agents_to_display:
                             agents_to_display[agent_name] = attr
-            except (ImportError, AttributeError) as e:
-                # Extract module name from the full import path
+            except Exception as e:
+                # Handle missing API key errors gracefully
                 module_short_name = name.split('.')[-1]
-                print(f"Error importing {module_short_name}: {e}")
+                error_str = str(e)
+                if (
+                    "OPENAI_API_KEY" in error_str
+                    or "Missing OpenAI API Key" in error_str
+                    or "openai.api_key" in error_str
+                    or "No API key" in error_str
+                ):
+                    print(f"Skipping {module_short_name} - skipped: Missing OpenAI API Key.")
+                    print("Set the OPENAI_API_KEY environment variable to enable it.")
+                elif isinstance(e, (ImportError, AttributeError)):
+                    # Ignore standard import errors
+                    pass
+                else:
+                    print(f"Error importing {module_short_name}: {e}")
 
     # If we found no agents by importing (likely because optional deps are missing),
     # try a static analysis pass over the agents/ package to discover agent names
@@ -235,7 +264,8 @@ def get_agent_module(agent_name: str) -> str:
                 # Try both with and without _agent suffix
                 if Agent is not None and (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
                     return name
-        except (ImportError, AttributeError):
+        except (ImportError, AttributeError, Exception):
+            # If a module fails to load (e.g. API key missing), just skip it
             pass
 
     # Also check the patterns subdirectory
@@ -249,7 +279,8 @@ def get_agent_module(agent_name: str) -> str:
                     # Try both with and without _agent suffix
                     if Agent is not None and (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
                         return name
-            except (ImportError, AttributeError):
+            except (ImportError, AttributeError, Exception):
+                # If a module fails to load (e.g. API key missing), just skip it
                 pass
 
     return "unknown"

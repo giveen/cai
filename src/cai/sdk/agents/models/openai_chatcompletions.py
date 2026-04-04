@@ -88,6 +88,7 @@ from cai.util import (
     create_agent_streaming_context,
     finish_agent_streaming,
     get_ollama_api_base,
+    get_minimax_api_base,
     start_active_timer,
     start_claude_thinking_if_applicable,
     start_idle_timer,
@@ -192,6 +193,30 @@ def get_agent_message_history(agent_name: str) -> list:
     
     # Get history from SimpleAgentManager
     return AGENT_MANAGER.get_message_history(base_name)
+
+
+# Helper functions to centralize legacy active-instance registration.
+def register_active_model_instance(display_name: str, agent_id: str, instance: object) -> None:
+    """Register an active model instance in the legacy registry.
+
+    Centralizes registration so we can remove or change the underlying
+    implementation later without touching all call sites.
+    """
+    try:
+        key = (display_name, agent_id)
+        ACTIVE_MODEL_INSTANCES[key] = weakref.ref(instance)
+    except Exception:
+        logger.exception("Failed to register active model instance for %s", (display_name, agent_id))
+
+
+def unregister_active_model_instance(display_name: str, agent_id: str) -> None:
+    """Unregister an active model instance from the legacy registry."""
+    try:
+        key = (display_name, agent_id)
+        if key in ACTIVE_MODEL_INSTANCES:
+            del ACTIVE_MODEL_INSTANCES[key]
+    except Exception:
+        logger.exception("Failed to unregister active model instance for %s", (display_name, agent_id))
 
 
 def get_all_agent_histories() -> dict:
@@ -453,8 +478,8 @@ class OpenAIChatCompletionsModel(Model):
         self.logger = get_session_recorder()
         
         # DEPRECATED: Still maintain backward compatibility with ACTIVE_MODEL_INSTANCES
-        # TODO: Remove this after updating all dependent code
-        ACTIVE_MODEL_INSTANCES[(self._display_name, self.agent_id)] = weakref.ref(self)
+        # Centralize registration so future removals are simpler.
+        register_active_model_instance(self._display_name, self.agent_id, self)
         # Resume support for interrupted streams
         self._last_stream_request = None
         self._last_stream_partial = ""
@@ -468,10 +493,8 @@ class OpenAIChatCompletionsModel(Model):
         """Clean up when the model instance is destroyed."""
         try:
             # DEPRECATED: Remove from old registry for backward compatibility
-            if hasattr(self, '_display_name') and hasattr(self, 'agent_id'):
-                key = (self._display_name, self.agent_id)
-                if key in ACTIVE_MODEL_INSTANCES:
-                    del ACTIVE_MODEL_INSTANCES[key]
+                if hasattr(self, '_display_name') and hasattr(self, 'agent_id'):
+                    unregister_active_model_instance(self._display_name, self.agent_id)
             
             # SimpleAgentManager handles history persistence
             # No need to save to PERSISTENT_MESSAGE_HISTORIES
@@ -3383,9 +3406,7 @@ class OpenAIChatCompletionsModel(Model):
                         provider_kwargs = kwargs.copy()
                         if provider == "deepseek":
                             provider_kwargs["custom_llm_provider"] = "deepseek"
-                            provider_kwargs.pop(
-                                "store", None
-                            )  # DeepSeek doesn't support store parameter
+                            provider_kwargs.pop("store", None)  # DeepSeek doesn't support store parameter
                             provider_kwargs.pop(
                                 "parallel_tool_calls", None
                             )  # DeepSeek doesn't support parallel tool calls
@@ -3418,9 +3439,7 @@ class OpenAIChatCompletionsModel(Model):
                                     clean_model = re.sub(
                                         r"[-_]{2,}", "-", clean_model
                                     )  # Clean up multiple separators
-                                    clean_model = clean_model.strip(
-                                        "-_"
-                                    )  # Clean up leading/trailing separators
+                                    clean_model = clean_model.strip("-_")  # Clean up leading/trailing separators
                                     provider_kwargs["model"] = clean_model
 
                                 # Check if message history is compatible with reasoning
@@ -3437,11 +3456,53 @@ class OpenAIChatCompletionsModel(Model):
                             provider_kwargs.pop(
                                 "parallel_tool_calls", None
                             )  # Gemini doesn't support parallel tool calls
+                        elif provider == "minimax" or "minimax" in model_str or str(self.model).lower().startswith("mm-"):
+                            # Route MiniMax models to the minimax provider in LiteLLM
+                            provider_kwargs["custom_llm_provider"] = "minimax"
+                            # Minimax may not support store/parallel_tool_calls params
+                            provider_kwargs.pop("store", None)
+                            provider_kwargs.pop("parallel_tool_calls", None)
+                            try:
+                                api_base = get_minimax_api_base()
+                                if api_base:
+                                    provider_kwargs["api_base"] = api_base
+                            except Exception:
+                                # If helper not available or fails, continue without api_base
+                                pass
                         else:
                             # For unknown providers, try ollama as fallback
                             return await self._fetch_response_litellm_ollama(
                                 kwargs, model_settings, tool_choice, stream, parallel_tool_calls
                             )
+
+                        # Attempt the provider-specific call (streaming and non-streaming)
+                        try:
+                            if stream:
+                                response = Response(
+                                    id=FAKE_RESPONSES_ID,
+                                    created_at=time.time(),
+                                    model=self.model,
+                                    object="response",
+                                    output=[],
+                                    tool_choice="auto"
+                                    if tool_choice is None or tool_choice == NOT_GIVEN
+                                    else cast(Literal["auto", "required", "none"], tool_choice),
+                                    top_p=model_settings.top_p,
+                                    temperature=model_settings.temperature,
+                                    tools=[],
+                                    parallel_tool_calls=parallel_tool_calls or False,
+                                )
+                                stream_obj = await litellm.acompletion(**provider_kwargs)
+                                return response, stream_obj
+                            else:
+                                ret = await litellm.acompletion(**provider_kwargs)
+                                return ret
+                        except Exception as direct_e:
+                            # All provider-specific approaches failed, log and raise the original error
+                            print(
+                                f"All provider approaches failed. Original error: {str(e)}, Direct error: {str(direct_e)}"
+                            )
+                            raise e
                 
                 # Check for message sequence errors
                 if (

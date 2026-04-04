@@ -133,7 +133,6 @@ def capture_remote_traffic(ip, username, password, interface, capture_filter="",
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-@function_tool  # TODO: not ideal to decorate this context manager.
 @contextmanager
 def remote_capture_session(ip, username, password, interface, capture_filter="", port=22):
     """
@@ -161,6 +160,20 @@ def remote_capture_session(ip, username, password, interface, capture_filter="",
             # Remove the temp directory that housed the FIFO
             if tmp_dir and os.path.isdir(tmp_dir):
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@function_tool
+def remote_capture_session_tool(ip, username, password, interface, capture_filter="", port=22):
+    """
+    Tool wrapper to start a remote capture and return the FIFO path.
+
+    Use the `remote_capture_session` context manager for automatic cleanup
+    when calling from local scripts. This tool returns the path and is
+    intended to be used as an agent tool (non-contextmanager).
+    """
+    # Delegate to the existing capture_remote_traffic helper which is itself
+    # a tool-friendly function and returns the FIFO path when successful.
+    return capture_remote_traffic(ip, username, password, interface, capture_filter=capture_filter, port=port)
 
 if __name__ == "__main__":
     # Example usage

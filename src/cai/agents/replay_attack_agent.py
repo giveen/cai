@@ -43,7 +43,8 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
 # Import network tools
 from cai.tools.network.capture_traffic import (  # pylint: disable=import-error # noqa: E501
     capture_remote_traffic,
-    remote_capture_session
+    remote_capture_session,
+    remote_capture_session_tool,
 )
 
 # Prompts
@@ -55,7 +56,7 @@ tools = [
     run_ssh_command_with_credentials,
     execute_code,
     capture_remote_traffic,
-    remote_capture_session,
+    remote_capture_session_tool,
 ]
 
 # Add conditional tools based on available API keys

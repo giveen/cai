@@ -432,7 +432,7 @@ def run_cai_cli(
     Returns:
         None
     """
-    ACTIVE_TIME = 0  # TODO: review this variable
+    # Active/idle timing is tracked via cai.util's start/stop timer helpers
 
     agent = starting_agent
     turn_count = 0

@@ -58,7 +58,8 @@ load_dotenv()
 
 from cai.tools.network.capture_traffic import (
     capture_remote_traffic,
-    remote_capture_session
+    remote_capture_session,
+    remote_capture_session_tool,
 )
 
 
@@ -70,7 +71,7 @@ tools = [
     run_ssh_command_with_credentials,
     execute_code,
     capture_remote_traffic,
-    remote_capture_session,
+    remote_capture_session_tool,
 ]
 
 if os.getenv('PERPLEXITY_API_KEY'):

@@ -69,6 +69,7 @@ _CLAUDE_THINKING_PANELS = {}
 # Global flag to track if cleanup is in progress
 _cleanup_in_progress = False
 _cleanup_lock = threading.Lock()
+_shutdown_requested = False
 
 
 def cleanup_all_streaming_resources():
@@ -204,7 +205,33 @@ def signal_handler(signum, frame):
     # Clean up all streaming resources
     cleanup_all_streaming_resources()
 
-    # Re-raise KeyboardInterrupt to allow normal interrupt handling
+    # Attempt to stop asyncio event loop gracefully instead of raising
+    # KeyboardInterrupt inside arbitrary tasks. Raising KeyboardInterrupt
+    # inside callbacks can surface as unhandled task exceptions
+    # ('Task exception was never retrieved'). Prefer stopping the loop
+    # which allows tasks to unwind cleanly.
+    try:
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+                # Mark requested shutdown so other parts of the program can
+                # detect it if needed.
+                global _shutdown_requested
+                _shutdown_requested = True
+                return
+            except Exception:
+                # Fall through to raising below if we can't stop loop
+                pass
+    except Exception:
+        # If asyncio is not available or another error occurs, fall back
+        # to the default behavior of raising KeyboardInterrupt.
+        pass
+
+    # If we couldn't stop the asyncio loop, fall back to raising
+    # KeyboardInterrupt so the default interpreter behavior takes place.
     raise KeyboardInterrupt()
 
 
@@ -783,6 +810,27 @@ def get_ollama_auth_headers():
     return {}
 
 
+def get_minimax_api_base():
+    """Get the MiniMax API base URL from environment variable or default to localhost:8080.
+
+    Supports both:
+    - MINIMAX_API_BASE: For local MiniMax instances (e.g., http://localhost:8080/v1)
+    - OPENAI_BASE_URL: If set to a MiniMax-compatible endpoint (contains 'minimax')
+    """
+    # First check MINIMAX_API_BASE for local MiniMax
+    minimax_base = os.environ.get("MINIMAX_API_BASE")
+    if minimax_base:
+        return minimax_base
+
+    # Then check OPENAI_BASE_URL for hosted MiniMax-like endpoints
+    openai_base = os.environ.get("OPENAI_BASE_URL")
+    if openai_base and "minimax" in openai_base:
+        return openai_base
+
+    # Default to local MiniMax
+    return "http://localhost:8080/v1"
+
+
 def load_prompt_template(template_path):
     """
     Load a prompt template from the package resources.
@@ -1235,56 +1283,72 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     # Second pass - ensure correct sequence (tool messages must directly follow their assistant messages)
     # This fixes the error "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'"
     i = 0
+    # Safety iteration counter to prevent pathological infinite loops
+    max_iterations = max(10, len(processed_messages) * 3 + 10)
+    iteration_count = 0
+
     while i < len(processed_messages):
+        iteration_count += 1
+        if iteration_count > max_iterations:
+            # Give up reordering after too many attempts to avoid hangs
+            break
         msg = processed_messages[i]
 
         # Check if this is a tool message that might be out of sequence
         if msg.get("role") == "tool" and msg.get("tool_call_id"):
             tool_id = msg.get("tool_call_id")
 
-            # If this isn't the first message, check if the previous message is a matching assistant message
+            # If this isn't the first message, check if the previous non-tool message
+            # is the matching assistant. Walk backward past sibling tool messages
+            # to find the nearest candidate assistant instead of only checking
+            # the immediately preceding message. This prevents a ping-pong
+            # when multiple tool responses arrive out-of-order.
             if i > 0:
-                prev_msg = processed_messages[i - 1]
+                # Walk backward past any sibling tool messages
+                j = i - 1
+                while j >= 0 and processed_messages[j].get("role") == "tool":
+                    j -= 1
 
-                # Check if the previous message is an assistant message with matching tool_call_id
-                is_valid_sequence = (
-                    prev_msg.get("role") == "assistant"
-                    and prev_msg.get("tool_calls")
-                    and any(tc.get("id") == tool_id for tc in prev_msg.get("tool_calls", []))
-                )
+                prev_non_tool = processed_messages[j] if j >= 0 else None
+
+                # Consider sequence valid only if the nearest previous non-tool
+                # message is an assistant that actually owns this tool_call_id
+                is_valid_sequence = False
+                if prev_non_tool and prev_non_tool.get("role") == "assistant" and prev_non_tool.get("tool_calls"):
+                    if any(tc.get("id") == tool_id for tc in prev_non_tool.get("tool_calls", [])):
+                        is_valid_sequence = True
 
                 if not is_valid_sequence:
-                    # Find the assistant message with this tool_call_id
+                    # Find the nearest assistant before the current position that
+                    # owns this tool_call_id by scanning backward. Prefer the
+                    # closest assistant to avoid reordering sibling tool messages.
                     assistant_idx = None
-                    for j, assistant_msg in enumerate(processed_messages):
+                    for k in range(i - 1, -1, -1):
+                        assistant_msg = processed_messages[k]
                         if (
                             assistant_msg.get("role") == "assistant"
                             and assistant_msg.get("tool_calls")
-                            and any(
-                                tc.get("id") == tool_id
-                                for tc in assistant_msg.get("tool_calls", [])
-                            )
+                            and any(tc.get("id") == tool_id for tc in assistant_msg.get("tool_calls", []))
                         ):
-                            assistant_idx = j
+                            assistant_idx = k
                             break
 
                     # If we found a matching assistant message, move this tool message right after it
+                    # If we found a matching assistant message, move this tool message
+                    # right after it but after any existing tool responses to avoid
+                    # displacing sibling tool messages unnecessarily.
                     if assistant_idx is not None:
-                        # Remember to save the tool message
                         tool_msg = processed_messages.pop(i)
 
-                        # Insert right after the assistant message
-                        processed_messages.insert(assistant_idx + 1, tool_msg)
+                        # Insert after the assistant AND any existing tool results
+                        insert_at = assistant_idx + 1
+                        while insert_at < len(processed_messages) and processed_messages[insert_at].get("role") == "tool":
+                            insert_at += 1
 
-                        # Adjust i to account for the move
-                        if assistant_idx < i:
-                            # We moved the message backward, so i should point to the next message
-                            # which is now at position i (since we removed a message before it)
-                            continue
-                        else:
-                            # We moved the message forward, so i should now point to the message
-                            # that is now at position i
-                            continue
+                        processed_messages.insert(insert_at, tool_msg)
+                        # Adjust index to a safe value so we don't loop forever at same i
+                        i = min(i, insert_at)
+                        continue
                     else:
                         # No matching assistant message found - create one
                         assistant_msg = {
@@ -1619,7 +1683,7 @@ def _create_token_display(
     return tokens_text
 
 
-def parse_message_content(message):
+def parse_message_content(message, extract_thinks=True):
     """
     Parse a message object to extract its textual content.
     Only processes messages that don't have tool calls.
@@ -1651,6 +1715,30 @@ def parse_message_content(message):
     # If we can't extract content, convert to string
     else:
         raw_content = str(message)
+
+    # Detect <think>...</think> tags and extract their content so the caller
+    # can render them separately (collapsed) to avoid cluttering the main chat.
+    # The extracted thoughts are stored on the function object as
+    # `parse_message_content._last_thoughts` (list of strings). When
+    # `extract_thinks` is False this extraction is skipped (useful when
+    # re-parsing thought text for rich rendering).
+    if extract_thinks:
+        try:
+            think_pattern = re.compile(r"<think>([\s\S]*?)</think>", re.IGNORECASE | re.DOTALL)
+            found = think_pattern.findall(raw_content)
+            if found:
+                parse_message_content._last_thoughts = [tb.strip() for tb in found if tb and tb.strip()]
+                # Remove the think blocks from the main content and add a short
+                # placeholder so users know a thought was present.
+                raw_content = think_pattern.sub(" [Thought Process hidden] ", raw_content)
+            else:
+                parse_message_content._last_thoughts = []
+        except Exception:
+            parse_message_content._last_thoughts = []
+    else:
+        # Ensure attribute exists even when extraction is skipped
+        if not hasattr(parse_message_content, "_last_thoughts"):
+            parse_message_content._last_thoughts = []
 
     # Check if streaming is enabled
     streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
@@ -2077,6 +2165,52 @@ def cli_print_agent_messages(
     if tool_panels:
         for tool_panel in tool_panels:
             console.print(tool_panel)
+
+    # Render extracted <think> blocks as collapsed 'Thought Process' panels.
+    # These are collapsed by default; set CAI_SHOW_THOUGHTS=true to expand them.
+    thought_texts = getattr(parse_message_content, "_last_thoughts", []) or []
+    if thought_texts:
+        from rich.markdown import Markdown
+
+        show_thoughts = os.getenv("CAI_SHOW_THOUGHTS", "false").lower() in ("1", "true", "yes", "on")
+        for idx, thought in enumerate(thought_texts, start=1):
+            try:
+                # Tree with collapsed children mimics an HTML <details> element
+                tree = Tree("Thought Process", guide_style="dim", expanded=show_thoughts)
+
+                # Parse the thought content for rich rendering but avoid re-extracting nested <think>
+                parsed_thought = parse_message_content(thought, extract_thinks=False)
+
+                if isinstance(parsed_thought, Group):
+                    tree.add(parsed_thought)
+                else:
+                    # Prefer Markdown for formatting and preserve code fences
+                    if isinstance(parsed_thought, str) and re.search(r"```", thought):
+                        tree.add(Markdown(thought))
+                    else:
+                        tree.add(Text(parsed_thought, style="dim"))
+
+                console.print(
+                    Panel(
+                        tree,
+                        border_style="magenta",
+                        box=ROUNDED,
+                        padding=(0, 1),
+                        title="",
+                        title_align="left",
+                    )
+                )
+            except Exception:
+                console.print(
+                    Panel(
+                        Text("[Thought Process hidden — set CAI_SHOW_THOUGHTS=true to view]"),
+                        border_style="magenta",
+                        box=ROUNDED,
+                    )
+                )
+
+        # Clear stored thoughts after rendering to avoid leaking across calls
+        parse_message_content._last_thoughts = []
 
 
 def create_agent_streaming_context(agent_name, counter, model):
@@ -4412,14 +4546,39 @@ def setup_ctf():
     ctf.start_ctf()
 
     # Get the challenge from the environment variable or default to the
-    # first challenge
-    challenge_key = os.getenv("CTF_CHALLENGE")  # TODO:
+    # first challenge. Support numeric indices, direct keys, and comma-separated lists.
+    raw_challenge_spec = os.getenv("CTF_CHALLENGE", "").strip()
     challenges = list(ctf.get_challenges().keys())
-    challenge = (
-        challenge_key
-        if challenge_key in challenges
-        else (challenges[0] if len(challenges) > 0 else None)
-    )
+
+    challenge = None
+    if raw_challenge_spec:
+        # Allow a comma-separated list and pick the first valid entry
+        candidates = [c.strip() for c in raw_challenge_spec.split(",") if c.strip()]
+        for candidate in candidates:
+            # Try interpreting as an index into the challenges list
+            try:
+                idx = int(candidate)
+                if 0 <= idx < len(challenges):
+                    challenge = challenges[idx]
+                    break
+            except Exception:
+                # Not an integer index - treat as a challenge key
+                if candidate in challenges:
+                    challenge = candidate
+                    break
+
+        if challenge is None:
+            # If the requested challenge wasn't found, warn and fall back
+            print(
+                color(
+                    f"CTF_CHALLENGE '{raw_challenge_spec}' not found; defaulting to first available challenge",
+                    fg="yellow",
+                )
+            )
+
+    # Final fallback to the first available challenge (or None if none exist)
+    if challenge is None:
+        challenge = challenges[0] if len(challenges) > 0 else None
 
     # Use the user master template
     messages = Template(filename="src/cai/prompts/core/user_master_template.md").render(

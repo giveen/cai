@@ -118,6 +118,15 @@ SESSION_COUNTER = 0
 # Global counter for session output commands to ensure they always display
 SESSION_OUTPUT_COUNTER = {}
 
+# Idle timeout for command runners (seconds). Can be configured via environment
+# variable `CAI_COMMAND_IDLE_TIMEOUT`. Default is 10 seconds.
+try:
+    IDLE_KILL_TIMEOUT = int(os.getenv("CAI_COMMAND_IDLE_TIMEOUT", "10"))
+    if IDLE_KILL_TIMEOUT < 1:
+        IDLE_KILL_TIMEOUT = 10
+except Exception:
+    IDLE_KILL_TIMEOUT = 10
+
 # Lock protecting SESSION_COUNTER and the session / friendly-ID maps
 _SESSION_LOCK = threading.Lock()
 
@@ -792,14 +801,14 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                     else:
                         break
                 except asyncio.TimeoutError:
-                    if time.time() - last_output > 10:
+                    if time.time() - last_output > IDLE_KILL_TIMEOUT:
                         process.terminate()
                         try:
                             await asyncio.wait_for(process.wait(), timeout=1.0)
                         except asyncio.TimeoutError:
                             process.kill()
                             await process.wait()
-                        output_buffer.append("\n[Terminated: idle 10s, likely waiting for input]")
+                        output_buffer.append(f"\n[Terminated: idle {IDLE_KILL_TIMEOUT}s, likely waiting for input]")
                         break
             
             # Wait for process to complete
@@ -881,7 +890,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                             last_output = time.time()
                 except asyncio.TimeoutError:
                     pass
-                if time.time() - last_output > 10:
+                if time.time() - last_output > IDLE_KILL_TIMEOUT:
                     try:
                         await asyncio.wait_for(process.wait(), timeout=0.1)
                         break
@@ -892,7 +901,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                         except asyncio.TimeoutError:
                             process.kill()
                             await process.wait()
-                        stderr_chunks.append(b"\n[Terminated: idle 10s]")
+                        stderr_chunks.append(f"\n[Terminated: idle {IDLE_KILL_TIMEOUT}s]".encode())
                         break
             
             stdout_data, stderr_data = b''.join(stdout_chunks), b''.join(stderr_chunks)
@@ -1116,14 +1125,14 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
                     else:
                         break
                 except asyncio.TimeoutError:
-                    if time.time() - last_output > 10:
+                    if time.time() - last_output > IDLE_KILL_TIMEOUT:
                         process.terminate()
                         try:
                             await asyncio.wait_for(process.wait(), timeout=1.0)
                         except asyncio.TimeoutError:
                             process.kill()
                             await process.wait()
-                        output_buffer.append("\n[Terminated: idle 10s]")
+                        output_buffer.append(f"\n[Terminated: idle {IDLE_KILL_TIMEOUT}s]")
                         break
             
             # Wait for process completion
