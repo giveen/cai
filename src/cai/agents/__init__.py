@@ -66,9 +66,21 @@ except Exception:
     pass
 
 # Local application imports
-from cai.agents.flag_discriminator import flag_discriminator, transfer_to_flag_discriminator
-from cai.sdk.agents import Agent
-from cai.sdk.agents.handoffs import handoff
+try:
+    from cai.agents.flag_discriminator import flag_discriminator, transfer_to_flag_discriminator
+except Exception:  # pragma: no cover - optional component
+    flag_discriminator = None
+    transfer_to_flag_discriminator = None
+
+try:
+    from cai.sdk.agents import Agent
+except Exception:  # pragma: no cover - optional dependency (e.g., openai not installed)
+    Agent = None
+
+try:
+    from cai.sdk.agents.handoffs import handoff
+except Exception:
+    handoff = None
 
 # Extend the search path for namespace packages (allows merging)
 __path__ = pkgutil.extend_path(__path__, __name__)
@@ -101,7 +113,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
             # Look for Agent instances in the module
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
-                if isinstance(attr, Agent) and not attr_name.startswith("_"):
+                if Agent is not None and isinstance(attr, Agent) and not attr_name.startswith("_"):
                     # agent_name = attr_name.replace("_agent", "")
                     agent_name = attr_name
                     if agent_name not in agents_to_display:
@@ -118,7 +130,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                 # Look for Agent instances in the patterns module
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
-                    if isinstance(attr, Agent) and not attr_name.startswith("_"):
+                    if Agent is not None and isinstance(attr, Agent) and not attr_name.startswith("_"):
                         # Only include agents that have a .pattern attribute (swarm patterns)
                         # Skip regular agents without pattern attribute
                         if not hasattr(attr, "pattern"):
@@ -178,7 +190,7 @@ def get_agent_module(agent_name: str) -> str:
             # Look for Agent instances in the module
             for attr_name in dir(module):
                 # Try both with and without _agent suffix
-                if (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
+                if Agent is not None and (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
                     return name
         except (ImportError, AttributeError):
             pass
@@ -192,7 +204,7 @@ def get_agent_module(agent_name: str) -> str:
                 # Look for Agent instances in the patterns module
                 for attr_name in dir(module):
                     # Try both with and without _agent suffix
-                    if (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
+                    if Agent is not None and (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
                         return name
             except (ImportError, AttributeError):
                 pass
