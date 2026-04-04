@@ -14,7 +14,12 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
 )
 
 load_dotenv()
-# Prompts
+import os
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
+
 reporting_agent_system_prompt = load_prompt_template("prompts/system_reporting_agent.md")
 
 # Define functions list
@@ -29,9 +34,25 @@ reporting_agent = Agent(
     name="reporting agent",
     instructions=reporting_agent_system_prompt,
     description="""Agent that generates reports in html.""",
-    tools=functions,
+_openai_client = None
+if AsyncOpenAI is not None:
+    try:
+        _openai_client = AsyncOpenAI()
+    except Exception:
+        _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=os.getenv('CAI_MODEL', 'alias1'),
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
+
     model=OpenAIChatCompletionsModel(
         model=os.getenv('CAI_MODEL', "alias1"),
         openai_client=AsyncOpenAI(),
     )
-)
+    model=_model_inst,

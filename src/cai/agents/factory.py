@@ -6,7 +6,10 @@ import importlib
 import os
 from typing import Callable, Dict
 
-from openai import AsyncOpenAI
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 
@@ -49,13 +52,18 @@ def create_generic_agent_factory(
 
         # Create a new model instance with the original agent name
         # Custom name is only for display purposes, not for the model
-        new_model = OpenAIChatCompletionsModel(
-            model=model_name,
-            openai_client=AsyncOpenAI(api_key=api_key),
-            agent_name=original_agent.name,  # Always use original agent name
-            agent_id=agent_id,
-            agent_type=agent_var_name,  # Pass the agent type for registry
-        )
+        new_model = None
+        if AsyncOpenAI is not None:
+            try:
+                new_model = OpenAIChatCompletionsModel(
+                    model=model_name,
+                    openai_client=AsyncOpenAI(api_key=api_key),
+                    agent_name=original_agent.name,  # Always use original agent name
+                    agent_id=agent_id,
+                    agent_type=agent_var_name,  # Pass the agent type for registry
+                )
+            except Exception:
+                new_model = None
         
         # Mark as parallel agent if running in parallel mode
         parallel_count = int(os.getenv("CAI_PARALLEL", "1"))

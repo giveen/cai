@@ -2,8 +2,12 @@
 CTF Flag Discriminator Agent with test
 """
 import os
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff
-from openai import AsyncOpenAI
 from cai.agents.one_tool import one_tool_agent
 
 model = os.getenv('CAI_MODEL', "alias1")
@@ -11,6 +15,23 @@ model = os.getenv('CAI_MODEL', "alias1")
 # Create OpenAI client with fallback API key to prevent initialization errors
 # The actual API key should be set in environment variables or .env file
 api_key = os.getenv('OPENAI_API_KEY', 'sk-placeholder-key-for-local-models')
+
+_openai_client = None
+if AsyncOpenAI is not None:
+    try:
+        _openai_client = AsyncOpenAI(api_key=api_key)
+    except Exception:
+        _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=("alias1" if os.getenv('CAI_MODEL') == "o3-mini" else model),
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
 
 flag_discriminator = Agent(
     name="Flag discriminator",
@@ -21,10 +42,7 @@ flag_discriminator = Agent(
                 3. Flags can be in any format (not always CTF{...}).
                 4. If you do not find a flag, call `ctf_agent` to continue investigating.
                 """,
-    model=OpenAIChatCompletionsModel(
-        model="alias1" if os.getenv('CAI_MODEL') == "o3-mini" else model,
-        openai_client=AsyncOpenAI(api_key=api_key),
-    ),
+    model=_model_inst,
     handoffs=[
         handoff(
             agent=one_tool_agent,

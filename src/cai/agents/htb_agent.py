@@ -14,7 +14,10 @@ except Exception:
         return False
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
 
 from cai.tools.reconnaissance.generic_linux_command import (
     generic_linux_command,
@@ -54,6 +57,23 @@ if os.getenv("PERPLEXITY_API_KEY") or os.getenv("SEARCH_API_KEY"):
 input_guardrails, output_guardrails = get_security_guardrails()
 
 
+_openai_client = None
+if AsyncOpenAI is not None:
+    try:
+        _openai_client = AsyncOpenAI(api_key=api_key)
+    except Exception:
+        _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=model_name,
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
+
 htb_agent = Agent(
     name="Hack The Box Specialist",
     description=(
@@ -64,10 +84,7 @@ htb_agent = Agent(
     tools=tools,
     input_guardrails=input_guardrails,
     output_guardrails=output_guardrails,
-    model=OpenAIChatCompletionsModel(
-        model=model_name,
-        openai_client=AsyncOpenAI(api_key=api_key),
-    ),
+    model=_model_inst,
 )
 
 
