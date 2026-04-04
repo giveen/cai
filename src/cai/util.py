@@ -380,7 +380,8 @@ def get_idle_time_seconds():
 # Initialize idle timer at module load - system starts in idle state
 start_idle_timer()
 
-# Instead of direct import
+# Keep START_TIME import robust: importing `cai.cli` can fail during
+# test collection or when the CLI isn't initialized (avoid import-time side effects).
 try:
     from cai.cli import START_TIME
 except ImportError:
@@ -444,6 +445,7 @@ class CostTracker:
             # We don't have model/token details here, so just update the cost
             # The tokens should have been tracked separately
             # This is just a safety net to ensure costs are consistent
+            pass
         except ImportError:
             pass
 
@@ -1412,17 +1414,39 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     return processed_messages
 
 
-def cli_print_tool_call(tool_name="", args="", output="", prefix="  "):
-    """Print a tool call with pretty formatting"""
+def cli_print_tool_call(tool_name="", args=None, output=None, prefix="  ", tool_args=None, tool_output=None, **kwargs):
+    """Print a tool call with pretty formatting.
+
+    This helper accepts both the legacy `args`/`output` parameters and the newer
+    `tool_args`/`tool_output` keywords used by templates. Extra kwargs are
+    ignored to remain forward-compatible with template changes.
+    """
     if not tool_name:
         return
 
+    # Prefer explicit args, fall back to tool_args for compatibility
+    display_args = args if args is not None else tool_args
+    display_output = output if output is not None else tool_output
+
+    # Normalize args for display
+    if isinstance(display_args, dict):
+        try:
+            import json
+
+            args_str = json.dumps(display_args)
+        except Exception:
+            args_str = str(display_args)
+    else:
+        args_str = str(display_args) if display_args is not None else ""
+
+    output_str = str(display_output) if display_output is not None else ""
+
     print(f"{prefix}{color('Tool Call:', fg='cyan')}")
     print(f"{prefix}{color('Name:', fg='cyan')} {tool_name}")
-    if args:
-        print(f"{prefix}{color('Args:', fg='cyan')} {args}")
-    if output:
-        print(f"{prefix}{color('Output:', fg='cyan')} {output}")
+    if args_str:
+        print(f"{prefix}{color('Args:', fg='cyan')} {args_str}")
+    if output_str:
+        print(f"{prefix}{color('Output:', fg='cyan')} {output_str}")
 
 
 def get_model_input_tokens(model):
