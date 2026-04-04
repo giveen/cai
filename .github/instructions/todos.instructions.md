@@ -17,18 +17,22 @@ applyTo: '**'
   _Commit message: Apply PR #389: Debug Dockerfile; pushed to giveen/buggy_
 - [x] apply-pr-388: Fetch and apply PR #388 changes (tools/logs.py) — add rate limiting and import fixes 🟡
   _Added RateLimiter, apply_rate_limit, and applied checks in `index` and `pypi_stats`; committed and pushed to giveen/buggy_
-- [x] commit-push-pr-388: Commit the applied PR #388 changes and push to fork/branch for review 🟡
+- [x] commit-push-pr-388: Commit and push the applied PR #388 changes and push to fork/branch for review 🟡
   _Pushed commit 7b5e7b5 to giveen/buggy_
-- [-] apply-pr-383: Fetch and apply PR #383 changes 🟡
-  _Will fetch PR #383, apply patches, run import checks, and push to giveen/buggy_
-- [ ] commit-push-pr-383: Commit and push the applied PR #383 changes 🟡
-  _Commit message: Apply PR #383: <summary> and push to giveen/buggy_
-- [ ] apply-pr-382: Fetch and apply PR #382 changes 🟡
-  _Will fetch PR #382 after #383 is applied_
-- [ ] commit-push-pr-382: Commit and push the applied PR #382 changes 🟡
-- [ ] apply-pr-378: Fetch and apply PR #378 changes 🟡
-- [ ] commit-push-pr-378: Commit and push the applied PR #378 changes 🟡
-- [ ] apply-pr-338: Fetch and apply PR #338 changes 🟡
+- [x] apply-pr-383: Fetch and apply PR #383 changes 🟡
+  _Applied PR #383: expanded bug bounter prompt; committed and pushed (655f3f6)_
+- [x] commit-push-pr-383: Commit and push the applied PR #383 changes 🟡
+  _Pushed commit 655f3f6 to giveen/buggy_
+- [x] apply-pr-382: Fetch and apply PR #382 changes 🟡
+  _Applied PR #382: doc and typo fixes; committed and pushed (019bd87)_
+- [x] commit-push-pr-382: Commit and push the applied PR #382 changes 🟡
+  _Pushed commit 019bd87 to giveen/buggy_
+- [x] apply-pr-378: Fetch and apply PR #378 changes 🟡
+  _Applied PR #378: Add warning for empty/sentinel LLM responses; committed and pushed (9cc37b2)_
+- [x] commit-push-pr-378: Commit and push the applied PR #378 changes 🟡
+  _Pushed commit 9cc37b2 to giveen/buggy_
+- [-] apply-pr-338: Fetch and apply PR #338 changes 🟡
+  _Will fetch PR #338, apply patches, run import checks, and push to giveen/buggy_
 - [ ] commit-push-pr-338: Commit and push the applied PR #338 changes 🟡
 </todos>
 
