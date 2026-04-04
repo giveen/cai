@@ -145,7 +145,12 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                 print(f"Error importing {module_short_name}: {e}")
 
     # Add all patterns (parallel, swarm, etc.) as pseudo-agents
-    from cai.agents.patterns import PATTERNS
+    try:
+        from cai.agents.patterns import PATTERNS
+    except Exception as e:  # pragma: no cover - optional patterns import
+        PATTERNS = {}
+        print(f"Warning: failed to import agent patterns: {e}")
+
     for pattern_name, pattern_obj in PATTERNS.items():
         # Create a pseudo-agent object for the pattern
         class PatternAgent:
