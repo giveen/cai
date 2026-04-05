@@ -17,6 +17,7 @@ from typing import Optional
 
 from textual import work, on
 from textual.app import App, ComposeResult
+from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.message import Message
@@ -398,6 +399,142 @@ Footer > .footer--description {
 Footer > .footer--spacer {
     background: #001a00;
 }
+
+/* ─── Terminals container ─── */
+#terminals {
+    height: 1fr;
+    layout: horizontal;
+    background: #000000;
+}
+
+TerminalPanel {
+    width: 1fr;
+    height: 100%;
+    layout: vertical;
+    border: solid #003300;
+    background: #000000;
+}
+
+TerminalPanel.-active-panel {
+    border: solid #00ff00;
+}
+
+.term-header {
+    height: 1;
+    background: #001a00;
+    color: #00cc00;
+    padding: 0 1;
+    border-bottom: solid #003300;
+}
+
+.term-log {
+    height: 1fr;
+    background: #000000;
+    color: #00ff00;
+    border: none;
+    scrollbar-color: #003300 #000000;
+    scrollbar-size: 1 1;
+    padding: 0 1;
+}
+
+.term-status {
+    height: 1;
+    background: #001a00;
+    color: #00aa00;
+    padding: 0 1;
+}
+
+.term-input-row {
+    height: 3;
+    layout: horizontal;
+    background: #000000;
+    border-top: solid #003300;
+}
+
+.term-input-prefix {
+    width: 7;
+    height: 3;
+    content-align: left middle;
+    color: #00ff00;
+    padding: 0 1;
+    background: #000000;
+}
+
+.term-input {
+    background: #000000;
+    color: #00ff00;
+    border: none;
+    border-bottom: solid #003300;
+    height: 3;
+    width: 1fr;
+    padding: 0 1;
+}
+
+.term-input:focus {
+    border: none;
+    border-bottom: solid #00ff00;
+    background: #000000;
+}
+
+.term-input > .input--placeholder {
+    color: #004400;
+}
+
+/* ─── Agent action modal ─── */
+AgentModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.8);
+}
+
+#modal-dialog {
+    width: 32;
+    height: auto;
+    background: #001a00;
+    border: solid #00ff00;
+    padding: 1 2;
+    layout: vertical;
+}
+
+#modal-agent-label {
+    height: 2;
+    color: #00ff00;
+    text-style: bold;
+    content-align: center middle;
+    border-bottom: solid #003300;
+    margin-bottom: 1;
+}
+
+.modal-btn {
+    width: 1fr;
+    height: 3;
+    background: #002800;
+    color: #00cc00;
+    border: solid #003300;
+    margin-bottom: 1;
+    text-align: center;
+}
+
+.modal-btn:hover {
+    background: #003300;
+    color: #00ff00;
+}
+
+.modal-btn:focus {
+    border: solid #00ff00;
+    color: #00ff00;
+}
+
+.modal-btn--cancel {
+    background: #050000;
+    color: #446644;
+    border: solid #002200;
+    margin-bottom: 0;
+}
+
+.modal-btn--cancel:hover {
+    background: #110000;
+    color: #00aa44;
+}
 """
 
 
@@ -415,6 +552,257 @@ TEAM_PRESETS = [
     ("4 Bug",           ["bug_bounter_agent"] * 4),
     ("Mixed 4",         ["redteam_agent", "blueteam_agent", "bug_bounter_agent", "retester_agent"]),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Agent-selection modal
+# ---------------------------------------------------------------------------
+class AgentModal(ModalScreen):
+    """Pop-up shown when the user clicks an agent button.
+
+    Dismissed with:
+      ('update', agent_name)  – re-assign the current active terminal
+      ('new',    agent_name)  – open a new terminal panel for this agent
+      None                    – cancelled
+    """
+
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, agent_name: str, active_term_label: str) -> None:
+        super().__init__()
+        self._agent_name = agent_name
+        self._active_term_label = active_term_label
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static(
+                f"Agent: [bold]{self._agent_name}[/bold]",
+                id="modal-agent-label",
+            )
+            yield Button(
+                f"Update {self._active_term_label}",
+                id="modal-update",
+                classes="modal-btn",
+            )
+            yield Button(
+                "New Terminal",
+                id="modal-new",
+                classes="modal-btn",
+            )
+            yield Button(
+                "Cancel",
+                id="modal-cancel",
+                classes="modal-btn modal-btn--cancel",
+            )
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "modal-update":
+            self.dismiss(("update", self._agent_name))
+        elif btn_id == "modal-new":
+            self.dismiss(("new", self._agent_name))
+        else:
+            self.dismiss(None)
+
+
+# ---------------------------------------------------------------------------
+# Terminal panel widget  (one per open terminal)
+# ---------------------------------------------------------------------------
+class TerminalPanel(Widget):
+    """Self-contained chat terminal: header bar + RichLog + status + input."""
+
+    # Sent to the App when this panel is clicked so the app can mark it active
+    class Activated(Message):
+        def __init__(self, term_id: int) -> None:
+            super().__init__()
+            self.term_id = term_id
+
+    # Sent when the close button is clicked
+    class CloseRequested(Message):
+        def __init__(self, term_id: int) -> None:
+            super().__init__()
+            self.term_id = term_id
+
+    def __init__(
+        self,
+        term_id: int,
+        agent,
+        agent_name: str,
+        model_name: str,
+    ) -> None:
+        super().__init__(id=f"terminal-panel-{term_id}")
+        self._term_id = term_id
+        self._agent = agent
+        self._agent_name = agent_name
+        self._model_name = model_name
+
+    # header text helper
+    def _header_text(self) -> str:
+        return (
+            f"[bold #00ff00]T{self._term_id}[/bold #00ff00]"
+            f"[#004400] | [/#004400]"
+            f"[#00cc00]{self._agent_name}[/#00cc00]"
+            f"[#004400] ▼  [/#004400]"
+            f"[#00aa00]{self._model_name}[/#00aa00]"
+            f"[#004400] ▼  container ▼  [/#004400]"
+            f"[bold #00ff00]●[/bold #00ff00]"
+            f"  [dim #666600]×[/dim #666600]"
+        )
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            self._header_text(),
+            id=f"term-header-{self._term_id}",
+            classes="term-header",
+        )
+        yield RichLog(
+            id=f"term-log-{self._term_id}",
+            classes="term-log",
+            highlight=False,
+            markup=True,
+            wrap=True,
+        )
+        yield Static("", id=f"term-status-{self._term_id}", classes="term-status")
+        with Horizontal(classes="term-input-row"):
+            yield Static("CAI>", classes="term-input-prefix")
+            yield Input(
+                placeholder="Type a message…",
+                id=f"term-input-{self._term_id}",
+                classes="term-input",
+            )
+
+    async def on_mount(self) -> None:
+        from rich.text import Text as RichText
+        log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+        for line in _BANNER_LINES:
+            log.write(RichText(line, style="#00ff00"))
+        log.write(RichText("", style=""))
+        log.write(RichText(
+            f"T{self._term_id} ready — agent: {self._agent_name}",
+            style="#006600",
+        ))
+        log.write(RichText("", style=""))
+
+    def on_click(self) -> None:
+        self.post_message(self.Activated(self._term_id))
+
+    def update_agent(self, agent, agent_name: str) -> None:
+        """Hot-swap the agent for this terminal and refresh the header."""
+        self._agent = agent
+        self._agent_name = agent_name
+        try:
+            self.query_one(
+                f"#term-header-{self._term_id}", Static
+            ).update(self._header_text())
+        except Exception:
+            pass
+
+    # ──────────────────────────────────────────────────────── dispatch / worker
+
+    async def dispatch(self, text: str) -> None:
+        from rich.text import Text as RichText
+        log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+        log.write(RichText(f"> {text}", style="bold #00ff00"))
+
+        cmd = text.lower().split()[0] if text.startswith("/") else ""
+        if cmd in ("/exit", "/quit"):
+            self.app.exit()
+            return
+        if cmd == "/help":
+            log.write(RichText(
+                "  /exit /quit     Exit the TUI\n"
+                "  /clear          Clear this terminal\n"
+                "  /help           Show this message\n"
+                "\n"
+                "  ^q  Exit    ^l  Clear    ^s  Sidebar\n"
+                "  Esc Cancel",
+                style="#00cc00",
+            ))
+            return
+        if cmd in ("/clear", "/cls"):
+            log.clear()
+            return
+
+        if self._agent is None:
+            log.write(RichText(
+                "  No agent loaded. Select one from the sidebar.",
+                style="#ff4444",
+            ))
+            return
+
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._set_status(f"T{self._term_id}> [{ts}] ⟳ Thinking…")
+        self._run_agent(text)
+
+    @work(exclusive=True)
+    async def _run_agent(self, text: str) -> None:
+        from rich.text import Text as RichText
+        from cai.sdk.agents import Runner
+        from cai.sdk.agents.stream_events import RunItemStreamEvent
+        from cai.sdk.agents.items import ToolCallOutputItem
+
+        log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+        stream_iter = None
+        try:
+            result = Runner.run_streamed(self._agent, text)
+            stream_iter = result.stream_events()
+
+            async for event in stream_iter:
+                if not isinstance(event, RunItemStreamEvent):
+                    continue
+                ev_name = event.name
+                item = event.item
+
+                if ev_name == "message_output_created":
+                    try:
+                        from cai.sdk.agents.items import ItemHelpers
+                        content = ItemHelpers.text_message_output(item)
+                    except Exception:
+                        content = str(getattr(item, "content", ""))
+                    if content:
+                        for line in content.splitlines():
+                            log.write(RichText(f"CAI>  {line}", style="#00ff00"))
+
+                elif ev_name == "tool_called":
+                    raw = getattr(item, "raw_item", item)
+                    fn_name = getattr(
+                        raw, "name",
+                        getattr(getattr(raw, "function", None), "name", "tool"),
+                    )
+                    fn_args = str(getattr(raw, "arguments", "…"))
+                    if len(fn_args) > 80:
+                        fn_args = fn_args[:80] + "…"
+                    log.write(RichText(f"  ↳ {fn_name}({fn_args})", style="#006600"))
+
+                elif ev_name == "tool_output":
+                    if isinstance(item, ToolCallOutputItem):
+                        lines = str(item.output).splitlines()
+                        for line in lines[:15]:
+                            log.write(RichText(f"    {line}", style="#00aa00"))
+                        if len(lines) > 15:
+                            log.write(RichText(
+                                f"    … {len(lines) - 15} more lines …",
+                                style="#004400",
+                            ))
+
+        except asyncio.CancelledError:
+            log.write(RichText("  [cancelled]", style="#ff6600"))
+        except Exception as exc:
+            log.write(RichText(f"  [error] {exc}", style="#ff4444"))
+        finally:
+            if stream_iter is not None:
+                try:
+                    await stream_iter.aclose()
+                except Exception:
+                    pass
+            self._set_status("")
+
+    def _set_status(self, text: str) -> None:
+        try:
+            self.query_one(f"#term-status-{self._term_id}", Static).update(text)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -464,17 +852,16 @@ class CaiHeader(Widget):
 # Main application
 # ---------------------------------------------------------------------------
 class CAIApp(App):
-    """Matrix-themed TUI – mirrors the CAI PRO layout in green-on-black."""
+    """Matrix-themed TUI with multi-terminal sidebar."""
 
     TITLE = "CAI"
 
     BINDINGS = [
-        Binding("ctrl+q", "quit",           "Exit",           show=True),
-        Binding("ctrl+l", "clear_log",      "Clear",          show=True),
-        Binding("ctrl+s", "toggle_sidebar", "Sidebar",        show=True),
-        Binding("escape", "cancel_run",     "Cancel",         show=True),
-        Binding("shift+a", "focus_prompt",  "Prompt Alt",     show=True),
-        Binding("ctrl+p", "command_palette","Command Palette", show=True),
+        Binding("ctrl+q", "quit",           "Exit",    show=True),
+        Binding("ctrl+l", "clear_active",   "Clear",   show=True),
+        Binding("ctrl+s", "toggle_sidebar", "Sidebar", show=True),
+        Binding("escape", "cancel_active",  "Cancel",  show=True),
+        Binding("ctrl+p", "command_palette","Palette", show=True),
     ]
 
     CSS = _CSS
@@ -486,19 +873,18 @@ class CAIApp(App):
     ) -> None:
         super().__init__()
         self._agent = agent
-        self._initial_prompt = initial_prompt
-        self._agent_name = (
+        self._agent_name: str = (
             getattr(agent, "name", "one_tool_agent") if agent else "one_tool_agent"
         )
-        self._model_name = os.getenv("CAI_MODEL", "alias1")
-        self._current_worker = None
+        self._model_name: str = os.getenv("CAI_MODEL", "alias1")
+        self._initial_prompt = initial_prompt
         self._sidebar_visible = True
-        # Queue items: list of (done: bool, text: str)
-        self._queue_items: list[tuple[bool, str]] = []
-        # Available agents populated on mount
         self._available_agents: dict = {}
-        # Active team index or None
         self._active_team: Optional[int] = None
+        self._queue_items: list[tuple[bool, str]] = []
+        # terminal tracking
+        self._next_term_id = 1
+        self._active_term_id = 1
 
     # ------------------------------------------------------------------ layout
 
@@ -511,13 +897,10 @@ class CAIApp(App):
             # ── Left sidebar ─────────────────────────────────────────────
             with Vertical(id="sidebar"):
                 with TabbedContent(id="sidebar-tabs"):
-                    # ── Agents tab ───────────────────────────────────────
                     with TabPane("Agents", id="tab-agents"):
                         with Vertical(id="agents-pane"):
                             with ScrollableContainer(id="agents-scroll"):
-                                # Agent buttons are populated in on_mount
-                                pass
-                            # Teams sub-section
+                                pass  # populated in on_mount
                             with Vertical(id="teams-section"):
                                 yield Static("Teams", id="teams-label")
                                 with ScrollableContainer(id="teams-scroll"):
@@ -527,11 +910,7 @@ class CAIApp(App):
                                             id=f"team-{i}",
                                             classes="team-btn",
                                         )
-                                yield Button(
-                                    "+ Create Team",
-                                    id="new-team-btn",
-                                )
-                    # ── Queue tab ────────────────────────────────────────
+                                yield Button("+ Create Team", id="new-team-btn")
                     with TabPane("Queue", id="tab-queue"):
                         with Vertical(id="queue-pane"):
                             yield ListView(id="queue-list")
@@ -541,27 +920,15 @@ class CAIApp(App):
                                     placeholder="Add task / command…",
                                     id="queue-input",
                                 )
-            # ── Right main area ──────────────────────────────────────────
-            with Vertical(id="main-area"):
-                yield RichLog(
-                    id="output-log",
-                    highlight=False,
-                    markup=True,
-                    wrap=True,
-                )
-                yield Static("", id="status-bar")
-                with Horizontal(id="input-row"):
-                    yield Static("CAI>", id="input-prefix")
-                    yield Input(
-                        placeholder="Type a message, /help for commands…",
-                        id="user-input",
-                    )
+            # ── Right: horizontal strip of terminal panels ────────────────
+            with Horizontal(id="terminals"):
+                pass  # first panel added in on_mount
         yield Footer()
 
     # ------------------------------------------------------------------ lifecycle
 
     async def on_mount(self) -> None:
-        # Populate agent buttons
+        # Load available agents
         try:
             from cai.agents import get_available_agents
             self._available_agents = get_available_agents()
@@ -569,28 +936,89 @@ class CAIApp(App):
             self._available_agents = {}
 
         scroll = self.query_one("#agents-scroll", ScrollableContainer)
-        for agent_name in sorted(self._available_agents.keys()):
-            label = agent_name if len(agent_name) <= 20 else agent_name[:18] + ".."
-            btn = Button(label, id=f"agent-{agent_name}", classes="agent-btn")
-            await scroll.mount(btn)
+        for name in sorted(self._available_agents.keys()):
+            label = name if len(name) <= 20 else name[:18] + ".."
+            await scroll.mount(Button(label, id=f"agent-{name}", classes="agent-btn"))
 
-        # Mark active agent
         self._highlight_active_agent(self._agent_name)
 
-        # Banner + welcome
-        log = self.query_one("#output-log", RichLog)
-        for line in _BANNER_LINES:
-            log.write(RichText(line, style="#00ff00"))
-        log.write(RichText("", style=""))
-        log.write(RichText(
-            "Terminal 1 ready — Type /help for commands",
-            style="#006600",
-        ))
-        log.write(RichText("", style=""))
+        # Spawn the first terminal panel
+        first = TerminalPanel(
+            term_id=1,
+            agent=self._agent,
+            agent_name=self._agent_name,
+            model_name=self._model_name,
+        )
+        await self.query_one("#terminals", Horizontal).mount(first)
+        self._set_active_terminal(1)
 
-        self.query_one("#user-input", Input).focus()
+        # Focus the first input
+        try:
+            self.query_one("#term-input-1", Input).focus()
+        except Exception:
+            pass
+
         if self._initial_prompt:
-            await self._dispatch(self._initial_prompt)
+            await first.dispatch(self._initial_prompt)
+
+    # ------------------------------------------------------------------ terminal panel messages
+
+    def on_terminal_panel_activated(self, event: TerminalPanel.Activated) -> None:
+        self._set_active_terminal(event.term_id)
+
+    def on_terminal_panel_close_requested(self, event: TerminalPanel.CloseRequested) -> None:
+        panels = list(self.query(TerminalPanel))
+        if len(panels) <= 1:
+            self.exit()
+            return
+        try:
+            panel = self.query_one(f"#terminal-panel-{event.term_id}", TerminalPanel)
+            panel.remove()
+        except Exception:
+            pass
+        remaining = list(self.query(TerminalPanel))
+        if remaining:
+            self._set_active_terminal(remaining[-1]._term_id)
+
+    # ------------------------------------------------------------------ terminal management
+
+    def _set_active_terminal(self, term_id: int) -> None:
+        self._active_term_id = term_id
+        for panel in self.query(TerminalPanel):
+            if panel._term_id == term_id:
+                panel.add_class("-active-panel")
+            else:
+                panel.remove_class("-active-panel")
+        # Update header to reflect active terminal
+        try:
+            panel = self.query_one(f"#terminal-panel-{term_id}", TerminalPanel)
+            self.query_one(CaiHeader).query_one("#header-right", Static).update(
+                f"[bold #00ff00]T{term_id}[/bold #00ff00]"
+                f"[#004400] | [/#004400]"
+                f"[#00cc00]{panel._agent_name}[/#00cc00]"
+                f"[#004400] ▼ [/#004400]"
+                f"[#00aa00]{self._model_name}[/#00aa00]"
+                f"[#004400] ▼ [/#004400]"
+                f"[bold #00ff00]●[/bold #00ff00]"
+            )
+        except Exception:
+            pass
+
+    async def _add_terminal(self, agent, agent_name: str) -> None:
+        self._next_term_id += 1
+        tid = self._next_term_id
+        panel = TerminalPanel(
+            term_id=tid,
+            agent=agent,
+            agent_name=agent_name,
+            model_name=self._model_name,
+        )
+        await self.query_one("#terminals", Horizontal).mount(panel)
+        self._set_active_terminal(tid)
+        try:
+            self.query_one(f"#term-input-{tid}", Input).focus()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ button events
 
@@ -598,85 +1026,86 @@ class CAIApp(App):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
 
-        # Agent button pressed → switch active agent
         if btn_id.startswith("agent-"):
             agent_name = btn_id[len("agent-"):]
-            new_agent = self._available_agents.get(agent_name)
-            if new_agent is not None:
-                self._agent = new_agent
-                self._agent_name = agent_name
-                self._highlight_active_agent(agent_name)
-                self._log_info(f"Switched to agent: [bold]{agent_name}[/bold]")
-                # Update header
-                try:
-                    header = self.query_one(CaiHeader)
-                    header._agent_name = agent_name
-                    header.query_one("#header-right", Static).update(
-                        f"[#00cc00]{agent_name}[/#00cc00][#004400] ▼ [/#004400]"
-                        f"[#00cc00]{self._model_name}[/#00cc00][#004400] ▼ [/#004400]"
-                        "[bold #00ff00]●[/bold #00ff00]"
-                    )
-                except Exception:
-                    pass
+            if agent_name in self._available_agents:
+                active_label = f"T{self._active_term_id}"
+                self.push_screen(
+                    AgentModal(agent_name, active_label),
+                    self._handle_agent_modal,
+                )
             return
 
-        # Team button pressed → load team preset
         if btn_id.startswith("team-"):
-            idx = int(btn_id[len("team-"):])
-            self._activate_team(idx)
+            self._activate_team(int(btn_id[len("team-"):]))
             return
 
-        # Create-team button
         if btn_id == "new-team-btn":
             self._prompt_new_team()
             return
 
+    # ------------------------------------------------------------------ modal callback
+
+    async def _handle_agent_modal(self, result) -> None:
+        if result is None:
+            return  # cancelled
+        action, agent_name = result
+        new_agent = self._available_agents.get(agent_name)
+        if new_agent is None:
+            return
+
+        if action == "update":
+            try:
+                panel = self.query_one(
+                    f"#terminal-panel-{self._active_term_id}", TerminalPanel
+                )
+                panel.update_agent(new_agent, agent_name)
+                self._set_active_terminal(self._active_term_id)
+            except Exception:
+                pass
+            self._highlight_active_agent(agent_name)
+        elif action == "new":
+            await self._add_terminal(new_agent, agent_name)
+            self._highlight_active_agent(agent_name)
+
     # ------------------------------------------------------------------ input events
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        input_id = event.input.id
+        input_id = event.input.id or ""
         text = event.value.strip()
         event.input.clear()
 
         if input_id == "queue-input":
-            # Add item to queue
             if text:
                 self._add_queue_item(text)
             return
 
-        # Main terminal input
-        if text:
-            await self._dispatch(text)
+        if input_id.startswith("term-input-"):
+            tid = int(input_id[len("term-input-"):])
+            self._set_active_terminal(tid)
+            if text:
+                try:
+                    panel = self.query_one(f"#terminal-panel-{tid}", TerminalPanel)
+                    await panel.dispatch(text)
+                except Exception:
+                    pass
+            return
 
     # ------------------------------------------------------------------ queue
 
     def _add_queue_item(self, text: str) -> None:
+        idx = len(self._queue_items)
         self._queue_items.append((False, text))
-        idx = len(self._queue_items) - 1
-        label_text = f"○ {text}"
-        item = ListItem(Label(label_text), id=f"queue-item-{idx}")
+        item = ListItem(Label(f"○ {text}"), id=f"queue-item-{idx}")
         self.query_one("#queue-list", ListView).mount(item)
-
-    def _mark_queue_item_done(self, idx: int) -> None:
-        if 0 <= idx < len(self._queue_items):
-            done, text = self._queue_items[idx]
-            if not done:
-                self._queue_items[idx] = (True, text)
-                try:
-                    item = self.query_one(f"#queue-item-{idx}", ListItem)
-                    item.query_one(Label).update(f"[strike #004400]✓ {text}[/strike #004400]")
-                except Exception:
-                    pass
 
     # ------------------------------------------------------------------ teams
 
     def _activate_team(self, idx: int) -> None:
         label, agent_types = TEAM_PRESETS[idx]
-        # Deactivate previous
         if self._active_team is not None:
             try:
-                old = self.query_one(f"#team-{self._active_team}", Button)
-                old.remove_class("-active-team")
+                self.query_one(f"#team-{self._active_team}", Button).remove_class("-active-team")
             except Exception:
                 pass
         self._active_team = idx
@@ -684,20 +1113,25 @@ class CAIApp(App):
             self.query_one(f"#team-{idx}", Button).add_class("-active-team")
         except Exception:
             pass
-        self._log_info(
-            f"Team [bold]#{idx + 1} {label}[/bold] selected — "
-            f"{len(agent_types)} agents: {', '.join(agent_types)}"
-        )
+        # Log to active terminal instead of a now-removed output-log
+        try:
+            panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+            panel.query_one(f"#term-log-{self._active_term_id}", RichLog).write(
+                RichText.from_markup(
+                    f"  [dim]Team [bold]#{idx + 1} {label}[/bold] — "
+                    f"{len(agent_types)} agents: {', '.join(agent_types)}[/dim]"
+                )
+            )
+        except Exception:
+            pass
 
     def _prompt_new_team(self) -> None:
-        """Redirect to queue input with a new-team prompt."""
-        inp = self.query_one("#queue-input", Input)
-        inp.placeholder = "team: agent1 agent2 agent3…"
-        inp.focus()
-        self._log_info(
-            "Type agent names in the Queue input to define a new team, e.g. "
-            "[#006600]redteam_agent blueteam_agent[/#006600]",
-        )
+        try:
+            inp = self.query_one("#queue-input", Input)
+            inp.placeholder = "team: agent1 agent2 agent3…"
+            inp.focus()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ agent highlight
 
@@ -711,146 +1145,33 @@ class CAIApp(App):
 
     # ------------------------------------------------------------------ actions
 
-    def action_clear_log(self) -> None:
-        self.query_one("#output-log", RichLog).clear()
+    def action_clear_active(self) -> None:
+        try:
+            self.query_one(
+                f"#term-log-{self._active_term_id}", RichLog
+            ).clear()
+        except Exception:
+            pass
 
-    def action_cancel_run(self) -> None:
-        if self._current_worker is not None:
-            self._current_worker.cancel()
-            self._current_worker = None
-        self._set_status("")
+    def action_cancel_active(self) -> None:
+        try:
+            panel = self.query_one(
+                f"#terminal-panel-{self._active_term_id}", TerminalPanel
+            )
+            panel._set_status("")
+            # Cancel the panel's worker if running
+            for w in panel._workers:
+                w.cancel()
+        except Exception:
+            pass
 
     def action_toggle_sidebar(self) -> None:
         sidebar = self.query_one("#sidebar", Vertical)
         self._sidebar_visible = not self._sidebar_visible
         sidebar.display = self._sidebar_visible
 
-    def action_focus_prompt(self) -> None:
-        self.query_one("#user-input", Input).focus()
-
     def action_command_palette(self) -> None:
         pass  # Reserved
-
-    # ------------------------------------------------------------------ dispatch
-
-    async def _dispatch(self, text: str) -> None:
-        log = self.query_one("#output-log", RichLog)
-        log.write(RichText(f"> {text}", style="bold #00ff00"))
-
-        cmd = text.lower().split()[0] if text.startswith("/") else ""
-        if cmd in ("/exit", "/quit"):
-            self.exit()
-            return
-        if cmd == "/help":
-            log.write(RichText(
-                "  /exit /quit     Exit the TUI\n"
-                "  /clear          Clear the output log\n"
-                "  /help           Show this message\n"
-                "\n"
-                "  ^q  Exit    ^l  Clear    ^s  Toggle Sidebar\n"
-                "  Esc Cancel  shift+a  Focus prompt",
-                style="#00cc00",
-            ))
-            return
-        if cmd in ("/clear", "/cls"):
-            log.clear()
-            return
-
-        if self._agent is None:
-            log.write(RichText(
-                "  No agent loaded. Check CAI_AGENT_TYPE and restart.",
-                style="#ff4444",
-            ))
-            return
-
-        self._set_status(
-            f"CAI> [{datetime.now().strftime('%H:%M:%S')}] * Thinking…"
-        )
-        self._current_worker = self._stream_agent(text)
-
-    # ------------------------------------------------------------------ agent worker
-
-    @work(exclusive=True)
-    async def _stream_agent(self, text: str) -> None:
-        """Run the CAI agent in a Textual worker; stream output into the log."""
-        log = self.query_one("#output-log", RichLog)
-        stream_iter = None
-
-        try:
-            from cai.sdk.agents import Runner
-            from cai.sdk.agents.stream_events import RunItemStreamEvent
-            from cai.sdk.agents.items import ToolCallOutputItem
-
-            result = Runner.run_streamed(self._agent, text)
-            stream_iter = result.stream_events()
-
-            async for event in stream_iter:
-                if not isinstance(event, RunItemStreamEvent):
-                    continue
-
-                ev_name = event.name
-                item = event.item
-
-                if ev_name == "message_output_created":
-                    try:
-                        from cai.sdk.agents.items import ItemHelpers
-                        content = ItemHelpers.text_message_output(item)
-                    except Exception:
-                        content = str(getattr(item, "content", ""))
-                    if content:
-                        for line in content.splitlines():
-                            log.write(RichText(f"CAI>  {line}", style="#00ff00"))
-
-                elif ev_name == "tool_called":
-                    raw = getattr(item, "raw_item", item)
-                    fn_name = getattr(
-                        raw,
-                        "name",
-                        getattr(getattr(raw, "function", None), "name", "tool"),
-                    )
-                    fn_args = str(getattr(raw, "arguments", "…"))
-                    if len(fn_args) > 80:
-                        fn_args = fn_args[:80] + "…"
-                    log.write(RichText(f"  ↳ {fn_name}({fn_args})", style="#006600"))
-
-                elif ev_name == "tool_output":
-                    if isinstance(item, ToolCallOutputItem):
-                        output_lines = str(item.output).splitlines()
-                        for line in output_lines[:15]:
-                            log.write(RichText(f"    {line}", style="#00aa00"))
-                        if len(output_lines) > 15:
-                            log.write(RichText(
-                                f"    … {len(output_lines) - 15} more lines …",
-                                style="#004400",
-                            ))
-
-        except asyncio.CancelledError:
-            log.write(RichText("  [cancelled]", style="#ff6600"))
-        except Exception as exc:
-            log.write(RichText(f"  [error] {exc}", style="#ff4444"))
-        finally:
-            if stream_iter is not None:
-                try:
-                    await stream_iter.aclose()
-                except Exception:
-                    pass
-            self._set_status("")
-
-    # ------------------------------------------------------------------ helpers
-
-    def _set_status(self, text: str) -> None:
-        try:
-            self.query_one("#status-bar", Static).update(text)
-        except Exception:
-            pass
-
-    def _log_info(self, markup: str) -> None:
-        try:
-            self.query_one("#output-log", RichLog).write(
-                RichText.from_markup(f"  [dim]{markup}[/dim]")
-            )
-        except Exception:
-            pass
 
 
 # ---------------------------------------------------------------------------
