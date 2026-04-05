@@ -123,22 +123,22 @@ class CustomResponseUsage(ResponseUsage):
         return self.output_tokens
 
 
-from cai.internal.components.metrics import process_intermediate_logs
+from cai.internal.components.metrics import process_intermediate_logs  # noqa: E402
 
-from .. import _debug
-from ..agent_output import AgentOutputSchema
-from ..exceptions import AgentsException, UserError
-from ..handoffs import Handoff
-from ..items import ModelResponse, TResponseInputItem, TResponseOutputItem, TResponseStreamEvent
-from ..logger import logger
-from ..tool import FunctionTool, Tool
-from ..tracing import generation_span
-from ..tracing.span_data import GenerationSpanData
-from ..tracing.spans import Span
-from ..usage import Usage
-from ..version import __version__
-from .fake_id import FAKE_RESPONSES_ID
-from .interface import Model, ModelTracing
+from .. import _debug  # noqa: E402
+from ..agent_output import AgentOutputSchema  # noqa: E402
+from ..exceptions import AgentsException, UserError  # noqa: E402
+from ..handoffs import Handoff  # noqa: E402
+from ..items import ModelResponse, TResponseInputItem, TResponseOutputItem, TResponseStreamEvent  # noqa: E402
+from ..logger import logger  # noqa: E402
+from ..tool import FunctionTool, Tool  # noqa: E402
+from ..tracing import generation_span  # noqa: E402
+from ..tracing.span_data import GenerationSpanData  # noqa: E402
+from ..tracing.spans import Span  # noqa: E402
+from ..usage import Usage  # noqa: E402
+from ..version import __version__  # noqa: E402
+from .fake_id import FAKE_RESPONSES_ID  # noqa: E402
+from .interface import Model, ModelTracing  # noqa: E402
 
 if TYPE_CHECKING:
     from ..model_settings import ModelSettings
@@ -155,8 +155,8 @@ _HEADERS = {"User-Agent": _USER_AGENT}
 
 # Global registry to track active model instances
 # This allows us to access instance-based histories for commands like /history
-import weakref
-import contextvars
+import weakref  # noqa: E402
+import contextvars  # noqa: E402
 
 # DEPRECATED: Use AGENT_REGISTRY instead
 ACTIVE_MODEL_INSTANCES = {}
@@ -1514,7 +1514,7 @@ class OpenAIChatCompletionsModel(Model):
 
                         # Update input with the fixed version
                         input = new_input
-                except Exception as e:
+                except Exception:
                     # Silently continue with original input if pre-processing failed
                     # This is not critical and shouldn't show warnings
                     pass
@@ -1541,7 +1541,7 @@ class OpenAIChatCompletionsModel(Model):
                         counter=self.interaction_counter,
                         model=str(self.model),
                     )
-                except Exception as e:
+                except Exception:
                     # Silently fall back to non-streaming display
                     streaming_context = None
 
@@ -3969,7 +3969,7 @@ class OpenAIChatCompletionsModel(Model):
 
         # Check if this is a Qwen model
         model_str = str(self.model).lower()
-        is_qwen = "qwen" in model_str
+        _is_qwen = "qwen" in model_str
         api_base = get_ollama_api_base()
 
         if stream:
@@ -4873,8 +4873,6 @@ class _Converter:
                         if time_since_execution < 5.0 and "_command" in tool_name.lower():
                             # Parse arguments to check if this is an async session command
                             try:
-                                import json
-
                                 args_dict = (
                                     json.loads(tool_args)
                                     if isinstance(tool_args, str)
@@ -4940,7 +4938,7 @@ class _Converter:
                 result.append(msg)
 
             # 6) item reference => handle or raise
-            elif item_ref := self.maybe_item_reference(item):
+            elif _item_ref := self.maybe_item_reference(item):
                 raise UserError(
                     "🔗 Item references not supported - Include content directly"
                 )

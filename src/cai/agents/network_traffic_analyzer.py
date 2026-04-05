@@ -56,9 +56,8 @@ load_dotenv()
 ###
 # Import remote traffic capture tools
 
-from cai.tools.network.capture_traffic import (
+from cai.tools.network.capture_traffic import (  # noqa: E402
     capture_remote_traffic,
-    remote_capture_session,
     remote_capture_session_tool,
 )
 

@@ -9,7 +9,6 @@ from functools import cached_property
 from typing import Any
 
 import httpx
-import asyncio
 
 from ..logger import logger
 from .processor_interface import TracingExporter, TracingProcessor

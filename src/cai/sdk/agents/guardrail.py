@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Union, overload
 from typing_extensions import TypeVar
 
 from .exceptions import UserError
-from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .items import TResponseInputItem
 else:

@@ -6,7 +6,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Union, overload
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 try:
     from pydantic import ValidationError
 except ImportError:  # pragma: no cover

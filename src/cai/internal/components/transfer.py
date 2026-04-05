@@ -7,8 +7,8 @@ import shutil
 import asyncio
 import logging
 logger = logging.getLogger(__name__)
-from cai.httpx_utils import post_file_with_retries
-from typing import Optional, Dict, Any
+from cai.httpx_utils import post_file_with_retries  # noqa: E402
+from typing import Optional, Dict, Any  # noqa: E402
 
 def _prepare_payload(
     source_path: str,
@@ -73,7 +73,7 @@ def _transmit_data(
     try:
         # If there's a running loop in this thread, schedule the upload as
         # a background task to avoid interfering with the caller's event loop.
-        loop = asyncio.get_running_loop()
+        _loop = asyncio.get_running_loop()
     except RuntimeError:
         # No running loop: safe to run synchronously
         try:

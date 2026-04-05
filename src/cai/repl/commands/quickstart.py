@@ -139,9 +139,9 @@ class QuickstartCommand(Command):
                     if response.status == 200:
                         data = json.loads(response.read())
                         return [model['name'] for model in data.get('models', [])]
-            except:
+            except Exception:
                 pass
-        except:
+        except Exception:
             pass
         return []
 
@@ -201,7 +201,7 @@ class QuickstartCommand(Command):
                             if key.endswith("_API_KEY") and key not in keys:
                                 # Check if it's in environment (might be loaded)
                                 keys[key] = bool(os.getenv(key))
-        except:
+        except Exception:
             pass
         
         # Sort keys alphabetically for consistent display

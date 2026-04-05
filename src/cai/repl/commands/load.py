@@ -15,7 +15,7 @@ from cai.repl.commands.base import Command, register_command
 from cai.repl.commands.parallel import PARALLEL_CONFIGS
 from cai.sdk.agents.models.openai_chatcompletions import (
     get_all_agent_histories,
-    get_agent_message_history,
+    get_agent_message_history,  # noqa: F401  (used in tests via mock)
 )
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl
@@ -397,7 +397,7 @@ class LoadCommand(Command):
                             PARALLEL_ISOLATION.replace_isolated_history(agent_id, agent_conversations[best_match])
                             
                             # Verify it was stored
-                            test_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
+                            _test_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
                             
                             # Also sync with AGENT_MANAGER for consistency
                             # Don't use set_message_history or any method that might register the agent

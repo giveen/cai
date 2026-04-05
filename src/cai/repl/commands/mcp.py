@@ -572,7 +572,7 @@ Example: `/mcp add burp 13`
         """
         try:
             # Try to get existing loop
-            loop = asyncio.get_running_loop()
+            _loop = asyncio.get_running_loop()
             # If we're in a loop, we need to use a different approach
             import concurrent.futures
             import sys
@@ -711,7 +711,7 @@ Example: `/mcp add burp 13`
                 try:
                     await server.connect()
                     break
-                except Exception as e:
+                except Exception:
                     if attempt < max_connect_retries - 1:
                         await asyncio.sleep(1)  # Wait before retry
                         continue
@@ -1018,10 +1018,10 @@ Example: `/mcp add burp 13`
                 )
                 return all_regular_tools + all_mcp_tools
 
-            all_tools = self._run_async(test_agent_tools())
+            _all_tools = self._run_async(test_agent_tools())
 
             # Count different types of tools
-            mcp_server_tools_count = (
+            _mcp_server_tools_count = (
                 len([t for t in agent.mcp_servers if hasattr(agent, "mcp_servers")])
                 if hasattr(agent, "mcp_servers")
                 else 0
@@ -1308,7 +1308,7 @@ Example: `/mcp add burp 13`
                 # Test 3: Test reconnection
                 console.print("[yellow]Test 3: Testing reconnection...[/yellow]")
                 if hasattr(server, 'session'):
-                    old_session = server.session
+                    _old_session = server.session
                     server.session = None
                 await server.connect()
                 console.print("[green]✓ Reconnection successful[/green]")
@@ -1387,7 +1387,7 @@ def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
                 
                 # Try to get existing loop or create new one
                 try:
-                    loop = asyncio.get_running_loop()
+                    _loop = asyncio.get_running_loop()
                     import concurrent.futures
                     def run_in_thread():
                         new_loop = asyncio.new_event_loop()

@@ -3,15 +3,14 @@ from __future__ import annotations
 import asyncio
 import copy
 import os
-import logging
 from dataclasses import dataclass, field
 from typing import Any, cast
 
 from openai.types.responses import ResponseCompletedEvent
 
-logger = logging.getLogger(__name__)
+# removed duplicate: logger = logging.getLogger(__name__)
 
-from ._run_impl import (
+from ._run_impl import (  # noqa: E402
     AgentToolUseTracker,
     NextStepFinalOutput,
     NextStepHandoff,
@@ -22,31 +21,31 @@ from ._run_impl import (
     TraceCtxManager,
     get_model_tracing_impl,
 )
-from .agent import Agent
-from .agent_output import AgentOutputSchema
-from .exceptions import (
+from .agent import Agent  # noqa: E402
+from .agent_output import AgentOutputSchema  # noqa: E402
+from .exceptions import (  # noqa: E402
     AgentsException,
     InputGuardrailTripwireTriggered,
     MaxTurnsExceeded,
     ModelBehaviorError,
     OutputGuardrailTripwireTriggered,
 )
-from .guardrail import InputGuardrail, InputGuardrailResult, OutputGuardrail, OutputGuardrailResult
-from .handoffs import Handoff, HandoffInputFilter, handoff
-from .items import ItemHelpers, ModelResponse, RunItem, TResponseInputItem
-from .lifecycle import RunHooks
-from .logger import logger
-from .model_settings import ModelSettings
-from .models.interface import Model, ModelProvider
-from .models.openai_provider import OpenAIProvider
-from .result import RunResult, RunResultStreaming
-from .run_context import RunContextWrapper, TContext
-from .stream_events import AgentUpdatedStreamEvent, RawResponsesStreamEvent
-from .tool import Tool
-from .tracing import Span, SpanError, agent_span, get_current_trace, trace
-from .tracing.span_data import AgentSpanData
-from .usage import Usage
-from .util import _coro, _error_tracing
+from .guardrail import InputGuardrail, InputGuardrailResult, OutputGuardrail, OutputGuardrailResult  # noqa: E402
+from .handoffs import Handoff, HandoffInputFilter, handoff  # noqa: E402
+from .items import ItemHelpers, ModelResponse, RunItem, TResponseInputItem  # noqa: E402
+from .lifecycle import RunHooks  # noqa: E402
+from .logger import logger  # noqa: E402
+from .model_settings import ModelSettings  # noqa: E402
+from .models.interface import Model, ModelProvider  # noqa: E402
+from .models.openai_provider import OpenAIProvider  # noqa: E402
+from .result import RunResult, RunResultStreaming  # noqa: E402
+from .run_context import RunContextWrapper, TContext  # noqa: E402
+from .stream_events import AgentUpdatedStreamEvent, RawResponsesStreamEvent  # noqa: E402
+from .tool import Tool  # noqa: E402
+from .tracing import Span, SpanError, agent_span, get_current_trace, trace  # noqa: E402
+from .tracing.span_data import AgentSpanData  # noqa: E402
+from .usage import Usage  # noqa: E402
+from .util import _coro, _error_tracing  # noqa: E402
 
 # CAI_MAX_TURNS must be converted to an int to avoid type mismatch error when comparing.
 max_turns_env = os.getenv("CAI_MAX_TURNS")
@@ -903,31 +902,31 @@ class Runner:
             for i, tool_call in enumerate(processed_response.tools_used):
                 try:
                     # Safely extract tool name with multiple fallbacks
-                    tool_name = "Unknown"
+                    _tool_name = "Unknown"
                     try:
                         if hasattr(tool_call, "tool"):
                             if isinstance(tool_call.tool, str):
-                                tool_name = tool_call.tool
+                                _tool_name = tool_call.tool
                             elif hasattr(tool_call.tool, "name"):
-                                tool_name = tool_call.tool.name
+                                _tool_name = tool_call.tool.name
                             else:
-                                tool_name = str(tool_call.tool)
+                                _tool_name = str(tool_call.tool)
                     except Exception:
                         pass
 
                     # Safely extract call_id
-                    call_id = "Unknown"
+                    _call_id = "Unknown"
                     try:
                         if hasattr(tool_call, "call_id"):
-                            call_id = str(tool_call.call_id)
+                            _call_id = str(tool_call.call_id)
                     except Exception:
                         pass
 
                     # Safely extract parsed_args
-                    parsed_args = "Unknown"
+                    _parsed_args = "Unknown"
                     try:
                         if hasattr(tool_call, "parsed_args"):
-                            parsed_args = str(tool_call.parsed_args)
+                            _parsed_args = str(tool_call.parsed_args)
                     except Exception:
                         pass
                 except Exception:

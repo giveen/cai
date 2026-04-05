@@ -370,7 +370,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                             # and read returned empty. Session is over.
                             self.is_running = False
                             break
-                except UnicodeDecodeError as e:
+                except UnicodeDecodeError:
                     # Handle unicode decode errors gracefully
                     self.output_buffer.append(f"[Session {self.session_id}] Unicode decode error in output\n")
                     continue
@@ -486,7 +486,8 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                      termination_message = f" (Error during SIGTERM: {term_err})"
                      try:
                          self.process.kill()
-                     except Exception: pass # Ignore nested errors
+                     except Exception:
+                         pass  # Ignore nested errors
 
 
                 # Final check
@@ -497,12 +498,16 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
 
             # Clean up PTY resources if they exist
             if self.master:
-                try: os.close(self.master)
-                except OSError: pass
+                try:
+                    os.close(self.master)
+                except OSError:
+                    pass
                 self.master = None
             if self.slave:
-                try: os.close(self.slave)
-                except OSError: pass
+                try:
+                    os.close(self.slave)
+                except OSError:
+                    pass
                 self.slave = None
                 
             return termination_message
@@ -714,8 +719,8 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
         target_dir = workspace_dir or _get_workspace_dir()
         # Normalize command for display and execution
         exec_cmd, cmd_var, args_param_val, full_command = _normalize_command(command)
-        original_cmd_for_msg = full_command  # For logging/display
-        context_msg = f"(local:{target_dir})"
+        _original_cmd_for_msg = full_command  # For logging/display
+        _context_msg = f"(local:{target_dir})"
         
         # If streaming is enabled and we have a call_id
         if stream:
@@ -912,7 +917,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                 output = stderr_data.decode('utf-8', errors='replace')
             
             # Use normalized command parts for display
-            parts = [cmd_var, args_param_val]
+            _parts = [cmd_var, args_param_val]
             
             # In non-streaming mode (typically parallel execution), display completed panel
             # Get token info for agent display
@@ -1274,8 +1279,8 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
         target_dir = workspace_dir or _get_workspace_dir()
         # Normalize command for display and execution
         exec_cmd, cmd_var, args_param_val, full_command = _normalize_command(command)
-        original_cmd_for_msg = full_command  # For logging
-        context_msg = f"(local:{target_dir})"
+        _original_cmd_for_msg = full_command  # For logging
+        _context_msg = f"(local:{target_dir})"
         
         # If streaming is enabled and we have a call_id
         if stream:
@@ -2493,7 +2498,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         stop_active_timer()
         start_idle_timer()
         return result
-    except Exception as e:
+    except Exception:
         stop_active_timer()
         start_idle_timer()
         raise

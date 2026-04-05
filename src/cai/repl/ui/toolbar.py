@@ -55,7 +55,7 @@ def get_terminal_width():
     """Get the terminal width."""
     try:
         return shutil.get_terminal_size().columns
-    except:
+    except Exception:
         return 80  # Default width
 
 
@@ -64,9 +64,9 @@ def update_toolbar_in_background():
     try:
         # Get system info (cached)
         sys_info = get_system_info()
-        ip_address = sys_info['ip_address']
-        os_name = sys_info['os_name']
-        os_version = sys_info['os_version']
+        _ip_address = sys_info['ip_address']
+        _os_name = sys_info['os_name']
+        _os_version = sys_info['os_version']
        
         # Get the current workspace and base directory
         workspace_name = os.getenv("CAI_WORKSPACE")
@@ -74,14 +74,14 @@ def update_toolbar_in_background():
 
         # Construct the workspace path 
         standard_path = os.path.join(base_dir, workspace_name) if workspace_name else ""
-        workspace_path = ""
+        _workspace_path = ""
         if workspace_name:
             if os.path.isdir(standard_path):
-                workspace_path = standard_path
+                _workspace_path = standard_path
             elif os.path.isdir(workspace_name):
-                workspace_path = os.path.abspath(workspace_name)
+                _workspace_path = os.path.abspath(workspace_name)
             else:
-                workspace_path = standard_path
+                _workspace_path = standard_path
         
         # Get current active container info
         container_id = os.getenv("CAI_ACTIVE_CONTAINER")
@@ -92,7 +92,7 @@ def update_toolbar_in_background():
 
 
         # Get Ollama information
-        ollama_status = "unavailable"
+        _ollama_status = "unavailable"
         try:
             # Get Ollama models with a short timeout to prevent hanging
             from cai.util import get_ollama_api_base
@@ -117,10 +117,10 @@ def update_toolbar_in_background():
                 else:
                     # Fallback for older Ollama versions
                     ollama_models = len(data.get('items', []))
-                ollama_status = f"{ollama_models} models"
+                _ollama_status = f"{ollama_models} models"
         except Exception:  # pylint: disable=broad-except
             # Silently fail if Ollama is not available
-            ollama_status = "unavailable"
+            _ollama_status = "unavailable"
 
         # Get current time for the toolbar refresh indicator
         current_time = datetime.datetime.now().strftime("%H:%M")
@@ -136,7 +136,7 @@ def update_toolbar_in_background():
         context_usage = 0.0
         try:
             context_usage = float(os.getenv('CAI_CONTEXT_USAGE', '0.0'))
-        except:
+        except Exception:
             pass
             
         # Determine auto-compact display based on usage

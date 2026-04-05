@@ -153,7 +153,7 @@ class GraphCommand(Command):
             prev_node_idx = None
             node_counter = 0  # Use a separate counter for node IDs
             current_turn = 0  # Track current turn number (will be incremented on first assistant message)
-            last_role = None  # Track last role to detect turn changes
+            _last_role = None  # Track last role to detect turn changes
             
             for idx, msg in enumerate(history):
                 role = msg.get("role", "unknown")
@@ -220,7 +220,7 @@ class GraphCommand(Command):
                 node_counter += 1
                 
                 # Update last_role for turn tracking
-                last_role = role
+                _last_role = role
             
             def render_graph(G):
                 """Render the conversation graph as panels with arrows"""
@@ -436,7 +436,7 @@ class GraphCommand(Command):
                 node_counter = 0
                 message_count = 0
                 turn_counter = 0  # Will be incremented on first assistant message
-                last_role = None
+                _last_role = None
                 
                 # Build graph for this agent's history
                 for idx, msg in enumerate(history):
@@ -475,7 +475,7 @@ class GraphCommand(Command):
                     node_counter += 1
                     
                     # Update last_role for turn tracking
-                    last_role = role
+                    _last_role = role
                 
                 # Create simplified graph representation
                 graph_lines = []
@@ -630,7 +630,7 @@ class GraphCommand(Command):
                             prev_node_idx = None
                             node_counter = 0
                             current_turn = 0  # Will be incremented to 1 on first user message
-                            last_role = None
+                            _last_role = None
                             
                             for idx, msg in enumerate(history):
                                 role = msg.get("role", "unknown")
@@ -695,7 +695,7 @@ class GraphCommand(Command):
                                 node_counter += 1
                                 
                                 # Update last_role for turn tracking
-                                last_role = role
+                                _last_role = role
                             
                             def render_graph(G):
                                 """Render the conversation graph as panels with arrows"""

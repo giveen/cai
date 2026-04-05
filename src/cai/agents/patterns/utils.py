@@ -164,7 +164,7 @@ def is_swarm_pattern(agent) -> bool:
                 continue
                 
             # Get the target agent name from the handoff
-            target_agent_name = handoff.agent_name
+            _target_agent_name = handoff.agent_name
             
             # Now we need to check if the target agent has a handoff back to this agent
             # Since we can't access the target agent directly from the handoff,
@@ -189,7 +189,7 @@ def is_swarm_pattern(agent) -> bool:
                                         hasattr(agent, 'name') and 
                                         target_handoff.agent_name == agent.name):
                                         return True
-                        except:
+                        except Exception:
                             continue
     
     return False

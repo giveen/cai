@@ -404,11 +404,13 @@ class WorkspaceCommand(Command):
              def get_common_workspace_dir():
                  base = os.getenv("CAI_WORKSPACE_DIR", ".")
                  name = os.getenv("CAI_WORKSPACE")
-                 if name: return os.path.abspath(os.path.join(base, name))
+                 if name:
+                     return os.path.abspath(os.path.join(base, name))
                  return os.path.abspath(base)
              def get_common_container_path():
                  name = os.getenv("CAI_WORKSPACE")
-                 if name: return f"/workspace/workspaces/{name}"
+                 if name:
+                     return f"/workspace/workspaces/{name}"
                  return "/"
 
         host_workspace_dir = get_common_workspace_dir()
@@ -509,11 +511,13 @@ class WorkspaceCommand(Command):
              def get_common_workspace_dir():
                  base = os.getenv("CAI_WORKSPACE_DIR", ".")
                  name = os.getenv("CAI_WORKSPACE")
-                 if name: return os.path.abspath(os.path.join(base, name))
+                 if name:
+                     return os.path.abspath(os.path.join(base, name))
                  return os.path.abspath(base)
              def get_common_container_path():
                  name = os.getenv("CAI_WORKSPACE")
-                 if name: return f"/workspace/workspaces/{name}"
+                 if name:
+                     return f"/workspace/workspaces/{name}"
                  return "/"
 
         host_workspace_dir = get_common_workspace_dir()

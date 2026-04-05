@@ -154,7 +154,7 @@ def detect_injection_patterns(text: str) -> tuple[bool, list[str]]:
             suspicious_patterns.append(pattern)
     
     # Check for unusual command-like structures (but not in JSON)
-    if not "'role'" in text and (re.search(r'[\$\{\}`;|&><]', text) or re.search(r'[\$\{\}`;|&><]', normalized_text)):
+    if "'role'" not in text and (re.search(r'[\$\{\}`;|&><]', text) or re.search(r'[\$\{\}`;|&><]', normalized_text)):
         suspicious_patterns.append("shell_metacharacters")
     
     # Check for excessive uppercase (shouting commands)
@@ -304,7 +304,7 @@ async def prompt_injection_guardrail(
                         },
                         tripwire_triggered=True
                     )
-            except:
+            except Exception:
                 pass
     
     # If we detect obvious patterns, block immediately
@@ -442,7 +442,7 @@ async def command_execution_guardrail(
                         },
                         tripwire_triggered=True
                     )
-            except:
+            except Exception:
                 pass
     
     # Check for base32 decoding commands (PoC5 mitigation)
@@ -468,7 +468,7 @@ async def command_execution_guardrail(
                             },
                             tripwire_triggered=True
                         )
-                except:
+                except Exception:
                     pass
     
     # Check if output contains IP addresses with common exploit patterns

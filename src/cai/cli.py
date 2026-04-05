@@ -121,8 +121,8 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 # Configure Python warnings BEFORE any other imports
-import warnings
-import sys
+import warnings  # noqa: E402
+import sys  # noqa: E402
 
 # Custom warning handler to suppress specific warnings
 def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
@@ -141,10 +141,10 @@ if os.getenv("CAI_DEBUG", "1") != "2":
     # Also set environment variable to prevent warnings from subprocesses
     os.environ["PYTHONWARNINGS"] = "ignore"
 
-import asyncio
-import logging
-import shlex
-import time
+import asyncio  # noqa: E402
+import logging  # noqa: E402
+import shlex  # noqa: E402
+import time  # noqa: E402
 
 # Configure comprehensive error filtering
 class ComprehensiveErrorFilter(logging.Filter):
@@ -281,43 +281,43 @@ def suppress_aiohttp_warnings():
 suppress_aiohttp_warnings()
 
 # OpenAI imports
-from rich.console import Console
+from rich.console import Console  # noqa: E402
 
-from cai import is_pentestperf_available
+from cai import is_pentestperf_available  # noqa: E402
 
 # CAI agents and metrics imports
-from cai.agents import get_agent_by_name
-from cai.internal.components.metrics import process_metrics
+from cai.agents import get_agent_by_name  # noqa: E402
+from cai.internal.components.metrics import process_metrics  # noqa: E402
 
 # CAI REPL imports
-from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
+from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command  # noqa: E402
 
 # Add import for parallel configs at the top of the file
-from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig, PARALLEL_AGENT_INSTANCES
+from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig, PARALLEL_AGENT_INSTANCES  # noqa: E402
 
 # Global storage for shared message histories (keyed by a unique identifier)
 UNIFIED_MESSAGE_HISTORIES = {}
-from cai.repl.ui.banner import display_banner, display_quick_guide
-from cai.repl.ui.keybindings import create_key_bindings
-from cai.repl.ui.logging import setup_session_logging
-from cai.repl.ui.prompt import get_user_input
-from cai.repl.ui.toolbar import get_toolbar_with_refresh
+from cai.repl.ui.banner import display_banner, display_quick_guide  # noqa: E402
+from cai.repl.ui.keybindings import create_key_bindings  # noqa: E402
+from cai.repl.ui.logging import setup_session_logging  # noqa: E402
+from cai.repl.ui.prompt import get_user_input  # noqa: E402
+from cai.repl.ui.toolbar import get_toolbar_with_refresh  # noqa: E402
 
 # CAI SDK imports
-from cai.sdk.agents import Runner, set_tracing_disabled
-from cai.sdk.agents.items import ToolCallOutputItem
-from cai.sdk.agents.exceptions import OutputGuardrailTripwireTriggered, InputGuardrailTripwireTriggered
-from cai.sdk.agents.models.openai_chatcompletions import (
+from cai.sdk.agents import Runner, set_tracing_disabled  # noqa: E402
+from cai.sdk.agents.items import ToolCallOutputItem  # noqa: E402
+from cai.sdk.agents.exceptions import OutputGuardrailTripwireTriggered, InputGuardrailTripwireTriggered  # noqa: E402
+from cai.sdk.agents.models.openai_chatcompletions import (  # noqa: E402
     ContextCompactedError,
 )
 # Import handled where needed to avoid circular imports
-from cai.sdk.agents.run_to_jsonl import get_session_recorder
-from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
-from cai.sdk.agents.stream_events import RunItemStreamEvent
-from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
+from cai.sdk.agents.run_to_jsonl import get_session_recorder  # noqa: E402
+from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER  # noqa: E402
+from cai.sdk.agents.stream_events import RunItemStreamEvent  # noqa: E402
+from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION  # noqa: E402
 
 # CAI utility imports
-from cai.util import (
+from cai.util import (  # noqa: E402
     color,
     fix_litellm_transcription_annotations,
     setup_ctf,
@@ -1009,14 +1009,14 @@ def run_cai_cli(
                 # Use parallel configurations instead of normal processing
                 
                 # Show which agents have custom prompts
-                agents_with_prompts = [(idx, config) for idx, config in enumerate(PARALLEL_CONFIGS, 1) if config.prompt]
+                _agents_with_prompts = [(idx, config) for idx, config in enumerate(PARALLEL_CONFIGS, 1) if config.prompt]
                 
                 # First ensure ALL parallel configs have agent instances (not just selected ones)
                 # This prevents agents from disappearing from history when not selected
                 from cai.agents import get_available_agents
                 
                 # Setup parallel isolation for these agents
-                from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
+                # (PARALLEL_ISOLATION already imported at module level)
                 
                 # Get agent IDs
                 agent_ids = [config.id or f"P{idx}" for idx, config in enumerate(PARALLEL_CONFIGS, 1)]
@@ -1557,7 +1557,7 @@ def run_cai_cli(
                                             agent.model.add_to_message_history(tool_msg)
 
                             return result
-                        except OutputGuardrailTripwireTriggered as e:
+                        except OutputGuardrailTripwireTriggered:
                             # Handle guardrail exception specifically - MUST come before broad Exception handler
                             # Clean up streaming display before showing error
                             try:
@@ -1610,7 +1610,7 @@ def run_cai_cli(
                                             "content": "Tool execution interrupted"
                                         }
                                         agent.model.add_to_message_history(synthetic_msg)
-                            except Exception as cleanup_error:
+                            except Exception:
                                 # Silently ignore cleanup errors during interrupt
                                 pass
                             
@@ -1937,7 +1937,7 @@ def run_cai_cli(
 
                     agent.model.message_history[:] = fix_message_list(agent.model.message_history)
                     
-            except Exception as cleanup_error:
+            except Exception:
                 pass
 
             # Add a small delay to allow the system to settle after interruption

@@ -20,7 +20,7 @@ from mako.template import Template  # pylint: disable=import-error
 from rich.box import ROUNDED  # pylint: disable=import-error
 from rich.console import Console, Group
 from rich.panel import Panel  # pylint: disable=import-error
-from rich.pretty import install as install_pretty  # pylint: disable=import-error # noqa: 501
+from rich.pretty import install as install_pretty  # pylint: disable=import-error  # noqa: E501
 from rich.syntax import Syntax  # Import Syntax for highlighting
 from rich.table import Table
 from rich.text import Text  # pylint: disable=import-error
@@ -454,7 +454,7 @@ class CostTracker:
         # Check price limit before updating
         self.check_price_limit(new_cost)
 
-        old_total = self.session_total_cost
+        _old_total = self.session_total_cost
         self.session_total_cost += new_cost
         
         # Also update the global usage tracker when session cost changes
@@ -585,7 +585,7 @@ class CostTracker:
             # Check if it's a network connectivity issue by testing a simple connection
             try:
                 import requests
-                test_response = requests.get("https://aliasrobotics.com/", timeout=1)
+                _test_response = requests.get("https://aliasrobotics.com/", timeout=1)
                 # The pricing URL failed
                 print(f"  WARNING: Error fetching model pricing: {str(e)}")
             except Exception:
@@ -1131,7 +1131,7 @@ def fix_litellm_transcription_annotations():
         import litellm.litellm_core_utils.model_param_helper as model_param_helper
 
         # Override the problematic method to avoid the error
-        original_get_transcription_kwargs = (
+        _original_get_transcription_kwargs = (
             model_param_helper.ModelParamHelper._get_litellm_supported_transcription_kwargs
         )
 
@@ -1870,7 +1870,7 @@ def parse_message_tool_call(message, tool_output=None):
                         import json
 
                         args_dict = json.loads(tool_call.function.arguments)
-                    except:
+                    except Exception:
                         args_dict = {"raw_arguments": tool_call.function.arguments}
             elif isinstance(tool_call, dict):
                 if "function" in tool_call:
@@ -1881,7 +1881,7 @@ def parse_message_tool_call(message, tool_output=None):
                             import json
 
                             args_dict = json.loads(tool_call["function"]["arguments"])
-                        except:
+                        except Exception:
                             args_dict = {"raw_arguments": tool_call["function"]["arguments"]}
 
             # Create a panel for this tool call if name is not None
@@ -1975,14 +1975,14 @@ def cli_print_agent_messages(
 
     # Check if the message has tool calls
     has_tool_calls = False
-    has_execute_code = False
+    _has_execute_code = False
     if hasattr(message, "tool_calls") and message.tool_calls:
         has_tool_calls = True
         # Check if this is an execute_code tool call
         for tool_call in message.tool_calls:
             if hasattr(tool_call, "function") and hasattr(tool_call.function, "name"):
                 if tool_call.function.name == "execute_code":
-                    has_execute_code = True
+                    _has_execute_code = True
                     break
     elif isinstance(message, dict) and "tool_calls" in message and message["tool_calls"]:
         has_tool_calls = True
@@ -1990,7 +1990,7 @@ def cli_print_agent_messages(
         for tool_call in message["tool_calls"]:
             if isinstance(tool_call, dict) and "function" in tool_call:
                 if tool_call["function"].get("name") == "execute_code":
-                    has_execute_code = True
+                    _has_execute_code = True
                     break
 
     # Parse the message based on whether it has tool calls
@@ -2662,11 +2662,11 @@ def cli_print_tool_output(
         return
     
     # Check if we're in parallel mode
-    is_parallel_mode = False
+    _is_parallel_mode = False
     if token_info and isinstance(token_info, dict):
         agent_id = token_info.get("agent_id", "")
         if agent_id and agent_id.startswith("P") and agent_id[1:].isdigit():
-            is_parallel_mode = True
+            _is_parallel_mode = True
     
     # Special suppression for cat commands that create code files from execute_code
     # We don't want to show the cat command that creates the file
@@ -3850,25 +3850,25 @@ def _print_simple_tool_output(tool_name, args, output, execution_info=None, toke
     args_str = _format_tool_args(args)
 
     # Get tool execution time if available
-    tool_time_str = ""
-    execution_status = ""
+    _tool_time_str = ""
+    _execution_status = ""
     if execution_info:
         time_taken = execution_info.get("time_taken", 0) or execution_info.get("tool_time", 0)
         status = execution_info.get("status", "completed")
 
         # Add execution info to the tool call display
         if time_taken:
-            tool_time_str = f"Tool: {format_time(time_taken)}"
-            execution_status = f" [{status} in {time_taken:.2f}s]"
+            _tool_time_str = f"Tool: {format_time(time_taken)}"
+            _execution_status = f" [{status} in {time_taken:.2f}s]"
         else:
-            execution_status = f" [{status}]"
+            _execution_status = f" [{status}]"
 
     # Create timing display string
     timing_info, _ = _get_timing_info(execution_info)
-    timing_display = f" [{' | '.join(timing_info)}]" if timing_info else ""
+    _timing_display = f" [{' | '.join(timing_info)}]" if timing_info else ""
 
     # Show tool name, args, execution status and timing display
-    tool_call = f"{tool_name}({args_str})"
+    _tool_call = f"{tool_name}({args_str})"
     # If we have token info, display it
     if token_info:
         model = token_info.get("model", "")
@@ -4071,7 +4071,7 @@ def start_tool_streaming(tool_name, args, call_id=None, token_info=None):
     
     # Build command key consistently with cli_print_tool_output
     if isinstance(args, dict):
-        cmd = args.get("command", "")
+        _cmd = args.get("command", "")
         cmd_args = args.get("args", "")
         effective_args = cmd_args
     else:
@@ -4295,12 +4295,12 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
         return
 
     # Check if we're in parallel mode by looking at agent_id
-    is_parallel = False
+    _is_parallel = False
     if token_info and isinstance(token_info, dict):
         agent_id = token_info.get("agent_id", "")
         # In parallel mode, agent_id has format P1, P2, etc.
         if agent_id and agent_id.startswith("P") and agent_id[1:].isdigit():
-            is_parallel = True
+            _is_parallel = True
 
     # Special handling for execute_code in streaming mode (both parallel and normal)
     if tool_name == "execute_code" and isinstance(args, dict) and "code" in args:
@@ -4316,7 +4316,7 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
         agent_name = token_info.get("agent_name", "Agent") if token_info else "Agent"
         
         # Extract code and language from args
-        code = args.get("code", "")
+        _code = args.get("code", "")
         language = args.get("language", "python")
         filename = args.get("filename", "code")
         
@@ -4329,7 +4329,7 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
             "kotlin": "kt", "c": "c", "cpp": "cpp", "c++": "cpp"
         }
         ext = extensions.get(language, "txt")
-        full_path = f"./{filename}.{ext}"
+        _full_path = f"./{filename}.{ext}"
         
         # Get workspace directory from args or execution_info
         workspace = ""
@@ -4347,19 +4347,19 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
         
         # Build full path based on environment
         if environment == "Container" and workspace:
-            full_path = f"{workspace}/{filename}.{ext}"
+            _full_path = f"{workspace}/{filename}.{ext}"
         elif workspace:
             # For local execution, workspace might be just the directory name
             # Get current working directory
             cwd = os.getcwd()
             if workspace == os.path.basename(cwd):
                 # workspace is just the directory name, use full path
-                full_path = os.path.join(cwd, f"{filename}.{ext}")
+                _full_path = os.path.join(cwd, f"{filename}.{ext}")
             else:
-                full_path = f"{workspace}/{filename}.{ext}"
+                _full_path = f"{workspace}/{filename}.{ext}"
         else:
             # Default to current directory
-            full_path = os.path.join(os.getcwd(), f"{filename}.{ext}")
+            _full_path = os.path.join(os.getcwd(), f"{filename}.{ext}")
         
         # In finish_tool_streaming, we only show the output panel
         # The code panel was already shown in start_tool_streaming

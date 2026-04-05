@@ -398,7 +398,7 @@ def display_quick_guide(console: Console):
     )
     
     # Create additional tips panels
-    ollama_tip = Panel(
+    _ollama_tip = Panel(
         "To use Ollama models, configure OLLAMA_API_BASE\n"
         "before startup.\n\n"
         "Default: host.docker.internal:8000/v1",
@@ -409,7 +409,7 @@ def display_quick_guide(console: Console):
     )
     
     # Simplified privacy notice
-    privacy_notice = Text.assemble(
+    _privacy_notice = Text.assemble(
         ("CAI collects pseudonymized data to improve our research.\n"
          "Your privacy is protected in compliance with GDPR.\n"
          "Continue to start, or press Ctrl-C to exit.", "yellow"), "\n\n",

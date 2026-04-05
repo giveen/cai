@@ -362,7 +362,7 @@ class CostCommand(Command):
                 # Highlight today
                 if date_obj.date() == datetime.now().date():
                     date_str = f"[bold]{date_str} (Today)[/bold]"
-            except:
+            except Exception:
                 date_str = date
             
             table.add_row(
@@ -398,7 +398,7 @@ class CostCommand(Command):
                 if week_key not in weekly_costs:
                     weekly_costs[week_key] = 0
                 weekly_costs[week_key] += stats.get("total_cost", 0)
-            except:
+            except Exception:
                 continue
         
         # Show last 4 weeks
@@ -409,7 +409,7 @@ class CostCommand(Command):
                 week_date = datetime.strptime(week_start, "%Y-%m-%d")
                 week_label = f"Week of {week_date.strftime('%b %d')}"
                 console.print(f"  {week_label:<20} ${cost:.4f}")
-            except:
+            except Exception:
                 console.print(f"  {week_start:<20} ${cost:.4f}")
 
     def handle_sessions(self, args: Optional[List[str]] = None) -> bool:
@@ -462,7 +462,7 @@ class CostCommand(Command):
             try:
                 start_dt = datetime.fromisoformat(start_time)
                 start_str = start_dt.strftime("%Y-%m-%d %H:%M")
-            except:
+            except Exception:
                 start_str = "Unknown"
             
             # Calculate duration
@@ -484,7 +484,7 @@ class CostCommand(Command):
                         duration_str = f"{minutes}m {seconds}s"
                     else:
                         duration_str = f"{seconds}s"
-                except:
+                except Exception:
                     duration_str = "Unknown"
             else:
                 duration_str = "[yellow]Active[/yellow]"

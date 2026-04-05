@@ -1081,7 +1081,7 @@ class VirtualizationCommand(Command):
                     icon = "🔒"
                     
                 # Display name with category
-                category = info.get("category", "")
+                _category = info.get("category", "")
                 display_name = f"{icon} {image_name} [ID: {image_id}]" if image_id else f"{icon} {image_name}"
                 
                 # Highlight active image
@@ -1369,7 +1369,7 @@ class VirtualizationCommand(Command):
             True if the image was activated successfully, False otherwise
         """
         # Normalize image name for all comparisons
-        normalized_image_identifier = normalize_image_name(image_identifier)
+        _normalized_image_identifier = normalize_image_name(image_identifier)
         # Special case for returning to host system
         if image_identifier.lower() in ["host", "system", "none"]:
             if "CAI_ACTIVE_CONTAINER" in os.environ:

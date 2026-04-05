@@ -1217,9 +1217,9 @@ class ParallelCommand(Command):
         from cai.agents import get_available_agents
 
         # First, check if the target agent already exists in PARALLEL_CONFIGS
-        target_config = None
+        _target_config = None
         target_exists_in_configs = False
-        target_display_name = target_agent
+        _target_display_name = target_agent
         
         # Check if target matches any existing config by display name or ID
         available_agents = get_available_agents()
@@ -1233,9 +1233,9 @@ class ParallelCommand(Command):
                 if (display_name.lower() == target_agent.lower() or 
                     config.agent_name.lower() == target_agent.lower() or
                     (config.id and config.id.upper() == target_agent.upper())):
-                    target_config = config
+                    _target_config = config
                     target_exists_in_configs = True
-                    target_display_name = display_name
+                    _target_display_name = display_name
                     break
         
         # If not in configs, just store the merged history
@@ -1529,7 +1529,7 @@ class ParallelCommand(Command):
                 for config in PARALLEL_CONFIGS:
                     if config.id and config.id.upper() == target_id:
                         # Get the actual agent name with instance number
-                        agent_counts = {}
+                        _agent_counts = {}
                         instance_num = 0
                         
                         # Count how many instances of this agent type exist
@@ -1635,14 +1635,14 @@ class ParallelCommand(Command):
         
         # Find the config to update
         config_to_update = None
-        index_to_update = -1
+        _index_to_update = -1
         
         # Try by ID first
         if identifier.upper().startswith("P"):
             for idx, config in enumerate(PARALLEL_CONFIGS):
                 if config.id and config.id.upper() == identifier.upper():
                     config_to_update = config
-                    index_to_update = idx + 1
+                    _index_to_update = idx + 1
                     break
         else:
             # Try by index
@@ -1650,7 +1650,7 @@ class ParallelCommand(Command):
                 idx = int(identifier)
                 if 1 <= idx <= len(PARALLEL_CONFIGS):
                     config_to_update = PARALLEL_CONFIGS[idx - 1]
-                    index_to_update = idx
+                    _index_to_update = idx
             except ValueError:
                 pass
         
