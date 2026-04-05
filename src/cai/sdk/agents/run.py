@@ -516,6 +516,9 @@ class Runner:
             for done in asyncio.as_completed(guardrail_tasks):
                 result = await done
                 if result.output.tripwire_triggered:
+                    # Cancel all guardrail tasks if a tripwire is triggered.
+                    for t in guardrail_tasks:
+                        t.cancel()
                     _error_tracing.attach_error_to_span(
                         parent_span,
                         SpanError(
@@ -526,14 +529,20 @@ class Runner:
                             },
                         ),
                     )
-                queue.put_nowait(result)
-                guardrail_results.append(result)
+                    # Put the tripwire result on the queue and include it in results
+                    queue.put_nowait(result)
+                    guardrail_results.append(result)
+                    break
+                else:
+                    queue.put_nowait(result)
+                    guardrail_results.append(result)
         except Exception:
             for t in guardrail_tasks:
                 t.cancel()
             raise
 
         streamed_result.input_guardrail_results = guardrail_results
+        return guardrail_results
 
     @classmethod
     async def _run_streamed_impl(
@@ -787,7 +796,28 @@ class Runner:
 
         # 3. Now, we can process the turn as we do in the non-streaming case
         single_step_result = None
+        # Start a lightweight heartbeat while we wait for tool execution to complete.
+        # This periodically enqueues a RawResponsesStreamEvent so streaming clients
+        # remain active and can show progress while tools run.
+        heartbeat_task = None
         try:
+            heartbeat_interval = float(os.getenv("CAI_HEARTBEAT_INTERVAL", "5"))
+
+            async def _streaming_heartbeat():
+                jitter = random.random() * (heartbeat_interval * 0.2)
+                await asyncio.sleep(jitter)
+                while True:
+                    try:
+                        streamed_result._event_queue.put_nowait(
+                            RawResponsesStreamEvent(data={"type": "heartbeat", "ts": time.time()})
+                        )
+                    except Exception:
+                        pass
+                    await asyncio.sleep(heartbeat_interval)
+
+            if hasattr(streamed_result, "_event_queue") and streamed_result._event_queue is not None:
+                heartbeat_task = asyncio.create_task(_streaming_heartbeat())
+
             single_step_result = await cls._get_single_step_result_from_response(
                 agent=agent,
                 original_input=streamed_result.input,
@@ -811,6 +841,13 @@ class Runner:
             if single_step_result:
                 RunImpl.stream_step_result_to_queue(single_step_result, streamed_result._event_queue)
             raise e
+        finally:
+            if heartbeat_task:
+                heartbeat_task.cancel()
+                try:
+                    await heartbeat_task
+                except Exception:
+                    pass
 
     @classmethod
     async def _run_single_turn(
