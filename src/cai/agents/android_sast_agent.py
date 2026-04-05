@@ -9,7 +9,7 @@ It includes:
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.reconnaissance.generic_linux_command import generic_linux_command
 try:
-    from openai import OpenAI as AsyncOpenAI
+    from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 import os

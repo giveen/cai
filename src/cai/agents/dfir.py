@@ -13,7 +13,7 @@ and analyzing digital evidence. This agent specializes in:
 """
 import os
 try:
-    from openai import OpenAI as AsyncOpenAI
+    from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 

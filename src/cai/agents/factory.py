@@ -7,7 +7,7 @@ import os
 from typing import Callable, Dict
 
 try:
-    from openai import OpenAI as AsyncOpenAI
+    from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 

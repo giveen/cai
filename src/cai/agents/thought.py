@@ -8,7 +8,7 @@ support meta agent may better @cai.sdk.agents.meta.reasoner_support
 from cai.tools.misc.reasoning import think
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
 try:
-    from openai import OpenAI as AsyncOpenAI
+    from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 from cai.util import load_prompt_template, create_system_prompt_renderer

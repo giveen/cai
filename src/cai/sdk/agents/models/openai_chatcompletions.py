@@ -3815,15 +3815,21 @@ class OpenAIChatCompletionsModel(Model):
         too long, truncate all tool_call ids in the messages to 40 characters
         and retry once silently.
         """
-        # If no provider-specific routing is needed, use the injected OpenAI client
-        # directly. Pass raw_kwargs (containing NOT_GIVEN sentinels) so callers such
-        # as tests can observe the full parameter set; the OpenAI SDK itself ignores
-        # NOT_GIVEN values when serializing the HTTP request.
+        # Use the injected client directly only when it is NOT the real OpenAI endpoint.
+        # This covers two cases:
+        #   1. Tests: inject a DummyClient with base_url="http://fake" → use directly so
+        #      tests can capture kwargs without hitting the network.
+        #   2. Custom local endpoints (Ollama, LiteLLM proxy, etc.) with a non-OpenAI
+        #      base_url → also safe to call directly.
+        # When the client points at api.openai.com we let litellm handle routing so it
+        # can apply retries, parameter stripping, and provider-specific transforms.
+        _client_base = str(getattr(self._client, "base_url", ""))
         use_direct_client = (
             self._client is not None
             and "api_base" not in kwargs
             and "custom_llm_provider" not in kwargs
             and "api_key" not in kwargs
+            and "api.openai.com" not in _client_base
         )
         client_kwargs = raw_kwargs if (use_direct_client and raw_kwargs is not None) else kwargs
         try:

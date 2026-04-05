@@ -15,7 +15,7 @@ except Exception:
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 try:
-    from openai import OpenAI as AsyncOpenAI
+    from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 

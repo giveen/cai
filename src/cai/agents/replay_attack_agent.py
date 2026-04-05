@@ -20,7 +20,7 @@ Objectives:
 
 import os
 try:
-    from openai import OpenAI as AsyncOpenAI
+    from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
