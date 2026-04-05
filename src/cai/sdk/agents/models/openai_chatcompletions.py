@@ -682,16 +682,81 @@ class OpenAIChatCompletionsModel(Model):
                 )
                 await asyncio.sleep(retry_delay)
 
-    def _warn_empty_response(self, content: str | None, has_tool_calls: bool, has_refusal: bool) -> None:
-        """Log warning for empty or sentinel responses (e.g., <|endoftext|>)."""
+    def _warn_empty_response(
+        self,
+        content: str | None,
+        has_tool_calls: bool,
+        has_refusal: bool,
+        converted_items: list[Any] | None = None,
+    ) -> None:
+        """Log warning for empty or sentinel responses (e.g., <|endoftext|>).
+
+        This helper is defensive: it attempts to detect meaningful text in several
+        different content shapes (string, list of parts, converted output items)
+        before emitting a warning. `converted_items` may be passed by callers
+        to avoid re-parsing provider-specific message shapes.
+        """
         try:
             if has_tool_calls or has_refusal:
                 return
-            is_empty = not content or not str(content).strip()
-            is_sentinel = content and "<|endoftext|>" in str(content)
+
+            def _has_text_in_content(c: Any) -> bool:
+                try:
+                    if c is None:
+                        return False
+                    if isinstance(c, str):
+                        return bool(c.strip())
+                    if isinstance(c, list):
+                        for elem in c:
+                            if isinstance(elem, dict):
+                                txt = elem.get("text") or elem.get("content") or elem.get("refusal")
+                                if txt and str(txt).strip():
+                                    return True
+                            else:
+                                s = str(elem)
+                                if s.strip():
+                                    return True
+                        return False
+                    if isinstance(c, dict):
+                        # Try common keys
+                        txt = c.get("text") or c.get("content")
+                        if isinstance(txt, str) and txt.strip():
+                            return True
+                        return bool(str(c).strip())
+                    return bool(str(c).strip())
+                except Exception:
+                    return False
+
+            is_content_non_empty = _has_text_in_content(content)
+
+            # If the raw content looked empty, consult converted_items (if provided)
+            if not is_content_non_empty and converted_items:
+                for it in converted_items:
+                    try:
+                        # Treat function_call items as non-empty (they indicate a tool invocation)
+                        if getattr(it, "type", None) == "function_call":
+                            return
+                        # Check common text-like attributes
+                        txt = getattr(it, "text", None) or getattr(it, "content", None) or getattr(it, "refusal", None)
+                        if txt and str(txt).strip():
+                            is_content_non_empty = True
+                            break
+                    except Exception:
+                        continue
+
+            is_empty = not is_content_non_empty
+            is_sentinel = False
+            try:
+                if isinstance(content, str) and "<|endoftext|>" in content:
+                    is_sentinel = True
+            except Exception:
+                pass
+
             if is_empty or is_sentinel:
                 detail = "empty" if is_empty else f"sentinel({str(content)[:50]})"
-                logger.warning(f"Model completed without output ({detail}). May indicate model-agent compatibility issue.")
+                logger.warning(
+                    f"Model completed without output ({detail}). May indicate model-agent compatibility issue."
+                )
         except Exception:
             # Never raise from a diagnostic helper
             return
@@ -1388,6 +1453,7 @@ class OpenAIChatCompletionsModel(Model):
                     getattr(msg, "content", None),
                     bool(has_tool_calls),
                     bool(getattr(msg, "refusal", None)),
+                    converted_items=items,
                 )
             except Exception:
                 pass
