@@ -3933,6 +3933,70 @@ class OpenAIChatCompletionsModel(Model):
                     ret = await litellm.acompletion(**kwargs)
                     return ret
             else:
+                # Some providers (via litellm/OpenAI) may return a 500 when the
+                # model attempted a `function_call` but generated malformed JSON
+                # for the `arguments` field. Detect that case and retry once with
+                # tools/functions disabled so the model returns plain text instead
+                # of a function call. This avoids surfacing a hard exception when
+                # the model produces invalid JSON.
+                parse_error_signals = [
+                    "Failed to parse tool call arguments",
+                    "Failed to parse tool call arguments as JSON",
+                    "parse_error",
+                    "parse error",
+                ]
+                lower_msg = error_msg.lower()
+                should_retry_without_tools = any(sig.lower() in lower_msg for sig in parse_error_signals) and "tool" in lower_msg
+
+                if should_retry_without_tools:
+                    # Prepare a conservative copy of kwargs without any tools or
+                    # function schemas so the model will not attempt to emit a
+                    # structured function_call.
+                    kwargs_retry = dict(kwargs)
+                    kwargs_retry.pop("tools", None)
+                    kwargs_retry.pop("functions", None)
+                    # Also remove any response_format/store hints which could
+                    # confuse downstream providers.
+                    kwargs_retry.pop("response_format", None)
+                    kwargs_retry.pop("store", None)
+
+                    client_kwargs_retry = raw_kwargs if (use_direct_client and raw_kwargs is not None) else kwargs_retry
+
+                    try:
+                        if stream:
+                            if use_direct_client:
+                                stream_obj = await self._client.chat.completions.create(**client_kwargs_retry)
+                            else:
+                                stream_obj = await litellm.acompletion(**kwargs_retry)
+
+                            response = Response(
+                                id=FAKE_RESPONSES_ID,
+                                created_at=time.time(),
+                                model=self.model,
+                                object="response",
+                                output=[],
+                                tool_choice=(
+                                    "auto"
+                                    if tool_choice is None or tool_choice == NOT_GIVEN
+                                    else cast(Literal["auto", "required", "none"], tool_choice)
+                                ),
+                                top_p=model_settings.top_p,
+                                temperature=model_settings.temperature,
+                                tools=[],
+                                parallel_tool_calls=parallel_tool_calls or False,
+                            )
+                            return response, stream_obj
+                        else:
+                            if use_direct_client:
+                                ret = await self._client.chat.completions.create(**client_kwargs_retry)
+                            else:
+                                ret = await litellm.acompletion(**kwargs_retry)
+                            return ret
+                    except Exception:
+                        # If the retry fails, fall through and re-raise the
+                        # original exception for visibility.
+                        raise
+
                 raise
 
     async def _fetch_response_litellm_ollama(
