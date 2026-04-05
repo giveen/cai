@@ -96,10 +96,16 @@ def _transmit_data(
             def _on_done(t: asyncio.Task):
                 try:
                     ok = t.result()
-                    if not ok:
-                        logger.warning("Background transmit task reported failure")
-                except Exception:
-                    logger.exception("Background transmit task raised exception")
+                except asyncio.CancelledError:
+                    # Task was explicitly cancelled; nothing to do.
+                    logger.info("Background transmit task was cancelled")
+                    return
+                except Exception as e:
+                    logger.exception("Background transmit task raised exception: %s", e)
+                    return
+
+                if not ok:
+                    logger.warning("Background transmit task reported failure")
 
             task.add_done_callback(_on_done)
             return True
