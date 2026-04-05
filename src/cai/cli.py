@@ -1846,10 +1846,13 @@ def main():
             )
         )
 
-    # Check for command-line arguments to use as initial prompt
+    # Check for command-line arguments to use as initial prompt.
+    # --tui flag triggers the Textual TUI and is consumed here.
     initial_prompt = None
-    if len(sys.argv) > 1:
-        initial_prompt = sys.argv[1]
+    use_tui = "--tui" in sys.argv or os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false")
+    remaining_args = [a for a in sys.argv[1:] if a != "--tui"]
+    if remaining_args:
+        initial_prompt = remaining_args[0]
 
     # Get agent type from environment variables or use default
     agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
@@ -1875,6 +1878,18 @@ def main():
     # Ensure the agent and all its handoff agents use the current model
     current_model = os.getenv("CAI_MODEL", "alias1")
     update_agent_models_recursively(agent, current_model)
+
+    # Launch Textual TUI when requested, otherwise fall through to the REPL
+    if use_tui:
+        try:
+            from cai.tui import run_tui
+            run_tui(agent=agent, initial_prompt=initial_prompt)
+            return
+        except Exception as tui_err:
+            console = Console()
+            console.print(
+                f"[yellow]TUI failed to start ({tui_err}); falling back to REPL.[/yellow]"
+            )
 
     # Run the CLI with the selected agent and optional initial prompt
     run_cai_cli(agent, initial_prompt=initial_prompt)
