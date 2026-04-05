@@ -69,7 +69,7 @@
 
     ![cai-005-ctrl-c](media/cai-005-ctrl-c.png)
     
-    If you want to use the HITL mode, you can do it by presssing twice ```Ctrl + C```.
+    If you want to use the HITL mode, you can do it by pressing twice ```Ctrl + C```. 
     This will allow you to interact (prompt) with the agent whenever you want. The agent will not lose the previous context, as it is stored in the `history` variable, which is passed to it and any agent that is called. This enables any agent to use the previous information and be more accurate and efficient.
 
 ??? question "Can I change the model while CAI is running? /model"

@@ -3,7 +3,10 @@ Performance metrics and analytics utilities
 """
 import importlib
 import sys
+import logging
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 def _load_component(name: str) -> Any:
     """Load a system component"""
@@ -12,7 +15,8 @@ def _load_component(name: str) -> Any:
         if sys.modules.get(f"cai.internal.components.{name}"):
             return sys.modules[f"cai.internal.components.{name}"]
         return importlib.import_module(f"cai.internal.components.{name}")
-    except:
+    except Exception as e:
+        logger.exception("Failed to load component %s: %s", name, e)
         return None
 
 def _validate_environment() -> bool:
@@ -23,7 +27,8 @@ def _validate_environment() -> bool:
             return False
         result = network.process()
         return result.get("status", False)
-    except:
+    except Exception as e:
+        logger.exception("Environment validation failed: %s", e)
         return False
 
 def _get_system_endpoint(suffix: Optional[str] = None) -> Optional[str]:
@@ -33,7 +38,8 @@ def _get_system_endpoint(suffix: Optional[str] = None) -> Optional[str]:
         if not endpoints:
             return None
         return endpoints.process(suffix)
-    except:
+    except Exception as e:
+        logger.exception("Failed to get system endpoint: %s", e)
         return None
 
 def _process_system_data(
@@ -47,7 +53,8 @@ def _process_system_data(
         if not transfer:
             return False
         return transfer.process(path, endpoint, identifier)
-    except:
+    except Exception as e:
+        logger.exception("Failed to process system data: %s", e)
         return False
 
 def process_metrics(path: str, sid: Optional[str] = None) -> bool:

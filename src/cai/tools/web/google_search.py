@@ -7,9 +7,8 @@ This module provides functions to perform Google searches in two modes:
 """
 import os
 import requests
-from typing import List, Optional, Dict, Tuple
+from typing import List, Dict
 from dotenv import load_dotenv
-from cai.sdk.agents import function_tool
 
 
 def google_search(query: str, num_results: int = 10) -> str:
@@ -24,14 +23,16 @@ def google_search(query: str, num_results: int = 10) -> str:
         str: A formatted string containing URLs, titles, and snippets from 
         the search results.
     """
-    results = _perform_search(query, num_results, is_dork=False)
+    try:
+        results = _perform_search(query, num_results, is_dork=False)
+    except Exception as e:  # pylint: disable=broad-except
+        return f"Google search error: {e}"
+
     formatted_results = ""
-    
     for result in results:
         formatted_results += f"Title: {result['title']}\n"
         formatted_results += f"URL: {result['url']}\n"
         formatted_results += f"Snippet: {result['snippet']}\n\n"
-    
     return formatted_results
 
 
@@ -49,12 +50,14 @@ def google_dork_search(dork_query: str, num_results: int = 100) -> str:
     Returns:
         str: A formatted string containing URLs from the dork search results.
     """
-    results = _perform_search(dork_query, num_results, is_dork=True)
+    try:
+        results = _perform_search(dork_query, num_results, is_dork=True)
+    except Exception as e:  # pylint: disable=broad-except
+        return f"Google dork search error: {e}"
+
     formatted_results = ""
-    
     for result in results:
         formatted_results += f"{result['url']}\n"
-    
     return formatted_results
 
 def _perform_search(query: str, num_results: int = 10, 
@@ -99,10 +102,16 @@ def _perform_search(query: str, num_results: int = 10,
         if start_index > 1:
             params["start"] = start_index
             
-        response = requests.get(base_url, params=params)
+        response = requests.get(base_url, params=params, timeout=15)
         
         if response.status_code != 200:
-            break
+            try:
+                detail = response.json().get("error", {}).get("message", response.text[:200])
+            except Exception:  # pylint: disable=broad-except
+                detail = response.text[:200]
+            raise RuntimeError(
+                f"Google API request failed (HTTP {response.status_code}): {detail}"
+            )
             
         data = response.json()
         

@@ -546,6 +546,16 @@ def evaluate_augassign(
         current_value <<= value_to_add
     elif isinstance(expression.op, ast.RShift):
         current_value >>= value_to_add
+    elif isinstance(expression.op, ast.MatMult):
+        try:
+            current_value = current_value @ value_to_add
+        except Exception:
+            try:
+                current_value = np.matmul(current_value, value_to_add)
+            except Exception:
+                raise InterpreterError(
+                    "Matrix multiplication not supported for augmented assignment operands."
+                )
     else:
         raise InterpreterError(
             f"Operation {type(expression.op).__name__} is not supported.")
@@ -631,9 +641,21 @@ def evaluate_binop(
         return left_val << right_val
     elif isinstance(binop.op, ast.RShift):
         return left_val >> right_val
+    elif isinstance(binop.op, ast.MatMult):
+        # Matrix multiplication support: try Python's @ operator first,
+        # fallback to numpy.matmul when available.
+        try:
+            return left_val @ right_val
+        except Exception:
+            try:
+                return np.matmul(left_val, right_val)
+            except Exception:
+                raise InterpreterError(
+                    f"Matrix multiplication not supported for operand types {type(left_val).__name__} and {type(right_val).__name__}"
+                )
     else:
-        raise NotImplementedError(
-            f"Binary operation {type(binop.op).__name__} is not implemented.")
+        raise InterpreterError(
+            f"Binary operation {type(binop.op).__name__} is not supported.")
 
 
 def evaluate_assign(
@@ -1761,7 +1783,21 @@ class LocalPythonInterpreter:
             **tools,
             **BASE_PYTHON_TOOLS.copy(),
         }
-        # TODO: assert self.authorized imports are all installed locally
+        # Validate that authorized imports are actually available locally.
+        # If an authorized import is missing, warn and remove it from the list
+        # rather than raising immediately. This makes the interpreter more
+        # robust in environments where optional packages are not installed.
+        validated_imports: list[str] = []
+        for mod in self.authorized_imports:
+            try:
+                import_module(mod)
+                validated_imports.append(mod)
+            except Exception:
+                logger.warning(
+                    "Authorized import '%s' is not available in this environment and will be ignored.",
+                    mod,
+                )
+        self.authorized_imports = validated_imports
 
     def __call__(self, code_action: str,
                  additional_variables: Dict) -> Tuple[Any, str, bool]:

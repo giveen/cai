@@ -18,7 +18,6 @@ except ImportError as exc:
 from cai.repl.commands.base import COMMAND_ALIASES, COMMANDS, Command, register_command
 
 try:
-    from caiextensions.platform.base.platform_manager import PlatformManager
     HAS_PLATFORM_EXTENSIONS = True
 except ImportError:
     HAS_PLATFORM_EXTENSIONS = False

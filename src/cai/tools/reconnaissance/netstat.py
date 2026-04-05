@@ -14,5 +14,11 @@ def netstat(args: str = '', ctf=None) -> str:
     Returns:
         str: The output of running the netstat command
     """
-    command = f'netstat -tuln {args}'
-    return run_command(command, ctf=ctf)
+    import shlex
+    try:
+        args_tokens = shlex.split(args) if args else []
+    except Exception:
+        args_tokens = [args]
+
+    cmd = ["netstat", "-tuln"] + args_tokens
+    return run_command(cmd, ctf=ctf)

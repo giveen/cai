@@ -12,10 +12,7 @@ from rich.panel import Panel
 
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.models.openai_chatcompletions import get_current_active_model
-from cai.util import COST_TRACKER
 from cai.repl.commands.model import (
-    ModelCommand, 
-    get_predefined_model_categories,
     get_all_predefined_models
 )
 
@@ -443,7 +440,6 @@ class CompactCommand(Command):
         from cai.repl.commands.memory import MEMORY_COMMAND_INSTANCE
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
         from cai.sdk.agents.models.openai_chatcompletions import (
-            ACTIVE_MODEL_INSTANCES, 
             PERSISTENT_MESSAGE_HISTORIES,
             get_all_agent_histories
         )
@@ -493,7 +489,7 @@ class CompactCommand(Command):
                 current_agent = get_agent_by_name(agent_name.lower().replace(' ', '_'))
                 if current_agent:
                     AGENT_MANAGER.set_active_agent(current_agent, agent_name)
-            except:
+            except Exception:
                 # If we can't create the agent, continue anyway
                 # The history might still be accessible
                 pass
@@ -531,7 +527,7 @@ class CompactCommand(Command):
                 result = MEMORY_COMMAND_INSTANCE.handle_save([memory_name], preserve_history=False)
             
             if result:
-                console.print(f"\n[green]✓ Conversation compacted successfully![/green]")
+                console.print("\n[green]✓ Conversation compacted successfully![/green]")
                 console.print("[dim]The memory has been saved and applied to the agent[/dim]")
                 console.print("[dim]Use '/memory list' to see all saved memories[/dim]")
                 
@@ -567,7 +563,7 @@ class CompactCommand(Command):
                         console.print(f"[dim]Debug: Active agent model history length: {len(current_active_agent.model.message_history)}[/dim]")
                 
             else:
-                console.print(f"[red]Failed to compact conversation[/red]")
+                console.print("[red]Failed to compact conversation[/red]")
             
             return result
             

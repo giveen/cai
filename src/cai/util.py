@@ -20,7 +20,7 @@ from mako.template import Template  # pylint: disable=import-error
 from rich.box import ROUNDED  # pylint: disable=import-error
 from rich.console import Console, Group
 from rich.panel import Panel  # pylint: disable=import-error
-from rich.pretty import install as install_pretty  # pylint: disable=import-error # noqa: 501
+from rich.pretty import install as install_pretty  # pylint: disable=import-error  # noqa: E501
 from rich.syntax import Syntax  # Import Syntax for highlighting
 from rich.table import Table
 from rich.text import Text  # pylint: disable=import-error
@@ -69,6 +69,7 @@ _CLAUDE_THINKING_PANELS = {}
 # Global flag to track if cleanup is in progress
 _cleanup_in_progress = False
 _cleanup_lock = threading.Lock()
+_shutdown_requested = False
 
 
 def cleanup_all_streaming_resources():
@@ -159,7 +160,6 @@ def cleanup_agent_streaming_resources(agent_name):
             sessions_to_cleanup.append((session_id, session_info))
     
     # Also clean up any Live panels for this agent
-    global _LIVE_STREAMING_PANELS
     panels_to_cleanup = []
     for panel_id, panel_info in list(_LIVE_STREAMING_PANELS.items()):
         # Check if this is a static panel with matching agent
@@ -204,7 +204,33 @@ def signal_handler(signum, frame):
     # Clean up all streaming resources
     cleanup_all_streaming_resources()
 
-    # Re-raise KeyboardInterrupt to allow normal interrupt handling
+    # Attempt to stop asyncio event loop gracefully instead of raising
+    # KeyboardInterrupt inside arbitrary tasks. Raising KeyboardInterrupt
+    # inside callbacks can surface as unhandled task exceptions
+    # ('Task exception was never retrieved'). Prefer stopping the loop
+    # which allows tasks to unwind cleanly.
+    try:
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+                # Mark requested shutdown so other parts of the program can
+                # detect it if needed.
+                global _shutdown_requested
+                _shutdown_requested = True
+                return
+            except Exception:
+                # Fall through to raising below if we can't stop loop
+                pass
+    except Exception:
+        # If asyncio is not available or another error occurs, fall back
+        # to the default behavior of raising KeyboardInterrupt.
+        pass
+
+    # If we couldn't stop the asyncio loop, fall back to raising
+    # KeyboardInterrupt so the default interpreter behavior takes place.
     raise KeyboardInterrupt()
 
 
@@ -296,8 +322,6 @@ def get_active_time():
     Get the total active time (LLM processing, tool execution).
     Returns a formatted string like "1h 30m 45s" or "45s" or "5m 30s".
     """
-    global _active_time_total, _active_timer_start
-
     with _timing_lock:
         # Calculate total active time including current active period if running
         total_active_seconds = _active_time_total
@@ -322,8 +346,6 @@ def get_idle_time():
     Get the total idle time (waiting for user input).
     Returns a formatted string like "1h 30m 45s" or "45s" or "5m 30s".
     """
-    global _idle_time_total, _idle_timer_start
-
     with _timing_lock:
         # Calculate total idle time including current idle period if running
         total_idle_seconds = _idle_time_total
@@ -348,8 +370,6 @@ def get_active_time_seconds():
     Get the total active time in seconds for precise measurement.
     Returns a float representing the total number of seconds.
     """
-    global _active_time_total, _active_timer_start
-
     with _timing_lock:
         # Calculate total active time including current active period if running
         total_active_seconds = _active_time_total
@@ -365,8 +385,6 @@ def get_idle_time_seconds():
     Get the total idle time in seconds for precise measurement.
     Returns a float representing the total number of seconds.
     """
-    global _idle_time_total, _idle_timer_start
-
     with _timing_lock:
         # Calculate total idle time including current idle period if running
         total_idle_seconds = _idle_time_total
@@ -380,7 +398,8 @@ def get_idle_time_seconds():
 # Initialize idle timer at module load - system starts in idle state
 start_idle_timer()
 
-# Instead of direct import
+# Keep START_TIME import robust: importing `cai.cli` can fail during
+# test collection or when the CLI isn't initialized (avoid import-time side effects).
 try:
     from cai.cli import START_TIME
 except ImportError:
@@ -435,16 +454,16 @@ class CostTracker:
         # Check price limit before updating
         self.check_price_limit(new_cost)
 
-        old_total = self.session_total_cost
+        _old_total = self.session_total_cost
         self.session_total_cost += new_cost
         
         # Also update the global usage tracker when session cost changes
         # This ensures consistency between COST_TRACKER and GLOBAL_USAGE_TRACKER
         try:
-            from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
             # We don't have model/token details here, so just update the cost
             # The tokens should have been tracked separately
             # This is just a safety net to ensure costs are consistent
+            pass
         except ImportError:
             pass
 
@@ -566,7 +585,7 @@ class CostTracker:
             # Check if it's a network connectivity issue by testing a simple connection
             try:
                 import requests
-                test_response = requests.get("https://aliasrobotics.com/", timeout=1)
+                _test_response = requests.get("https://aliasrobotics.com/", timeout=1)
                 # The pricing URL failed
                 print(f"  WARNING: Error fetching model pricing: {str(e)}")
             except Exception:
@@ -782,6 +801,27 @@ def get_ollama_auth_headers():
     return {}
 
 
+def get_minimax_api_base():
+    """Get the MiniMax API base URL from environment variable or default to localhost:8080.
+
+    Supports both:
+    - MINIMAX_API_BASE: For local MiniMax instances (e.g., http://localhost:8080/v1)
+    - OPENAI_BASE_URL: If set to a MiniMax-compatible endpoint (contains 'minimax')
+    """
+    # First check MINIMAX_API_BASE for local MiniMax
+    minimax_base = os.environ.get("MINIMAX_API_BASE")
+    if minimax_base:
+        return minimax_base
+
+    # Then check OPENAI_BASE_URL for hosted MiniMax-like endpoints
+    openai_base = os.environ.get("OPENAI_BASE_URL")
+    if openai_base and "minimax" in openai_base:
+        return openai_base
+
+    # Default to local MiniMax
+    return "http://localhost:8080/v1"
+
+
 def load_prompt_template(template_path):
     """
     Load a prompt template from the package resources.
@@ -975,8 +1015,7 @@ def visualize_agent_graph(start_agent):
         all_tools = getattr(agent, "tools", [])
         
         # Import necessary modules for MCP checking
-        from cai.repl.commands.mcp import get_mcp_tools_for_agent, _GLOBAL_MCP_SERVERS
-        from cai.sdk.agents.tool import FunctionTool
+        from cai.repl.commands.mcp import get_mcp_tools_for_agent
         
         # Separate regular tools from MCP tools
         regular_tools = []
@@ -1092,7 +1131,7 @@ def fix_litellm_transcription_annotations():
         import litellm.litellm_core_utils.model_param_helper as model_param_helper
 
         # Override the problematic method to avoid the error
-        original_get_transcription_kwargs = (
+        _original_get_transcription_kwargs = (
             model_param_helper.ModelParamHelper._get_litellm_supported_transcription_kwargs
         )
 
@@ -1235,56 +1274,72 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     # Second pass - ensure correct sequence (tool messages must directly follow their assistant messages)
     # This fixes the error "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'"
     i = 0
+    # Safety iteration counter to prevent pathological infinite loops
+    max_iterations = max(10, len(processed_messages) * 3 + 10)
+    iteration_count = 0
+
     while i < len(processed_messages):
+        iteration_count += 1
+        if iteration_count > max_iterations:
+            # Give up reordering after too many attempts to avoid hangs
+            break
         msg = processed_messages[i]
 
         # Check if this is a tool message that might be out of sequence
         if msg.get("role") == "tool" and msg.get("tool_call_id"):
             tool_id = msg.get("tool_call_id")
 
-            # If this isn't the first message, check if the previous message is a matching assistant message
+            # If this isn't the first message, check if the previous non-tool message
+            # is the matching assistant. Walk backward past sibling tool messages
+            # to find the nearest candidate assistant instead of only checking
+            # the immediately preceding message. This prevents a ping-pong
+            # when multiple tool responses arrive out-of-order.
             if i > 0:
-                prev_msg = processed_messages[i - 1]
+                # Walk backward past any sibling tool messages
+                j = i - 1
+                while j >= 0 and processed_messages[j].get("role") == "tool":
+                    j -= 1
 
-                # Check if the previous message is an assistant message with matching tool_call_id
-                is_valid_sequence = (
-                    prev_msg.get("role") == "assistant"
-                    and prev_msg.get("tool_calls")
-                    and any(tc.get("id") == tool_id for tc in prev_msg.get("tool_calls", []))
-                )
+                prev_non_tool = processed_messages[j] if j >= 0 else None
+
+                # Consider sequence valid only if the nearest previous non-tool
+                # message is an assistant that actually owns this tool_call_id
+                is_valid_sequence = False
+                if prev_non_tool and prev_non_tool.get("role") == "assistant" and prev_non_tool.get("tool_calls"):
+                    if any(tc.get("id") == tool_id for tc in prev_non_tool.get("tool_calls", [])):
+                        is_valid_sequence = True
 
                 if not is_valid_sequence:
-                    # Find the assistant message with this tool_call_id
+                    # Find the nearest assistant before the current position that
+                    # owns this tool_call_id by scanning backward. Prefer the
+                    # closest assistant to avoid reordering sibling tool messages.
                     assistant_idx = None
-                    for j, assistant_msg in enumerate(processed_messages):
+                    for k in range(i - 1, -1, -1):
+                        assistant_msg = processed_messages[k]
                         if (
                             assistant_msg.get("role") == "assistant"
                             and assistant_msg.get("tool_calls")
-                            and any(
-                                tc.get("id") == tool_id
-                                for tc in assistant_msg.get("tool_calls", [])
-                            )
+                            and any(tc.get("id") == tool_id for tc in assistant_msg.get("tool_calls", []))
                         ):
-                            assistant_idx = j
+                            assistant_idx = k
                             break
 
                     # If we found a matching assistant message, move this tool message right after it
+                    # If we found a matching assistant message, move this tool message
+                    # right after it but after any existing tool responses to avoid
+                    # displacing sibling tool messages unnecessarily.
                     if assistant_idx is not None:
-                        # Remember to save the tool message
                         tool_msg = processed_messages.pop(i)
 
-                        # Insert right after the assistant message
-                        processed_messages.insert(assistant_idx + 1, tool_msg)
+                        # Insert after the assistant AND any existing tool results
+                        insert_at = assistant_idx + 1
+                        while insert_at < len(processed_messages) and processed_messages[insert_at].get("role") == "tool":
+                            insert_at += 1
 
-                        # Adjust i to account for the move
-                        if assistant_idx < i:
-                            # We moved the message backward, so i should point to the next message
-                            # which is now at position i (since we removed a message before it)
-                            continue
-                        else:
-                            # We moved the message forward, so i should now point to the message
-                            # that is now at position i
-                            continue
+                        processed_messages.insert(insert_at, tool_msg)
+                        # Adjust index to a safe value so we don't loop forever at same i
+                        i = min(i, insert_at)
+                        continue
                     else:
                         # No matching assistant message found - create one
                         assistant_msg = {
@@ -1414,17 +1469,39 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     return processed_messages
 
 
-def cli_print_tool_call(tool_name="", args="", output="", prefix="  "):
-    """Print a tool call with pretty formatting"""
+def cli_print_tool_call(tool_name="", args=None, output=None, prefix="  ", tool_args=None, tool_output=None, **kwargs):
+    """Print a tool call with pretty formatting.
+
+    This helper accepts both the legacy `args`/`output` parameters and the newer
+    `tool_args`/`tool_output` keywords used by templates. Extra kwargs are
+    ignored to remain forward-compatible with template changes.
+    """
     if not tool_name:
         return
 
+    # Prefer explicit args, fall back to tool_args for compatibility
+    display_args = args if args is not None else tool_args
+    display_output = output if output is not None else tool_output
+
+    # Normalize args for display
+    if isinstance(display_args, dict):
+        try:
+            import json
+
+            args_str = json.dumps(display_args)
+        except Exception:
+            args_str = str(display_args)
+    else:
+        args_str = str(display_args) if display_args is not None else ""
+
+    output_str = str(display_output) if display_output is not None else ""
+
     print(f"{prefix}{color('Tool Call:', fg='cyan')}")
     print(f"{prefix}{color('Name:', fg='cyan')} {tool_name}")
-    if args:
-        print(f"{prefix}{color('Args:', fg='cyan')} {args}")
-    if output:
-        print(f"{prefix}{color('Output:', fg='cyan')} {output}")
+    if args_str:
+        print(f"{prefix}{color('Args:', fg='cyan')} {args_str}")
+    if output_str:
+        print(f"{prefix}{color('Output:', fg='cyan')} {output_str}")
 
 
 def get_model_input_tokens(model):
@@ -1529,6 +1606,7 @@ def _create_token_display(
     model,
     interaction_cost=None,
     total_cost=None,
+    include_context: bool = True,
 ) -> Text:
     # Standardize model name
     model_name = get_model_name(model)
@@ -1575,29 +1653,30 @@ def _create_token_display(
     tokens_text.append("Session: ", style="bold magenta")
     tokens_text.append(f"${COST_TRACKER.session_total_cost:.4f}", style="bold magenta")
 
-    # Context usage
-    tokens_text.append(" | ", style="dim")
-    context_pct = interaction_input_tokens / get_model_input_tokens(model_name) * 100
-    tokens_text.append("Context: ", style="bold")
-    tokens_text.append(f"{context_pct:.1f}% ", style="bold")
+    # Context usage (optional)
+    if include_context:
+        tokens_text.append(" | ", style="dim")
+        context_pct = interaction_input_tokens / get_model_input_tokens(model_name) * 100
+        tokens_text.append("Context: ", style="bold")
+        tokens_text.append(f"{context_pct:.1f}% ", style="bold")
 
-    # Context indicator
-    if context_pct < 50:
-        indicator = "🟩"
-        color_local = "green"
-    elif context_pct < 80:
-        indicator = "🟨"
-        color_local = "yellow"
-    else:
-        indicator = "🟥"
-        color_local = "red"
+        # Context indicator
+        if context_pct < 50:
+            indicator = "🟩"
+            color_local = "green"
+        elif context_pct < 80:
+            indicator = "🟨"
+            color_local = "yellow"
+        else:
+            indicator = "🟥"
+            color_local = "red"
 
-    tokens_text.append(f"{indicator}", style=color_local)
+        tokens_text.append(f"{indicator}", style=color_local)
 
     return tokens_text
 
 
-def parse_message_content(message):
+def parse_message_content(message, extract_thinks=True):
     """
     Parse a message object to extract its textual content.
     Only processes messages that don't have tool calls.
@@ -1629,6 +1708,30 @@ def parse_message_content(message):
     # If we can't extract content, convert to string
     else:
         raw_content = str(message)
+
+    # Detect <think>...</think> tags and extract their content so the caller
+    # can render them separately (collapsed) to avoid cluttering the main chat.
+    # The extracted thoughts are stored on the function object as
+    # `parse_message_content._last_thoughts` (list of strings). When
+    # `extract_thinks` is False this extraction is skipped (useful when
+    # re-parsing thought text for rich rendering).
+    if extract_thinks:
+        try:
+            think_pattern = re.compile(r"<think>([\s\S]*?)</think>", re.IGNORECASE | re.DOTALL)
+            found = think_pattern.findall(raw_content)
+            if found:
+                parse_message_content._last_thoughts = [tb.strip() for tb in found if tb and tb.strip()]
+                # Remove the think blocks from the main content and add a short
+                # placeholder so users know a thought was present.
+                raw_content = think_pattern.sub(" [Thought Process hidden] ", raw_content)
+            else:
+                parse_message_content._last_thoughts = []
+        except Exception:
+            parse_message_content._last_thoughts = []
+    else:
+        # Ensure attribute exists even when extraction is skipped
+        if not hasattr(parse_message_content, "_last_thoughts"):
+            parse_message_content._last_thoughts = []
 
     # Check if streaming is enabled
     streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
@@ -1767,7 +1870,7 @@ def parse_message_tool_call(message, tool_output=None):
                         import json
 
                         args_dict = json.loads(tool_call.function.arguments)
-                    except:
+                    except Exception:
                         args_dict = {"raw_arguments": tool_call.function.arguments}
             elif isinstance(tool_call, dict):
                 if "function" in tool_call:
@@ -1778,7 +1881,7 @@ def parse_message_tool_call(message, tool_output=None):
                             import json
 
                             args_dict = json.loads(tool_call["function"]["arguments"])
-                        except:
+                        except Exception:
                             args_dict = {"raw_arguments": tool_call["function"]["arguments"]}
 
             # Create a panel for this tool call if name is not None
@@ -1872,14 +1975,14 @@ def cli_print_agent_messages(
 
     # Check if the message has tool calls
     has_tool_calls = False
-    has_execute_code = False
+    _has_execute_code = False
     if hasattr(message, "tool_calls") and message.tool_calls:
         has_tool_calls = True
         # Check if this is an execute_code tool call
         for tool_call in message.tool_calls:
             if hasattr(tool_call, "function") and hasattr(tool_call.function, "name"):
                 if tool_call.function.name == "execute_code":
-                    has_execute_code = True
+                    _has_execute_code = True
                     break
     elif isinstance(message, dict) and "tool_calls" in message and message["tool_calls"]:
         has_tool_calls = True
@@ -1887,7 +1990,7 @@ def cli_print_agent_messages(
         for tool_call in message["tool_calls"]:
             if isinstance(tool_call, dict) and "function" in tool_call:
                 if tool_call["function"].get("name") == "execute_code":
-                    has_execute_code = True
+                    _has_execute_code = True
                     break
 
     # Parse the message based on whether it has tool calls
@@ -1902,7 +2005,7 @@ def cli_print_agent_messages(
     if (isinstance(parsed_message, str) and 
         hasattr(start_tool_streaming, "_parallel_execute_code_agents") and
         any(parallel_agent in parsed_message for parallel_agent in start_tool_streaming._parallel_execute_code_agents if parallel_agent) and
-        token_info and token_info.get("agent_name") not in start_tool_streaming._parallel_execute_code_agents):
+        agent_name not in start_tool_streaming._parallel_execute_code_agents):
         # This is the main agent displaying output from a parallel agent that used execute_code
         # Check if it contains execute_code output patterns (code blocks)
         if "```" in parsed_message and any(pattern in parsed_message.lower() for pattern in ["package main", "def ", "function", "import ", "class "]):
@@ -2056,6 +2159,52 @@ def cli_print_agent_messages(
         for tool_panel in tool_panels:
             console.print(tool_panel)
 
+    # Render extracted <think> blocks as collapsed 'Thought Process' panels.
+    # These are collapsed by default; set CAI_SHOW_THOUGHTS=true to expand them.
+    thought_texts = getattr(parse_message_content, "_last_thoughts", []) or []
+    if thought_texts:
+        from rich.markdown import Markdown
+
+        show_thoughts = os.getenv("CAI_SHOW_THOUGHTS", "false").lower() in ("1", "true", "yes", "on")
+        for idx, thought in enumerate(thought_texts, start=1):
+            try:
+                # Tree with collapsed children mimics an HTML <details> element
+                tree = Tree("Thought Process", guide_style="dim", expanded=show_thoughts)
+
+                # Parse the thought content for rich rendering but avoid re-extracting nested <think>
+                parsed_thought = parse_message_content(thought, extract_thinks=False)
+
+                if isinstance(parsed_thought, Group):
+                    tree.add(parsed_thought)
+                else:
+                    # Prefer Markdown for formatting and preserve code fences
+                    if isinstance(parsed_thought, str) and re.search(r"```", thought):
+                        tree.add(Markdown(thought))
+                    else:
+                        tree.add(Text(parsed_thought, style="dim"))
+
+                console.print(
+                    Panel(
+                        tree,
+                        border_style="magenta",
+                        box=ROUNDED,
+                        padding=(0, 1),
+                        title="",
+                        title_align="left",
+                    )
+                )
+            except Exception:
+                console.print(
+                    Panel(
+                        Text("[Thought Process hidden — set CAI_SHOW_THOUGHTS=true to view]"),
+                        border_style="magenta",
+                        box=ROUNDED,
+                    )
+                )
+
+        # Clear stored thoughts after rendering to avoid leaking across calls
+        parse_message_content._last_thoughts = []
+
 
 def create_agent_streaming_context(agent_name, counter, model):
     """
@@ -2168,7 +2317,6 @@ def update_agent_streaming_content(context, text_delta, token_stats=None):
         return False
 
     # Check if cleanup is in progress to avoid updating a context being cleaned up
-    global _cleanup_in_progress
     if _cleanup_in_progress:
         return False
 
@@ -2314,7 +2462,6 @@ def finish_agent_streaming(context, final_stats=None):
         return False
 
     # Check if cleanup is in progress
-    global _cleanup_in_progress
     if _cleanup_in_progress:
         return False
 
@@ -2383,6 +2530,7 @@ def finish_agent_streaming(context, final_stats=None):
                     model_name,  # string model name!
                     interaction_cost,
                     total_cost,
+                    include_context=False,
                 )
 
                 # Crear una línea de tokens compacta para el streaming
@@ -2514,11 +2662,11 @@ def cli_print_tool_output(
         return
     
     # Check if we're in parallel mode
-    is_parallel_mode = False
+    _is_parallel_mode = False
     if token_info and isinstance(token_info, dict):
         agent_id = token_info.get("agent_id", "")
         if agent_id and agent_id.startswith("P") and agent_id[1:].isdigit():
-            is_parallel_mode = True
+            _is_parallel_mode = True
     
     # Special suppression for cat commands that create code files from execute_code
     # We don't want to show the cat command that creates the file
@@ -2531,7 +2679,6 @@ def cli_print_tool_output(
     # We want to show both code and output panels for all execute_code calls
 
     # Check if cleanup is in progress
-    global _cleanup_in_progress
     if _cleanup_in_progress:
         return
 
@@ -2718,7 +2865,6 @@ def cli_print_tool_output(
                 from rich.console import Console
                 from rich.live import Live
                 from rich.panel import Panel
-                from rich.text import Text
 
                 # Create the header, content, and panel
                 # Pass the original 'args' (dict or string) to _create_tool_panel_content for formatting
@@ -2795,7 +2941,7 @@ def cli_print_tool_output(
                             if execution_info and execution_info.get("is_final", False):
                                 # Debug output
                                 if os.getenv("CAI_DEBUG_STREAMING"):
-                                    print(f"\n[DEBUG] Final update check:")
+                                    print("\n[DEBUG] Final update check:")
                                     print(f"  output: {repr(output[:50])}...")
                                     print(f"  initial_output: {repr(panel_info.get('initial_output', '')[:50])}...")
                                     print(f"  outputs_equal: {output == panel_info.get('initial_output', '')}")
@@ -3014,9 +3160,8 @@ def cli_print_tool_output(
     # Standard tool output display for non-streaming or when rich is not available
     try:
         from rich.box import ROUNDED
-        from rich.console import Console, Group
+        from rich.console import Console
         from rich.panel import Panel
-        from rich.text import Text
 
         # Create a console for output
         console = Console(theme=theme)
@@ -3705,25 +3850,25 @@ def _print_simple_tool_output(tool_name, args, output, execution_info=None, toke
     args_str = _format_tool_args(args)
 
     # Get tool execution time if available
-    tool_time_str = ""
-    execution_status = ""
+    _tool_time_str = ""
+    _execution_status = ""
     if execution_info:
         time_taken = execution_info.get("time_taken", 0) or execution_info.get("tool_time", 0)
         status = execution_info.get("status", "completed")
 
         # Add execution info to the tool call display
         if time_taken:
-            tool_time_str = f"Tool: {format_time(time_taken)}"
-            execution_status = f" [{status} in {time_taken:.2f}s]"
+            _tool_time_str = f"Tool: {format_time(time_taken)}"
+            _execution_status = f" [{status} in {time_taken:.2f}s]"
         else:
-            execution_status = f" [{status}]"
+            _execution_status = f" [{status}]"
 
     # Create timing display string
     timing_info, _ = _get_timing_info(execution_info)
-    timing_display = f" [{' | '.join(timing_info)}]" if timing_info else ""
+    _timing_display = f" [{' | '.join(timing_info)}]" if timing_info else ""
 
     # Show tool name, args, execution status and timing display
-    tool_call = f"{tool_name}({args_str})"
+    _tool_call = f"{tool_name}({args_str})"
     # If we have token info, display it
     if token_info:
         model = token_info.get("model", "")
@@ -3926,7 +4071,7 @@ def start_tool_streaming(tool_name, args, call_id=None, token_info=None):
     
     # Build command key consistently with cli_print_tool_output
     if isinstance(args, dict):
-        cmd = args.get("command", "")
+        _cmd = args.get("command", "")
         cmd_args = args.get("args", "")
         effective_args = cmd_args
     else:
@@ -4150,12 +4295,12 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
         return
 
     # Check if we're in parallel mode by looking at agent_id
-    is_parallel = False
+    _is_parallel = False
     if token_info and isinstance(token_info, dict):
         agent_id = token_info.get("agent_id", "")
         # In parallel mode, agent_id has format P1, P2, etc.
         if agent_id and agent_id.startswith("P") and agent_id[1:].isdigit():
-            is_parallel = True
+            _is_parallel = True
 
     # Special handling for execute_code in streaming mode (both parallel and normal)
     if tool_name == "execute_code" and isinstance(args, dict) and "code" in args:
@@ -4171,7 +4316,7 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
         agent_name = token_info.get("agent_name", "Agent") if token_info else "Agent"
         
         # Extract code and language from args
-        code = args.get("code", "")
+        _code = args.get("code", "")
         language = args.get("language", "python")
         filename = args.get("filename", "code")
         
@@ -4184,7 +4329,7 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
             "kotlin": "kt", "c": "c", "cpp": "cpp", "c++": "cpp"
         }
         ext = extensions.get(language, "txt")
-        full_path = f"./{filename}.{ext}"
+        _full_path = f"./{filename}.{ext}"
         
         # Get workspace directory from args or execution_info
         workspace = ""
@@ -4202,19 +4347,19 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
         
         # Build full path based on environment
         if environment == "Container" and workspace:
-            full_path = f"{workspace}/{filename}.{ext}"
+            _full_path = f"{workspace}/{filename}.{ext}"
         elif workspace:
             # For local execution, workspace might be just the directory name
             # Get current working directory
             cwd = os.getcwd()
             if workspace == os.path.basename(cwd):
                 # workspace is just the directory name, use full path
-                full_path = os.path.join(cwd, f"{filename}.{ext}")
+                _full_path = os.path.join(cwd, f"{filename}.{ext}")
             else:
-                full_path = f"{workspace}/{filename}.{ext}"
+                _full_path = f"{workspace}/{filename}.{ext}"
         else:
             # Default to current directory
-            full_path = os.path.join(os.getcwd(), f"{filename}.{ext}")
+            _full_path = os.path.join(os.getcwd(), f"{filename}.{ext}")
         
         # In finish_tool_streaming, we only show the output panel
         # The code panel was already shown in start_tool_streaming
@@ -4392,14 +4537,39 @@ def setup_ctf():
     ctf.start_ctf()
 
     # Get the challenge from the environment variable or default to the
-    # first challenge
-    challenge_key = os.getenv("CTF_CHALLENGE")  # TODO:
+    # first challenge. Support numeric indices, direct keys, and comma-separated lists.
+    raw_challenge_spec = os.getenv("CTF_CHALLENGE", "").strip()
     challenges = list(ctf.get_challenges().keys())
-    challenge = (
-        challenge_key
-        if challenge_key in challenges
-        else (challenges[0] if len(challenges) > 0 else None)
-    )
+
+    challenge = None
+    if raw_challenge_spec:
+        # Allow a comma-separated list and pick the first valid entry
+        candidates = [c.strip() for c in raw_challenge_spec.split(",") if c.strip()]
+        for candidate in candidates:
+            # Try interpreting as an index into the challenges list
+            try:
+                idx = int(candidate)
+                if 0 <= idx < len(challenges):
+                    challenge = challenges[idx]
+                    break
+            except Exception:
+                # Not an integer index - treat as a challenge key
+                if candidate in challenges:
+                    challenge = candidate
+                    break
+
+        if challenge is None:
+            # If the requested challenge wasn't found, warn and fall back
+            print(
+                color(
+                    f"CTF_CHALLENGE '{raw_challenge_spec}' not found; defaulting to first available challenge",
+                    fg="yellow",
+                )
+            )
+
+    # Final fallback to the first available challenge (or None if none exist)
+    if challenge is None:
+        challenge = challenges[0] if len(challenges) > 0 else None
 
     # Use the user master template
     messages = Template(filename="src/cai/prompts/core/user_master_template.md").render(
@@ -4411,7 +4581,9 @@ def setup_ctf():
     print(
         color("Testing CTF: ", fg="black", bg="yellow") + color(ctf.name, fg="black", bg="yellow")
     )
-    if not challenge_key or challenge_key not in challenges:
+    # If no explicit challenge specified or the selected challenge isn't available,
+    # warn and attempt to fall back to the first available challenge.
+    if not raw_challenge_spec or (challenge is None or challenge not in challenges):
         print(
             color(
                 "No challenge provided or challenge not found. Attempting to use the first challenge.",

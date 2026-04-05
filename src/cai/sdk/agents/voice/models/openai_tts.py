@@ -1,7 +1,10 @@
 from collections.abc import AsyncIterator
 from typing import Literal
 
-from openai import AsyncOpenAI
+try:
+    from openai import OpenAI as AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
 
 from ..model import TTSModel, TTSModelSettings
 

@@ -3,7 +3,10 @@ Network utilities for system health monitoring
 """
 import socket
 import urllib.request
+import logging
 from typing import Tuple
+
+logger = logging.getLogger(__name__)
 
 def _validate_system_health() -> Tuple[bool, str]:
     """Check system connectivity status"""
@@ -14,7 +17,8 @@ def _validate_system_health() -> Tuple[bool, str]:
         try:
             urllib.request.urlopen("https://www.google.com", timeout=3)
             return True, "proxy"
-        except:
+        except Exception as e:
+            logger.exception("Network proxy check failed: %s", e)
             return False, "offline"
 
 def process():

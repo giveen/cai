@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests  # type: ignore
@@ -119,21 +120,45 @@ def _origin(url: str) -> str:
     return f"{p.scheme}://{p.netloc}"
 
 
-def _fetch_text(url: str, headers: Optional[Dict[str, str]], cookies: Optional[Dict[str, str]],
-                timeout: int, max_bytes: int) -> Tuple[str, Optional[str]]:
+def _fetch_text(
+    url: str,
+    headers: Optional[Dict[str, str]],
+    cookies: Optional[Dict[str, str]],
+    timeout: int,
+    max_bytes: int,
+    verify: bool = True,
+) -> Tuple[str, Optional[str]]:
+    """Fetch URL content, bounded by *max_bytes* and a total wall-clock deadline.
+
+    Returns (text, None) on success, or ('', error_string) on failure.
+    Truncation due to size/time limits is noted inline but is not an error.
+    """
+    deadline = time.monotonic() + timeout
     try:
-        resp = requests.get(url, headers=headers, cookies=cookies, timeout=timeout, verify=False, stream=True)
+        resp = requests.get(
+            url, headers=headers, cookies=cookies,
+            timeout=timeout, verify=verify, stream=True,
+        )
         resp.raise_for_status()
         data = bytearray()
+        truncated = False
         for chunk in resp.iter_content(chunk_size=16384):
             if not chunk:
                 continue
             data.extend(chunk)
             if len(data) >= max_bytes:
+                truncated = True
                 break
-        # Best-effort decode
+            if time.monotonic() > deadline:
+                truncated = True
+                break
         text = data.decode(errors="replace")
+        if truncated:
+            text += "\n[... output truncated by size/time limit ...]"
         return text, None
+    except requests.HTTPError as exc:  # pylint: disable=broad-except
+        status = exc.response.status_code if exc.response is not None else "?"
+        return "", f"{url} -> HTTP {status}: {exc}"
     except Exception as exc:  # pylint: disable=broad-except
         return "", f"{url} -> {exc}"
 
@@ -195,6 +220,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
     max_bytes_per_asset: int = 2_000_000,
     include_sourcemaps: bool = False,
     timeout: int = 10,
+    verify_ssl: bool = True,
 ) -> str:
     """
     Extract JS-derived attack surface hints from a web application.
@@ -209,6 +235,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
         max_bytes_per_asset: Cap bytes per asset (default 2,000,000)
         include_sourcemaps: Fetch and parse sourcemaps (default False)
         timeout: Request timeout (seconds)
+        verify_ssl: Whether to verify TLS certificates for HTTP requests (default True)
 
     Returns:
         JSON string with extracted surface hints and evidence.
@@ -229,7 +256,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
     # Fetch entry HTML pages
     for path in entry_paths:
         entry_url = path if path.startswith("http") else urljoin(base_url + "/", path.lstrip("/"))
-        html, err = _fetch_text(entry_url, headers, cookies, timeout, max_bytes_per_asset)
+        html, err = _fetch_text(entry_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
         if err:
             errors.append(err)
             continue
@@ -267,7 +294,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
 
     # Fetch JS assets and extract
     for asset_url in dedup_assets:
-        js, err = _fetch_text(asset_url, headers, cookies, timeout, max_bytes_per_asset)
+        js, err = _fetch_text(asset_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
         if err:
             errors.append(err)
             continue
@@ -288,7 +315,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
         if include_sourcemaps:
             for sm in _SOURCE_MAP_RE.findall(js):
                 sm_url = sm if sm.startswith("http") else urljoin(asset_url, sm)
-                sm_text, sm_err = _fetch_text(sm_url, headers, cookies, timeout, max_bytes_per_asset)
+                sm_text, sm_err = _fetch_text(sm_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
                 if sm_err:
                     errors.append(sm_err)
                     continue

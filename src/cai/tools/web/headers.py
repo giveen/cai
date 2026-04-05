@@ -19,7 +19,9 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
                             data: dict = None,
                             cookies: dict = None,
                             params: dict = None,
-                            ctf=None) -> str:  # pylint: disable=unused-argument  # noqa: E501
+                            ctf=None,
+                            timeout: int = 15,
+                            verify_ssl: bool = True) -> str:  # pylint: disable=unused-argument  # noqa: E501
     """
     Analyze HTTP requests and responses in detail for security testing.
 
@@ -31,6 +33,8 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
         cookies: Request cookies
         params: URL parameters
         ctf: CTF object to use for context
+        timeout: Request timeout in seconds (default 15)
+        verify_ssl: Whether to verify TLS certificates (default True)
     Returns:
         str: Detailed analysis of the HTTP interaction including:
             - Request details (method, headers, parameters)
@@ -84,7 +88,8 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
             data=data,
             cookies=cookies,
             params=params,
-            verify=False,
+            timeout=timeout,
+            verify=verify_ssl,
             allow_redirects=True
         )
 

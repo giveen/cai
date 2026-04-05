@@ -13,7 +13,6 @@ from typing import List, Optional, Dict, Any, Tuple
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.markdown import Markdown
 import rich.box
 
 from cai.repl.commands.base import Command, register_command
@@ -311,7 +310,7 @@ class DockerManager:
                 )
                 
                 if not verify_result.stdout.strip():
-                    return False, f"Container created but exited immediately. Check image compatibility."
+                    return False, "Container created but exited immediately. Check image compatibility."
                 
                 return True, (
                     f"Successfully started container with ID: {container_id}"
@@ -322,7 +321,7 @@ class DockerManager:
                 # If mount fails, try again without mounts
                 if "Mounts denied" in error_msg or try_mount:
                     console.print(
-                        f"[yellow]Mount failed. Trying without workspace mount...[/yellow]"
+                        "[yellow]Mount failed. Trying without workspace mount...[/yellow]"
                     )
                     # Remove any mount-related options
                     new_cmd = ["docker", "run", "-d"]
@@ -378,7 +377,7 @@ class DockerManager:
                         )
                         
                         if not verify_result.stdout.strip():
-                            return False, f"Container created but exited immediately despite retry."
+                            return False, "Container created but exited immediately despite retry."
                         
                         return True, (
                             f"Successfully started container with ID: {container_id} "
@@ -469,8 +468,8 @@ class DockerManager:
                                     if not verify_result.stdout.strip():
                                         # If it's not running, try to commit it to a new image and create a fixed container
                                         console.print(
-                                            f"[yellow]Container exits immediately. "
-                                            f"Attempting to create fixed version...[/yellow]"
+                                            "[yellow]Container exits immediately. "
+                                            "Attempting to create fixed version...[/yellow]"
                                         )
                                         
                                         # First, start the container in detached mode (it may exit immediately)
@@ -533,7 +532,7 @@ class DockerManager:
                                     if needs_entrypoint_override:
                                         # Remove the existing container and create a new one
                                         console.print(
-                                            f"[yellow]Cannot start container. Removing and creating a new one with fixed entrypoint.[/yellow]"
+                                            "[yellow]Cannot start container. Removing and creating a new one with fixed entrypoint.[/yellow]"
                                         )
                                         
                                         # Remove the old container
@@ -638,7 +637,7 @@ class DockerManager:
                 # Check if start was successful
                 if start_process.returncode != 0:
                     console.print(
-                        f"[yellow]Normal start failed. Trying with custom keep-alive...[/yellow]"
+                        "[yellow]Normal start failed. Trying with custom keep-alive...[/yellow]"
                     )
                     
                     # Some containers exit immediately. Force remove and recreate with keep-alive
@@ -699,8 +698,8 @@ class DockerManager:
                     
                     if not verify.stdout.strip():
                         console.print(
-                            f"[yellow]Container started but exited immediately. "
-                            f"Recreating with keep-alive...[/yellow]"
+                            "[yellow]Container started but exited immediately. "
+                            "Recreating with keep-alive...[/yellow]"
                         )
                         
                         # Get the image of the container
@@ -1082,7 +1081,7 @@ class VirtualizationCommand(Command):
                     icon = "🔒"
                     
                 # Display name with category
-                category = info.get("category", "")
+                _category = info.get("category", "")
                 display_name = f"{icon} {image_name} [ID: {image_id}]" if image_id else f"{icon} {image_name}"
                 
                 # Highlight active image
@@ -1370,7 +1369,7 @@ class VirtualizationCommand(Command):
             True if the image was activated successfully, False otherwise
         """
         # Normalize image name for all comparisons
-        normalized_image_identifier = normalize_image_name(image_identifier)
+        _normalized_image_identifier = normalize_image_name(image_identifier)
         # Special case for returning to host system
         if image_identifier.lower() in ["host", "system", "none"]:
             if "CAI_ACTIVE_CONTAINER" in os.environ:
@@ -1516,7 +1515,7 @@ class VirtualizationCommand(Command):
                                 f"[yellow]Normal start failed: {start_process.stderr.strip()}[/yellow]"
                             )
                             console.print(
-                                f"[yellow]Setting container as active anyway - commands will fall back to host.[/yellow]"
+                                "[yellow]Setting container as active anyway - commands will fall back to host.[/yellow]"
                             )
                             
                             # Set container as active even though it's not running
@@ -1661,7 +1660,7 @@ class VirtualizationCommand(Command):
         # Step 2: If we don't have a fixed image, create one
         if not fixed_image_exists:
             console.print(
-                f"[yellow]Creating a fixed Parrot Security image...[/yellow]"
+                "[yellow]Creating a fixed Parrot Security image...[/yellow]"
             )
             
             # 2.1: First pull the original image if needed
@@ -1768,7 +1767,7 @@ CMD ["-c", "tail -f /dev/null"]
         # Step 4: If container exists, try to start it if needed
         if existing_container_id:
             console.print(
-                f"[yellow]Found existing fixed container. Starting if needed...[/yellow]"
+                "[yellow]Found existing fixed container. Starting if needed...[/yellow]"
             )
             
             # Check if it's running
@@ -1796,7 +1795,7 @@ CMD ["-c", "tail -f /dev/null"]
                 if start_result.returncode != 0:
                     # Failed to start, remove and create a new one
                     console.print(
-                        f"[yellow]Failed to start container. Removing and creating a new one.[/yellow]"
+                        "[yellow]Failed to start container. Removing and creating a new one.[/yellow]"
                     )
                     
                     subprocess.run(
@@ -1815,7 +1814,7 @@ CMD ["-c", "tail -f /dev/null"]
         # Step 5: If no running container, create a new one
         if not existing_container_id:
             console.print(
-                f"[yellow]Creating new container from fixed image...[/yellow]"
+                "[yellow]Creating new container from fixed image...[/yellow]"
             )
             
             # Remove any existing container with the same name
@@ -1863,7 +1862,7 @@ CMD ["-c", "tail -f /dev/null"]
                 
                 if not check_result.stdout.strip():
                     console.print(
-                        f"[red]Container created but not running. Setting with fallback handling.[/red]"
+                        "[red]Container created but not running. Setting with fallback handling.[/red]"
                     )
                 else:
                     console.print(

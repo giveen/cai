@@ -6,7 +6,7 @@ and parallel patterns (for simultaneous execution).
 """
 import importlib
 import pkgutil
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Optional, Union
 
 __all__ = [
     'Pattern',
@@ -156,7 +156,7 @@ def _initialize_patterns():
         PATTERNS.update(discover_patterns())
 
 # Import Pattern and related items after defining functions to avoid circular imports
-from .pattern import (
+from .pattern import (  # noqa: E402
     Pattern, PatternType,
     parallel_pattern, swarm_pattern, hierarchical_pattern,
     sequential_pattern, conditional_pattern
@@ -245,16 +245,4 @@ def create_pattern(
     )
 
 # Import utility functions
-from .utils import is_swarm_pattern
-
-# Import core pattern classes
-from .pattern import Pattern, PatternType
-
-# Import factory functions for creating patterns
-from .pattern import (
-    parallel_pattern,
-    swarm_pattern,
-    hierarchical_pattern,
-    sequential_pattern,
-    conditional_pattern
-)
+from .utils import is_swarm_pattern  # noqa: E402

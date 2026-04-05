@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Union, overload
 from typing_extensions import TypeVar
 
 from .exceptions import UserError
-from .items import TResponseInputItem
+if TYPE_CHECKING:
+    from .items import TResponseInputItem
+else:
+    # Runtime fallback when openai is not installed
+    TResponseInputItem = Any
 from .run_context import RunContextWrapper, TContext
 from .util._types import MaybeAwaitable
 

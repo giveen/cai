@@ -18,10 +18,19 @@ Objectives:
 - Vulnerability impact understanding: Assessing how vulnerabilities affect network security
 """
 import os
-from openai import AsyncOpenAI
+try:
+    from dotenv import load_dotenv
+except Exception:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff  # pylint: disable=import-error
 from cai.util import load_prompt_template, create_system_prompt_renderer
-from dotenv import load_dotenv
 from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
     run_ssh_command_with_credentials
 )
@@ -38,9 +47,6 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
 )
 
 
-from cai.tools.reconnaissance.shodan import shodan_search
-from cai.tools.web.google_search import google_search
-from cai.tools.misc.reasoning import think  # pylint: disable=import-error
 from cai.agents.dfir import dfir_agent
 
 load_dotenv()
@@ -50,9 +56,9 @@ load_dotenv()
 ###
 # Import remote traffic capture tools
 
-from cai.tools.network.capture_traffic import (
+from cai.tools.network.capture_traffic import (  # noqa: E402
     capture_remote_traffic,
-    remote_capture_session
+    remote_capture_session_tool,
 )
 
 
@@ -64,21 +70,35 @@ tools = [
     run_ssh_command_with_credentials,
     execute_code,
     capture_remote_traffic,
-    remote_capture_session,
+    remote_capture_session_tool,
 ]
 
 if os.getenv('PERPLEXITY_API_KEY'):
     tools.append(make_web_search_with_explanation)
+
+_openai_client = None
+if AsyncOpenAI is not None:
+    try:
+        _openai_client = AsyncOpenAI()
+    except Exception:
+        _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=os.getenv('CAI_MODEL', "alias1"),
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
 
 network_security_analyzer_agent = Agent(
     name="Network Security Analyzer",
     instructions=create_system_prompt_renderer(network_security_analyzer_prompt),
     description="""Agent that specializes in network security analysis.
                    Expert in monitoring, capturing, and analyzing network communications for security threats.""",
-        model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "alias1"),
-        openai_client=AsyncOpenAI(),
-    ),
+        model=_model_inst,
     tools=tools,
     handoffs=[ # Handoff to DFIR agent for further analysis
         handoff(

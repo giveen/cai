@@ -38,6 +38,8 @@ def scripting_tool(
     import sys
     from io import StringIO
     import ast
+    import json
+    import traceback
 
     if not command or not isinstance(command, str):
         raise ValueError("Command must be a non-empty string")
@@ -61,19 +63,35 @@ def scripting_tool(
     if not script:
         raise ValueError("No valid Python code found in command")
 
+    _BLOCKED_MODULES = {'os', 'sys', 'subprocess', 'shutil'}
+
     try:
         tree = ast.parse(script)
         for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)
-                          ):  # Check for potentially dangerous operations
-                module = node.names[0].name.split('.')[0]
-                if module in ['os', 'sys', 'subprocess', 'shutil']:
+            if isinstance(node, ast.Import):
+                # Iterate all aliases: `import os, sys` has two names
+                for alias in node.names:
+                    module = alias.name.split('.')[0]
+                    if module in _BLOCKED_MODULES:
+                        raise SecurityError(
+                            f"Importing potentially dangerous module: {module}")
+            elif isinstance(node, ast.ImportFrom):
+                # `from os import path` — check the module being imported from
+                module = (node.module or "").split('.')[0]
+                if module in _BLOCKED_MODULES:
                     raise SecurityError(
                         f"Importing potentially dangerous module: {module}")
     except SyntaxError as e:
-        return f"Python syntax error: {str(e)}"
+        err = {
+            "error": "SyntaxError",
+            "message": str(e),
+            "lineno": getattr(e, 'lineno', None),
+            "offset": getattr(e, 'offset', None),
+            "text": getattr(e, 'text', None),
+        }
+        return json.dumps(err)
     except SecurityError as e:
-        return f"Security check failed: {str(e)}"
+        return json.dumps({"error": "SecurityError", "message": str(e)})
 
     # Capture stdout
     old_stdout = sys.stdout
@@ -103,27 +121,39 @@ def scripting_tool(
             'zip': zip
         }
 
-        # Parse the script to check for potentially dangerous operations
         try:
-            parsed = ast.parse(script)
-            # Add additional security checks here if needed
+            # Script is already parsed/validated above; compile directly
+            compiled_code = compile(script, '<string>', 'exec')
 
             # Execute in a restricted environment
             restricted_globals = {'__builtins__': safe_builtins}
-            restricted_globals.update(local_vars)
 
-            # Use compile and eval instead of exec for better control
-            compiled_code = compile(parsed, '<string>', 'exec')
-            # pylint: disable=eval-used
-            eval(compiled_code, restricted_globals)  # nosec B307
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            return f"Error executing script: {str(e)}"
+            # pylint: disable=exec-used
+            # Execute with local_vars as the locals mapping so user-provided
+            # args are available to the script but do not pollute globals.
+            exec(compiled_code, restricted_globals, local_vars)  # nosec B102
+        except Exception as e:  # capture runtime exceptions and give diagnostics
+            partial = redirected_output.getvalue()
+            tb = traceback.format_exc()
+            err = {
+                "error": e.__class__.__name__,
+                "message": str(e),
+                "traceback": tb,
+                "partial_output": partial,
+            }
+            return json.dumps(err)
 
         # Get the output
         output = redirected_output.getvalue()
         return output if output else "Code executed successfully (no output)"
     except Exception as e:  # pylint: disable=broad-exception-caught
-        return f"Error during execution: {str(e)}"
+        # Unexpected errors in the wrapping logic — return structured diagnostics
+        tb = traceback.format_exc()
+        return json.dumps({
+            "error": e.__class__.__name__,
+            "message": str(e),
+            "traceback": tb,
+        })
     finally:
         sys.stdout = old_stdout  # restore
 

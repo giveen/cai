@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import inspect
+import os
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
@@ -63,6 +64,8 @@ from .tracing import (
     trace,
 )
 from .util import _coro, _error_tracing
+import hashlib
+from collections import deque
 
 if TYPE_CHECKING:
     from .run import RunConfig
@@ -75,6 +78,11 @@ class QueueCompleteSentinel:
 QUEUE_COMPLETE_SENTINEL = QueueCompleteSentinel()
 
 _NOT_FINAL_OUTPUT = ToolsToFinalOutputResult(is_final_output=False, final_output=None)
+
+# Simple in-memory screenshot cache to avoid sending full base64 payloads every time.
+# Keys are sha256 hex digests of the base64 payload; values are the base64 string.
+SCREENSHOT_CACHE: dict[str, str] = {}
+_SCREENSHOT_ORDER = deque(maxlen=200)
 
 
 def truncate_output(output: Any, max_length: int = 10000) -> str:
@@ -943,17 +951,45 @@ class ComputerAction:
             ),
         )
 
-        # TODO: don't send a screenshot every single time, use references
-        image_url = f"data:image/png;base64,{output}"
+        # Use a small in-memory cache of screenshots to avoid embedding
+        # large base64 payloads on every tool call. By default we return a
+        # reference string like 'screenshot:<sha256>' in the `output` field
+        # and include the reference in `raw_item`. Set `CAI_EMBED_SCREENSHOT`
+        # to 'true' to preserve legacy behavior of returning a data URL.
+        embed = os.getenv("CAI_EMBED_SCREENSHOT", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
+        try:
+            hash_bytes = output.encode("utf-8") if isinstance(output, str) else bytes(output)
+        except Exception:
+            hash_bytes = str(output).encode("utf-8")
+
+        image_hash = hashlib.sha256(hash_bytes).hexdigest()
+        if image_hash not in SCREENSHOT_CACHE:
+            SCREENSHOT_CACHE[image_hash] = output
+            _SCREENSHOT_ORDER.append(image_hash)
+
+        image_ref = f"screenshot:{image_hash}"
+        image_url = f"data:image/png;base64,{output}" if embed else image_ref
+
+        raw_output = {
+            "type": "computer_screenshot",
+            "image_ref": image_ref,
+            "size": len(output) if isinstance(output, str) else None,
+        }
+        if embed:
+            raw_output["image_url"] = image_url
+
         return ToolCallOutputItem(
             agent=agent,
             output=image_url,
             raw_item=ComputerCallOutput(
                 call_id=action.tool_call.call_id,
-                output={
-                    "type": "computer_screenshot",
-                    "image_url": image_url,
-                },
+                output=raw_output,
                 type="computer_call_output",
             ),
         )

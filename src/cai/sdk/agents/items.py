@@ -5,22 +5,54 @@ import copy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, Union
 
-from openai.types.responses import (
-    Response,
-    ResponseComputerToolCall,
-    ResponseFileSearchToolCall,
-    ResponseFunctionToolCall,
-    ResponseFunctionWebSearch,
-    ResponseInputItemParam,
-    ResponseOutputItem,
-    ResponseOutputMessage,
-    ResponseOutputRefusal,
-    ResponseOutputText,
-    ResponseStreamEvent,
-)
-from openai.types.responses.response_input_item_param import ComputerCallOutput, FunctionCallOutput
-from openai.types.responses.response_reasoning_item import ResponseReasoningItem
-from pydantic import BaseModel
+if TYPE_CHECKING:
+    from openai.types.responses import (
+        Response,
+        ResponseComputerToolCall,
+        ResponseFileSearchToolCall,
+        ResponseFunctionToolCall,
+        ResponseFunctionWebSearch,
+        ResponseInputItemParam,
+        ResponseOutputItem,
+        ResponseOutputMessage,
+        ResponseOutputRefusal,
+        ResponseOutputText,
+        ResponseStreamEvent,
+    )
+    from openai.types.responses.response_input_item_param import ComputerCallOutput, FunctionCallOutput
+    from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+else:
+    # Fallback types when `openai` is not installed. These are only used at runtime
+    # for type-agnostic operations (e.g., agent discovery) and should not be relied on
+    # for full model behavior. Use TYPE_CHECKING imports for accurate typing.
+    Response = dict
+    ResponseComputerToolCall = dict
+    ResponseFileSearchToolCall = dict
+    ResponseFunctionToolCall = dict
+    ResponseFunctionWebSearch = dict
+    ResponseInputItemParam = dict
+    ResponseOutputItem = dict
+    ResponseOutputMessage = dict
+    ResponseOutputRefusal = dict
+    ResponseOutputText = dict
+    ResponseStreamEvent = dict
+    ComputerCallOutput = dict
+    FunctionCallOutput = dict
+    ResponseReasoningItem = dict
+try:
+    from pydantic import BaseModel
+except Exception:
+    # Minimal fallback for BaseModel when pydantic is not installed.
+    class BaseModel:  # pragma: no cover - fallback for environments without pydantic
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def model_dump(self, *args, **kwargs):
+            return {}
+
+        @classmethod
+        def model_json_schema(cls):
+            return {}
 from typing_extensions import TypeAlias
 
 from .exceptions import AgentsException, ModelBehaviorError
@@ -183,24 +215,61 @@ class ItemHelpers:
     @classmethod
     def extract_last_content(cls, message: TResponseOutputItem) -> str:
         """Extracts the last text content or refusal from a message."""
-        if not isinstance(message, ResponseOutputMessage):
+        # Support both dict-style messages and pydantic/BaseModel-style messages.
+        content = None
+        try:
+            if isinstance(message, dict):
+                content = message.get("content", [])
+            elif hasattr(message, "model_dump"):
+                data = message.model_dump(exclude_unset=True)  # type: ignore[attr-defined]
+                content = data.get("content", [])
+            else:
+                content = getattr(message, "content", [])
+        except Exception:
+            content = getattr(message, "content", [])
+
+        if not content:
             return ""
 
-        last_content = message.content[-1]
-        if isinstance(last_content, ResponseOutputText):
-            return last_content.text
-        elif isinstance(last_content, ResponseOutputRefusal):
-            return last_content.refusal
-        else:
-            raise ModelBehaviorError(f"Unexpected content type: {type(last_content)}")
+        last_content = content[-1]
+        # dict-style content
+        if isinstance(last_content, dict):
+            if "text" in last_content:
+                return last_content.get("text", "")
+            if "refusal" in last_content:
+                return last_content.get("refusal", "")
+
+        # object-style content (e.g., pydantic models)
+        if hasattr(last_content, "text"):
+            return getattr(last_content, "text")
+        if hasattr(last_content, "refusal"):
+            return getattr(last_content, "refusal")
+
+        raise ModelBehaviorError(f"Unexpected content type: {type(last_content)}")
 
     @classmethod
     def extract_last_text(cls, message: TResponseOutputItem) -> str | None:
         """Extracts the last text content from a message, if any. Ignores refusals."""
-        if isinstance(message, ResponseOutputMessage):
-            last_content = message.content[-1]
-            if isinstance(last_content, ResponseOutputText):
-                return last_content.text
+        try:
+            if isinstance(message, dict):
+                content = message.get("content", [])
+            elif hasattr(message, "model_dump"):
+                data = message.model_dump(exclude_unset=True)  # type: ignore[attr-defined]
+                content = data.get("content", [])
+            else:
+                content = getattr(message, "content", [])
+        except Exception:
+            content = getattr(message, "content", [])
+
+        if not content:
+            return None
+
+        last_content = content[-1]
+        if isinstance(last_content, dict):
+            return last_content.get("text")
+
+        if hasattr(last_content, "text"):
+            return getattr(last_content, "text")
 
         return None
 
@@ -231,9 +300,24 @@ class ItemHelpers:
     def text_message_output(cls, message: MessageOutputItem) -> str:
         """Extracts all the text content from a single message output item."""
         text = ""
-        for item in message.raw_item.content:
-            if isinstance(item, ResponseOutputText):
-                text += item.text
+        # message.raw_item may be a BaseModel-like object or a dict
+        try:
+            if isinstance(message.raw_item, dict):
+                parts = message.raw_item.get("content", [])
+            elif hasattr(message.raw_item, "model_dump"):
+                data = message.raw_item.model_dump(exclude_unset=True)  # type: ignore[attr-defined]
+                parts = data.get("content", [])
+            else:
+                parts = getattr(message.raw_item, "content", [])
+        except Exception:
+            parts = getattr(message.raw_item, "content", [])
+
+        for item in parts:
+            if isinstance(item, dict) and "text" in item:
+                text += item.get("text", "")
+            elif hasattr(item, "text"):
+                text += getattr(item, "text")
+
         return text
 
     @classmethod

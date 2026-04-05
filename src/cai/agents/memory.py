@@ -82,11 +82,23 @@ Environment Variables enabling the episodic memory store
 """
 
 import os
+try:
+   from dotenv import load_dotenv
+except Exception:
+   def load_dotenv(*args, **kwargs):
+      return False
+
+try:
+   from openai import AsyncOpenAI
+except Exception:
+   AsyncOpenAI = None
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.misc.rag import add_to_memory_semantic, add_to_memory_episodic
+from cai.rag.vector_db import get_previous_memory
 
 # Get model from environment or use default
-model = os.getenv('CAI_MODEL', "alias1")
+model_name = os.getenv('CAI_MODEL', "alias1")
 
 
 def get_previous_steps(query: str) -> str:
@@ -188,6 +200,23 @@ QUERY_PROMPT = """INSTRUCTIONS:
     while maintaining clarity and precision.
     """
 
+_openai_client = None
+if AsyncOpenAI is not None:
+   try:
+      _openai_client = AsyncOpenAI()
+   except Exception:
+      _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+   try:
+      _model_inst = OpenAIChatCompletionsModel(
+         model=model_name,
+         openai_client=_openai_client,
+      )
+   except Exception:
+      _model_inst = None
+
 semantic_builder = Agent(
     name="Semantic_Builder",
     instructions=ADD_MEMORY_PROMPT,
@@ -196,12 +225,26 @@ semantic_builder = Agent(
     tool_choice="required",
     temperature=0,
     tools=[add_to_memory_semantic],
-    model=OpenAIChatCompletionsModel(
-        model=model_name,
-        openai_client=AsyncOpenAI(),
-    )
+   model=_model_inst,
 )
 
+
+_openai_client = None
+if AsyncOpenAI is not None:
+   try:
+      _openai_client = AsyncOpenAI()
+   except Exception:
+      _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+   try:
+      _model_inst = OpenAIChatCompletionsModel(
+         model=model_name,
+         openai_client=_openai_client,
+      )
+   except Exception:
+      _model_inst = None
 
 episodic_builder = Agent(
     name="Episodic_Builder",
@@ -211,11 +254,25 @@ episodic_builder = Agent(
     tool_choice="required",
     temperature=0,
     tools=[add_to_memory_episodic],
-    model=OpenAIChatCompletionsModel(
-        model=model_name,
-        openai_client=AsyncOpenAI(),
-    )
+   model=_model_inst,
 )
+
+_openai_client = None
+if AsyncOpenAI is not None:
+   try:
+      _openai_client = AsyncOpenAI()
+   except Exception:
+      _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+   try:
+      _model_inst = OpenAIChatCompletionsModel(
+         model=model_name,
+         openai_client=_openai_client,
+      )
+   except Exception:
+      _model_inst = None
 
 query_agent = Agent(
     name="Query_Agent",
@@ -225,8 +282,5 @@ query_agent = Agent(
     instructions=QUERY_PROMPT,
     tool_choice="required",
     temperature=0,
-    model=OpenAIChatCompletionsModel(
-        model=model_name,
-        openai_client=AsyncOpenAI(),
-    )
+   model=_model_inst,
 )

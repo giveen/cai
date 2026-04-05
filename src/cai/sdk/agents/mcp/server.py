@@ -15,7 +15,6 @@ from typing_extensions import NotRequired, TypedDict
 
 from ..exceptions import UserError
 from ..logger import logger
-import warnings
 
 
 class MCPServer(abc.ABC):
@@ -334,35 +333,6 @@ class MCPServerSse(_MCPServerWithClientSession):
     def name(self) -> str:
         """A readable name for the server."""
         return self._name
-    
-    async def cleanup(self):
-        """Cleanup the SSE server with special handling for async generators."""
-        import warnings
-        import asyncio
-        
-        async with self._cleanup_lock:
-            try:
-                # For SSE servers, we need to handle cleanup more carefully
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=RuntimeWarning)
-                    warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
-                    warnings.filterwarnings("ignore", message=".*didn't stop after athrow.*")
-                    warnings.filterwarnings("ignore", message=".*cancel scope.*")
-                    
-                    # Try to close gracefully with a short timeout
-                    try:
-                        await asyncio.wait_for(self.exit_stack.aclose(), timeout=0.5)
-                    except asyncio.TimeoutError:
-                        # Expected for SSE connections
-                        pass
-                    except Exception:
-                        # Ignore other cleanup errors for SSE
-                        pass
-                    
-                    self.session = None
-            except Exception:
-                # Silently ignore all cleanup errors for SSE
-                pass
     
     async def cleanup(self):
         """Cleanup the SSE server with special handling for async generators."""

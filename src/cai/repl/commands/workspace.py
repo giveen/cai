@@ -7,16 +7,11 @@ environments.
 import os
 import json
 import subprocess
-import datetime
-import time
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional
 
 # Third-party imports
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.markdown import Markdown
-import rich.box
 
 # Local imports
 from cai.repl.commands.base import Command, register_command
@@ -409,11 +404,13 @@ class WorkspaceCommand(Command):
              def get_common_workspace_dir():
                  base = os.getenv("CAI_WORKSPACE_DIR", ".")
                  name = os.getenv("CAI_WORKSPACE")
-                 if name: return os.path.abspath(os.path.join(base, name))
+                 if name:
+                     return os.path.abspath(os.path.join(base, name))
                  return os.path.abspath(base)
              def get_common_container_path():
                  name = os.getenv("CAI_WORKSPACE")
-                 if name: return f"/workspace/workspaces/{name}"
+                 if name:
+                     return f"/workspace/workspaces/{name}"
                  return "/"
 
         host_workspace_dir = get_common_workspace_dir()
@@ -514,11 +511,13 @@ class WorkspaceCommand(Command):
              def get_common_workspace_dir():
                  base = os.getenv("CAI_WORKSPACE_DIR", ".")
                  name = os.getenv("CAI_WORKSPACE")
-                 if name: return os.path.abspath(os.path.join(base, name))
+                 if name:
+                     return os.path.abspath(os.path.join(base, name))
                  return os.path.abspath(base)
              def get_common_container_path():
                  name = os.getenv("CAI_WORKSPACE")
-                 if name: return f"/workspace/workspaces/{name}"
+                 if name:
+                     return f"/workspace/workspaces/{name}"
                  return "/"
 
         host_workspace_dir = get_common_workspace_dir()

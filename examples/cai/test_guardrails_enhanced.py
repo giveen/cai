@@ -4,12 +4,18 @@ Test script to demonstrate enhanced prompt injection guardrail protection
 """
 
 import asyncio
+import os
+import pytest
 from cai.agents.one_tool import one_tool_agent
 from cai.sdk.agents import Runner, InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
 from cai.agents.guardrails import detect_injection_patterns, sanitize_external_content
 from cai.tools.reconnaissance.generic_linux_command import generic_linux_command
 
 
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY not set; skipping real OpenAI integration test",
+)
 async def test_guardrails():
     """Test the enhanced prompt injection guardrails"""
     

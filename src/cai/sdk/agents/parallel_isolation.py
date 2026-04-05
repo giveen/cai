@@ -6,7 +6,7 @@ ensuring that each agent has its own completely independent copy of the conversa
 """
 
 import copy
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from threading import Lock
 
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER

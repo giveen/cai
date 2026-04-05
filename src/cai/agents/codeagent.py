@@ -31,9 +31,7 @@ from cai.agents.meta.local_python_executor import (
     fix_final_answer_code,
     truncate_content,
 )
-from cai.sdk.agents import Agent, Result, OpenAIChatCompletionsModel
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
+from cai.sdk.agents import Agent, Result
 
 class CodeAgentException(Exception):
     """Base exception class for CodeAgent-related errors."""
@@ -244,7 +242,7 @@ class CodeAgent(Agent):
             model=model,
             description=description,
             instructions=instructions,
-            tools=functions or [],
+            tools=tools or [],
             reasoning_effort=reasoning_effort,
             temperature=0.2,  # Lower temperature for predictable code
         )

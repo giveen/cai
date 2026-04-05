@@ -8,7 +8,10 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
 
-from openai import AsyncOpenAI
+try:
+    from openai import OpenAI as AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
 
 from ... import _debug
 from ...exceptions import AgentsException

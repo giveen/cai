@@ -11,12 +11,9 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from dataclasses import dataclass, field
 from collections import defaultdict
-import weakref
 import logging
 
-from .tool import FunctionTool
 from .items import ToolCallOutputItem, ItemHelpers
-from .agent import Agent
 from .run_context import RunContextWrapper
 
 logger = logging.getLogger(__name__)

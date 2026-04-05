@@ -635,11 +635,11 @@ List active MCP connections.
 /mcp list
 ```
 
-#### `add <agent_name> <server_name>`
+#### `add <server_name> <agent_name>`
 Add MCP tools to an agent.
 
 ```bash
-/mcp add redteam_agent burp
+/mcp add burp redteam_agent
 ```
 
 #### `remove <server_name>`
@@ -680,7 +680,7 @@ CAI> /mcp load http://localhost:9876/sse burp
 CAI> /mcp tools burp
 
 # Add to current agent
-CAI> /mcp add redteam_agent burp
+CAI> /mcp add burp redteam_agent
 
 # Check status
 CAI> /mcp status

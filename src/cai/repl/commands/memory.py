@@ -13,7 +13,6 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.tree import Tree
 
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.models.openai_chatcompletions import (
@@ -27,7 +26,10 @@ from cai.sdk.agents.models.openai_chatcompletions import (
 from cai.sdk.agents import Agent, Runner
 from cai.repl.commands.parallel import PARALLEL_CONFIGS
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-from openai import AsyncOpenAI
+try:
+    from openai import OpenAI as AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
 
 # Import get_compact_model function - imported later to avoid circular import
 def get_compact_model():
@@ -43,8 +45,11 @@ console = Console()
 MEMORY_DIR = Path.home() / ".cai" / "memory"
 MEMORY_INDEX_FILE = MEMORY_DIR / "index.json"
 
-# Global storage for compacted summaries (deprecated - use file storage)
-# Now supports multiple memories per agent
+# Legacy in-memory storage for compacted summaries.
+# This in-memory dict is retained for backward compatibility with
+# existing scripts and tests. Prefer persistent file-based storage
+# located under `MEMORY_DIR` for production usage.
+# Supports multiple memories per agent.
 COMPACTED_SUMMARIES: Dict[str, List[str]] = {}
 
 # Global storage for memory ID mappings per agent
@@ -291,7 +296,7 @@ class MemoryCommand(Command):
                         if line.startswith("Agent: "):
                             agent_name = line[7:]
                             break
-                except:
+                except Exception:
                     pass
                 
                 size = memory_file.stat().st_size
@@ -481,7 +486,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 border_style="green"
             ))
         else:
-            console.print(f"[red]✗ Failed to save memory[/red]")
+            console.print("[red]✗ Failed to save memory[/red]")
             
         return True
     
@@ -561,7 +566,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         summary = memory_content.strip()
         
         if not summary:
-            console.print(f"[red]Error: Memory file is empty[/red]")
+            console.print("[red]Error: Memory file is empty[/red]")
             return False
         
         # Get memory ID from the path or identifier
@@ -622,7 +627,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             if len(target_agents) > 1:
                 console.print(f"\n[bold green]Successfully applied memory to {success_count}/{len(target_agents)} agents[/bold green]")
         else:
-            console.print(f"[red]Failed to apply memory to any agents[/red]")
+            console.print("[red]Failed to apply memory to any agents[/red]")
         
         return True
     
@@ -766,7 +771,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                         try:
                             msg_count = int(line.split("Original messages: ")[1].split()[0])
                             total_messages += msg_count
-                        except:
+                        except Exception:
                             pass
                     elif line.strip() == "## Summary":
                         in_summary = True
@@ -1081,7 +1086,8 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             
             # Ask if user wants to clear history
             clear = console.input("\nClear agent history after compaction? (y/N): ")
-            if clear.lower() == 'y':
+            preserve_history = clear.lower() != 'y'
+            if not preserve_history:
                 self._clear_agent_history(agent_name)
                 console.print(f"[green]✓ Cleared history for {agent_name}[/green]")
             
@@ -1409,7 +1415,6 @@ This session is being continued from a previous conversation that ran out of con
             # Get the current agent instance and its history
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
             from cai.agents import get_agent_by_name, get_available_agents
-            import os
             
             # ALWAYS skip reload when in parallel mode
             # Parallel agents are already configured and reloading causes duplicate registrations
@@ -1484,7 +1489,7 @@ This session is being continued from a previous conversation that ran out of con
                     import cai.cli
                     if hasattr(cai.cli, 'agent'):
                         cai.cli.agent = new_agent
-                except:
+                except Exception:
                     pass
             
             console.print(f"[green]✓ Reloaded agent '{agent_name}' with memory applied[/green]")

@@ -24,23 +24,28 @@ def strings_command(file_path: str, ctf=None) -> str:
 #     Returns:
         str: The output of running the strings command
     """
-    command = f'strings {file_path}'
-    return run_command(command, ctf=ctf)
+    cmd = ["strings"]
+    if file_path:
+        cmd.append(file_path)
+    return run_command(cmd, ctf=ctf)
 
 @function_tool
-def decode64(input_data: str, ctf=None) -> str:
+def decode64(input_data: str, ctf=None) -> str:  # pylint: disable=unused-argument
     """
     Decode a base64-encoded string.
 
     Args:
-        input_data: The base64-encoded string to decode
-        args: Additional arguments (not used in this function)
+        input_data: The base64-encoded string to decode (not a file path).
 
     Returns:
-        str: The decoded string
+        str: The decoded string, or an error message.
     """
-    command = f"base64 --decode {input_data}"
-    return run_command(command, ctf=ctf)
+    import base64 as _base64
+    try:
+        decoded = _base64.b64decode(input_data.strip()).decode('utf-8', errors='replace')
+        return decoded
+    except Exception as e:  # pylint: disable=broad-except
+        return f"Error decoding base64: {str(e)}"
 
 @function_tool
 def decode_hex_bytes(input_data: str) -> str:

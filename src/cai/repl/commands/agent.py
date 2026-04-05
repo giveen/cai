@@ -345,7 +345,6 @@ class AgentCommand(Command):
                 # Handle parallel patterns
                 if pattern_type_str == "parallel":
                     # This is a parallel pattern, load it into parallel configs
-                    from cai.agents.patterns import get_pattern
                     from cai.repl.commands.parallel import PARALLEL_CONFIGS, PARALLEL_AGENT_INSTANCES
                     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
                     
@@ -501,10 +500,10 @@ class AgentCommand(Command):
                             agent_name = getattr(entry_agent, "name", agent_key)
                             agent = entry_agent
                         else:
-                            console.print(f"[red]Error: Could not find entry agent for swarm pattern[/red]")
+                            console.print("[red]Error: Could not find entry agent for swarm pattern[/red]")
                             return False
                     else:
-                        console.print(f"[red]Error: Swarm pattern has no entry agent defined[/red]")
+                        console.print("[red]Error: Swarm pattern has no entry agent defined[/red]")
                         return False
                         
                 else:
@@ -538,7 +537,7 @@ class AgentCommand(Command):
                     return False
         else:
             # This shouldn't happen, but let's be safe
-            console.print(f"[red]Error: Could not determine agent key[/red]")
+            console.print("[red]Error: Could not determine agent key[/red]")
             return False
         
         # Check if this was a parallel pattern - if so, we're done
@@ -832,7 +831,7 @@ class AgentCommand(Command):
             # Build parallel content
             parallel_content = []
             parallel_content.append(f"[bold cyan]Active Pattern:[/bold cyan] {pattern_name}")
-            parallel_content.append(f"[bold]Mode:[/bold] Parallel Execution")
+            parallel_content.append("[bold]Mode:[/bold] Parallel Execution")
             parallel_content.append(f"[bold]Agent Count:[/bold] {len(PARALLEL_CONFIGS)}")
             parallel_content.append("")
             parallel_content.append("[bold]Configured Agents:[/bold]")

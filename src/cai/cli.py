@@ -57,7 +57,7 @@ Environment Variables
             executions (default: "5")
         CAI_STREAM: Enable/disable streaming output in rich panel
             (default: "false")
-        CAI_TELEMETRY: Enable/disable telemetry (default: "true")
+        CAI_TELEMETRY: Enable/disable telemetry (default: "false")
         CAI_PARALLEL: Number of parallel agent instances to run
             (default: "1"). When set to values greater than 1,
             executes multiple instances of the same agent in
@@ -121,8 +121,8 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 # Configure Python warnings BEFORE any other imports
-import warnings
-import sys
+import warnings  # noqa: E402
+import sys  # noqa: E402
 
 # Custom warning handler to suppress specific warnings
 def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
@@ -141,10 +141,10 @@ if os.getenv("CAI_DEBUG", "1") != "2":
     # Also set environment variable to prevent warnings from subprocesses
     os.environ["PYTHONWARNINGS"] = "ignore"
 
-import asyncio
-import logging
-import shlex
-import time
+import asyncio  # noqa: E402
+import logging  # noqa: E402
+import shlex  # noqa: E402
+import time  # noqa: E402
 
 # Configure comprehensive error filtering
 class ComprehensiveErrorFilter(logging.Filter):
@@ -253,7 +253,6 @@ warnings.filterwarnings("ignore", message=".*connector:.*")
 warnings.filterwarnings("ignore", message=".*connections:.*")
 
 # Also configure Python's warning system to be less verbose
-import sys
 if not sys.warnoptions:
     warnings.simplefilter("ignore", RuntimeWarning)
     warnings.simplefilter("ignore", ResourceWarning)  # Also ignore ResourceWarnings
@@ -262,7 +261,6 @@ if not sys.warnoptions:
 def suppress_aiohttp_warnings():
     """Suppress aiohttp specific warnings about unclosed sessions."""
     try:
-        import aiohttp
         # Suppress aiohttp warnings about unclosed sessions
         aiohttp_logger = logging.getLogger("aiohttp")
         aiohttp_logger.setLevel(logging.ERROR)  # Only show errors, not warnings
@@ -283,45 +281,43 @@ def suppress_aiohttp_warnings():
 suppress_aiohttp_warnings()
 
 # OpenAI imports
-from openai import AsyncOpenAI
-from rich.console import Console
+from rich.console import Console  # noqa: E402
 
-from cai import is_pentestperf_available
+from cai import is_pentestperf_available  # noqa: E402
 
 # CAI agents and metrics imports
-from cai.agents import get_agent_by_name
-from cai.internal.components.metrics import process_metrics
+from cai.agents import get_agent_by_name  # noqa: E402
+from cai.internal.components.metrics import process_metrics  # noqa: E402
 
 # CAI REPL imports
-from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
+from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command  # noqa: E402
 
 # Add import for parallel configs at the top of the file
-from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig, PARALLEL_AGENT_INSTANCES
+from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig, PARALLEL_AGENT_INSTANCES  # noqa: E402
 
 # Global storage for shared message histories (keyed by a unique identifier)
 UNIFIED_MESSAGE_HISTORIES = {}
-from cai.repl.ui.banner import display_banner, display_quick_guide
-from cai.repl.ui.keybindings import create_key_bindings
-from cai.repl.ui.logging import setup_session_logging
-from cai.repl.ui.prompt import get_user_input
-from cai.repl.ui.toolbar import get_toolbar_with_refresh
+from cai.repl.ui.banner import display_banner, display_quick_guide  # noqa: E402
+from cai.repl.ui.keybindings import create_key_bindings  # noqa: E402
+from cai.repl.ui.logging import setup_session_logging  # noqa: E402
+from cai.repl.ui.prompt import get_user_input  # noqa: E402
+from cai.repl.ui.toolbar import get_toolbar_with_refresh  # noqa: E402
 
 # CAI SDK imports
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, Runner, set_tracing_disabled
-from cai.sdk.agents.items import ToolCallOutputItem
-from cai.sdk.agents.exceptions import OutputGuardrailTripwireTriggered, InputGuardrailTripwireTriggered
-from cai.sdk.agents.models.openai_chatcompletions import (
-    get_agent_message_history,
-    get_all_agent_histories,
+from cai.sdk.agents import Runner, set_tracing_disabled  # noqa: E402
+from cai.sdk.agents.items import ToolCallOutputItem  # noqa: E402
+from cai.sdk.agents.exceptions import OutputGuardrailTripwireTriggered, InputGuardrailTripwireTriggered  # noqa: E402
+from cai.sdk.agents.models.openai_chatcompletions import (  # noqa: E402
     ContextCompactedError,
 )
 # Import handled where needed to avoid circular imports
-from cai.sdk.agents.run_to_jsonl import get_session_recorder
-from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
-from cai.sdk.agents.stream_events import RunItemStreamEvent
+from cai.sdk.agents.run_to_jsonl import get_session_recorder  # noqa: E402
+from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER  # noqa: E402
+from cai.sdk.agents.stream_events import RunItemStreamEvent  # noqa: E402
+from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION  # noqa: E402
 
 # CAI utility imports
-from cai.util import (
+from cai.util import (  # noqa: E402
     color,
     fix_litellm_transcription_annotations,
     setup_ctf,
@@ -351,8 +347,6 @@ if is_pentestperf_available() and os.getenv("CTF_NAME", None):
 # Global variables for timing tracking
 global START_TIME
 START_TIME = time.time()
-
-set_tracing_disabled(True)
 
 
 def update_agent_models_recursively(agent, new_model, visited=None):
@@ -438,7 +432,7 @@ def run_cai_cli(
     Returns:
         None
     """
-    ACTIVE_TIME = 0  # TODO: review this variable
+    # Active/idle timing is tracked via cai.util's start/stop timer helpers
 
     agent = starting_agent
     turn_count = 0
@@ -446,6 +440,13 @@ def run_cai_cli(
     # Holds a user message to replay on the next iteration without prompting
     # the user — set by auto-compact so the agent continues its current task.
     _post_compact_input: str | None = None
+    # Last raw user input captured so auto-compact replay and ContextCompactedError
+    # handlers can reference it reliably even in parallel mode.
+    _last_user_input: str = ""
+    # When a user interrupts execution (KeyboardInterrupt), set this flag so
+    # the subsequent loop iteration will not auto-compact immediately
+    # (avoids losing data when a user pauses/resumes the session).
+    _skip_auto_compact_after_interrupt = False
     console = Console()
     last_model = os.getenv("CAI_MODEL", "alias1")
     last_agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
@@ -736,6 +737,13 @@ def run_cai_cli(
             # Print newline to ensure clean prompt display after interrupt
             print()
 
+            # Mark that the user interrupted execution so we skip the next
+            # automatic compaction cycle to avoid losing data.
+            _skip_auto_compact_after_interrupt = True
+            # Mark that the user interrupted execution so we skip the next
+            # automatic compaction cycle to avoid losing data.
+            _skip_auto_compact_after_interrupt = True
+
             def format_time(seconds):
                 mins, secs = divmod(int(seconds), 60)
                 hours, mins = divmod(mins, 60)
@@ -941,7 +949,8 @@ def run_cai_cli(
 
                 # Upload logs if telemetry is enabled by checking the
                 # env. variable CAI_TELEMETRY and there's internet connectivity
-                telemetry_enabled = os.getenv("CAI_TELEMETRY", "true").lower() != "false"
+                # Default is disabled for privacy; set CAI_TELEMETRY=true to opt in.
+                telemetry_enabled = os.getenv("CAI_TELEMETRY", "false").lower() != "false"
                 if (
                     telemetry_enabled
                     and hasattr(session_logger, "session_id")
@@ -1000,14 +1009,14 @@ def run_cai_cli(
                 # Use parallel configurations instead of normal processing
                 
                 # Show which agents have custom prompts
-                agents_with_prompts = [(idx, config) for idx, config in enumerate(PARALLEL_CONFIGS, 1) if config.prompt]
+                _agents_with_prompts = [(idx, config) for idx, config in enumerate(PARALLEL_CONFIGS, 1) if config.prompt]
                 
                 # First ensure ALL parallel configs have agent instances (not just selected ones)
                 # This prevents agents from disappearing from history when not selected
                 from cai.agents import get_available_agents
                 
                 # Setup parallel isolation for these agents
-                from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
+                # (PARALLEL_ISOLATION already imported at module level)
                 
                 # Get agent IDs
                 agent_ids = [config.id or f"P{idx}" for idx, config in enumerate(PARALLEL_CONFIGS, 1)]
@@ -1166,7 +1175,7 @@ def run_cai_cli(
                         
                         # Clean up any streaming resources created by this agent's tools
                         try:
-                            from cai.util import finish_tool_streaming, cli_print_tool_output, _LIVE_STREAMING_PANELS
+                            from cai.util import finish_tool_streaming, cli_print_tool_output
                             
                             # In parallel mode, we need to update the final status of panels
                             if hasattr(cli_print_tool_output, "_streaming_sessions"):
@@ -1411,7 +1420,7 @@ def run_cai_cli(
             # Process the conversation with the agent - with parallel execution if enabled
             if parallel_count > 1:
                 # Parallel execution mode (always non-streaming)
-                async def run_agent_instance(instance_number, conversation_context):
+                async def _run_simple_parallel_agent(instance_number, conversation_context):
                     """Run a single agent instance with its own complete context"""
                     try:
                         # Create a fresh agent instance with unique name to ensure complete isolation
@@ -1471,7 +1480,7 @@ def run_cai_cli(
                     """Process multiple parallel agent executions"""
                     # Create tasks for each instance
                     tasks = [
-                        run_agent_instance(i, conversation_input) for i in range(parallel_count)
+                        _run_simple_parallel_agent(i, conversation_input) for i in range(parallel_count)
                     ]
 
                     # Wait for all to complete, no matter if some fail
@@ -1548,6 +1557,31 @@ def run_cai_cli(
                                             agent.model.add_to_message_history(tool_msg)
 
                             return result
+                        except OutputGuardrailTripwireTriggered:
+                            # Handle guardrail exception specifically - MUST come before broad Exception handler
+                            # Clean up streaming display before showing error
+                            try:
+                                from cai.util import cleanup_all_streaming_resources
+                                cleanup_all_streaming_resources()
+                            except Exception:
+                                pass
+                            
+                            # Clean up the async generator
+                            if stream_iterator is not None:
+                                try:
+                                    await stream_iterator.aclose()
+                                except Exception:
+                                    pass
+                            
+                            # Clean up the result object if it has cleanup methods
+                            if result is not None and hasattr(result, '_cleanup_tasks'):
+                                try:
+                                    result._cleanup_tasks()
+                                except Exception:
+                                    pass
+                            
+                            # Re-raise to be caught by outer handler which shows user-friendly message
+                            raise
                         except (KeyboardInterrupt, asyncio.CancelledError) as e:
                             # Handle interruption specifically
                             
@@ -1576,7 +1610,7 @@ def run_cai_cli(
                                             "content": "Tool execution interrupted"
                                         }
                                         agent.model.add_to_message_history(synthetic_msg)
-                            except Exception as cleanup_error:
+                            except Exception:
                                 # Silently ignore cleanup errors during interrupt
                                 pass
                             
@@ -1597,8 +1631,12 @@ def run_cai_cli(
                                     result._cleanup_tasks()
                                 except Exception:
                                     pass
+                            
+                            # Re-raise OutputGuardrailTripwireTriggered to be handled by outer handler
+                            if isinstance(e, OutputGuardrailTripwireTriggered):
+                                raise
                                     
-                            # Log error for debugging
+                            # Log error for debugging (non-guardrail exceptions)
                             logger = logging.getLogger(__name__)
                             logger.error(f"Error occurred during streaming: {str(e)}", exc_info=True)
                             
@@ -1637,11 +1675,11 @@ def run_cai_cli(
                         reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
                         
                         # Use red color for the warning message
-                        print(f"\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
+                        print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
                         print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
                         print(f"\033[91mReason: {reason}\033[0m")
-                        print(f"\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                        print(f"\033[96mYou can continue the conversation with a different request.\033[0m\n")
+                        print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
+                        print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
                         
                         # Continue the conversation loop instead of crashing
                         continue
@@ -1672,11 +1710,11 @@ def run_cai_cli(
                                 reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
                                 
                                 # Use red color for the warning message
-                                print(f"\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
+                                print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
                                 print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
                                 print(f"\033[91mReason: {reason}\033[0m")
-                                print(f"\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                                print(f"\033[96mYou can continue the conversation with a different request.\033[0m\n")
+                                print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
+                                print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
                                 
                                 # Close the loop and continue the conversation loop
                                 new_loop.close()
@@ -1718,19 +1756,19 @@ def run_cai_cli(
                                 reason = e.guardrail_result.output.output_info.get("reason", reason)
                         
                         # Use red color for the warning message
-                        print(f"\n\033[91m🛡️  INPUT SECURITY GUARDRAIL TRIGGERED\033[0m")
+                        print("\n\033[91m🛡️  INPUT SECURITY GUARDRAIL TRIGGERED\033[0m")
                         print(f"\033[91mReason: {reason}\033[0m")
-                        print(f"\033[93mYour input was blocked for security reasons.\033[0m")
+                        print("\033[93mYour input was blocked for security reasons.\033[0m")
                         
                         # Check if this is likely due to conversation history
                         if "base64" in reason.lower() or "pattern" in reason.lower():
-                            print(f"\n\033[96mThis may be due to malicious content in the conversation history.\033[0m")
-                            print(f"\033[96mOptions:\033[0m")
-                            print(f"  1. Type \033[92m/clear\033[0m to clear the conversation history")
-                            print(f"  2. Type \033[92m/config set 26 false\033[0m to temporarily disable guardrails")
-                            print(f"  3. Type \033[92m/exit\033[0m to exit CAI")
+                            print("\n\033[96mThis may be due to malicious content in the conversation history.\033[0m")
+                            print("\033[96mOptions:\033[0m")
+                            print("  1. Type \033[92m/clear\033[0m to clear the conversation history")
+                            print("  2. Type \033[92m/config set 26 false\033[0m to temporarily disable guardrails")
+                            print("  3. Type \033[92m/exit\033[0m to exit CAI")
                         else:
-                            print(f"\033[96mPlease rephrase your request or try a different approach.\033[0m\n")
+                            print("\033[96mPlease rephrase your request or try a different approach.\033[0m\n")
                         
                         # Continue the conversation loop instead of crashing
                         continue
@@ -1740,11 +1778,11 @@ def run_cai_cli(
                         reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
                         
                         # Use red color for the warning message
-                        print(f"\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
+                        print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
                         print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
                         print(f"\033[91mReason: {reason}\033[0m")
-                        print(f"\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                        print(f"\033[96mYou can continue the conversation with a different request.\033[0m\n")
+                        print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
+                        print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
                         
                         # Continue the conversation loop instead of crashing
                         continue
@@ -1786,7 +1824,12 @@ def run_cai_cli(
             # many tool-call rounds per single user input — are handled correctly.
             _support_model = os.getenv("CAI_SUPPORT_MODEL")
             _support_interval_raw = os.getenv("CAI_SUPPORT_INTERVAL")
-            if _support_model and _support_interval_raw:
+            # Skip auto-compact when running multiple parallel agents to avoid
+            # queuing a single "last user input" for replay across many instances.
+            # Rely on model-level ContextCompactedError handling in parallel mode.
+            # Honor the CAI_AUTO_COMPACT flag so users can fully disable auto-compaction.
+            _auto_compact_enabled = os.getenv("CAI_AUTO_COMPACT", "true").lower() != "false"
+            if _auto_compact_enabled and not _skip_auto_compact_after_interrupt and parallel_count <= 1 and _support_model and _support_interval_raw:
                 try:
                     _support_interval = int(_support_interval_raw)
                     if _support_interval > 0:
@@ -1835,6 +1878,17 @@ def run_cai_cli(
                 except (ValueError, Exception) as _e:
                     # Always show auto-compact errors so they are never silently lost.
                     console.print(f"[red]Auto-compact error: {_e}[/red]")
+            elif _auto_compact_enabled and _skip_auto_compact_after_interrupt:
+                # Skip a single scheduled auto-compact immediately after a user
+                # KeyboardInterrupt to avoid losing data the user intended to
+                # inspect or pause for. Reset the flag and continue.
+                _skip_auto_compact_after_interrupt = False
+                try:
+                    console.print(
+                        "[dim yellow]Auto-compact skipped due to recent interrupt; resuming.[/dim yellow]"
+                    )
+                except Exception:
+                    pass
 
             # Stop measuring active time and start measuring idle time again
             stop_active_timer()
@@ -1883,7 +1937,7 @@ def run_cai_cli(
 
                     agent.model.message_history[:] = fix_message_list(agent.model.message_history)
                     
-            except Exception as cleanup_error:
+            except Exception:
                 pass
 
             # Add a small delay to allow the system to settle after interruption
@@ -1976,11 +2030,38 @@ def main():
     if len(sys.argv) > 1:
         initial_prompt = sys.argv[1]
 
+    # Detect TUI activation via env or CLI flag (--tui)
+    tui_flag = os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false") or "--tui" in sys.argv
+
     # Get agent type from environment variables or use default
     agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
 
-    # Get the agent instance by name with default ID P1
-    agent = get_agent_by_name(agent_type, agent_id="P1")
+    # If TUI requested, try to initialize and run it (Textual if available,
+    # otherwise a Rich fallback). Create the agent only if needed so the
+    # TUI can reuse the agent instance for display or interaction.
+    agent = None
+    if tui_flag:
+        try:
+            agent = get_agent_by_name(agent_type, agent_id="P1")
+            try:
+                from cai.tui import run_tui
+
+                ran = run_tui(agent, initial_prompt=initial_prompt)
+                # If run_tui returns False explicitly, it failed to start
+                if ran is False:
+                    agent = None
+                else:
+                    # run_tui either ran the UI (blocking) or returned truthy/None
+                    return
+            except Exception as e:
+                print(f"Failed to start TUI ({e}), falling back to CLI.")
+                agent = None
+        except Exception as e:
+            print(f"Failed to initialize agent for TUI ({e}), falling back to CLI.")
+
+    # Get the agent instance by name with default ID P1 when not using TUI
+    if agent is None:
+        agent = get_agent_by_name(agent_type, agent_id="P1")
     
     # Use the switch_to_single_agent method for proper initialization
     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
@@ -2000,6 +2081,17 @@ def main():
     # Ensure the agent and all its handoff agents use the current model
     current_model = os.getenv("CAI_MODEL", "alias1")
     update_agent_models_recursively(agent, current_model)
+
+    # Disable tracing for interactive CLI runs to avoid sending traces to
+    # the backend while users run commands locally. Do this only when the
+    # CLI is actually started (not on import) so tests and imports do not
+    # inadvertently disable tracing for the whole process.
+    try:
+        set_tracing_disabled(True)
+    except Exception:
+        # If tracing API isn't available for some reason, ignore to avoid
+        # breaking the CLI startup.
+        pass
 
     # Run the CLI with the selected agent and optional initial prompt
     run_cai_cli(agent, initial_prompt=initial_prompt)
