@@ -1360,12 +1360,34 @@ class OpenAIChatCompletionsModel(Model):
             if not hasattr(response, "cost"):
                 response.cost = None
 
-            # Warn if response is empty or contains sentinel token
+            # Warn if response is empty or contains sentinel token.
+            # Use a robust detection for tool-calls since different providers
+            # may expose function calls under different attributes
             try:
+                msg = response.choices[0].message
+
+                # Basic check for explicit tool_calls attribute
+                has_tool_calls = bool(getattr(msg, "tool_calls", None))
+
+                # Check alternate provider attribute names
+                if not has_tool_calls:
+                    has_tool_calls = bool(getattr(msg, "function_call", None))
+                if not has_tool_calls:
+                    has_tool_calls = bool(getattr(msg, "tool_use", None))
+
+                # Fall back to inspecting converted items for a function_call entry
+                if not has_tool_calls:
+                    try:
+                        converted_items = self._converter.message_to_output_items(msg)
+                        has_tool_calls = any(getattr(it, "type", None) == "function_call" for it in converted_items)
+                    except Exception:
+                        # If conversion fails, ignore and continue with available data
+                        pass
+
                 self._warn_empty_response(
-                    getattr(response.choices[0].message, "content", None),
-                    bool(getattr(response.choices[0].message, "tool_calls", None)),
-                    bool(getattr(response.choices[0].message, "refusal", None)),
+                    getattr(msg, "content", None),
+                    bool(has_tool_calls),
+                    bool(getattr(msg, "refusal", None)),
                 )
             except Exception:
                 pass
