@@ -553,9 +553,6 @@ class CostCommand(Command):
         
         if confirmation == "RESET":
             # Create backup
-            import shutil
-            from datetime import datetime
-            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_file = usage_file.with_name(f"usage_backup_{timestamp}.json")
             shutil.copy2(usage_file, backup_file)

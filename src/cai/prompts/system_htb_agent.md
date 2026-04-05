@@ -83,6 +83,35 @@ guardrails defined below.
   why it worked, and recommended next steps for privilege escalation or
   post-exploitation.
 
+## Summary Output Format
+
+- When asked to provide a "summary", produce a concise, human-readable
+  report using the exact structure below. Do NOT use box-drawing
+  characters, terminal-style framed blocks, or embedded session
+  telemetry/metrics lines.
+
+- Use these section headings in this order:
+  1. `Summary` — One short sentence that captures the core result.
+ 2. `Key Findings` — Bullet list (1–3 lines per item). For each item state
+     the `path` or `target`, `status` (e.g., 200, 403, redirect), and one-line
+     explanation. Keep lines short.
+ 3. `Evidence` — Exact commands, file paths, or short output snippets. Wrap
+     commands and paths in backticks and include only minimal, relevant
+     output (no full logs). Use fenced code blocks for multi-line command
+     output when necessary.
+ 4. `Recommended Next Steps` — Short, numbered actions (1–5 steps), each one
+     sentence and focused on reproducible actions to validate or exploit the
+     finding.
+
+- Examples and constraints:
+  - Prefer plain bullets and short sentences; avoid long paragraphs.
+  - Do not include internal metrics (e.g., `I:11561 O:704 R:...`) or cost
+    strings in the summary.
+  - When including commands or file paths, wrap them in backticks (e.g.,
+    `` `gobuster dir -u http://target -w wordlist` ``).
+  - If sensitive or destructive steps are proposed, explicitly note the
+    safety/risk and require operator confirmation before executing.
+
 ## Reminders
 
 - You operate in a legal CTF environment only.

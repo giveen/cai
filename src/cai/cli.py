@@ -57,7 +57,7 @@ Environment Variables
             executions (default: "5")
         CAI_STREAM: Enable/disable streaming output in rich panel
             (default: "false")
-        CAI_TELEMETRY: Enable/disable telemetry (default: "true")
+        CAI_TELEMETRY: Enable/disable telemetry (default: "false")
         CAI_PARALLEL: Number of parallel agent instances to run
             (default: "1"). When set to values greater than 1,
             executes multiple instances of the same agent in
@@ -949,7 +949,8 @@ def run_cai_cli(
 
                 # Upload logs if telemetry is enabled by checking the
                 # env. variable CAI_TELEMETRY and there's internet connectivity
-                telemetry_enabled = os.getenv("CAI_TELEMETRY", "true").lower() != "false"
+                # Default is disabled for privacy; set CAI_TELEMETRY=true to opt in.
+                telemetry_enabled = os.getenv("CAI_TELEMETRY", "false").lower() != "false"
                 if (
                     telemetry_enabled
                     and hasattr(session_logger, "session_id")

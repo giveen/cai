@@ -160,7 +160,6 @@ def cleanup_agent_streaming_resources(agent_name):
             sessions_to_cleanup.append((session_id, session_info))
     
     # Also clean up any Live panels for this agent
-    global _LIVE_STREAMING_PANELS
     panels_to_cleanup = []
     for panel_id, panel_info in list(_LIVE_STREAMING_PANELS.items()):
         # Check if this is a static panel with matching agent
@@ -323,8 +322,6 @@ def get_active_time():
     Get the total active time (LLM processing, tool execution).
     Returns a formatted string like "1h 30m 45s" or "45s" or "5m 30s".
     """
-    global _active_time_total, _active_timer_start
-
     with _timing_lock:
         # Calculate total active time including current active period if running
         total_active_seconds = _active_time_total
@@ -349,8 +346,6 @@ def get_idle_time():
     Get the total idle time (waiting for user input).
     Returns a formatted string like "1h 30m 45s" or "45s" or "5m 30s".
     """
-    global _idle_time_total, _idle_timer_start
-
     with _timing_lock:
         # Calculate total idle time including current idle period if running
         total_idle_seconds = _idle_time_total
@@ -375,8 +370,6 @@ def get_active_time_seconds():
     Get the total active time in seconds for precise measurement.
     Returns a float representing the total number of seconds.
     """
-    global _active_time_total, _active_timer_start
-
     with _timing_lock:
         # Calculate total active time including current active period if running
         total_active_seconds = _active_time_total
@@ -392,8 +385,6 @@ def get_idle_time_seconds():
     Get the total idle time in seconds for precise measurement.
     Returns a float representing the total number of seconds.
     """
-    global _idle_time_total, _idle_timer_start
-
     with _timing_lock:
         # Calculate total idle time including current idle period if running
         total_idle_seconds = _idle_time_total
@@ -2326,7 +2317,6 @@ def update_agent_streaming_content(context, text_delta, token_stats=None):
         return False
 
     # Check if cleanup is in progress to avoid updating a context being cleaned up
-    global _cleanup_in_progress
     if _cleanup_in_progress:
         return False
 
@@ -2472,7 +2462,6 @@ def finish_agent_streaming(context, final_stats=None):
         return False
 
     # Check if cleanup is in progress
-    global _cleanup_in_progress
     if _cleanup_in_progress:
         return False
 
@@ -2690,7 +2679,6 @@ def cli_print_tool_output(
     # We want to show both code and output panels for all execute_code calls
 
     # Check if cleanup is in progress
-    global _cleanup_in_progress
     if _cleanup_in_progress:
         return
 
@@ -4593,7 +4581,9 @@ def setup_ctf():
     print(
         color("Testing CTF: ", fg="black", bg="yellow") + color(ctf.name, fg="black", bg="yellow")
     )
-    if not challenge_key or challenge_key not in challenges:
+    # If no explicit challenge specified or the selected challenge isn't available,
+    # warn and attempt to fall back to the first available challenge.
+    if not raw_challenge_spec or (challenge is None or challenge not in challenges):
         print(
             color(
                 "No challenge provided or challenge not found. Attempting to use the first challenge.",

@@ -336,11 +336,13 @@ def count_tokens_with_tiktoken(text_or_messages):
     try:
         # Try to use cl100k_base encoding (used by GPT-4 and GPT-3.5-turbo)
         encoding = tiktoken.get_encoding("cl100k_base")
-    except:
+    except Exception as e:
         # Fall back to GPT-2 encoding if cl100k is not available
+        logger.exception("tiktoken cl100k_base encoding unavailable: %s", e)
         try:
             encoding = tiktoken.get_encoding("gpt2")
-        except:
+        except Exception as e2:
+            logger.exception("tiktoken gpt2 encoding unavailable: %s", e2)
             # If tiktoken fails, fall back to character estimate
             if isinstance(text_or_messages, str):
                 return len(text_or_messages) // 4, 0
@@ -1102,8 +1104,8 @@ class OpenAIChatCompletionsModel(Model):
                                 is_async_session_input = True
                                 # Check if this has auto_output flag
                                 has_auto_output = args.get("auto_output", False)
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.exception("Error inspecting tool args for streaming check: %s", e)
 
                         # For regular commands that were already shown via streaming, suppress the agent message
                         if (
@@ -1312,8 +1314,19 @@ class OpenAIChatCompletionsModel(Model):
             )
 
             # Always count the interaction as one request when we received a response.
-            # Debugging: show token counts prior to usage assignment
-            print(f"DEBUG get_response tokens: estimated_input_tokens={estimated_input_tokens} input_tokens={input_tokens} output_tokens={output_tokens}", flush=True)
+            # Debugging: show token counts prior to usage assignment. Use logger.debug
+            # so output is controlled by the application's logging configuration
+            # instead of printing unconditionally to stdout.
+            try:
+                logger.debug(
+                    "DEBUG get_response tokens: estimated_input_tokens=%s input_tokens=%s output_tokens=%s",
+                    estimated_input_tokens,
+                    input_tokens,
+                    output_tokens,
+                )
+            except Exception:
+                # Do not let debugging logging break execution
+                pass
 
             usage = Usage(
                 requests=1,
@@ -2240,7 +2253,8 @@ class OpenAIChatCompletionsModel(Model):
                                         if isinstance(args_dict, dict) and "ctf" in args_dict:
                                             del args_dict["ctf"]
                                         arguments_str = json.dumps(args_dict)
-                                    except:
+                                    except Exception as e:
+                                        logger.exception("Failed to parse tool arguments as JSON, falling back to string: %s", e)
                                         # If not valid JSON, encode it as a JSON string
                                         arguments_str = json.dumps(parsed["arguments"])
                                 else:
@@ -4757,7 +4771,8 @@ class _Converter:
                                     isinstance(args_dict, dict) and args_dict.get("session_id")
                                 ):
                                     should_display = False
-                            except:
+                            except Exception as e:
+                                logger.exception("Failed parsing tool args to decide display: %s", e)
                                 should_display = False
                         
 

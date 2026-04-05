@@ -45,8 +45,11 @@ console = Console()
 MEMORY_DIR = Path.home() / ".cai" / "memory"
 MEMORY_INDEX_FILE = MEMORY_DIR / "index.json"
 
-# Global storage for compacted summaries (deprecated - use file storage)
-# Now supports multiple memories per agent
+# Legacy in-memory storage for compacted summaries.
+# This in-memory dict is retained for backward compatibility with
+# existing scripts and tests. Prefer persistent file-based storage
+# located under `MEMORY_DIR` for production usage.
+# Supports multiple memories per agent.
 COMPACTED_SUMMARIES: Dict[str, List[str]] = {}
 
 # Global storage for memory ID mappings per agent

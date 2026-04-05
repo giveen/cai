@@ -3,7 +3,6 @@ import paramiko
 import tempfile
 import os
 import shutil
-import subprocess
 import time
 import socket
 import sys

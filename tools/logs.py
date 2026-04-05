@@ -20,12 +20,10 @@ import matplotlib
 matplotlib.use('Agg')
 
 from flask import Flask, render_template, request
-from functools import wraps
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
 import base64
-from datetime import datetime, timedelta
 import os
 import folium
 import requests
@@ -35,6 +33,8 @@ import numpy as np
 import re
 from collections import defaultdict
 import time
+import threading
+import ipaddress
 
 app = Flask(__name__)
 
@@ -46,37 +46,80 @@ class RateLimiter:
         self.requests_per_minute = requests_per_minute
         self.requests_per_hour = requests_per_hour
         self.requests_per_day = requests_per_day
+        # Map of client_ip -> list[timestamp]
         self.request_history: Dict[str, list] = defaultdict(list)
+
+        # Lock to make rate limiting safe under Flask's threaded mode
+        self._lock = threading.Lock()
+
+        # Last-seen timestamp per IP, used for eviction
+        self.last_seen: Dict[str, float] = {}
+
+        # Configurable caps for memory safety
+        self.max_ips = int(os.getenv('RATE_LIMIT_MAX_IPS', '10000'))
+        # How long to consider an IP 'recent' for eviction (seconds)
+        self.ip_ttl_seconds = int(os.getenv('RATE_LIMIT_IP_TTL_SECONDS', str(7 * 24 * 3600)))
 
     def is_rate_limited(self, client_id: str) -> bool:
         """Return True if the client has exceeded configured rate limits."""
         current_time = time.time()
 
-        # Clean up requests older than 24 hours
-        self.request_history[client_id] = [
-            req_time
-            for req_time in self.request_history[client_id]
-            if current_time - req_time < 86400
-        ]
+        with self._lock:
+            # Evict globally old IP entries first to keep memory bounded
+            self._evict_old_ips(current_time)
 
-        # Minute window
-        minute_requests = [r for r in self.request_history[client_id] if current_time - r < 60]
-        if len(minute_requests) >= self.requests_per_minute:
-            return True
+            # Clean up requests older than 24 hours for this IP (keeps counters accurate)
+            self.request_history[client_id] = [
+                req_time
+                for req_time in self.request_history[client_id]
+                if current_time - req_time < 86400
+            ]
 
-        # Hour window
-        hour_requests = [r for r in self.request_history[client_id] if current_time - r < 3600]
-        if len(hour_requests) >= self.requests_per_hour:
-            return True
+            # Minute window
+            minute_requests = [r for r in self.request_history[client_id] if current_time - r < 60]
+            if len(minute_requests) >= self.requests_per_minute:
+                # update last_seen for bookkeeping
+                self.last_seen[client_id] = current_time
+                return True
 
-        # Day window
-        day_requests = [r for r in self.request_history[client_id] if current_time - r < 86400]
-        if len(day_requests) >= self.requests_per_day:
-            return True
+            # Hour window
+            hour_requests = [r for r in self.request_history[client_id] if current_time - r < 3600]
+            if len(hour_requests) >= self.requests_per_hour:
+                self.last_seen[client_id] = current_time
+                return True
 
-        # Record this request and allow
-        self.request_history[client_id].append(current_time)
-        return False
+            # Day window
+            day_requests = [r for r in self.request_history[client_id] if current_time - r < 86400]
+            if len(day_requests) >= self.requests_per_day:
+                self.last_seen[client_id] = current_time
+                return True
+
+            # Record this request and allow
+            self.request_history[client_id].append(current_time)
+            self.last_seen[client_id] = current_time
+            return False
+
+    def _evict_old_ips(self, current_time: float) -> None:
+        """Evict IPs that haven't been seen recently or trim to max_ips.
+
+        This prevents unbounded growth when many distinct client IPs are observed.
+        """
+        # Remove IPs not seen within the configured TTL
+        threshold = current_time - self.ip_ttl_seconds
+        old_ips = [ip for ip, ts in self.last_seen.items() if ts < threshold]
+        for ip in old_ips:
+            self.request_history.pop(ip, None)
+            self.last_seen.pop(ip, None)
+
+        # If we still exceed max_ips, evict the oldest entries until under cap
+        if len(self.last_seen) > self.max_ips:
+            # Sort by last seen timestamp (oldest first)
+            sorted_ips = sorted(self.last_seen.items(), key=lambda kv: kv[1])
+            # Number to remove
+            remove_count = len(self.last_seen) - self.max_ips
+            for ip, _ in sorted_ips[:remove_count]:
+                self.request_history.pop(ip, None)
+                self.last_seen.pop(ip, None)
 
 
 # Initialize the global rate limiter
@@ -85,15 +128,91 @@ rate_limiter = RateLimiter(requests_per_minute=10, requests_per_hour=50, request
 
 def apply_rate_limit():
     """Check request and return a Flask-style response tuple on rate limit, else None."""
-    try:
-        # Prefer X-Forwarded-For when behind proxies
-        forwarded = request.headers.get('X-Forwarded-For', None)
-        if forwarded:
-            client_ip = forwarded.split(',')[0].strip()
-        else:
-            client_ip = request.remote_addr or 'unknown'
-    except Exception:
-        client_ip = 'unknown'
+    def _clean_ip(ip_str: str) -> str:
+        """Normalize an IP-like string by stripping ports and brackets."""
+        s = (ip_str or '').strip()
+        if not s:
+            return s
+        # IPv6 with brackets: [::1]:12345
+        if s.startswith('[') and ']' in s:
+            s = s.split(']')[0].lstrip('[')
+            return s
+        # Try to parse directly
+        try:
+            ipaddress.ip_address(s)
+            return s
+        except Exception:
+            # Maybe there's a port suffix; try stripping last :port
+            if ':' in s:
+                candidate = s.rsplit(':', 1)[0]
+                try:
+                    ipaddress.ip_address(candidate)
+                    return candidate
+                except Exception:
+                    return s
+            return s
+
+    def _parse_trusted_proxies(conf_value: str) -> list:
+        """Parse a comma-separated list of CIDRs/IPs into ip_network objects."""
+        nets = []
+        for piece in (conf_value or '').split(','):
+            piece = piece.strip()
+            if not piece:
+                continue
+            try:
+                if '/' in piece:
+                    nets.append(ipaddress.ip_network(piece, strict=False))
+                else:
+                    # Single IP -> make an appropriate host network
+                    ip_obj = ipaddress.ip_address(piece)
+                    nets.append(ipaddress.ip_network(ip_obj.exploded + ('/32' if ip_obj.version == 4 else '/128')))
+            except Exception:
+                # Ignore invalid entries
+                continue
+        return nets
+
+    def _get_trusted_proxies_from_config():
+        # Prefer Flask app config, fall back to environment variable
+        value = None
+        try:
+            value = app.config.get('TRUSTED_PROXIES')
+        except Exception:
+            value = None
+        if not value:
+            value = os.getenv('TRUSTED_PROXIES')
+        return _parse_trusted_proxies(value) if value else []
+
+    def parse_client_ip_from_request() -> str:
+        """Resolve the client IP in a safe way, respecting configured trusted proxies.
+
+        When `TRUSTED_PROXIES` is not set, X-Forwarded-For is ignored and
+        `request.remote_addr` is used. When `TRUSTED_PROXIES` is set (comma-separated
+        CIDRs or IPs), the X-Forwarded-For list is searched left-to-right and the
+        first address not in the trusted proxies is returned.
+        """
+        try:
+            trusted_nets = _get_trusted_proxies_from_config()
+            forwarded = request.headers.get('X-Forwarded-For')
+            if not forwarded or not trusted_nets:
+                return request.remote_addr or 'unknown'
+
+            # left-most entry is the original client; pick the first address not in trusted list
+            for part in [p.strip() for p in forwarded.split(',') if p.strip()]:
+                ip = _clean_ip(part)
+                try:
+                    ip_obj = ipaddress.ip_address(ip)
+                except Exception:
+                    continue
+                # If ip is not in any trusted proxy network, return it
+                if not any(ip_obj in net for net in trusted_nets):
+                    return ip
+
+            # All XFF entries were trusted proxies; fall back to remote_addr
+            return request.remote_addr or 'unknown'
+        except Exception:
+            return request.remote_addr or 'unknown'
+
+    client_ip = parse_client_ip_from_request()
 
     if rate_limiter.is_rate_limited(client_ip):
         return "Rate limit exceeded. Please try again later.", 429
