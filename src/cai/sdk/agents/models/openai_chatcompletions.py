@@ -2184,7 +2184,9 @@ class OpenAIChatCompletionsModel(Model):
                                 tool_args = state.function_calls[tc_index].arguments
                                 if tool_args is None or (isinstance(tool_args, str) and tool_args.strip() == ""):
                                     tool_args = "{}"
-                                
+
+                                # Only treat the tool call as "ready" for display/storage when
+                                # the arguments are valid JSON and we have a function name and call id.
                                 tool_call_msg = {
                                     "role": "assistant",
                                     "content": None,
@@ -2199,19 +2201,36 @@ class OpenAIChatCompletionsModel(Model):
                                         }
                                     ],
                                 }
-                                # Only add if not already in streamed_tool_calls
-                                if tool_call_msg not in streamed_tool_calls:
-                                    streamed_tool_calls.append(tool_call_msg)
+
+                                # Validate that the accumulated arguments are valid JSON before
+                                # we consider this a complete tool call to display or persist.
+                                args_are_valid_json = False
+                                if isinstance(tool_args, str):
+                                    try:
+                                        # Accept any valid JSON (object/array/string/number) but
+                                        # we prefer objects for tool arguments. If parsing fails,
+                                        # treat as not ready yet.
+                                        parsed_args = json.loads(tool_args)
+                                        args_are_valid_json = True
+                                    except Exception:
+                                        args_are_valid_json = False
+                                else:
+                                    # Non-string args (already a dict/list) are considered valid
+                                    args_are_valid_json = True
+
+                                # Only add to streamed_tool_calls and display when JSON is valid
+                                # and we have name and call id. This prevents executing partial
+                                # fragments from streaming deltas.
+                                if (
+                                    args_are_valid_json
+                                    and state.function_calls[tc_index].name
+                                    and state.function_calls[tc_index].call_id
+                                ):
+                                    if tool_call_msg not in streamed_tool_calls:
+                                        streamed_tool_calls.append(tool_call_msg)
                                     # Don't add to message history here - wait for tool output
                                     # to add both tool call and response atomically
-
                                     # NEW: Display tool call immediately when detected in streaming mode
-                                    # But only if it has complete arguments and name
-                                    if (
-                                        state.function_calls[tc_index].name
-                                        and state.function_calls[tc_index].arguments
-                                        and state.function_calls[tc_index].call_id
-                                    ):
                                         # First, finish any existing streaming context if it exists
                                         if streaming_context:
                                             try:

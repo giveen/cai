@@ -388,6 +388,30 @@ async def generic_linux_command(command: str = "",
     
     # Execute respecting session/interactive semantics and capture result
     if session_id:
+        # Defensive check: ensure the referenced session actually exists before
+        # attempting to send input to it. This prevents executing against
+        # non-existent sessions (e.g., a streaming partial that referenced
+        # a session id that was never created).
+        try:
+            sessions = list_shell_sessions() or []
+            found = False
+            for s in sessions:
+                sid = s.get("session_id")
+                fid = s.get("friendly_id")
+                if sid == session_id or fid == session_id:
+                    found = True
+                    break
+                # Allow prefix matching for short ids produced by some UIs
+                if sid and sid.startswith(session_id):
+                    found = True
+                    break
+            if not found:
+                return f"Error: Session {session_id} not found"
+        except Exception:
+            # If session listing fails for any reason, be defensive and refuse
+            # to send to a session we cannot verify.
+            return f"Error: Unable to verify session {session_id}"
+
         result = run_command(
             command,
             ctf=None,
