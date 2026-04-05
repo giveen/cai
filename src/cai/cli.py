@@ -2030,11 +2030,38 @@ def main():
     if len(sys.argv) > 1:
         initial_prompt = sys.argv[1]
 
+    # Detect TUI activation via env or CLI flag (--tui)
+    tui_flag = os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false") or "--tui" in sys.argv
+
     # Get agent type from environment variables or use default
     agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
 
-    # Get the agent instance by name with default ID P1
-    agent = get_agent_by_name(agent_type, agent_id="P1")
+    # If TUI requested, try to initialize and run it (Textual if available,
+    # otherwise a Rich fallback). Create the agent only if needed so the
+    # TUI can reuse the agent instance for display or interaction.
+    agent = None
+    if tui_flag:
+        try:
+            agent = get_agent_by_name(agent_type, agent_id="P1")
+            try:
+                from cai.tui import run_tui
+
+                ran = run_tui(agent, initial_prompt=initial_prompt)
+                # If run_tui returns False explicitly, it failed to start
+                if ran is False:
+                    agent = None
+                else:
+                    # run_tui either ran the UI (blocking) or returned truthy/None
+                    return
+            except Exception as e:
+                print(f"Failed to start TUI ({e}), falling back to CLI.")
+                agent = None
+        except Exception as e:
+            print(f"Failed to initialize agent for TUI ({e}), falling back to CLI.")
+
+    # Get the agent instance by name with default ID P1 when not using TUI
+    if agent is None:
+        agent = get_agent_by_name(agent_type, agent_id="P1")
     
     # Use the switch_to_single_agent method for proper initialization
     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
