@@ -17,7 +17,7 @@ import uuid
 import litellm
 import tiktoken
 try:
-    from openai import NOT_GIVEN, OpenAI as AsyncOpenAI, AsyncStream, NotGiven
+    from openai import NOT_GIVEN, AsyncOpenAI, AsyncStream, NotGiven
 except Exception:  # pragma: no cover - optional OpenAI SDK
     NOT_GIVEN = None
     AsyncOpenAI = None
@@ -3098,8 +3098,8 @@ class OpenAIChatCompletionsModel(Model):
                 f"Using OLLAMA: {self.is_ollama}\n"
             )
 
-        # Use NOT_GIVEN for store if not explicitly set to avoid compatibility issues
-        store = self._non_null_or_not_given(model_settings.store)
+        # store defaults to True per ModelSettings docstring when not explicitly set
+        store = model_settings.store if model_settings.store is not None else True
 
         # Check if we should use the agent's model instead of self.model
         # This prioritizes the model from Agent when available
@@ -3118,8 +3118,8 @@ class OpenAIChatCompletionsModel(Model):
             "frequency_penalty": self._non_null_or_not_given(model_settings.frequency_penalty),
             "presence_penalty": self._non_null_or_not_given(model_settings.presence_penalty),
             "max_tokens": self._non_null_or_not_given(model_settings.max_tokens),
-            "tool_choice": tool_choice,
-            "response_format": response_format,
+            "tool_choice": NOT_GIVEN if not converted_tools else tool_choice,
+            "response_format": NOT_GIVEN if response_format is None else response_format,
             "parallel_tool_calls": parallel_tool_calls,
             "stream": stream,
             "stream_options": {"include_usage": True} if stream else NOT_GIVEN,
@@ -3266,7 +3266,8 @@ class OpenAIChatCompletionsModel(Model):
                 # These typically need the Ollama provider
                 litellm.drop_params = True
                 kwargs.pop("parallel_tool_calls", None)
-                kwargs.pop("store", None)  # Ollama doesn't support store parameter
+                if self.is_ollama:
+                    kwargs.pop("store", None)  # Ollama doesn't support store parameter
                 # These models may not support certain parameters
                 if not converted_tools:
                     kwargs.pop("tool_choice", None)
@@ -3283,6 +3284,7 @@ class OpenAIChatCompletionsModel(Model):
                     kwargs["reasoning_effort"] = model_settings.reasoning_effort
 
         # Filter out NotGiven values to avoid JSON serialization issues
+        kwargs_raw = dict(kwargs)  # preserve unfiltered copy for direct-client usage
         filtered_kwargs = {}
         for key, value in kwargs.items():
             if value is not NOT_GIVEN:
@@ -3346,7 +3348,8 @@ class OpenAIChatCompletionsModel(Model):
                     )
                 else:
                     return await self._fetch_response_litellm_openai(
-                        kwargs, model_settings, tool_choice, stream, parallel_tool_calls
+                        kwargs, model_settings, tool_choice, stream, parallel_tool_calls,
+                        raw_kwargs=kwargs_raw,
                     )
             except litellm.exceptions.RateLimitError as e:
                 retry_count += 1
@@ -3804,6 +3807,7 @@ class OpenAIChatCompletionsModel(Model):
         tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven,
         stream: bool,
         parallel_tool_calls: bool,
+        raw_kwargs: dict | None = None,
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
         """
         Handle standard LiteLLM API calls for OpenAI and compatible models.
@@ -3811,10 +3815,23 @@ class OpenAIChatCompletionsModel(Model):
         too long, truncate all tool_call ids in the messages to 40 characters
         and retry once silently.
         """
+        # If no provider-specific routing is needed, use the injected OpenAI client
+        # directly. Pass raw_kwargs (containing NOT_GIVEN sentinels) so callers such
+        # as tests can observe the full parameter set; the OpenAI SDK itself ignores
+        # NOT_GIVEN values when serializing the HTTP request.
+        use_direct_client = (
+            self._client is not None
+            and "api_base" not in kwargs
+            and "custom_llm_provider" not in kwargs
+            and "api_key" not in kwargs
+        )
+        client_kwargs = raw_kwargs if (use_direct_client and raw_kwargs is not None) else kwargs
         try:
             if stream:
-                # Standard LiteLLM handling for streaming — make a single streaming call
-                stream_obj = await litellm.acompletion(**kwargs)
+                if use_direct_client:
+                    stream_obj = await self._client.chat.completions.create(**client_kwargs)
+                else:
+                    stream_obj = await litellm.acompletion(**kwargs)
 
                 response = Response(
                     id=FAKE_RESPONSES_ID,
@@ -3833,7 +3850,10 @@ class OpenAIChatCompletionsModel(Model):
                 return response, stream_obj
             else:
                 # Standard OpenAI handling for non-streaming
-                ret = await litellm.acompletion(**kwargs)
+                if use_direct_client:
+                    ret = await self._client.chat.completions.create(**client_kwargs)
+                else:
+                    ret = await litellm.acompletion(**kwargs)
                 return ret
         except Exception as e:
             error_msg = str(e)

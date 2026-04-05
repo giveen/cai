@@ -956,7 +956,7 @@ class ComputerAction:
         # reference string like 'screenshot:<sha256>' in the `output` field
         # and include the reference in `raw_item`. Set `CAI_EMBED_SCREENSHOT`
         # to 'true' to preserve legacy behavior of returning a data URL.
-        embed = os.getenv("CAI_EMBED_SCREENSHOT", "false").lower() in (
+        embed = os.getenv("CAI_EMBED_SCREENSHOT", "true").lower() in (
             "1",
             "true",
             "yes",

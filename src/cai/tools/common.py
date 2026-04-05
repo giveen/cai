@@ -1826,7 +1826,6 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     return new_session_id
                 
                 # Display the command that creates the async session
-                from cai.util import cli_print_tool_output
                 
                 # Create args for display
                 label = getattr(ACTIVE_SESSIONS.get(new_session_id), 'friendly_id', None) or new_session_id
@@ -2108,7 +2107,6 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     
                     # Only display if we're in streaming mode AND parallel mode
                     if streaming_enabled and is_parallel:
-                        from cai.util import cli_print_tool_output
                         
                         # Calculate execution time
                         execution_time = time.time() - process_start_time if 'process_start_time' in locals() else 0
@@ -2430,7 +2428,6 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 return new_session_id
             
             # Display the command that creates the async session
-            from cai.util import cli_print_tool_output
             
             # Retrieve the actual workspace dir the session is using
             session = ACTIVE_SESSIONS.get(new_session_id)

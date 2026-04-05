@@ -60,9 +60,7 @@ class BackendSpanExporter(TracingExporter):
         self.base_delay = base_delay
         self.max_delay = max_delay
 
-        # Use per-call AsyncClient in export() to avoid blocking the background thread
-        # and to allow asyncio-based retries/backoff. Keep _client for API parity.
-        self._client = None
+        self._client = httpx.Client(timeout=httpx.Timeout(timeout=60, connect=5.0))
 
     def set_api_key(self, api_key: str):
         """Set the OpenAI API key for the exporter.
@@ -104,68 +102,41 @@ class BackendSpanExporter(TracingExporter):
             "OpenAI-Beta": "traces=v1",
         }
 
-        async def _export_async():
-            if not self.api_key:
-                # double-check in async context
-                logger.warning("OPENAI_API_KEY is not set, skipping trace export")
-                return
+        attempt = 0
+        delay = self.base_delay
 
-            max_retries = max(1, self.max_retries)
-            attempt = 0
-            delay = self.base_delay
-
-            while True:
-                attempt += 1
-                try:
-                    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout=60, connect=5.0)) as client:
-                        resp = await client.post(url=self.endpoint, headers=headers, json=payload)
-                        # Successful
-                        if resp.status_code < 300:
-                            logger.debug(f"Exported {len(items)} items")
-                            return
-
-                        # Client errors shouldn't be retried
-                        if 400 <= resp.status_code < 500:
-                            logger.error(
-                                f"[non-fatal] Tracing client error {resp.status_code}: {resp.text}"
-                            )
-                            return
-
-                        # For 5xx treat as transient and retry
-                        logger.warning(
-                            f"[non-fatal] Tracing: server error {resp.status_code}, retrying."
-                        )
-
-                except httpx.HTTPStatusError as exc:
-                    logger.warning(f"[non-fatal] Tracing: http status error: {exc}")
-                except (httpx.RequestError, OSError) as exc:
-                    logger.warning(f"[non-fatal] Tracing: request failed: {exc}")
-
-                if attempt >= max_retries:
-                    logger.error("[non-fatal] Tracing: max retries reached, giving up on this batch.")
+        while True:
+            attempt += 1
+            try:
+                response = self._client.post(url=self.endpoint, headers=headers, json=payload)
+                if response.status_code < 300:
+                    logger.debug(f"Exported {len(items)} items")
                     return
 
-                # Exponential backoff + jitter
-                sleep_time = min(delay, self.max_delay) + random.uniform(0, 0.1 * delay)
-                await asyncio.sleep(sleep_time)
-                delay = min(delay * 2, self.max_delay)
+                if 400 <= response.status_code < 500:
+                    logger.error(
+                        f"[non-fatal] Tracing client error {response.status_code}: {response.text}"
+                    )
+                    return
 
-        try:
-            asyncio.run(_export_async())
-        except RuntimeError:
-            # Already inside an event loop: schedule the task and continue (best-effort)
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.ensure_future(_export_async())
-                else:
-                    loop.run_until_complete(_export_async())
-            except Exception:
-                logger.debug("trace export failed to run async exporter")
+                logger.warning(
+                    f"[non-fatal] Tracing: server error {response.status_code}, retrying."
+                )
+
+            except httpx.RequestError as exc:
+                logger.warning(f"[non-fatal] Tracing: request failed: {exc}")
+
+            if attempt >= self.max_retries:
+                logger.error("[non-fatal] Tracing: max retries reached, giving up on this batch.")
+                return
+
+            sleep_time = delay + random.uniform(0, 0.1 * delay)
+            time.sleep(sleep_time)
+            delay = min(delay * 2, self.max_delay)
 
     def close(self):
-        """No-op close since we create AsyncClient per-call."""
-        return
+        """Close the underlying HTTP client."""
+        self._client.close()
 
 
 class BatchTraceProcessor(TracingProcessor):

@@ -7,17 +7,19 @@ from dataclasses import dataclass
 from typing import Any, Callable, Literal, Union, overload
 
 from typing import TYPE_CHECKING, Any
+try:
+    from pydantic import ValidationError
+except ImportError:  # pragma: no cover
+    class ValidationError(Exception):  # type: ignore[no-redef]
+        pass
 if TYPE_CHECKING:
     from openai.types.responses.file_search_tool_param import Filters, RankingOptions
     from openai.types.responses.web_search_tool_param import UserLocation
-    from pydantic import ValidationError
 else:
     # Runtime fallbacks when optional packages are missing
     Filters = Any
     RankingOptions = Any
     UserLocation = Any
-    class ValidationError(Exception):
-        pass
 from typing_extensions import Concatenate, ParamSpec
 
 from . import _debug
@@ -96,6 +98,18 @@ class FunctionTool:
     strict_json_schema: bool = True
     """Whether the JSON schema is in strict mode. We **strongly** recommend setting this to True,
     as it increases the likelihood of correct JSON input."""
+
+    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Allow calling the FunctionTool directly like a coroutine for convenience.
+
+        Positional arguments are mapped to schema properties in declaration order;
+        keyword arguments are passed by name.
+        """
+        props = list(self.params_json_schema.get("properties", {}).keys())
+        json_data = dict(zip(props, args))
+        json_data.update(kwargs)
+        ctx = RunContextWrapper(context=None)
+        return await self.on_invoke_tool(ctx, json.dumps(json_data))
 
 
 @dataclass
