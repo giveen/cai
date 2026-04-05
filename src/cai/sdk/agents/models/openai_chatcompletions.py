@@ -3496,8 +3496,26 @@ class OpenAIChatCompletionsModel(Model):
         threshold = max_tokens * threshold_percent
         
         if estimated_tokens <= threshold:
+            # Context dropped below threshold — clear any previous failure record so we
+            # can attempt compaction again the next time it's needed.
+            if hasattr(self, '_compact_failed_tokens'):
+                del self._compact_failed_tokens
             return input, system_instructions, False
-            
+
+        # ── Failure back-off ──────────────────────────────────────────────────
+        # If the last compaction attempt failed (e.g. support model context too
+        # small), suppress further attempts until the token count changes
+        # meaningfully (>5 % growth).  This prevents the support model from
+        # being called on every single LLM turn when it cannot possibly succeed.
+        if hasattr(self, '_compact_failed_tokens'):
+            growth = (estimated_tokens - self._compact_failed_tokens) / max(estimated_tokens, 1)
+            if growth < 0.05:
+                # Still at roughly the same size — skip silently.
+                return input, system_instructions, False
+            # Token count grew enough; clear the flag and try again.
+            del self._compact_failed_tokens
+        # ─────────────────────────────────────────────────────────────────────
+
         # Auto-compaction needed
         from rich.console import Console
         console = Console()
@@ -3517,6 +3535,10 @@ class OpenAIChatCompletionsModel(Model):
             summary = await MEMORY_COMMAND_INSTANCE._ai_summarize_history(self.agent_name)
             
             if summary:
+                # Clear the failure record on success
+                if hasattr(self, '_compact_failed_tokens'):
+                    del self._compact_failed_tokens
+
                 # Store the summary
                 from cai.repl.commands.memory import COMPACTED_SUMMARIES
                 COMPACTED_SUMMARIES[self.agent_name] = summary
@@ -3524,9 +3546,6 @@ class OpenAIChatCompletionsModel(Model):
                 # Clear the message history and keep only essential messages
                 self.message_history.clear()
                 # Reset context usage after clearing
-                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
-                
-                # Reset context usage since we cleared history
                 os.environ['CAI_CONTEXT_USAGE'] = '0.0'
                 
                 # Create new input with summary
@@ -3564,10 +3583,18 @@ class OpenAIChatCompletionsModel(Model):
                 os.environ['CAI_CONTEXT_USAGE'] = str(new_context_usage)
                 
                 return new_input, new_system_instructions, True
-                
+
+            # Summary returned None — treat the same as an exception (record failure).
+            console.print("[yellow]Auto-compact did not produce a summary — continuing without compaction.[/yellow]")
+            console.print("[yellow]Future compaction attempts will be suppressed until the conversation grows further.[/yellow]\n")
+            self._compact_failed_tokens = estimated_tokens
+
         except Exception as e:
             console.print(f"[red]Auto-compaction failed: {e}[/red]")
-            console.print("[yellow]Continuing with full context...[/yellow]\n")
+            console.print("[yellow]Continuing with full context...[/yellow]")
+            console.print("[yellow]Future compaction attempts will be suppressed until the conversation grows further.[/yellow]\n")
+            # Record the failure so we don't spam the support model on every turn.
+            self._compact_failed_tokens = estimated_tokens
         
         return input, system_instructions, False
 
