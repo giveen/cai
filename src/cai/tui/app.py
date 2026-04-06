@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -613,6 +614,23 @@ _CSS += """
 }
 """
 
+# Simple on-disk config used by the TUI config screens.
+CONFIG_FILE = os.path.join(os.getcwd(), "tui_config.json")
+
+def _load_tui_config() -> dict:
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_tui_config(cfg: dict) -> None:
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Preset team compositions (label, list of agent-type strings)
@@ -762,6 +780,256 @@ class ConfigModal(ModalScreen):
         btn_id = event.button.id
         if btn_id == "config-open":
             self.dismiss(("open", self._action_key))
+        else:
+            self.dismiss(None)
+
+
+# ---------------------------------------------------------------------------
+# Full-screen Config screens
+# ---------------------------------------------------------------------------
+class ProvidersScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, config: dict) -> None:
+        super().__init__()
+        self._config = config or {}
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("Providers Configuration", id="modal-agent-label")
+            yield Static("Existing providers:", id="providers-label")
+            yield ListView(id="providers-list")
+            yield Input(placeholder="provider name", id="providers-name")
+            yield Input(placeholder="api key", id="providers-key")
+            with Horizontal():
+                yield Button("Save", id="providers-save", classes="modal-btn")
+                yield Button("Test", id="providers-test", classes="modal-btn")
+                yield Button("Close", id="providers-cancel", classes="modal-btn modal-btn--cancel")
+
+    async def on_mount(self) -> None:
+        try:
+            lv = self.query_one("#providers-list", ListView)
+            providers = self._config.get("providers", {})
+            for name, key in providers.items():
+                await lv.mount(ListItem(Label(f"{name}: {key[:6]}..."), id=f"provider-item-{name}"))
+        except Exception:
+            pass
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn = event.button.id
+        if btn == "providers-save":
+            try:
+                name = self.query_one("#providers-name", Input).value.strip()
+                key = self.query_one("#providers-key", Input).value.strip()
+            except Exception:
+                name = ""
+                key = ""
+            if not name:
+                self.dismiss(None)
+                return
+            self.dismiss(("save_provider", name, key))
+        elif btn == "providers-test":
+            try:
+                name = self.query_one("#providers-name", Input).value.strip()
+            except Exception:
+                name = ""
+            self.dismiss(("test_provider", name))
+        else:
+            self.dismiss(None)
+
+
+class ModelParamsScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, config: dict) -> None:
+        super().__init__()
+        self._config = config or {}
+
+    def compose(self) -> ComposeResult:
+        mp = self._config.get("model_params", {})
+        with Vertical(id="modal-dialog"):
+            yield Static("Model Parameters", id="modal-agent-label")
+            yield Input(value=str(mp.get("temperature", "0.0")), id="model-temp")
+            yield Input(value=str(mp.get("max_tokens", "1024")), id="model-max-tokens")
+            yield Input(value=str(mp.get("system_prompt", "")), id="model-system")
+            with Horizontal():
+                yield Button("Save", id="model-save", classes="modal-btn")
+                yield Button("Close", id="model-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn = event.button.id
+        if btn == "model-save":
+            try:
+                temp = float(self.query_one("#model-temp", Input).value)
+            except Exception:
+                temp = 0.0
+            try:
+                max_t = int(self.query_one("#model-max-tokens", Input).value)
+            except Exception:
+                max_t = 1024
+            try:
+                sys = self.query_one("#model-system", Input).value
+            except Exception:
+                sys = ""
+            self.dismiss(("save_model_params", {"temperature": temp, "max_tokens": max_t, "system_prompt": sys}))
+        else:
+            self.dismiss(None)
+
+
+class MemoryInspectorScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, config: dict) -> None:
+        super().__init__()
+        self._config = config or {}
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("Memory / RAG Inspector", id="modal-agent-label")
+            yield Static("Operations:", id="memory-ops")
+            with Horizontal():
+                yield Button("Rebuild Index", id="memory-rebuild", classes="modal-btn")
+                yield Button("Evict All", id="memory-evict", classes="modal-btn modal-btn--cancel")
+                yield Button("Close", id="memory-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn = event.button.id
+        if btn == "memory-rebuild":
+            self.dismiss(("rebuild_memory",))
+        elif btn == "memory-evict":
+            self.dismiss(("evict_memory",))
+        else:
+            self.dismiss(None)
+
+
+class ExportImportScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, config: dict) -> None:
+        super().__init__()
+        self._config = config or {}
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("Export / Import Workspace", id="modal-agent-label")
+            yield Input(placeholder="path to export/import", id="export-import-path")
+            with Horizontal():
+                yield Button("Export", id="export-do", classes="modal-btn")
+                yield Button("Import", id="import-do", classes="modal-btn")
+                yield Button("Close", id="export-import-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn = event.button.id
+        if btn == "export-do":
+            try:
+                path = self.query_one("#export-import-path", Input).value.strip()
+            except Exception:
+                path = ""
+            self.dismiss(("export_config", path))
+        elif btn == "import-do":
+            try:
+                path = self.query_one("#export-import-path", Input).value.strip()
+            except Exception:
+                path = ""
+            self.dismiss(("import_config", path))
+        else:
+            self.dismiss(None)
+
+
+class EnvScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, config: dict) -> None:
+        super().__init__()
+        self._config = config or {}
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("Environment Variables (CAI_*)", id="modal-agent-label")
+            yield ListView(id="env-list")
+            yield Input(placeholder="VAR_NAME (no CAI_ prefix)", id="env-name")
+            yield Input(placeholder="value", id="env-value")
+            with Horizontal():
+                yield Button("Set", id="env-set", classes="modal-btn")
+                yield Button("Unset", id="env-unset", classes="modal-btn modal-btn--cancel")
+                yield Button("Close", id="env-cancel", classes="modal-btn modal-btn--cancel")
+
+    async def on_mount(self) -> None:
+        try:
+            lv = self.query_one("#env-list", ListView)
+            for k in sorted([k for k in os.environ if k.startswith("CAI_")]):
+                await lv.mount(ListItem(Label(f"{k}={os.environ.get(k)}")))
+        except Exception:
+            pass
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn = event.button.id
+        if btn == "env-set":
+            try:
+                name = self.query_one("#env-name", Input).value.strip()
+                val = self.query_one("#env-value", Input).value
+            except Exception:
+                name = ""
+                val = ""
+            if not name:
+                self.dismiss(None)
+                return
+            self.dismiss(("set_env", f"CAI_{name}", val))
+        elif btn == "env-unset":
+            try:
+                name = self.query_one("#env-name", Input).value.strip()
+            except Exception:
+                name = ""
+            if not name:
+                self.dismiss(None)
+                return
+            self.dismiss(("unset_env", f"CAI_{name}"))
+        else:
+            self.dismiss(None)
+
+
+class SessionRecordingScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, config: dict) -> None:
+        super().__init__()
+        self._config = config or {}
+
+    def compose(self) -> ComposeResult:
+        cur = os.environ.get("CAI_DISABLE_SESSION_RECORDING", "").lower() == "true"
+        status = "disabled" if cur else "enabled"
+        with Vertical(id="modal-dialog"):
+            yield Static(f"Session recording is currently: [bold]{status}[/bold]", id="modal-agent-label")
+            with Horizontal():
+                yield Button("Toggle", id="session-toggle", classes="modal-btn")
+                yield Button("Close", id="session-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "session-toggle":
+            self.dismiss(("toggle_session_recording",))
+        else:
+            self.dismiss(None)
+
+
+class ResetDefaultsScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("Reset all TUI config to defaults?", id="modal-agent-label")
+            yield Button("Reset", id="reset-do", classes="modal-btn modal-btn--cancel")
+            yield Button("Cancel", id="reset-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "reset-do":
+            self.dismiss(("reset_defaults", True))
         else:
             self.dismiss(None)
 
@@ -1395,11 +1663,44 @@ class CAIApp(App):
         await self._handle_config_action(result)
 
     async def _handle_config_action(self, result) -> None:
-        """Perform a minimal action for the chosen config item (placeholder behavior)."""
+        """Open the corresponding full-screen config editor for the chosen item."""
         if not result:
             return
         action = result[1] if isinstance(result, (tuple, list)) and len(result) > 1 else None
         if not action:
+            return
+
+        # Delegate to the worker that can call push_screen_wait
+        await self._open_config_screen(action)
+
+    @work(exclusive=False)
+    async def _open_config_screen(self, action_key: str) -> None:
+        """Push the full-screen config modal for `action_key` and handle its result."""
+        from rich.text import Text as RichText
+
+        cfg = _load_tui_config()
+
+        screen_map = {
+            "providers": ProvidersScreen(cfg),
+            "model-params": ModelParamsScreen(cfg),
+            "memory": MemoryInspectorScreen(cfg),
+            "export-import": ExportImportScreen(cfg),
+            "env": EnvScreen(cfg),
+            "session-recording": SessionRecordingScreen(cfg),
+            "reset-defaults": ResetDefaultsScreen(),
+        }
+
+        screen = screen_map.get(action_key)
+        if not screen:
+            try:
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Unknown config section: {action_key}[/red]"))
+            except Exception:
+                pass
+            return
+
+        result = await self.push_screen_wait(screen)
+        if not result:
             return
 
         try:
@@ -1409,39 +1710,121 @@ class CAIApp(App):
             log = None
 
         try:
-            if action == "providers":
+            key = result[0] if isinstance(result, (list, tuple)) else result
+
+            if key == "save_provider":
+                _, name, secret = result
+                cfg = _load_tui_config()
+                cfg.setdefault("providers", {})[name] = secret
+                _save_tui_config(cfg)
                 if log:
-                    log.write(RichText.from_markup("[dim]Open Providers configuration (TODO)[/dim]"))
-            elif action == "model-params":
+                    log.write(RichText.from_markup(f"[green]Saved provider {name}[/green]"))
+
+            elif key == "test_provider":
+                _, name = result
                 if log:
-                    log.write(RichText.from_markup("[dim]Open Model selection & params (TODO)[/dim]"))
-            elif action == "memory":
+                    log.write(RichText.from_markup(f"[dim]Provider test requested for {name} (not implemented)[/dim]"))
+
+            elif key == "save_model_params":
+                _, params = result
+                cfg = _load_tui_config()
+                cfg["model_params"] = params
+                _save_tui_config(cfg)
                 if log:
-                    log.write(RichText.from_markup("[dim]Open Memory / RAG inspector (TODO)[/dim]"))
-            elif action == "export-import":
+                    log.write(RichText.from_markup("[green]Saved model parameters[/green]"))
+
+            elif key == "rebuild_memory":
                 if log:
-                    log.write(RichText.from_markup("[dim]Open Export/Import workspace (TODO)[/dim]"))
-            elif action == "env":
-                env_items = {k: os.environ[k] for k in os.environ if k.startswith("CAI_")}
-                body = "\n".join([f"{k}={v}" for k, v in sorted(env_items.items())]) or "(no CAI_ env vars set)"
+                    log.write(RichText.from_markup("[dim]Rebuild memory requested (not implemented)[/dim]"))
+
+            elif key == "evict_memory":
                 if log:
-                    log.write(RichText.from_markup(f"[dim]{body}[/dim]"))
-            elif action == "session-recording":
+                    log.write(RichText.from_markup("[dim]Evict memory requested (not implemented)[/dim]"))
+
+            elif key == "export_config":
+                _, path = result
+                dest = path or os.path.join(os.getcwd(), "tui_config_export.json")
+                try:
+                    cfg = _load_tui_config()
+                    if os.path.isdir(dest):
+                        dest = os.path.join(dest, "tui_config_export.json")
+                    with open(dest, "w") as f:
+                        json.dump(cfg, f, indent=2)
+                    if log:
+                        log.write(RichText.from_markup(f"[green]Exported config to {dest}[/green]"))
+                except Exception as e:
+                    if log:
+                        log.write(RichText.from_markup(f"[red]Export failed: {e}[/red]"))
+
+            elif key == "import_config":
+                _, path = result
+                try:
+                    if path and os.path.exists(path):
+                        with open(path, "r") as f:
+                            imported = json.load(f)
+                        cfg = _load_tui_config()
+                        cfg.update(imported)
+                        _save_tui_config(cfg)
+                        if log:
+                            log.write(RichText.from_markup(f"[green]Imported config from {path}[/green]"))
+                    else:
+                        if log:
+                            log.write(RichText.from_markup(f"[red]Import path not found: {path}[/red]"))
+                except Exception as e:
+                    if log:
+                        log.write(RichText.from_markup(f"[red]Import failed: {e}[/red]"))
+
+            elif key == "set_env":
+                _, var, val = result
+                try:
+                    os.environ[var] = val
+                    cfg = _load_tui_config()
+                    cfg.setdefault("env", {})[var] = val
+                    _save_tui_config(cfg)
+                    if log:
+                        log.write(RichText.from_markup(f"[green]Set {var}[/green]"))
+                except Exception as e:
+                    if log:
+                        log.write(RichText.from_markup(f"[red]Set env failed: {e}[/red]"))
+
+            elif key == "unset_env":
+                _, var = result
+                try:
+                    os.environ.pop(var, None)
+                    cfg = _load_tui_config()
+                    if "env" in cfg and var in cfg["env"]:
+                        cfg["env"].pop(var, None)
+                    _save_tui_config(cfg)
+                    if log:
+                        log.write(RichText.from_markup(f"[green]Unset {var}[/green]"))
+                except Exception as e:
+                    if log:
+                        log.write(RichText.from_markup(f"[red]Unset env failed: {e}[/red]"))
+
+            elif key == "toggle_session_recording":
                 cur = os.environ.get("CAI_DISABLE_SESSION_RECORDING", "").lower() == "true"
-                new = not cur
-                if new:
-                    os.environ["CAI_DISABLE_SESSION_RECORDING"] = "true"
-                    state = "disabled"
-                else:
+                if cur:
                     os.environ.pop("CAI_DISABLE_SESSION_RECORDING", None)
                     state = "enabled"
+                else:
+                    os.environ["CAI_DISABLE_SESSION_RECORDING"] = "true"
+                    state = "disabled"
                 if log:
                     log.write(RichText.from_markup(f"[green]Session recording {state}[/green]"))
-            elif action == "reset-defaults":
-                if log:
-                    log.write(RichText.from_markup("[red]Reset to defaults (not implemented)[/red]"))
+
+            elif key == "reset_defaults":
+                try:
+                    if os.path.exists(CONFIG_FILE):
+                        os.remove(CONFIG_FILE)
+                    if log:
+                        log.write(RichText.from_markup("[green]Reset TUI config to defaults (config file removed)[/green]"))
+                except Exception as e:
+                    if log:
+                        log.write(RichText.from_markup(f"[red]Reset failed: {e}[/red]"))
+
         except Exception:
-            pass
+            if log:
+                log.write(RichText.from_markup("[red]Error handling config action[/red]"))
 
     # ------------------------------------------------------------------ modal callback
 
