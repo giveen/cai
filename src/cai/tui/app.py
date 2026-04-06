@@ -741,6 +741,31 @@ class ConfirmModal(ModalScreen):
             self.dismiss(None)
 
 
+class ConfigModal(ModalScreen):
+    """Modal to confirm opening a Config section. Returns ('open', action_key) or None."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, action_key: str, display_label: str) -> None:
+        super().__init__()
+        self._action_key = action_key
+        self._display = display_label
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static(f"Open config: [bold]{self._display}[/bold]", id="modal-agent-label")
+            yield Button("Open", id="config-open", classes="modal-btn")
+            yield Button("Cancel", id="config-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "config-open":
+            self.dismiss(("open", self._action_key))
+        else:
+            self.dismiss(None)
+
+
 # ---------------------------------------------------------------------------
 # Terminal panel widget  (one per open terminal)
 # ---------------------------------------------------------------------------
@@ -1068,6 +1093,15 @@ class CAIApp(App):
                                 yield Button("Export Selected", id="sessions-export", classes="agent-btn")
                                 yield Button("Rename Selected", id="sessions-rename", classes="agent-btn")
                                 yield Button("Delete Selected", id="sessions-delete", classes="modal-btn modal-btn--cancel")
+                    with TabPane("Config", id="tab-config"):
+                        with Vertical(id="config-pane"):
+                            yield Button("Providers", id="config-providers", classes="menu-btn")
+                            yield Button("Model Params", id="config-model-params", classes="menu-btn")
+                            yield Button("Memory / RAG", id="config-memory", classes="menu-btn")
+                            yield Button("Export / Import", id="config-export-import", classes="menu-btn")
+                            yield Button("Environment", id="config-env", classes="menu-btn")
+                            yield Button("Toggle Session Recording", id="config-session-recording", classes="menu-btn")
+                            yield Button("Reset Defaults", id="config-reset-defaults", classes="menu-btn")
             # ── Right: vertical stack of (up to 2) terminal rows ─────────
             with Vertical(id="terminals"):
                 with Horizontal(id="term-row-top", classes="term-row"):
@@ -1325,6 +1359,15 @@ class CAIApp(App):
                 pass
             return
 
+        # Config menu buttons
+        if btn_id.startswith("config-"):
+            try:
+                action_key = btn_id[len("config-"):]
+                self._open_config_modal(action_key)
+            except Exception:
+                pass
+            return
+
     @work(exclusive=False)
     async def _open_agent_modal(self, agent_name: str) -> None:
         """Open the agent modal from a worker so push_screen_wait is valid."""
@@ -1334,6 +1377,71 @@ class CAIApp(App):
             AgentModal(agent_name, active_label, at_max=at_max)
         )
         await self._handle_agent_modal(result)
+
+    @work(exclusive=False)
+    async def _open_config_modal(self, action_key: str) -> None:
+        """Open a small modal to confirm opening the chosen Config section."""
+        mapping = {
+            "providers": "Providers",
+            "model-params": "Model Params",
+            "memory": "Memory / RAG",
+            "export-import": "Export / Import",
+            "env": "Environment",
+            "session-recording": "Session Recording",
+            "reset-defaults": "Reset Defaults",
+        }
+        display = mapping.get(action_key, action_key)
+        result = await self.push_screen_wait(ConfigModal(action_key, display))
+        await self._handle_config_action(result)
+
+    async def _handle_config_action(self, result) -> None:
+        """Perform a minimal action for the chosen config item (placeholder behavior)."""
+        if not result:
+            return
+        action = result[1] if isinstance(result, (tuple, list)) and len(result) > 1 else None
+        if not action:
+            return
+
+        try:
+            panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+            log = panel.query_one(f"#term-log-{panel._term_id}", RichLog)
+        except Exception:
+            log = None
+
+        try:
+            if action == "providers":
+                if log:
+                    log.write(RichText.from_markup("[dim]Open Providers configuration (TODO)[/dim]"))
+            elif action == "model-params":
+                if log:
+                    log.write(RichText.from_markup("[dim]Open Model selection & params (TODO)[/dim]"))
+            elif action == "memory":
+                if log:
+                    log.write(RichText.from_markup("[dim]Open Memory / RAG inspector (TODO)[/dim]"))
+            elif action == "export-import":
+                if log:
+                    log.write(RichText.from_markup("[dim]Open Export/Import workspace (TODO)[/dim]"))
+            elif action == "env":
+                env_items = {k: os.environ[k] for k in os.environ if k.startswith("CAI_")}
+                body = "\n".join([f"{k}={v}" for k, v in sorted(env_items.items())]) or "(no CAI_ env vars set)"
+                if log:
+                    log.write(RichText.from_markup(f"[dim]{body}[/dim]"))
+            elif action == "session-recording":
+                cur = os.environ.get("CAI_DISABLE_SESSION_RECORDING", "").lower() == "true"
+                new = not cur
+                if new:
+                    os.environ["CAI_DISABLE_SESSION_RECORDING"] = "true"
+                    state = "disabled"
+                else:
+                    os.environ.pop("CAI_DISABLE_SESSION_RECORDING", None)
+                    state = "enabled"
+                if log:
+                    log.write(RichText.from_markup(f"[green]Session recording {state}[/green]"))
+            elif action == "reset-defaults":
+                if log:
+                    log.write(RichText.from_markup("[red]Reset to defaults (not implemented)[/red]"))
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ modal callback
 
