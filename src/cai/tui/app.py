@@ -603,6 +603,14 @@ _CSS += """
 #sessions-list > ListItem > Button {
     margin-left: 1;
 }
+# session preview area
+#session-preview {
+    height: 7;
+    padding: 0 1;
+    background: #001400;
+    color: #00ff00;
+    border-top: solid #003300;
+}
 """
 
 
@@ -705,6 +713,30 @@ class PromptModal(ModalScreen):
             except Exception:
                 val = self._default
             self.dismiss(val)
+        else:
+            self.dismiss(None)
+
+
+class ConfirmModal(ModalScreen):
+    """Simple confirmation modal. Returns True if confirmed, else None."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, message: str) -> None:
+        super().__init__()
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static(self._message, id="modal-agent-label")
+            yield Button("Delete", id="confirm-ok", classes="modal-btn modal-btn--cancel")
+            yield Button("Cancel", id="confirm-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "confirm-ok":
+            self.dismiss(True)
         else:
             self.dismiss(None)
 
@@ -1028,6 +1060,7 @@ class CAIApp(App):
                         with Vertical(id="sessions-pane"):
                             with ScrollableContainer(id="sessions-scroll"):
                                 pass  # populated in on_mount
+                            yield Static("", id="session-preview")
                             with Horizontal(id="sessions-controls"):
                                 yield Button("Refresh", id="sessions-refresh", classes="team-btn")
                                 yield Button("Load Selected", id="sessions-load", classes="agent-btn")
@@ -1551,6 +1584,10 @@ class CAIApp(App):
             path = self._session_files.get(idx)
             if not path:
                 return
+            # Confirm deletion with modal
+            result = await self.push_screen_wait(ConfirmModal(f"Delete {os.path.basename(path)}?"))
+            if not result:
+                return
             try:
                 os.remove(path)
             except Exception:
@@ -1642,6 +1679,12 @@ class CAIApp(App):
         except Exception:
             pass
 
+        # Update preview for the newly selected session
+        try:
+            self._update_session_preview(self._session_selected_idx)
+        except Exception:
+            pass
+
     @work(exclusive=False)
     async def _session_export_worker(self, idx: int) -> None:
         """Export a session file to an arbitrary location chosen by the user."""
@@ -1672,6 +1715,68 @@ class CAIApp(App):
             try:
                 panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
                 panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Export failed: {e}[/red]"))
+            except Exception:
+                pass
+
+    def _update_session_preview(self, idx: Optional[int]) -> None:
+        """Update the `#session-preview` Static with token/cost summary and a snippet."""
+        try:
+            preview = self.query_one("#session-preview", Static)
+        except Exception:
+            return
+
+        if idx is None:
+            try:
+                preview.update("")
+            except Exception:
+                pass
+            return
+
+        path = self._session_files.get(idx)
+        if not path or not os.path.exists(path):
+            try:
+                preview.update("[dim]No preview available")
+            except Exception:
+                pass
+            return
+
+        try:
+            from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl, get_token_stats
+            messages = load_history_from_jsonl(path)
+        except Exception:
+            messages = []
+
+        # Try to get token/cost stats
+        try:
+            model_name, prompt_t, completion_t, total_cost, active, idle = get_token_stats(path)
+            stats = f"Model: {model_name or 'unknown'} · prompt:{prompt_t} completion:{completion_t} cost:{total_cost}"
+        except Exception:
+            stats = "Model: ? · prompt:? completion:? cost:?"
+
+        # Build snippet: last 6 non-system messages
+        snippet_lines = []
+        try:
+            filtered = [m for m in messages if isinstance(m, dict) and m.get('role') != 'system']
+            for m in filtered[-6:]:
+                role = m.get('role', '')
+                content = (m.get('content') or '')
+                if not content:
+                    # handle nested message structures
+                    content = str(m)
+                # single-line snippet
+                line = content.strip().splitlines()[0][:160]
+                snippet_lines.append(f"{role}: {line}")
+        except Exception:
+            snippet_lines = []
+
+        snippet = "\n".join(snippet_lines) or "(no preview)"
+
+        body = f"[bold]{os.path.basename(path)}[/bold]\n{stats}\n\n{snippet}"
+        try:
+            preview.update(RichText.from_markup(body))
+        except Exception:
+            try:
+                preview.update(body)
             except Exception:
                 pass
 
