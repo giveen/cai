@@ -1450,7 +1450,15 @@ def cli_print_tool_call(tool_name="", args="", output="", prefix="  ", **kwargs)
     ]
     token_info = {k: kwargs.get(k) for k in token_keys if k in kwargs}
     if token_info:
-        t_parts = [f"{k.split('_')[-2]}={v}" for k, v in token_info.items()]
+        token_labels = {
+            'interaction_input_tokens': 'interaction_input',
+            'interaction_output_tokens': 'interaction_output',
+            'interaction_reasoning_tokens': 'interaction_reasoning',
+            'total_input_tokens': 'total_input',
+            'total_output_tokens': 'total_output',
+            'total_reasoning_tokens': 'total_reasoning',
+        }
+        t_parts = [f"{token_labels.get(k, k)}={v}" for k, v in token_info.items()]
         print(f"{prefix}{color('Tokens:', fg='cyan')} {', '.join(t_parts)}")
     if 'model' in kwargs:
         print(f"{prefix}{color('Model:', fg='cyan')} {kwargs.get('model')}")
