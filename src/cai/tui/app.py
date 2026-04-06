@@ -1758,8 +1758,16 @@ class CAIApp(App):
                 pass
             return
 
-        # Config menu buttons
-        if btn_id.startswith("config-"):
+        # Config menu buttons (only handle known sidebar config buttons)
+        if btn_id in (
+            "config-providers",
+            "config-model-params",
+            "config-memory",
+            "config-export-import",
+            "config-env",
+            "config-session-recording",
+            "config-reset-defaults",
+        ):
             try:
                 action_key = btn_id[len("config-"):]
                 # Open the full config screen directly (avoid an extra confirm modal)
