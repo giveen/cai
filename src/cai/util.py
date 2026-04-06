@@ -1414,17 +1414,46 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     return processed_messages
 
 
-def cli_print_tool_call(tool_name="", args="", output="", prefix="  "):
-    """Print a tool call with pretty formatting"""
+def cli_print_tool_call(tool_name="", args="", output="", prefix="  ", **kwargs):
+    """Print a tool call with pretty formatting.
+
+    Backwards-compatible: templates may pass `tool_args` and `tool_output`
+    as keywords (and additional token/debug metadata). Accept and map them.
+    """
     if not tool_name:
         return
 
+    # Allow older templates to pass tool_args/tool_output
+    if not args and "tool_args" in kwargs:
+        args = kwargs.get("tool_args")
+    if not output and "tool_output" in kwargs:
+        output = kwargs.get("tool_output")
+
+    # Format args nicely if needed
+    try:
+        args_str = _format_tool_args(args, tool_name=tool_name) if args else ""
+    except Exception:
+        # Fallback to string representation
+        args_str = str(args)
+
     print(f"{prefix}{color('Tool Call:', fg='cyan')}")
     print(f"{prefix}{color('Name:', fg='cyan')} {tool_name}")
-    if args:
-        print(f"{prefix}{color('Args:', fg='cyan')} {args}")
+    if args_str:
+        print(f"{prefix}{color('Args:', fg='cyan')} {args_str}")
     if output:
         print(f"{prefix}{color('Output:', fg='cyan')} {output}")
+
+    # Optionally print token and model debug info if provided
+    token_keys = [
+        'interaction_input_tokens', 'interaction_output_tokens', 'interaction_reasoning_tokens',
+        'total_input_tokens', 'total_output_tokens', 'total_reasoning_tokens'
+    ]
+    token_info = {k: kwargs.get(k) for k in token_keys if k in kwargs}
+    if token_info:
+        t_parts = [f"{k.split('_')[-2]}={v}" for k, v in token_info.items()]
+        print(f"{prefix}{color('Tokens:', fg='cyan')} {', '.join(t_parts)}")
+    if 'model' in kwargs:
+        print(f"{prefix}{color('Model:', fg='cyan')} {kwargs.get('model')}")
 
 
 def get_model_input_tokens(model):
