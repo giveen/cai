@@ -1583,16 +1583,41 @@ class CAIApp(App):
     @work(exclusive=False)
     async def _session_resume_worker(self, idx: int) -> None:
         try:
-            # Load into active agent first
-            await self._session_open_worker(idx)
-            # Then open a new terminal with the same agent as current active panel
-            try:
-                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
-                agent = panel._agent
-                agent_name = panel._agent_name
-                await self._add_terminal(agent, agent_name)
-            except Exception:
-                pass
+            # Try to infer which agent this session belongs to, open a terminal for it,
+            # then load the session into that new terminal (so resume maps to the right agent).
+            path = self._session_files.get(idx)
+            if not path:
+                return
+
+            from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl
+            messages = load_history_from_jsonl(path)
+
+            # Infer agent key from messages
+            best_key = self._infer_agent_from_session_messages(messages)
+
+            # If we have a good match among available agents, open a terminal for it
+            opened_terminal = False
+            if best_key and best_key in self._available_agents:
+                try:
+                    agent_obj = self._available_agents.get(best_key)
+                    await self._add_terminal(agent_obj, best_key)
+                    opened_terminal = True
+                except Exception:
+                    opened_terminal = False
+
+            # If no mapping found, fall back to opening a terminal for the active panel's agent
+            if not opened_terminal:
+                try:
+                    panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                    agent = panel._agent
+                    agent_name = panel._agent_name
+                    await self._add_terminal(agent, agent_name)
+                except Exception:
+                    pass
+
+            # Schedule the session load into the (newly) active terminal
+            # Use the existing worker that merges messages into the active agent
+            self._session_open_worker(idx)
         except Exception:
             pass
 
@@ -1649,6 +1674,82 @@ class CAIApp(App):
                 panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Export failed: {e}[/red]"))
             except Exception:
                 pass
+
+    def _infer_agent_from_session_messages(self, messages: list) -> Optional[str]:
+        """Try to infer the best-matching available agent key from session messages.
+
+        Heuristic:
+        - Collect candidate agent identifiers from message fields: `agent_name`, `name`, `sender`.
+        - Normalize and score available agents by matching candidate identifiers against
+          agent keys and display names (`agent.name` or `_pretty_name(key)`).
+        - Return the agent key with the highest score, or None if no confident match.
+        """
+        try:
+            from collections import Counter
+        except Exception:
+            Counter = None
+
+        if not messages:
+            return None
+
+        # Collect candidate identifiers from messages
+        candidates = []
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            for k in ("agent_name", "name", "sender"):
+                v = msg.get(k)
+                if v:
+                    # Remove instance suffixes like ' #1'
+                    try:
+                        v2 = v.split(" #")[0]
+                    except Exception:
+                        v2 = v
+                    candidates.append(str(v2))
+
+        if not candidates:
+            return None
+
+        counts = Counter(candidates) if Counter is not None else {}
+
+        # Score each available agent
+        best_key = None
+        best_score = 0
+
+        for key, agent in self._available_agents.items():
+            # Build match variants
+            display = getattr(agent, "name", None) or _pretty_name(key)
+            variants = {key, key.replace("_agent", "").replace("_pattern", "").replace("_swarm", "")}
+            variants.add(display)
+            variants.add(display.replace(" ", ""))
+
+            score = 0
+            for cand, cnt in (counts.items() if counts else []):
+                cand_n = "".join([c for c in cand.lower() if c.isalnum()])
+                for v in variants:
+                    try:
+                        v_n = "".join([c for c in str(v).lower() if c.isalnum()])
+                    except Exception:
+                        v_n = ""
+                    if not v_n or not cand_n:
+                        continue
+                    if cand_n == v_n:
+                        score += 10 * cnt
+                    elif cand_n in v_n or v_n in cand_n:
+                        score += 5 * cnt
+                    else:
+                        # partial word overlap
+                        if any(part in v_n for part in cand_n.split() if len(part) > 3):
+                            score += 2 * cnt
+
+            if score > best_score:
+                best_score = score
+                best_key = key
+
+        # Require some minimal confidence to accept match
+        if best_score >= 5:
+            return best_key
+        return None
 
     # ------------------------------------------------------------------ agent highlight
 
