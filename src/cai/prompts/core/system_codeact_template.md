@@ -1,7 +1,11 @@
 <%
     import os
     from cai.util import cli_print_tool_call
-    from cai.rag.vector_db import get_previous_memory
+    try:
+        from cai.rag.vector_db import get_previous_memory
+    except Exception:
+        # RAG module may be optional in some environments
+        get_previous_memory = None
     from cai import is_caiextensions_memory_available
 
     # Get system prompt from agent if provided
