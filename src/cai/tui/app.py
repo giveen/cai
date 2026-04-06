@@ -68,27 +68,47 @@ _ACRONYMS = {
     "api", "iot", "ai", "ml", "ids", "ips", "osint",
 }
 
+# Suffix → short distinguishing label appended after the base name
+_SUFFIX_LABELS: list[tuple[str, str]] = [
+    ("_swarm_pattern", " ↺"),   # swarm
+    ("_swarm_pa",      " ↺"),
+    ("_pattern",       " ⊕"),   # non-swarm pattern
+    ("_agent",         ""),      # plain agent – strip cleanly
+]
+
 
 def _pretty_name(raw: str) -> str:
     """Convert internal agent name → display label.
 
-    android_sast_agent       → Android SAST
-    redteam_agent            → Redteam
-    bug_bounter_agent        → Bug Bounter
-    dns_smtp_agent           → DNS SMTP
-    blue_team_red_team_..    → Blue Team Red Team ..
+    android_sast_agent            → Android SAST
+    redteam_agent                 → Redteam
+    redteam_swarm_pattern         → Redteam ↺
+    bug_bounter_agent             → Bug Bounter
+    dns_smtp_agent                → DNS SMTP
+    blue_team_red_team_shared_..  → Blue/Red Shared
     """
     name = raw
-    for suffix in ("_swarm_pattern", "_swarm_pa", "_pattern", "_agent"):
+    suffix_label = ""
+    for suffix, label in _SUFFIX_LABELS:
         if name.endswith(suffix):
             name = name[: -len(suffix)]
+            suffix_label = label
             break
+    # Abbreviate long blue/red team names to fit the sidebar
+    name = (
+        name.replace("blue_team_red_team_shared_context", "Blue/Red Shared")
+            .replace("blue_team_red_team_split_context",  "Blue/Red Split")
+            .replace("blue_team_red_team",                "Blue/Red Team")
+    )
+    if "_" not in name and " " in name:
+        # Already replaced with a friendly string above
+        return name + suffix_label
     parts = []
     for part in name.split("_"):
         if not part:
             continue
         parts.append(part.upper() if part.lower() in _ACRONYMS else part.capitalize())
-    return " ".join(parts) or raw
+    return " ".join(parts) + suffix_label or raw
 
 
 # ---------------------------------------------------------------------------
@@ -133,8 +153,8 @@ CaiHeader {
 
 /* ─── Left sidebar ─── */
 #sidebar {
-    width: 28;
-    min-width: 24;
+    width: 32;
+    min-width: 26;
     background: #000000;
     border-right: solid #003300;
     height: 100%;
@@ -431,17 +451,22 @@ Footer > .footer--spacer {
     background: #001a00;
 }
 
-/* ─── Terminals container (2×2 grid, max 4 panels) ─── */
+/* ─── Terminals container: Vertical, two rows max ─── */
 #terminals {
     height: 1fr;
-    layout: grid;
-    grid-size: 2 2;
+    layout: vertical;
+    background: #000000;
+}
+
+.term-row {
+    height: 1fr;
+    layout: horizontal;
     background: #000000;
 }
 
 TerminalPanel {
     width: 1fr;
-    height: 1fr;
+    height: 100%;
     layout: vertical;
     border: solid #003300;
     background: #000000;
@@ -955,9 +980,10 @@ class CAIApp(App):
                                     placeholder="Add task / command…",
                                     id="queue-input",
                                 )
-            # ── Right: horizontal strip of terminal panels ────────────────
-            with Horizontal(id="terminals"):
-                pass  # first panel added in on_mount
+            # ── Right: vertical stack of (up to 2) terminal rows ─────────
+            with Vertical(id="terminals"):
+                with Horizontal(id="term-row-top", classes="term-row"):
+                    pass  # first panel added in on_mount
         yield Footer()
 
     # ------------------------------------------------------------------ lifecycle
@@ -977,14 +1003,14 @@ class CAIApp(App):
 
         self._highlight_active_agent(self._agent_name)
 
-        # Spawn the first terminal panel
+        # Spawn the first terminal panel (into top row)
         first = TerminalPanel(
             term_id=1,
             agent=self._agent,
             agent_name=self._agent_name,
             model_name=self._model_name,
         )
-        await self.query_one("#terminals", Horizontal).mount(first)
+        await self.query_one("#term-row-top", Horizontal).mount(first)
         self._set_active_terminal(1)
 
         # Focus the first input
@@ -1009,6 +1035,13 @@ class CAIApp(App):
         try:
             panel = self.query_one(f"#terminal-panel-{event.term_id}", TerminalPanel)
             panel.remove()
+        except Exception:
+            pass
+        # Remove empty bottom row if all its panels were closed
+        try:
+            bottom = self.query_one("#term-row-bottom", Horizontal)
+            if not list(bottom.query(TerminalPanel)):
+                bottom.remove()
         except Exception:
             pass
         remaining = list(self.query(TerminalPanel))
@@ -1051,7 +1084,17 @@ class CAIApp(App):
             agent_name=agent_name,
             model_name=self._model_name,
         )
-        await self.query_one("#terminals", Horizontal).mount(panel)
+        # Panels 1 & 2 go in the top row; 3 & 4 go in the bottom row
+        if tid <= 2:
+            row = self.query_one("#term-row-top", Horizontal)
+        else:
+            # Create bottom row on first use
+            try:
+                row = self.query_one("#term-row-bottom", Horizontal)
+            except Exception:
+                row = Horizontal(id="term-row-bottom", classes="term-row")
+                await self.query_one("#terminals", Vertical).mount(row)
+        await row.mount(panel)
         self._set_active_terminal(tid)
         try:
             self.query_one(f"#term-input-{tid}", Input).focus()
@@ -1084,8 +1127,9 @@ class CAIApp(App):
             return
 
     # ------------------------------------------------------------------ modal callback
+    # NOTE: push_screen callback must be synchronous; use call_later for async work.
 
-    async def _handle_agent_modal(self, result) -> None:
+    def _handle_agent_modal(self, result) -> None:
         if result is None:
             return  # cancelled
         action, agent_name = result
@@ -1100,12 +1144,12 @@ class CAIApp(App):
                 )
                 panel.update_agent(new_agent, agent_name)
                 self._set_active_terminal(self._active_term_id)
-            except Exception:
+            except Exception as e:
                 pass
             self._highlight_active_agent(agent_name)
         elif action == "new":
-            await self._add_terminal(new_agent, agent_name)
             self._highlight_active_agent(agent_name)
+            self.call_later(self._add_terminal, new_agent, agent_name)
 
     # ------------------------------------------------------------------ input events
 
