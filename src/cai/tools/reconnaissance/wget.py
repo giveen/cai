@@ -7,6 +7,7 @@ Wget tool
 from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
 from cai.tools.validation import validate_args_no_injection, is_url_safe  # pylint: disable=import-error
+from cai.tools import validation  # pylint: disable=import-error
 
 
 def _validate_wget_input(args: str, url: str):
@@ -53,4 +54,11 @@ def wget(url: str, args: str = '', timeout: int = 60) -> str:
         return err
 
     command = f'wget {args} {url.strip()}'
-    return run_command(command, timeout=timeout)
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
+
+    result = run_command(command, timeout=timeout)
+    if isinstance(result, str):
+        result = validation.sanitize_tool_output(command, result)
+    return result

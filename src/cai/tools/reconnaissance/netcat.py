@@ -11,6 +11,7 @@ from cai.tools.validation import (
     is_valid_host,
     has_disallowed_nc_flags,
 )  # pylint: disable=import-error
+from cai.tools import validation  # pylint: disable=import-error
 
 
 def _validate_netcat_input(args: str, host: str, port: int, data: str):
@@ -82,6 +83,17 @@ def netcat(host: str, port: int, data: str = '', args: str = '', timeout: int = 
         else:
             # No data: ensure nc gets EOF immediately
             command = f'nc -w 3 {host_s} {port_i} {args} < /dev/null'
+
+        # Global guardrails
+        guard_err = validation.validate_command_guardrails(command)
+        if guard_err:
+            # cleanup tmp file if created
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+            return guard_err
 
         result = run_command(command, timeout=timeout)
         return result

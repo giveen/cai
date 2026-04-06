@@ -4,6 +4,7 @@ CLI utilities module for executing shell commands and processing their output.
 
 from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
+from cai.tools import validation  # pylint: disable=import-error
 
 @function_tool
 def execute_cli_command(command: str) -> str:
@@ -21,4 +22,11 @@ def execute_cli_command(command: str) -> str:
         str: Command output, formatted for clarity and readability.
             Long outputs will be truncated or filtered
     """
-    return run_command(command)
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
+
+    result = run_command(command)
+    if isinstance(result, str):
+        return validation.sanitize_tool_output(command, result)
+    return result
