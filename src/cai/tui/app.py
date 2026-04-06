@@ -1104,7 +1104,7 @@ class CAIApp(App):
     # ------------------------------------------------------------------ button events
 
     @on(Button.Pressed)
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
 
         if btn_id.startswith("agent-"):
@@ -1112,10 +1112,10 @@ class CAIApp(App):
             if agent_name in self._available_agents:
                 active_label = f"T{self._active_term_id}"
                 at_max = len(list(self.query(TerminalPanel))) >= 4
-                self.push_screen(
-                    AgentModal(agent_name, active_label, at_max=at_max),
-                    self._handle_agent_modal,
+                result = await self.push_screen_wait(
+                    AgentModal(agent_name, active_label, at_max=at_max)
                 )
+                await self._handle_agent_modal(result)
             return
 
         if btn_id.startswith("team-"):
@@ -1127,9 +1127,8 @@ class CAIApp(App):
             return
 
     # ------------------------------------------------------------------ modal callback
-    # NOTE: push_screen callback must be synchronous; use call_later for async work.
 
-    def _handle_agent_modal(self, result) -> None:
+    async def _handle_agent_modal(self, result) -> None:
         if result is None:
             return  # cancelled
         action, agent_name = result
@@ -1144,12 +1143,12 @@ class CAIApp(App):
                 )
                 panel.update_agent(new_agent, agent_name)
                 self._set_active_terminal(self._active_term_id)
-            except Exception as e:
+            except Exception:
                 pass
             self._highlight_active_agent(agent_name)
         elif action == "new":
+            await self._add_terminal(new_agent, agent_name)
             self._highlight_active_agent(agent_name)
-            self.call_later(self._add_terminal, new_agent, agent_name)
 
     # ------------------------------------------------------------------ input events
 
