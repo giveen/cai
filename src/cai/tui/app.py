@@ -1660,9 +1660,10 @@ class CAIApp(App):
         }
         display = mapping.get(action_key, action_key)
         result = await self.push_screen_wait(ConfigModal(action_key, display))
-        await self._handle_config_action(result)
+        # Do not await the handler because it will schedule a worker; call it synchronously.
+        self._handle_config_action(result)
 
-    async def _handle_config_action(self, result) -> None:
+    def _handle_config_action(self, result) -> None:
         """Open the corresponding full-screen config editor for the chosen item."""
         if not result:
             return
@@ -1670,8 +1671,11 @@ class CAIApp(App):
         if not action:
             return
 
-        # Delegate to the worker that can call push_screen_wait
-        await self._open_config_screen(action)
+        # Schedule the full-screen config worker (do not await the Worker object).
+        try:
+            self._open_config_screen(action)
+        except Exception:
+            pass
 
     @work(exclusive=False)
     async def _open_config_screen(self, action_key: str) -> None:
