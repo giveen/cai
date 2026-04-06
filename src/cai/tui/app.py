@@ -633,6 +633,64 @@ def _save_tui_config(cfg: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Full configuration variable definitions for the `/config` overview
+# ---------------------------------------------------------------------------
+CONFIG_VARIABLES = [
+    {"name": "CTF_NAME", "default": "Not set", "description": "Name of the CTF challenge to run"},
+    {"name": "CTF_CHALLENGE", "default": "Not set", "description": "Specific challenge name within the CTF to test"},
+    {"name": "CTF_SUBNET", "default": "192.168.3.0/24", "description": "Network subnet for the CTF container"},
+    {"name": "CTF_IP", "default": "192.168.3.100", "description": "IP address for the CTF container"},
+    {"name": "CTF_INSIDE", "default": "true", "description": "Whether to conquer the CTF from within container"},
+    {"name": "CAI_MODEL", "default": "alias1", "description": "Model to use for agents"},
+    {"name": "CAI_DEBUG", "default": "1", "description": "Set debug output level (0: Only tool outputs, 1: Verbose debug output, 2: CLI debug output)"},
+    {"name": "CAI_BRIEF", "default": "false", "description": "Enable/disable brief output mode"},
+    {"name": "CAI_MAX_TURNS", "default": "inf", "description": "Maximum number of turns for agent interactions"},
+    {"name": "CAI_TRACING", "default": "true", "description": "Enable/disable OpenTelemetry tracing"},
+    {"name": "CAI_AGENT_TYPE", "default": "one_tool", "description": "Specify the agents to use (boot2root, one_tool...)"},
+    {"name": "CAI_STATE", "default": "false", "description": "Enable/disable stateful mode"},
+    {"name": "CAI_MEMORY", "default": "false", "description": "Enable/disable memory mode (episodic, semantic, all)"},
+    {"name": "CAI_MEMORY_ONLINE", "default": "false", "description": "Enable/disable online memory mode"},
+    {"name": "CAI_MEMORY_OFFLINE", "default": "false", "description": "Enable/disable offline memory"},
+    {"name": "CAI_ENV_CONTEXT", "default": "true", "description": "Add dirs and current env to llm context"},
+    {"name": "CAI_MEMORY_ONLINE_INTERVAL", "default": "5", "description": "Number of turns between online memory updates"},
+    {"name": "CAI_PRICE_LIMIT", "default": "0", "description": "Price limit for the conversation in dollars"},
+    {"name": "CAI_REPORT", "default": "ctf", "description": "Enable/disable reporter mode (ctf, nis2, pentesting)"},
+    {"name": "CAI_SUPPORT_MODEL", "default": "o3-mini", "description": "Model to use for the support agent"},
+    {"name": "CAI_SUPPORT_INTERVAL", "default": "5", "description": "Number of turns between support agent executions"},
+    {"name": "CAI_STREAM", "default": "true", "description": "Boolean to enable real-time, chunked responses"},
+    {"name": "CAI_WORKSPACE", "default": "Not set", "description": "Name of the current workspace (affects log file naming)"},
+    {"name": "CAI_WORKSPACE_DIR", "default": "Not set", "description": "Path to the current workspace directory"},
+    {"name": "CAI_GUARDRAILS", "default": "true", "description": "Enable/disable security guardrails for prompt injection protection"},
+    {"name": "CAI_ANDROID_SAST_MODEL", "default": "Not set", "description": "Model override for AndroidSAST agent"},
+    {"name": "CAI_APP_LOGIC_MAPPER_MODEL", "default": "Not set", "description": "Model override for AppLogicMapper agent"},
+    {"name": "CAI_BB_TRIAGE_SWARM_PATTERN_MODEL", "default": "Not set", "description": "Model override for Bug bounty Triage agent"},
+    {"name": "CAI_BLUE_TEAM_RED_TEAM_SHARED_CONTEXT_MODEL", "default": "Not set", "description": "Model override for shared blue/red context agent"},
+    {"name": "CAI_BLUE_TEAM_RED_TEAM_SPLIT_CONTEXT_MODEL", "default": "Not set", "description": "Model override for split blue/red context agent"},
+    {"name": "CAI_BLUETEAM_AGENT_MODEL", "default": "Not set", "description": "Model override for Blue Team agent"},
+    {"name": "CAI_BUG_BOUNTER_AGENT_MODEL", "default": "Not set", "description": "Model override for Bug Bounter agent"},
+    {"name": "CAI_DFIR_AGENT_MODEL", "default": "Not set", "description": "Model override for DFIR agent"},
+    {"name": "CAI_DNS_SMTP_AGENT_MODEL", "default": "Not set", "description": "Model override for DNS/SMTP agent"},
+    {"name": "CAI_FLAG_DISCRIMINATOR_MODEL", "default": "Not set", "description": "Model override for Flag discriminator agent"},
+    {"name": "CAI_INJECTION_DETECTOR_AGENT_MODEL", "default": "Not set", "description": "Model override for Prompt Injection Detector agent"},
+    {"name": "CAI_MEMORY_ANALYSIS_AGENT_MODEL", "default": "Not set", "description": "Model override for Memory Analysis Specialist agent"},
+    {"name": "CAI_NETWORK_SECURITY_ANALYZER_AGENT_MODEL", "default": "Not set", "description": "Model override for Network Security Analyzer agent"},
+    {"name": "CAI_OFFSEC_PATTERN_MODEL", "default": "Not set", "description": "Model override for offsec_pattern agent"},
+    {"name": "CAI_ONE_TOOL_AGENT_MODEL", "default": "Not set", "description": "Model override for one tool CTF agent"},
+    {"name": "CAI_REDTEAM_AGENT_MODEL", "default": "Not set", "description": "Model override for Red Team agent"},
+    {"name": "CAI_REDTEAM_SWARM_PATTERN_MODEL", "default": "Not set", "description": "Model override for Red Team swarm manager"},
+    {"name": "CAI_REPLAY_ATTACK_AGENT_MODEL", "default": "Not set", "description": "Model override for Replay Attack agent"},
+    {"name": "CAI_REPORTING_AGENT_MODEL", "default": "Not set", "description": "Model override for reporting agent"},
+    {"name": "CAI_RETESTER_AGENT_MODEL", "default": "Not set", "description": "Model override for Retester agent"},
+    {"name": "CAI_REVERSE_ENGINEERING_AGENT_MODEL", "default": "Not set", "description": "Model override for Reverse Engineering agent"},
+    {"name": "CAI_SUBGHZ_SDR_AGENT_MODEL", "default": "Not set", "description": "Model override for Sub-GHz SDR agent"},
+    {"name": "CAI_THOUGHT_AGENT_MODEL", "default": "Not set", "description": "Model override for ThoughtAgent"},
+    {"name": "CAI_USE_CASE_AGENT_MODEL", "default": "Not set", "description": "Model override for Use Case agent"},
+    {"name": "CAI_WEB_PENTESTER_AGENT_MODEL", "default": "Not set", "description": "Model override for Web App Pentester agent"},
+    {"name": "CAI_WIFI_SECURITY_AGENT_MODEL", "default": "Not set", "description": "Model override for Wi-Fi Security Tester agent"},
+]
+
+
+# ---------------------------------------------------------------------------
 # Preset team compositions (label, list of agent-type strings)
 # ---------------------------------------------------------------------------
 TEAM_PRESETS = [
@@ -1034,6 +1092,62 @@ class ResetDefaultsScreen(ModalScreen):
             self.dismiss(None)
 
 
+class ConfigOverviewScreen(ModalScreen):
+    """Full interactive configuration overview: list of variables with Edit/Reset."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Close")]
+
+    def __init__(self, variables: list[dict]) -> None:
+        super().__init__()
+        self._variables = variables
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("Configuration Overview", id="modal-agent-label")
+            with ScrollableContainer(id="config-overview-scroll"):
+                yield ListView(id="config-overview-list")
+            with Horizontal():
+                yield Button("Close", id="config-overview-close", classes="modal-btn modal-btn--cancel")
+
+    async def on_mount(self) -> None:
+        try:
+            lv = self.query_one("#config-overview-list", ListView)
+            # Populate rows with current values
+            for idx, v in enumerate(self._variables):
+                name = v.get("name")
+                # Prefer explicit env var, then persisted config, then default
+                cfg = _load_tui_config()
+                val = os.environ.get(name) or cfg.get("env", {}).get(name) or v.get("default", "Not set")
+                display = f"{idx+1:2d} | {name:<40.40} | {str(val):<15.15} | {v.get('default', ''):<12.12} | {v.get('description','')[:60]}"
+                item = ListItem(Label(display), id=f"config-item-{idx}")
+                await lv.mount(item)
+                await item.mount(Button("Edit", id=f"cfg-edit-{idx}", classes="agent-btn"))
+                await item.mount(Button("Reset", id=f"cfg-reset-{idx}", classes="team-btn"))
+        except Exception:
+            pass
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id or ""
+        if btn_id == "config-overview-close":
+            self.dismiss(None)
+            return
+        if btn_id.startswith("cfg-edit-"):
+            try:
+                idx = int(btn_id.rsplit("-", 1)[-1])
+            except Exception:
+                idx = None
+            self.dismiss(("edit", idx))
+            return
+        if btn_id.startswith("cfg-reset-"):
+            try:
+                idx = int(btn_id.rsplit("-", 1)[-1])
+            except Exception:
+                idx = None
+            self.dismiss(("reset", idx))
+            return
+
+
 # ---------------------------------------------------------------------------
 # Terminal panel widget  (one per open terminal)
 # ---------------------------------------------------------------------------
@@ -1158,6 +1272,15 @@ class TerminalPanel(Widget):
                 "  No agent loaded. Select one from the sidebar.",
                 style="#ff4444",
             ))
+            return
+
+        # Open full config overview with /config
+        if cmd == "/config":
+            try:
+                # schedule the worker that can show full config screens
+                self.app._open_config_screen("full-config")
+            except Exception:
+                pass
             return
 
         ts = datetime.now().strftime("%H:%M:%S")
@@ -1631,7 +1754,15 @@ class CAIApp(App):
         if btn_id.startswith("config-"):
             try:
                 action_key = btn_id[len("config-"):]
-                self._open_config_modal(action_key)
+                # Open the full config screen directly (avoid an extra confirm modal)
+                try:
+                    self._open_config_screen(action_key)
+                except Exception:
+                    # Fallback to the confirm modal if scheduling the worker fails
+                    try:
+                        self._open_config_modal(action_key)
+                    except Exception:
+                        pass
             except Exception:
                 pass
             return
@@ -1682,6 +1813,12 @@ class CAIApp(App):
         """Push the full-screen config modal for `action_key` and handle its result."""
         from rich.text import Text as RichText
 
+        # Log for easier debugging when screens are opened
+        try:
+            self.log.info(f"_open_config_screen: {action_key}")
+        except Exception:
+            pass
+
         cfg = _load_tui_config()
 
         screen_map = {
@@ -1692,10 +1829,86 @@ class CAIApp(App):
             "env": EnvScreen(cfg),
             "session-recording": SessionRecordingScreen(cfg),
             "reset-defaults": ResetDefaultsScreen(),
+            "full-config": None,
         }
 
+        # Special-case: full-config overview requires a loop to allow edits
+        if action_key == "full-config":
+            try:
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                log = panel.query_one(f"#term-log-{panel._term_id}", RichLog)
+            except Exception:
+                panel = None
+                log = None
+            # Interactive loop: show overview, handle edit/reset, and re-show until closed
+            while True:
+                screen = ConfigOverviewScreen(CONFIG_VARIABLES)
+                result = await self.push_screen_wait(screen)
+                if not result:
+                    break
+                try:
+                    action = result[0]
+                    if action == "edit":
+                        idx = result[1]
+                        if idx is None or idx < 0 or idx >= len(CONFIG_VARIABLES):
+                            continue
+                        var = CONFIG_VARIABLES[idx]
+                        name = var.get("name")
+                        cur_cfg = _load_tui_config()
+                        current = os.environ.get(name) or cur_cfg.get("env", {}).get(name) or var.get("default", "")
+                        newval = await self.push_screen_wait(PromptModal(f"Set value for {name} (empty to unset):", str(current)))
+                        if newval is None:
+                            continue
+                        # Apply change
+                        try:
+                            cfg2 = _load_tui_config()
+                            if newval == "":
+                                os.environ.pop(name, None)
+                                if "env" in cfg2 and name in cfg2["env"]:
+                                    cfg2["env"].pop(name, None)
+                            else:
+                                os.environ[name] = newval
+                                cfg2.setdefault("env", {})[name] = newval
+                            _save_tui_config(cfg2)
+                            if log:
+                                log.write(RichText.from_markup(f"[green]Set {name} = {newval}[/green]"))
+                        except Exception as e:
+                            if log:
+                                log.write(RichText.from_markup(f"[red]Failed to set {name}: {e}[/red]"))
+                        continue
+
+                    elif action == "reset":
+                        idx = result[1]
+                        if idx is None or idx < 0 or idx >= len(CONFIG_VARIABLES):
+                            continue
+                        var = CONFIG_VARIABLES[idx]
+                        name = var.get("name")
+                        default = var.get("default")
+                        try:
+                            cfg2 = _load_tui_config()
+                            if default in (None, "Not set"):
+                                os.environ.pop(name, None)
+                                if "env" in cfg2 and name in cfg2["env"]:
+                                    cfg2["env"].pop(name, None)
+                            else:
+                                os.environ[name] = str(default)
+                                cfg2.setdefault("env", {})[name] = str(default)
+                            _save_tui_config(cfg2)
+                            if log:
+                                log.write(RichText.from_markup(f"[green]Reset {name} to {default}[/green]"))
+                        except Exception as e:
+                            if log:
+                                log.write(RichText.from_markup(f"[red]Failed to reset {name}: {e}[/red]"))
+                        continue
+                    else:
+                        # Unknown action – break
+                        break
+                except Exception:
+                    break
+            return
+
         screen = screen_map.get(action_key)
-        if not screen:
+        if screen is None:
             try:
                 panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
                 panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Unknown config section: {action_key}[/red]"))
