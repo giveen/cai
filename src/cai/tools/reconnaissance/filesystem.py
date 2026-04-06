@@ -4,6 +4,7 @@ Here are the CLI tools for executing commands.
 
 from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
+from cai.tools import validation  # pylint: disable=import-error
 
 # Dangerous flags that enable RCE, file writes, or file deletion
 DANGEROUS_FIND_FLAGS = {
@@ -26,6 +27,9 @@ def list_dir(path: str, args: str = "", ctf=None) -> str:
         str: The output of running the ls command
     """
     command = f'ls {path} {args}'
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
     return run_command(command, ctf=ctf)
 
 @function_tool
@@ -41,6 +45,9 @@ def cat_file(file_path: str, args: str = "", ctf=None) -> str:
         str: The output of running the cat command
     """
     command = f'cat {args} {file_path} '
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
     return run_command(command, ctf=ctf)
 
 
@@ -62,6 +69,9 @@ def pwd_command(ctf=None) -> str:
         str: The absolute path of the current working directory
     """
     command = 'pwd'
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
     return run_command(command, ctf=ctf)
 
 @function_tool
@@ -75,4 +85,7 @@ def find_file(file_path: str, args: str = "", ctf=None) -> str:
             return f"Error: DANGEROUS flag '{flag}' is not allowed"
     
     command = f'find {file_path} {args}'
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
     return run_command(command, ctf=ctf)

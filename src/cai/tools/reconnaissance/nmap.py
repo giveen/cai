@@ -5,6 +5,7 @@ Here are the nmap tools.
 from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
 from cai.tools.validation import contains_shell_metacharacters, is_valid_target  # pylint: disable=import-error
+from cai.tools import validation  # pylint: disable=import-error
 
 
 def _validate_nmap_input(args: str, target: str):
@@ -57,4 +58,7 @@ def nmap(target: str, args: str = "", timeout: int = 300) -> str:
         return err
 
     command = f'nmap {args} {target.strip()}'
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
     return run_command(command, timeout=timeout)

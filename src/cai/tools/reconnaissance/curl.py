@@ -5,6 +5,7 @@ Here are the curl tools.
 from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.sdk.agents import function_tool
 from cai.tools.validation import validate_args_no_injection, is_url_safe  # pylint: disable=import-error
+from cai.tools import validation  # pylint: disable=import-error
 
 
 def _validate_curl_input(args: str, target: str):
@@ -62,4 +63,12 @@ def curl(target: str, args: str = "", timeout: int = 30) -> str:
         return err
 
     command = f'curl {args} {target.strip()}'
-    return run_command(command, timeout=timeout)
+    # Global guardrails
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
+
+    result = run_command(command, timeout=timeout)
+    if isinstance(result, str):
+        result = validation.sanitize_tool_output(command, result)
+    return result
