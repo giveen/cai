@@ -1277,8 +1277,16 @@ class TerminalPanel(Widget):
         # Open full config overview with /config
         if cmd == "/config":
             try:
-                # schedule the worker that can show full config screens
-                self.app._open_config_screen("full-config")
+                # Display a full config table in the active terminal's right-hand area
+                try:
+                    self.app._display_config_table()
+                except Exception:
+                    pass
+                # Also schedule the interactive full-config worker (overview/edit loop)
+                try:
+                    self.app._open_config_screen("full-config")
+                except Exception:
+                    pass
             except Exception:
                 pass
             return
@@ -2599,6 +2607,54 @@ class CAIApp(App):
             self.query_one(f"#agent-{name}", Button).add_class("-active-agent")
         except Exception:
             pass
+
+    def _render_config_table(self, width: int = 120) -> str:
+        """Render the configuration variables as a table string using Rich."""
+        from rich.table import Table
+        from rich.console import Console
+        import io
+
+        cfg = _load_tui_config()
+
+        table = Table(show_header=True, header_style="bold #00ff00")
+        table.add_column("#", width=3)
+        table.add_column("Variable", width=40)
+        table.add_column("Value", width=20)
+        table.add_column("Default", width=12)
+        table.add_column("Description", width=60)
+
+        for idx, v in enumerate(CONFIG_VARIABLES):
+            name = v.get("name")
+            default = v.get("default", "")
+            desc = v.get("description", "")
+            value = os.environ.get(name) or cfg.get("env", {}).get(name) or default
+            # Ensure strings
+            value_s = str(value) if value is not None else ""
+            table.add_row(str(idx + 1), name, value_s, str(default), desc)
+
+        buf = io.StringIO()
+        console = Console(file=buf, width=width, color_system=None)
+        console.print(table)
+        return buf.getvalue()
+
+    def _display_config_table(self) -> None:
+        """Write the rendered config table into the active terminal's RichLog."""
+        from rich.text import Text as RichText
+        try:
+            panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+            log = panel.query_one(f"#term-log-{panel._term_id}", RichLog)
+        except Exception:
+            return
+
+        try:
+            table_str = self._render_config_table(width=100)
+            # Write the table as a multiline RichText so it preserves formatting
+            log.write(RichText(table_str))
+        except Exception:
+            try:
+                log.write(RichText("Failed to render config table"))
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ actions
 
