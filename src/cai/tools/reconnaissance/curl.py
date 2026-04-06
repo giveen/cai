@@ -2,43 +2,21 @@
 Here are the curl tools.
 """
 
-import re
-
 from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.sdk.agents import function_tool
-
-# Block command chaining / substitution sequences.
-# Note: we deliberately allow {} [] () so JSON bodies like -d '{"key":"val"}'
-# and glob-style patterns remain usable. The dangerous sequences are:
-#   ;     — command separator
-#   &&    — conditional chaining
-#   ||    — conditional chaining
-#   |     — pipe (could chain to shell commands)
-#   `…`   — backtick command substitution
-#   $(…)  — dollar-paren command substitution
-#   \n\r  — newline injection (can smuggle extra shell commands / HTTP headers)
-_CMD_INJECT_RE = re.compile(r'(;|&&|\|\||\||`|\$\(|\n|\r)')
-
-# Valid URL target: must start with a recognised scheme (http/https/ftp/ftps),
-# or look like a bare host/IP that curl will default to http://.
-# Either way it must NOT contain whitespace or shell injection characters.
-_URL_SAFE_RE = re.compile(r'^[^\s;|&`$<>()\n\r]+$')
-_URL_SCHEME_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://')
+from cai.tools.validation import validate_args_no_injection, is_url_safe  # pylint: disable=import-error
 
 
 def _validate_curl_input(args: str, target: str):
     """Return an error string if inputs are unsafe, else None."""
-    if _CMD_INJECT_RE.search(args):
+    err = validate_args_no_injection(args, 'args')
+    if err:
+        return err
+    if target and not is_url_safe(target):
         return (
-            f"Invalid args '{args}': command injection sequences "
-            "(; && || | ` $( newline) are not allowed."
+            f"Invalid target '{target}': must be a URL or hostname "
+            "without whitespace or shell-special characters."
         )
-    if target:
-        if not _URL_SAFE_RE.match(target):
-            return (
-                f"Invalid target '{target}': must be a URL or hostname "
-                "without whitespace or shell-special characters."
-            )
     return None
 
 

@@ -3,28 +3,18 @@
 """
 Wget tool
 """
-import re
 
 from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
-
-# Block command chaining / substitution and shell redirection sequences.
-# Dangerous sequences include: ;, &&, ||, |, `...`, $(...), newlines, >, <, and backslash
-_CMD_INJECT_RE = re.compile(r'(;|&&|\|\||\||`|\$\(|\n|\r|>|<|\\)')
-
-# URL/target safety: no whitespace or shell-special characters allowed in the
-# provided URL/host string. Schemes (http://, https://, ftp://) are allowed
-# but not required — the agent should provide a safe target.
-_URL_SAFE_RE = re.compile(r'^[^\s;|&`$<>()\n\r]+$')
+from cai.tools.validation import validate_args_no_injection, is_url_safe  # pylint: disable=import-error
 
 
 def _validate_wget_input(args: str, url: str):
     """Return an error string if inputs are unsafe, else None."""
-    if args and _CMD_INJECT_RE.search(args):
-        return (
-            f"Invalid args '{args}': command injection sequences (; && || | ` $( > < \\ newline) are not allowed."
-        )
-    if url and not _URL_SAFE_RE.match(url.strip()):
+    err = validate_args_no_injection(args, 'args')
+    if err:
+        return err
+    if url and not is_url_safe(url):
         return (
             f"Invalid url '{url}': must be a URL, IP, or hostname without whitespace or shell-special characters."
         )

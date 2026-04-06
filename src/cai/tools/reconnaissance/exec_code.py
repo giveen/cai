@@ -2,13 +2,13 @@
 Tool for executing code via LLM tool calls.
 """
 import os
-import re
 import uuid
 import shlex
 import base64
 
 from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.sdk.agents import function_tool
+from cai.tools.validation import is_valid_filename  # pylint: disable=import-error
 
 
 @function_tool
@@ -76,7 +76,7 @@ def execute_code(
         return f"Unsupported language: {language}"
 
     # Validate filename (no paths, limited charset)
-    if not re.match(r"^[A-Za-z0-9_\-]{1,64}$", filename):
+    if not is_valid_filename(filename):
         return "Invalid filename: only A-Za-z0-9_- allowed, max 64 chars"
 
     ext = extensions[language]

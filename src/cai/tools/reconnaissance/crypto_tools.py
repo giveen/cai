@@ -12,11 +12,7 @@ from typing import Optional
 
 from cai.tools.common import run_command
 from cai.sdk.agents import function_tool
-
-
-# Simple shell-special character detector used to catch obvious injection
-# attempts when we must invoke a shell command.
-_SHELL_METACHAR_RE = re.compile(r'[;&|`$<>()\n\r\\]')
+from cai.tools.validation import contains_shell_metacharacters  # pylint: disable=import-error
 
 
 @function_tool
@@ -41,7 +37,7 @@ def strings_command(file_path: str, timeout: int = 10) -> str:
     if not file_path:
         return "Error: file_path is required"
 
-    if _SHELL_METACHAR_RE.search(file_path):
+    if contains_shell_metacharacters(file_path):
         return f"Invalid file_path '{file_path}': contains shell-special characters"
 
     # If file exists locally we allow it; otherwise still allow but quote it

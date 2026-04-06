@@ -7,19 +7,14 @@ import re
 from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
 
-# Block command chaining/substitution and redirection sequences.
-# Disallow: ; && || | ` $( newlines > < backslash
-_CMD_INJECT_RE = re.compile(r'(;|&&|\|\||\||`|\$\(|\n|\r|>|<|\\)')
+from cai.tools.validation import validate_args_no_injection  # pylint: disable=import-error
 
 
 def _validate_netstat_input(args: str):
     """Return an error string if inputs are unsafe, else None."""
-    if args and _CMD_INJECT_RE.search(args):
-        return (
-            f"Invalid args '{args}': command injection or shell-special characters are not allowed."
-        )
-    if args and len(args) > 256:
-        return "Invalid args: too long"
+    err = validate_args_no_injection(args, 'args', max_length=256)
+    if err:
+        return err
     return None
 
 
