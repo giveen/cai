@@ -9,6 +9,11 @@ import requests
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 from cai.sdk.agents import function_tool
+import ipaddress
+
+
+# Default HTTP timeout for Shodan API calls
+_SHODAN_HTTP_TIMEOUT = 10
 
 
 @function_tool
@@ -23,25 +28,41 @@ def shodan_search(query: str, limit: int = 10) -> str:
     Returns:
         str: A formatted string containing the search results.
     """
-    results = _perform_shodan_search(query, limit)
-    
+    # Basic validation
+    if not query or not isinstance(query, str):
+        return "Error: query must be a non-empty string"
+    if '\n' in query or '\r' in query:
+        return "Error: query contains invalid newline characters"
+    if len(query) > 500:
+        return "Error: query too long (max 500 chars)"
+
+    try:
+        results = _perform_shodan_search(query, limit)
+    except Exception as e:
+        return f"Shodan search error: {str(e)}"
+
     if not results:
-        return "No results found or API error occurred."
-    
-    formatted_results = ""
+        return "No results found."
+
+    formatted_results = []
     for result in results:
-        formatted_results += f"IP: {result.get('ip_str', 'N/A')}\n"
-        formatted_results += f"Port: {result.get('port', 'N/A')}\n"
-        formatted_results += f"Organization: {result.get('org', 'N/A')}\n"
-        formatted_results += f"Hostnames: {', '.join(result.get('hostnames', ['N/A']))}\n"
-        formatted_results += f"Country: {result.get('location', {}).get('country_name', 'N/A')}\n"
-        
-        if 'data' in result:
-            formatted_results += f"Banner: {result['data'][:200]}...\n" if len(result['data']) > 200 else f"Banner: {result['data']}\n"
-        
-        formatted_results += "\n"
-    
-    return formatted_results
+        ip = result.get('ip_str', 'N/A')
+        port = result.get('port', 'N/A')
+        org = result.get('org', 'N/A')
+        hostnames = ', '.join(result.get('hostnames', ['N/A']))
+        country = result.get('location', {}).get('country_name', 'N/A')
+
+        banner = ''
+        if 'data' in result and result['data']:
+            raw = result['data']
+            banner = (raw[:400] + '...') if len(raw) > 400 else raw
+
+        block = f"IP: {ip}\nPort: {port}\nOrganization: {org}\nHostnames: {hostnames}\nCountry: {country}\n"
+        if banner:
+            block += f"Banner: {banner}\n"
+        formatted_results.append(block)
+
+    return "\n\n".join(formatted_results)
 
 @function_tool
 def shodan_host_info(ip: str) -> str:
@@ -54,30 +75,41 @@ def shodan_host_info(ip: str) -> str:
     Returns:
         str: A formatted string containing host information.
     """
-    result = _get_shodan_host_info(ip)
-    
+    # Validate IP
+    try:
+        ipaddress.ip_address(ip)
+    except Exception:
+        return f"Error: invalid IP address '{ip}'"
+
+    try:
+        result = _get_shodan_host_info(ip)
+    except Exception as e:
+        return f"Shodan host lookup error: {str(e)}"
+
     if not result:
-        return f"No information found for IP {ip} or API error occurred."
-    
-    formatted_result = f"IP: {result.get('ip_str', 'N/A')}\n"
-    formatted_result += f"Organization: {result.get('org', 'N/A')}\n"
-    formatted_result += f"Operating System: {result.get('os', 'N/A')}\n"
-    formatted_result += f"Country: {result.get('country_name', 'N/A')}\n"
-    formatted_result += f"City: {result.get('city', 'N/A')}\n"
-    formatted_result += f"ISP: {result.get('isp', 'N/A')}\n"
-    formatted_result += f"Last Update: {result.get('last_update', 'N/A')}\n"
-    formatted_result += f"Hostnames: {', '.join(result.get('hostnames', ['N/A']))}\n"
-    formatted_result += f"Domains: {', '.join(result.get('domains', ['N/A']))}\n\n"
-    
+        return f"No information found for IP {ip}."
+
+    formatted_result = [
+        f"IP: {result.get('ip_str', 'N/A')}",
+        f"Organization: {result.get('org', 'N/A')}",
+        f"Operating System: {result.get('os', 'N/A')}",
+        f"Country: {result.get('country_name', 'N/A')}",
+        f"City: {result.get('city', 'N/A')}",
+        f"ISP: {result.get('isp', 'N/A')}",
+        f"Last Update: {result.get('last_update', 'N/A')}",
+        f"Hostnames: {', '.join(result.get('hostnames', ['N/A']))}",
+        f"Domains: {', '.join(result.get('domains', ['N/A']))}",
+    ]
+
     if 'ports' in result:
-        formatted_result += f"Open Ports: {', '.join(map(str, result['ports']))}\n\n"
-    
+        formatted_result.append(f"Open Ports: {', '.join(map(str, result['ports']))}")
+
     if 'vulns' in result:
-        formatted_result += "Vulnerabilities:\n"
+        formatted_result.append("Vulnerabilities:")
         for vuln in result['vulns']:
-            formatted_result += f"- {vuln}\n"
-    
-    return formatted_result
+            formatted_result.append(f"- {vuln}")
+
+    return "\n".join(formatted_result)
 
 
 def _perform_shodan_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -93,35 +125,35 @@ def _perform_shodan_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
     load_dotenv()
     api_key = os.getenv("SHODAN_API_KEY")
-    
+
     if not api_key:
-        raise ValueError(
-            "Shodan API key (SHODAN_API_KEY) must be set in environment variables."
-        )
-    
+        raise RuntimeError("Shodan API key (SHODAN_API_KEY) is not configured")
+
     base_url = "https://api.shodan.io/shodan/host/search"
-    
+
     params = {
         "key": api_key,
         "query": query,
-        "limit": min(limit, 100)  # Shodan API has limits
+        "limit": min(max(1, int(limit)), 100)  # enforce sensible bounds
     }
-    
+
     try:
-        response = requests.get(base_url, params=params)
-        
+        response = requests.get(base_url, params=params, timeout=_SHODAN_HTTP_TIMEOUT, headers={"User-Agent": "CAI-Shodan-Client/1.0"})
+
         if response.status_code != 200:
-            return []
-            
+            try:
+                err = response.json().get('error', '')
+            except Exception:
+                err = response.text or ''
+            raise RuntimeError(f"Shodan API error {response.status_code}: {err}")
+
         data = response.json()
-        
-        if "matches" not in data:
-            return []
-            
-        return data["matches"][:limit]
-    
-    except Exception:
-        return []
+
+        matches = data.get("matches", [])
+        return matches[: params["limit"]]
+
+    except requests.RequestException as e:
+        raise RuntimeError(f"Network error when contacting Shodan: {str(e)}")
 
 
 def _get_shodan_host_info(ip: str) -> Optional[Dict[str, Any]]:
@@ -136,25 +168,22 @@ def _get_shodan_host_info(ip: str) -> Optional[Dict[str, Any]]:
     """
     load_dotenv()
     api_key = os.getenv("SHODAN_API_KEY")
-    
+
     if not api_key:
-        raise ValueError(
-            "Shodan API key (SHODAN_API_KEY) must be set in environment variables."
-        )
-    
+        raise RuntimeError("Shodan API key (SHODAN_API_KEY) is not configured")
+
     base_url = f"https://api.shodan.io/shodan/host/{ip}"
-    
-    params = {
-        "key": api_key
-    }
-    
+
+    params = {"key": api_key}
+
     try:
-        response = requests.get(base_url, params=params)
-        
+        response = requests.get(base_url, params=params, timeout=_SHODAN_HTTP_TIMEOUT, headers={"User-Agent": "CAI-Shodan-Client/1.0"})
         if response.status_code != 200:
-            return None
-            
+            try:
+                err = response.json().get('error', '')
+            except Exception:
+                err = response.text or ''
+            raise RuntimeError(f"Shodan API error {response.status_code}: {err}")
         return response.json()
-    
-    except Exception:
-        return None
+    except requests.RequestException as e:
+        raise RuntimeError(f"Network error when contacting Shodan: {str(e)}")
