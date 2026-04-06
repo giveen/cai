@@ -43,6 +43,26 @@
     except Exception as e:
         compacted_summary = None
 
+    # Determine model name for display (try multiple possible agent model shapes)
+    try:
+        model_name = None
+        if hasattr(agent, 'model'):
+            m = getattr(agent, 'model')
+            if isinstance(m, str):
+                model_name = m
+            elif hasattr(m, 'model'):
+                model_name = getattr(m, 'model')
+            elif hasattr(m, 'name'):
+                model_name = getattr(m, 'name')
+        # Fallback: try agent.get_model_name() if available
+        if not model_name and hasattr(agent, 'get_model_name'):
+            try:
+                model_name = agent.get_model_name()
+            except Exception:
+                model_name = None
+    except Exception:
+        model_name = None
+
     # Get system prompt from the base instructions passed to the template
     # The base instructions are passed as 'ctf_instructions' in the render context
     # We use the pre-set system_prompt variable which equals base_instructions
@@ -67,16 +87,16 @@
             memory = ""  # Set empty memory on error
 
         cli_print_tool_call(tool_name="Memory",
-                       tool_args={"From": "Previous Findings"},
-                       tool_output=memory,
-                       interaction_input_tokens=0,
-                       interaction_output_tokens=0,
-                       interaction_reasoning_tokens=0,
-                       total_input_tokens=0,
-                       total_output_tokens=0,
-                       total_reasoning_tokens=0,
-                       model="Python Code",
-                       debug=False)
+                   tool_args={"From": "Previous Findings"},
+                   tool_output=memory,
+                   interaction_input_tokens=0,
+                   interaction_output_tokens=0,
+                   interaction_reasoning_tokens=0,
+                   total_input_tokens=0,
+                   total_output_tokens=0,
+                   total_reasoning_tokens=0,
+                   model=(model_name or agent_name or "Python Code"),
+                   debug=False)
     artifacts = None
     if is_caiextensions_memory_available() and os.getenv('CTF_NAME'):
         from caiextensions.memory import get_artifacts
