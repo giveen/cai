@@ -231,6 +231,7 @@ filterwarnings = [
 markers = [
     "allow_call_model_methods: mark test as allowing calls to real model implementations",
 ]
+norecursedirs = ["examples"]
 
 [tool.inline-snapshot]
 format-command = "ruff format --stdin-filename {filename}"

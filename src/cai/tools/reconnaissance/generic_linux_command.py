@@ -69,7 +69,9 @@ async def generic_linux_command(command: str = "",
             sid = str(session_id).strip()
             if (sid.startswith('"') and sid.endswith('"')) or (sid.startswith("'") and sid.endswith("'")):
                 sid = sid[1:-1].strip()
-            if sid == "":
+            # Treat common sentinel values emitted by LLMs as None
+            low = sid.lower()
+            if sid == "" or low in {"none", "null", "nil", "undefined"}:
                 session_id = None
             else:
                 session_id = sid
