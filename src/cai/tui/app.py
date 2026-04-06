@@ -1104,18 +1104,13 @@ class CAIApp(App):
     # ------------------------------------------------------------------ button events
 
     @on(Button.Pressed)
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
 
         if btn_id.startswith("agent-"):
             agent_name = btn_id[len("agent-"):]
             if agent_name in self._available_agents:
-                active_label = f"T{self._active_term_id}"
-                at_max = len(list(self.query(TerminalPanel))) >= 4
-                result = await self.push_screen_wait(
-                    AgentModal(agent_name, active_label, at_max=at_max)
-                )
-                await self._handle_agent_modal(result)
+                self._open_agent_modal(agent_name)
             return
 
         if btn_id.startswith("team-"):
@@ -1125,6 +1120,16 @@ class CAIApp(App):
         if btn_id == "new-team-btn":
             self._prompt_new_team()
             return
+
+    @work(exclusive=False)
+    async def _open_agent_modal(self, agent_name: str) -> None:
+        """Open the agent modal from a worker so push_screen_wait is valid."""
+        active_label = f"T{self._active_term_id}"
+        at_max = len(list(self.query(TerminalPanel))) >= 4
+        result = await self.push_screen_wait(
+            AgentModal(agent_name, active_label, at_max=at_max)
+        )
+        await self._handle_agent_modal(result)
 
     # ------------------------------------------------------------------ modal callback
 
