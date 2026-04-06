@@ -1,27 +1,16 @@
 """
  Here are the tools for netcat command
 """
-import re
 import tempfile
 import os
 
 from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
-
-# Disallow shell metacharacters to prevent command injection via args/data
-_SHELL_METACHAR_RE = re.compile(r'[;&|`$<>()\{\}\[\]\n\r\\]')
-
-# Host/IP/hostname validation (IPv4, IPv6, or hostname)
-_HOST_RE = re.compile(
-    r'^(?:'
-    r'(?:\d{1,3}\.){3}\d{1,3}'                       # IPv4
-    r'|[0-9a-fA-F:]+(?:%[0-9a-zA-Z]+)?'                 # IPv6 (basic)
-    r'|[a-zA-Z0-9](?:[a-zA-Z0-9\-\.]*[a-zA-Z0-9])?'   # Hostname/FQDN
-    r')$'
-)
-
-# Disallow potentially dangerous nc flags (execute, listen, etc.)
-_DISALLOWED_ARG_FLAGS = re.compile(r'(^|\s)-(?:e|c|l)($|\s)')
+from cai.tools.validation import (
+    contains_shell_metacharacters,
+    is_valid_host,
+    has_disallowed_nc_flags,
+)  # pylint: disable=import-error
 
 
 def _validate_netcat_input(args: str, host: str, port: int, data: str):
@@ -35,14 +24,14 @@ def _validate_netcat_input(args: str, host: str, port: int, data: str):
         return "Error: Port must be between 1 and 65535"
 
     # Host validation
-    if not host or not _HOST_RE.match(host.strip()):
+    if not host or not is_valid_host(host.strip()):
         return f"Invalid host '{host}': must be an IP address or hostname"
 
     # Args should not contain shell metacharacters or disallowed flags
     if args:
-        if _SHELL_METACHAR_RE.search(args):
+        if contains_shell_metacharacters(args):
             return f"Invalid args '{args}': shell metacharacters are not allowed"
-        if _DISALLOWED_ARG_FLAGS.search(args):
+        if has_disallowed_nc_flags(args):
             return f"Invalid args '{args}': flags -e, -c, -l are not allowed"
 
     # Data length guard

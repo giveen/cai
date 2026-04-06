@@ -2,33 +2,18 @@
 Here are the nmap tools.
 """
 
-import re
-
 from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
-
-# Shell metacharacters that would enable command injection
-_SHELL_METACHAR_RE = re.compile(r'[;&|`$<>()\{\}\[\]\n\r\\]')
-
-# Valid nmap target patterns: IPv4, CIDR, range, wildcard, IPv6, or hostname
-_TARGET_RE = re.compile(
-    r'^(?:'
-    r'(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?'          # IPv4 / CIDR  (e.g. 10.0.0.0/24)
-    r'|(?:\d{1,3}\.){3}\d{1,3}-\d{1,3}'               # IPv4 range   (e.g. 192.168.1.1-20)
-    r'|(?:\d{1,3}\.){3}\*'                             # IPv4 wildcard (e.g. 192.168.1.*)
-    r'|[0-9a-fA-F:]+(?:/\d{1,3})?'                    # IPv6 / CIDR  (e.g. ::1, fe80::1/64)
-    r'|[a-zA-Z0-9](?:[a-zA-Z0-9\-\.]*[a-zA-Z0-9])?'  # Hostname     (e.g. example.com)
-    r')$'
-)
+from cai.tools.validation import contains_shell_metacharacters, is_valid_target  # pylint: disable=import-error
 
 
 def _validate_nmap_input(args: str, target: str):
     """Return an error string if inputs are unsafe, else None."""
-    if _SHELL_METACHAR_RE.search(args):
+    if contains_shell_metacharacters(args):
         return (
             f"Invalid args '{args}': shell metacharacters (;|&`$<>\\) are not allowed."
         )
-    if target and not _TARGET_RE.match(target.strip()):
+    if target and not is_valid_target(target):
         return (
             f"Invalid target '{target}': must be an IPv4/IPv6 address, "
             "CIDR block, IP range, or hostname."
