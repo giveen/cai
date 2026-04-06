@@ -104,6 +104,20 @@ async def generic_linux_command(command: str = "",
     """
     # Handle special session management commands (tolerant parser)
     cmd_lower = command.strip().lower()
+    # Normalize session_id: treat empty strings or quoted-empty as None,
+    # and strip surrounding quotes if present (LLM outputs sometimes include them).
+    if session_id is not None:
+        try:
+            sid = str(session_id).strip()
+            if (sid.startswith('"') and sid.endswith('"')) or (sid.startswith("'") and sid.endswith("'")):
+                sid = sid[1:-1].strip()
+            if sid == "":
+                session_id = None
+            else:
+                session_id = sid
+        except Exception:
+            # If normalization fails for any reason, fall back to original value
+            pass
     if cmd_lower.startswith("output "):
         return get_session_output(command.split(None, 1)[1], clear=False, stdout=True)
     if cmd_lower.startswith("kill "):
