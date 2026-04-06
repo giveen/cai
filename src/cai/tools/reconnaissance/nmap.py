@@ -14,7 +14,12 @@ def _validate_nmap_input(args: str, target: str):
         return (
             f"Invalid args '{args}': shell metacharacters (;|&`$<>\\) are not allowed."
         )
-    if target and not is_valid_target(target):
+    # Normalize and sanitize target (strip whitespace and trailing punctuation
+    # that LLMs sometimes append like a trailing period).
+    t = (target or "").strip().rstrip('.,;:')
+    if not t:
+        return "Invalid target: target is required."
+    if not is_valid_target(t):
         return (
             f"Invalid target '{target}': must be an IPv4/IPv6 address, "
             "CIDR block, IP range, or hostname."
@@ -57,7 +62,9 @@ def nmap(target: str, args: str = "", timeout: int = 300) -> str:
     if err:
         return err
 
-    command = f'nmap {args} {target.strip()}'
+    # sanitize target for final command construction
+    target_s = (target or "").strip().rstrip('.,;:')
+    command = f'nmap {args} {target_s}'
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err

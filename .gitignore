@@ -173,3 +173,4 @@ data/
 
 # ignore dev files
 cai-*
+tui_config.json
