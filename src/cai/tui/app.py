@@ -666,6 +666,39 @@ class AgentModal(ModalScreen):
 
 
 # ---------------------------------------------------------------------------
+# Small prompt modal used for rename/export inputs
+# ---------------------------------------------------------------------------
+class PromptModal(ModalScreen):
+    """Simple input modal. Returns the entered string, or None if cancelled."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, prompt: str, default: str = "") -> None:
+        super().__init__()
+        self._prompt = prompt
+        self._default = default
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static(self._prompt, id="modal-agent-label")
+            yield Input(value=self._default, id="prompt-input")
+            yield Button("OK", id="prompt-ok", classes="modal-btn")
+            yield Button("Cancel", id="prompt-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "prompt-ok":
+            try:
+                val = self.query_one("#prompt-input", Input).value
+            except Exception:
+                val = self._default
+            self.dismiss(val)
+        else:
+            self.dismiss(None)
+
+
+# ---------------------------------------------------------------------------
 # Terminal panel widget  (one per open terminal)
 # ---------------------------------------------------------------------------
 class TerminalPanel(Widget):
@@ -980,6 +1013,16 @@ class CAIApp(App):
                                     placeholder="Add task / command…",
                                     id="queue-input",
                                 )
+                    with TabPane("Sessions", id="tab-sessions"):
+                        with Vertical(id="sessions-pane"):
+                            with ScrollableContainer(id="sessions-scroll"):
+                                pass  # populated in on_mount
+                            with Horizontal(id="sessions-controls"):
+                                yield Button("Refresh", id="sessions-refresh", classes="team-btn")
+                                yield Button("Load Selected", id="sessions-load", classes="agent-btn")
+                                yield Button("Resume Selected", id="sessions-resume", classes="agent-btn")
+                                yield Button("Rename Selected", id="sessions-rename", classes="agent-btn")
+                                yield Button("Delete Selected", id="sessions-delete", classes="modal-btn modal-btn--cancel")
             # ── Right: vertical stack of (up to 2) terminal rows ─────────
             with Vertical(id="terminals"):
                 with Horizontal(id="term-row-top", classes="term-row"):
@@ -1002,6 +1045,12 @@ class CAIApp(App):
             await scroll.mount(Button(label, id=f"agent-{name}", classes="agent-btn"))
 
         self._highlight_active_agent(self._agent_name)
+
+        # Populate sessions list in the Sessions tab
+        try:
+            await self._populate_sessions_list()
+        except Exception:
+            pass
 
         # Spawn the first terminal panel (into top row)
         first = TerminalPanel(
@@ -1120,6 +1169,79 @@ class CAIApp(App):
         if btn_id == "new-team-btn":
             self._prompt_new_team()
             return
+        # Sessions controls / per-item buttons
+        if btn_id == "sessions-refresh":
+            self._populate_sessions_list_worker()
+            return
+
+        if btn_id == "sessions-load":
+            # Load the newest session (index 0) as a convenience
+            try:
+                if hasattr(self, '_session_files') and self._session_files:
+                    first = sorted(self._session_files.keys())[0]
+                    self._session_open_worker(int(first))
+            except Exception:
+                pass
+            return
+
+        if btn_id == "sessions-resume":
+            try:
+                if hasattr(self, '_session_files') and self._session_files:
+                    first = sorted(self._session_files.keys())[0]
+                    self._session_resume_worker(int(first))
+            except Exception:
+                pass
+            return
+
+        if btn_id == "sessions-rename":
+            try:
+                if hasattr(self, '_session_files') and self._session_files:
+                    first = sorted(self._session_files.keys())[0]
+                    self._session_rename_worker(int(first))
+            except Exception:
+                pass
+            return
+
+        if btn_id == "sessions-delete":
+            try:
+                if hasattr(self, '_session_files') and self._session_files:
+                    first = sorted(self._session_files.keys())[0]
+                    self._session_delete_worker(int(first))
+            except Exception:
+                pass
+            return
+
+        if btn_id.startswith("session-open-"):
+            try:
+                idx = int(btn_id.split("-")[-1])
+                self._session_open_worker(idx)
+            except Exception:
+                pass
+            return
+
+        if btn_id.startswith("session-resume-"):
+            try:
+                idx = int(btn_id.split("-")[-1])
+                self._session_resume_worker(idx)
+            except Exception:
+                pass
+            return
+
+        if btn_id.startswith("session-rename-"):
+            try:
+                idx = int(btn_id.split("-")[-1])
+                self._session_rename_worker(idx)
+            except Exception:
+                pass
+            return
+
+        if btn_id.startswith("session-delete-"):
+            try:
+                idx = int(btn_id.split("-")[-1])
+                self._session_delete_worker(idx)
+            except Exception:
+                pass
+            return
 
     @work(exclusive=False)
     async def _open_agent_modal(self, agent_name: str) -> None:
@@ -1217,6 +1339,200 @@ class CAIApp(App):
             inp = self.query_one("#queue-input", Input)
             inp.placeholder = "team: agent1 agent2 agent3…"
             inp.focus()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ sessions
+
+    async def _populate_sessions_list(self) -> None:
+        """Discover JSONL session files in `logs/` and populate the Sessions list view."""
+        try:
+            scroll = self.query_one("#sessions-scroll", ScrollableContainer)
+        except Exception:
+            return
+
+        # Ensure a ListView exists
+        try:
+            lv = self.query_one("#sessions-list", ListView)
+        except Exception:
+            lv = ListView(id="sessions-list")
+            await scroll.mount(lv)
+
+        # Clear existing items
+        for child in list(lv.query(ListItem)):
+            try:
+                child.remove()
+            except Exception:
+                pass
+
+        self._session_files = {}
+        logs_dir = "logs"
+        try:
+            names = [f for f in os.listdir(logs_dir) if f.endswith(".jsonl")]
+        except Exception:
+            names = []
+
+        names = sorted(names, key=lambda n: os.path.getmtime(os.path.join(logs_dir, n)), reverse=True)
+
+        for idx, fname in enumerate(names):
+            path = os.path.join(logs_dir, fname)
+            try:
+                mtime = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                mtime = "?"
+            display = f"{fname}  ({mtime})"
+            item = ListItem(Label(display), id=f"session-item-{idx}")
+            await lv.mount(item)
+
+            # Per-item action buttons
+            await item.mount(Button("Open", id=f"session-open-{idx}", classes="agent-btn"))
+            await item.mount(Button("Resume", id=f"session-resume-{idx}", classes="agent-btn"))
+            await item.mount(Button("Rename", id=f"session-rename-{idx}", classes="team-btn"))
+            await item.mount(Button("Delete", id=f"session-delete-{idx}", classes="modal-btn modal-btn--cancel"))
+
+            self._session_files[idx] = path
+
+    @work(exclusive=False)
+    async def _populate_sessions_list_worker(self) -> None:
+        await self._populate_sessions_list()
+
+    @work(exclusive=False)
+    async def _session_open_worker(self, idx: int) -> None:
+        """Load messages from a session JSONL into the current active agent's history."""
+        from rich.text import Text as RichText
+        try:
+            path = self._session_files.get(idx)
+            if not path:
+                return
+            from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl
+
+            messages = load_history_from_jsonl(path)
+
+            # Merge into active agent similar to /load behavior
+            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+            from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
+            from cai.repl.commands.parallel import ParallelCommand
+
+            parallel_cmd = ParallelCommand()
+            current_agent = AGENT_MANAGER.get_active_agent()
+            current_agent_name = AGENT_MANAGER._active_agent_name
+            if not current_agent_name:
+                return
+
+            current_history = AGENT_MANAGER.get_message_history(current_agent_name) or []
+            original_signatures = set()
+            for msg in current_history:
+                try:
+                    sig = parallel_cmd._get_message_signature(msg)
+                    if sig:
+                        original_signatures.add(sig)
+                except Exception:
+                    continue
+
+            unique_messages = []
+            for msg in messages:
+                try:
+                    sig = parallel_cmd._get_message_signature(msg)
+                except Exception:
+                    sig = None
+                if sig and sig not in original_signatures:
+                    unique_messages.append(msg)
+                    original_signatures.add(sig)
+
+            if not unique_messages:
+                try:
+                    panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                    panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[dim]No new messages to add from {os.path.basename(path)}[/dim]"))
+                except Exception:
+                    pass
+                return
+
+            final_history = current_history + unique_messages
+
+            # Find active model instance
+            model_instance = None
+            for (name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
+                try:
+                    if name == current_agent_name:
+                        model_instance = model_ref() if model_ref else None
+                        break
+                except Exception:
+                    continue
+
+            if model_instance:
+                model_instance.message_history.clear()
+                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+                for msg in final_history:
+                    try:
+                        model_instance.add_to_message_history(msg)
+                    except Exception:
+                        pass
+            else:
+                PERSISTENT_MESSAGE_HISTORIES[current_agent_name] = final_history
+
+            AGENT_MANAGER._message_history[current_agent_name] = final_history
+
+            try:
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[green]Loaded {len(unique_messages)} messages into {current_agent_name} from {os.path.basename(path)}[/green]"))
+            except Exception:
+                pass
+
+        except Exception as e:
+            try:
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Error loading session: {e}[/red]"))
+            except Exception:
+                pass
+
+    @work(exclusive=False)
+    async def _session_delete_worker(self, idx: int) -> None:
+        try:
+            path = self._session_files.get(idx)
+            if not path:
+                return
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+            await self._populate_sessions_list()
+        except Exception:
+            pass
+
+    @work(exclusive=False)
+    async def _session_rename_worker(self, idx: int) -> None:
+        try:
+            path = self._session_files.get(idx)
+            if not path:
+                return
+            default = os.path.basename(path)
+            result = await self.push_screen_wait(PromptModal("Rename file to:", default))
+            if not result:
+                return
+            dest = os.path.join("logs", result)
+            if not dest.endswith(".jsonl"):
+                dest += ".jsonl"
+            try:
+                os.rename(path, dest)
+            except Exception:
+                pass
+            await self._populate_sessions_list()
+        except Exception:
+            pass
+
+    @work(exclusive=False)
+    async def _session_resume_worker(self, idx: int) -> None:
+        try:
+            # Load into active agent first
+            await self._session_open_worker(idx)
+            # Then open a new terminal with the same agent as current active panel
+            try:
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                agent = panel._agent
+                agent_name = panel._agent_name
+                await self._add_terminal(agent, agent_name)
+            except Exception:
+                pass
         except Exception:
             pass
 
