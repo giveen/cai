@@ -41,6 +41,18 @@ def shutdown_trace_provider():
 
 
 @pytest.fixture(autouse=True)
+def ensure_guardrails_enabled(monkeypatch):
+    """Override CAI_GUARDRAILS to 'true' for every test.
+
+    The ambient shell environment may have CAI_GUARDRAILS=false for development
+    purposes.  Tests that specifically need it disabled call
+    monkeypatch.setenv("CAI_GUARDRAILS", "false") themselves, which overrides
+    this fixture's setting for that single test.
+    """
+    monkeypatch.setenv("CAI_GUARDRAILS", "true")
+
+
+@pytest.fixture(autouse=True)
 def disable_real_model_clients(monkeypatch, request):
     # If the test is marked to allow the method call, don't override it.
     if request.node.get_closest_marker("allow_call_model_methods"):
@@ -53,3 +65,15 @@ def disable_real_model_clients(monkeypatch, request):
     monkeypatch.setattr(OpenAIResponsesModel, "stream_response", failing_version)
     monkeypatch.setattr(OpenAIChatCompletionsModel, "get_response", failing_version)
     monkeypatch.setattr(OpenAIChatCompletionsModel, "stream_response", failing_version)
+
+
+@pytest.fixture(autouse=True)
+def ensure_guardrails_enabled(monkeypatch):
+    """Override CAI_GUARDRAILS to 'true' for every test.
+
+    The ambient shell environment may have CAI_GUARDRAILS=false for development
+    purposes.  Tests that specifically need it disabled call
+    monkeypatch.setenv("CAI_GUARDRAILS", "false") themselves, which overrides
+    this fixture's setting for that single test.
+    """
+    monkeypatch.setenv("CAI_GUARDRAILS", "true")
