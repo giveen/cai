@@ -33,6 +33,20 @@
         except Exception as e:
             memory = ""  # Set empty memory on error
 
+        # Derive a model label from the agent when available
+        try:
+            model_name = None
+            if hasattr(agent, 'model'):
+                m = getattr(agent, 'model')
+                if isinstance(m, str):
+                    model_name = m
+                elif hasattr(m, 'model'):
+                    model_name = getattr(m, 'model')
+                elif hasattr(m, 'name'):
+                    model_name = getattr(m, 'name')
+        except Exception:
+            model_name = None
+
         cli_print_tool_call(tool_name="Memory",
                        tool_args={"From": "Previous Findings"},
                        tool_output=memory,
@@ -42,7 +56,7 @@
                        total_input_tokens=0,
                        total_output_tokens=0,
                        total_reasoning_tokens=0,
-                       model="Python Code",
+                       model=(model_name or "Python Code"),
                        debug=False)
     artifacts = None
     if is_caiextensions_memory_available() and os.getenv('CTF_NAME'):
