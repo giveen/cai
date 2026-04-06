@@ -593,6 +593,17 @@ AgentModal {
     color: #00aa44;
 }
 """
+# Add small selection styles for the Sessions list
+_CSS += """
+#sessions-list > ListItem.-selected {
+    background: #002800;
+    color: #00ff00;
+    border-left: solid #00ff00;
+}
+#sessions-list > ListItem > Button {
+    margin-left: 1;
+}
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -1021,6 +1032,7 @@ class CAIApp(App):
                                 yield Button("Refresh", id="sessions-refresh", classes="team-btn")
                                 yield Button("Load Selected", id="sessions-load", classes="agent-btn")
                                 yield Button("Resume Selected", id="sessions-resume", classes="agent-btn")
+                                yield Button("Export Selected", id="sessions-export", classes="agent-btn")
                                 yield Button("Rename Selected", id="sessions-rename", classes="agent-btn")
                                 yield Button("Delete Selected", id="sessions-delete", classes="modal-btn modal-btn--cancel")
             # ── Right: vertical stack of (up to 2) terminal rows ─────────
@@ -1174,10 +1186,14 @@ class CAIApp(App):
             self._populate_sessions_list_worker()
             return
 
+        selected = getattr(self, "_session_selected_idx", None)
+
         if btn_id == "sessions-load":
-            # Load the newest session (index 0) as a convenience
+            # Load selected session, fallback to newest
             try:
-                if hasattr(self, '_session_files') and self._session_files:
+                if selected is not None:
+                    self._session_open_worker(int(selected))
+                elif hasattr(self, '_session_files') and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_open_worker(int(first))
             except Exception:
@@ -1186,16 +1202,31 @@ class CAIApp(App):
 
         if btn_id == "sessions-resume":
             try:
-                if hasattr(self, '_session_files') and self._session_files:
+                if selected is not None:
+                    self._session_resume_worker(int(selected))
+                elif hasattr(self, '_session_files') and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_resume_worker(int(first))
             except Exception:
                 pass
             return
 
+        if btn_id == "sessions-export":
+            try:
+                if selected is not None:
+                    self._session_export_worker(int(selected))
+                elif hasattr(self, '_session_files') and self._session_files:
+                    first = sorted(self._session_files.keys())[0]
+                    self._session_export_worker(int(first))
+            except Exception:
+                pass
+            return
+
         if btn_id == "sessions-rename":
             try:
-                if hasattr(self, '_session_files') and self._session_files:
+                if selected is not None:
+                    self._session_rename_worker(int(selected))
+                elif hasattr(self, '_session_files') and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_rename_worker(int(first))
             except Exception:
@@ -1204,9 +1235,19 @@ class CAIApp(App):
 
         if btn_id == "sessions-delete":
             try:
-                if hasattr(self, '_session_files') and self._session_files:
+                if selected is not None:
+                    self._session_delete_worker(int(selected))
+                elif hasattr(self, '_session_files') and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_delete_worker(int(first))
+            except Exception:
+                pass
+            return
+
+        if btn_id.startswith("session-select-"):
+            try:
+                idx = int(btn_id.rsplit("-", 1)[-1])
+                self._set_selected_session(idx)
             except Exception:
                 pass
             return
@@ -1215,6 +1256,14 @@ class CAIApp(App):
             try:
                 idx = int(btn_id.split("-")[-1])
                 self._session_open_worker(idx)
+            except Exception:
+                pass
+            return
+
+        if btn_id.startswith("session-export-"):
+            try:
+                idx = int(btn_id.split("-")[-1])
+                self._session_export_worker(idx)
             except Exception:
                 pass
             return
@@ -1383,14 +1432,25 @@ class CAIApp(App):
             display = f"{fname}  ({mtime})"
             item = ListItem(Label(display), id=f"session-item-{idx}")
             await lv.mount(item)
-
-            # Per-item action buttons
+            # Per-item action & selection buttons
+            await item.mount(Button("Select", id=f"session-select-{idx}", classes="team-btn"))
             await item.mount(Button("Open", id=f"session-open-{idx}", classes="agent-btn"))
             await item.mount(Button("Resume", id=f"session-resume-{idx}", classes="agent-btn"))
+            await item.mount(Button("Export", id=f"session-export-{idx}", classes="agent-btn"))
             await item.mount(Button("Rename", id=f"session-rename-{idx}", classes="team-btn"))
             await item.mount(Button("Delete", id=f"session-delete-{idx}", classes="modal-btn modal-btn--cancel"))
 
             self._session_files[idx] = path
+
+        # Default selection: first item if present
+        if names:
+            try:
+                self._session_selected_idx = 0
+                self._set_selected_session(0)
+            except Exception:
+                self._session_selected_idx = None
+        else:
+            self._session_selected_idx = None
 
     @work(exclusive=False)
     async def _populate_sessions_list_worker(self) -> None:
@@ -1535,6 +1595,60 @@ class CAIApp(App):
                 pass
         except Exception:
             pass
+
+    def _set_selected_session(self, idx: Optional[int]) -> None:
+        """Set the currently selected session index and update visuals."""
+        try:
+            self._session_selected_idx = idx
+        except Exception:
+            self._session_selected_idx = None
+
+        # Update visual selection for list items
+        try:
+            for k in list(self._session_files.keys()):
+                try:
+                    li = self.query_one(f"#session-item-{k}", ListItem)
+                    if k == idx:
+                        li.add_class("-selected")
+                    else:
+                        li.remove_class("-selected")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    @work(exclusive=False)
+    async def _session_export_worker(self, idx: int) -> None:
+        """Export a session file to an arbitrary location chosen by the user."""
+        try:
+            path = self._session_files.get(idx)
+            if not path:
+                return
+            default = os.path.basename(path)
+            result = await self.push_screen_wait(PromptModal("Export to (path or directory):", default))
+            if not result:
+                return
+            dest = os.path.expanduser(result)
+            import shutil
+            if os.path.isdir(dest):
+                dest_path = os.path.join(dest, os.path.basename(path))
+            else:
+                parent = os.path.dirname(dest)
+                if parent and not os.path.exists(parent):
+                    os.makedirs(parent, exist_ok=True)
+                dest_path = dest
+            shutil.copy2(path, dest_path)
+            try:
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[green]Exported {os.path.basename(path)} to {dest_path}[/green]"))
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Export failed: {e}[/red]"))
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ agent highlight
 
