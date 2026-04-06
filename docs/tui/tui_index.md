@@ -25,6 +25,7 @@ The TUI is built on [Textual](https://textual.textualize.io/), offering:
 - **🎯 Smart Agent Selection**: Built-in agent recommendation system
 - **🔧 MCP Integration**: Connect to external tools via Model Context Protocol
 - **💾 Session Management**: Save and restore conversations across sessions
+- **🛠️ Tools Panel**: Run, inspect, replay, and inject tool outputs from the sidebar
 
 ## When to Use the TUI vs CLI
 
@@ -122,8 +123,9 @@ The collapsible sidebar (`Ctrl+S`) provides:
 
 - **Teams**: One-click team deployment
 - **Queue**: Visual prompt queue management
-- **Stats**: Real-time session statistics and costs
-- **Keys**: Manage API keys for multiple providers
+- **Sessions**: Select, resume, export, rename, and delete session logs
+- **Config**: Open config screens for providers, model params, environment, and reset
+- **Tools**: Run test tools, inspect schemas, replay calls, and inject tool output into terminals
 
 Learn more: [Sidebar Features](sidebar_features.md)
 

@@ -10,18 +10,149 @@ The CAI TUI sidebar is a powerful vertical panel that provides quick access to e
 - **Toggle button**: Click the sidebar toggle button in the top bar
 - **Keyboard shortcut**: Press `Ctrl+S` to show/hide the sidebar
 
-When hidden, the sidebar collapses completely, giving you full width for terminal content. Toggle it back to access teams, queue, stats, and API keys.
+When hidden, the sidebar collapses completely, giving you full width for terminal content. Toggle it back to access agents, queue, sessions, config, and tools.
 
 ---
 
 ## Overview
 
-The sidebar is organized into four main tabs:
+The current sidebar is organized into six main tabs:
 
-1. **Teams** - Quick team selection for parallel multi-agent workflows
-2. **Queue** - Command queue management and execution control
-3. **Stats** - Real-time usage statistics and cost tracking
-4. **Keys** - API key management and configuration
+1. **Agents** - Agent selection and team preset shortcuts
+2. **Queue** - Prompt queue management
+3. **Sessions** - Session file browse/open/resume/export/rename/delete
+4. **Config** - Provider/model/env/config management screens
+5. **Tools** - Run, inspect, replay, and inject tool output
+6. **Stats** - Live cost, token, latency, and telemetry summaries
+
+---
+
+## Tools Tab
+
+The **Tools** tab is a TUI-native panel for quickly exercising tools without leaving the active terminal context.
+
+### What You Can Do
+
+- **Run**: Execute the selected tool with JSON input.
+- **Inspect**: Review tool description and schema.
+- **Replay**: Re-run a previous tool call with editable JSON args.
+- **Inject**: Inject selected tool output either as terminal input or immediate command dispatch.
+
+### Current Tool Calls Workflow
+
+1. Pick a tool from the list.
+2. Press **Run** and provide JSON arguments.
+3. Inspect output in the active terminal log.
+4. Select a history entry to **Replay** or **Inject**.
+
+When replaying, the previous args are pre-filled so you can adjust and re-run quickly.
+
+When injecting, choose mode:
+
+- `input`: place payload in the active terminal input box
+- `command`: dispatch payload immediately as a terminal command/message
+
+You can switch this with the **Mode** button in the Tools action row.
+
+### Call History
+
+The panel tracks recent calls and shows:
+
+- Tool call id
+- Tool id
+- Timestamp
+- Replay marker
+
+This makes it easy to inspect prior calls and continue workflows from any output.
+
+### Persistence
+
+Tool call history is persisted to:
+
+- `logs/tui_tool_calls.jsonl`
+
+When the TUI starts, this history is loaded and shown in the Tools tab.
+
+History rotation keeps file growth bounded:
+
+- active file rotates when it exceeds approximately 2 MB
+- backups are kept as `logs/tui_tool_calls.jsonl.1` and `.2`
+
+### Active Agent Tool Mapping
+
+The Tools tab registry includes:
+
+- Built-in helper tools (`echo`, `now`, `list_agents`, `last_tool_call`)
+- Function tools from the currently active terminal's agent
+
+Hosted/non-function tools are currently inspect-only in this panel.
+
+### Metrics & Tracing Telemetry
+
+The TUI now captures lightweight telemetry for:
+
+- Streaming lifecycle events
+- Tool-call start/output traces with durations
+- Retrieval-oriented calls (search/RAG/MCP-style tools)
+- Per-run token and latency summaries
+
+Telemetry is persisted in:
+
+- `logs/tui_telemetry.jsonl`
+
+with rotation backups:
+
+- `logs/tui_telemetry.jsonl.1`
+- `logs/tui_telemetry.jsonl.2`
+
+### Stats Cost Guardrails
+
+The Stats tab also applies session cost guardrails using `CAI_PRICE_LIMIT`:
+
+- warning when usage approaches 80% of the limit
+- automatic pause of new prompt dispatch when the limit is exceeded
+
+Paused prompts can resume after increasing `CAI_PRICE_LIMIT` (or starting a new session).
+
+### Context Usage Menu
+
+The **Metrics** tab now includes a **Context** action that opens a context usage menu for the active terminal.
+
+The menu shows:
+
+- Used / max context tokens and percentage
+- Visual usage bar (used vs free)
+- Context-level legend (GREEN < 50%, YELLOW 50-79%, RED >= 80%)
+- Free tokens and last-input token count
+- Category breakdown percentages:
+  - System prompt
+  - Tool definitions
+  - Memory / RAG
+  - User prompts
+  - Assistant responses
+  - Tool calls
+  - Tool results
+
+When provider token details are available, the menu also refines attribution using:
+
+- cached input tokens (applied to system/prefix context)
+- reasoning output tokens (applied to assistant response budget)
+
+Quick actions from the menu:
+
+- **Refresh** the view
+- **Copy To Input** to place a compact context summary in the active terminal input
+- **Inject Command** to dispatch the summary immediately
+- **Jump Metrics** to focus the metrics tab
+
+Context snapshots are persisted in:
+
+- `logs/tui_context_usage.jsonl`
+
+with rotation backups:
+
+- `logs/tui_context_usage.jsonl.1`
+- `logs/tui_context_usage.jsonl.2`
 
 ---
 
@@ -127,12 +258,22 @@ T1: redteam_agent
 T2: redteam_agent
 T3: bug_bounter_agent
 T4: bug_bounter_agent
+Best for: Comprehensive vulnerability discovery with red + bug workflows.
 ```
 
 **Tooltip features**:
 - Color-coded title with team composition
 - Terminal-by-terminal agent breakdown
+- Built-in playbook hint (`Best for`) for quick strategy selection
 - Visual consistency with TUI color palette
+
+### Team Playbook Preview
+
+When a team is selected, the Teams panel shows a compact preview card with:
+
+- Team number and label
+- T1-T4 agent assignment summary
+- Strategy hint for when to use that team
 
 ### Using Teams
 
@@ -156,9 +297,44 @@ T4: bug_bounter_agent
 
 ## Queue Tab
 
-The **Queue** tab displays commands that are automatically queued when terminals are busy. This tab provides real-time visibility into pending operations.
+The **Queue** tab manages prompt batching and broadcast execution.
 
-### Automatic Queuing
+### Queue Management
+
+Queue controls now include:
+
+- **Run Queue**: Execute pending prompts sequentially in queue order
+- **Delete Selected**: Remove a single highlighted queue entry
+- **Clear All**: Remove the full queue safely
+- **Broadcast: ON/OFF**: Toggle queue-wide broadcast mode
+
+### Add Prompts
+
+Add prompts in the queue input row and press Enter (or **Add**).
+
+Prompt format options:
+
+- normal: queued for active terminal execution
+- suffix `all`: mark prompt for broadcast to all terminals
+
+### Broadcast Mode
+
+When **Broadcast: ON**, queued prompts execute to terminals T1-T4 during queue runs.
+
+When **Broadcast: OFF**, only prompts explicitly marked with `all` are broadcast.
+
+### Execution Progress
+
+Queue items display status markers:
+
+- `○` pending
+- `▶` running
+- `✓` completed
+- `✗` failed
+
+The queue status line shows pending/running/completed/error totals and current run state.
+
+### Automatic Queuing (legacy behavior)
 
 Commands are automatically added to the queue when you:
 - **Send prompts to busy terminals**: New commands wait while previous ones execute
@@ -173,6 +349,8 @@ The queue shows:
 - **Target terminal**: Which terminal will execute the command
 - **Execution order**: Commands execute in FIFO (First In, First Out) order
 - **Real-time updates**: Queue updates automatically as commands are added or completed
+
+Broadcast-tagged entries are labeled with `[ALL]`.
 
 ### How It Works
 
