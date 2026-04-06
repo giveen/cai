@@ -1923,15 +1923,41 @@ class CAIApp(App):
             scroll = self.query_one("#sessions-scroll", ScrollableContainer)
         except Exception:
             return
-
-        # Ensure a ListView exists
+        # Ensure a ListView exists (create and mount if missing)
         try:
             lv = self.query_one("#sessions-list", ListView)
         except Exception:
             lv = ListView(id="sessions-list")
             await scroll.mount(lv)
 
-        # Clear existing items
+        # Collect current selection path so we can preserve it if possible
+        prev_selected_path = None
+        try:
+            prev_idx = getattr(self, "_session_selected_idx", None)
+            if prev_idx is not None and hasattr(self, "_session_files"):
+                prev_selected_path = self._session_files.get(prev_idx)
+        except Exception:
+            prev_selected_path = None
+
+        # Discover files and their mtimes safely
+        logs_dir = "logs"
+        try:
+            raw_names = [f for f in os.listdir(logs_dir) if f.endswith(".jsonl")]
+        except Exception:
+            raw_names = []
+
+        files = []
+        for fname in raw_names:
+            path = os.path.join(logs_dir, fname)
+            try:
+                mtime_ts = os.path.getmtime(path)
+            except Exception:
+                mtime_ts = 0
+            files.append((fname, mtime_ts))
+
+        files_sorted = sorted(files, key=lambda t: t[1], reverse=True)
+
+        # Clear existing items only after we successfully computed the new list
         for child in list(lv.query(ListItem)):
             try:
                 child.remove()
@@ -1939,18 +1965,10 @@ class CAIApp(App):
                 pass
 
         self._session_files = {}
-        logs_dir = "logs"
-        try:
-            names = [f for f in os.listdir(logs_dir) if f.endswith(".jsonl")]
-        except Exception:
-            names = []
-
-        names = sorted(names, key=lambda n: os.path.getmtime(os.path.join(logs_dir, n)), reverse=True)
-
-        for idx, fname in enumerate(names):
+        for idx, (fname, mtime_ts) in enumerate(files_sorted):
             path = os.path.join(logs_dir, fname)
             try:
-                mtime = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+                mtime = datetime.fromtimestamp(mtime_ts).strftime("%Y-%m-%d %H:%M") if mtime_ts else "?"
             except Exception:
                 mtime = "?"
             display = f"{fname}  ({mtime})"
@@ -1966,11 +1984,19 @@ class CAIApp(App):
 
             self._session_files[idx] = path
 
-        # Default selection: first item if present
-        if names:
+        # Preserve previous selection if possible, otherwise pick the first
+        if self._session_files:
+            new_sel = None
+            if prev_selected_path:
+                for k, p in self._session_files.items():
+                    if p == prev_selected_path:
+                        new_sel = k
+                        break
+            if new_sel is None:
+                new_sel = min(self._session_files.keys())
             try:
-                self._session_selected_idx = 0
-                self._set_selected_session(0)
+                self._session_selected_idx = new_sel
+                self._set_selected_session(new_sel)
             except Exception:
                 self._session_selected_idx = None
         else:
