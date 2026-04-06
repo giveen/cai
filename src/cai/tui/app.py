@@ -61,6 +61,37 @@ _BANNER_LINES = [
 ]
 
 # ---------------------------------------------------------------------------
+# Agent name prettifier
+# ---------------------------------------------------------------------------
+_ACRONYMS = {
+    "sast", "dfir", "dns", "smtp", "sdr", "ctf", "mcp",
+    "api", "iot", "ai", "ml", "ids", "ips", "osint",
+}
+
+
+def _pretty_name(raw: str) -> str:
+    """Convert internal agent name → display label.
+
+    android_sast_agent       → Android SAST
+    redteam_agent            → Redteam
+    bug_bounter_agent        → Bug Bounter
+    dns_smtp_agent           → DNS SMTP
+    blue_team_red_team_..    → Blue Team Red Team ..
+    """
+    name = raw
+    for suffix in ("_swarm_pattern", "_swarm_pa", "_pattern", "_agent"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    parts = []
+    for part in name.split("_"):
+        if not part:
+            continue
+        parts.append(part.upper() if part.lower() in _ACRONYMS else part.capitalize())
+    return " ".join(parts) or raw
+
+
+# ---------------------------------------------------------------------------
 # Embedded CSS – everything Matrix green-on-black
 # ---------------------------------------------------------------------------
 _CSS = """
@@ -400,16 +431,17 @@ Footer > .footer--spacer {
     background: #001a00;
 }
 
-/* ─── Terminals container ─── */
+/* ─── Terminals container (2×2 grid, max 4 panels) ─── */
 #terminals {
     height: 1fr;
-    layout: horizontal;
+    layout: grid;
+    grid-size: 2 2;
     background: #000000;
 }
 
 TerminalPanel {
     width: 1fr;
-    height: 100%;
+    height: 1fr;
     layout: vertical;
     border: solid #003300;
     background: #000000;
@@ -568,15 +600,16 @@ class AgentModal(ModalScreen):
 
     BINDINGS = [Binding("escape", "dismiss", "Cancel")]
 
-    def __init__(self, agent_name: str, active_term_label: str) -> None:
+    def __init__(self, agent_name: str, active_term_label: str, at_max: bool = False) -> None:
         super().__init__()
         self._agent_name = agent_name
         self._active_term_label = active_term_label
+        self._at_max = at_max
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-dialog"):
             yield Static(
-                f"Agent: [bold]{self._agent_name}[/bold]",
+                f"Agent: [bold]{_pretty_name(self._agent_name)}[/bold]",
                 id="modal-agent-label",
             )
             yield Button(
@@ -585,9 +618,10 @@ class AgentModal(ModalScreen):
                 classes="modal-btn",
             )
             yield Button(
-                "New Terminal",
+                "New Terminal" if not self._at_max else "New Terminal (max 4 reached)",
                 id="modal-new",
-                classes="modal-btn",
+                classes="modal-btn" + (" modal-btn--cancel" if self._at_max else ""),
+                disabled=self._at_max,
             )
             yield Button(
                 "Cancel",
@@ -639,10 +673,11 @@ class TerminalPanel(Widget):
 
     # header text helper
     def _header_text(self) -> str:
+        display = _pretty_name(self._agent_name)
         return (
             f"[bold #00ff00]T{self._term_id}[/bold #00ff00]"
             f"[#004400] | [/#004400]"
-            f"[#00cc00]{self._agent_name}[/#00cc00]"
+            f"[#00cc00]{display}[/#00cc00]"
             f"[#004400] ▼  [/#004400]"
             f"[#00aa00]{self._model_name}[/#00aa00]"
             f"[#004400] ▼  container ▼  [/#004400]"
@@ -679,7 +714,7 @@ class TerminalPanel(Widget):
             log.write(RichText(line, style="#00ff00"))
         log.write(RichText("", style=""))
         log.write(RichText(
-            f"T{self._term_id} ready — agent: {self._agent_name}",
+            f"T{self._term_id} ready — {_pretty_name(self._agent_name)}",
             style="#006600",
         ))
         log.write(RichText("", style=""))
@@ -937,7 +972,7 @@ class CAIApp(App):
 
         scroll = self.query_one("#agents-scroll", ScrollableContainer)
         for name in sorted(self._available_agents.keys()):
-            label = name if len(name) <= 20 else name[:18] + ".."
+            label = _pretty_name(name)
             await scroll.mount(Button(label, id=f"agent-{name}", classes="agent-btn"))
 
         self._highlight_active_agent(self._agent_name)
@@ -1005,6 +1040,9 @@ class CAIApp(App):
             pass
 
     async def _add_terminal(self, agent, agent_name: str) -> None:
+        panels = list(self.query(TerminalPanel))
+        if len(panels) >= 4:
+            return  # hard cap — modal already disables the button
         self._next_term_id += 1
         tid = self._next_term_id
         panel = TerminalPanel(
@@ -1030,8 +1068,9 @@ class CAIApp(App):
             agent_name = btn_id[len("agent-"):]
             if agent_name in self._available_agents:
                 active_label = f"T{self._active_term_id}"
+                at_max = len(list(self.query(TerminalPanel))) >= 4
                 self.push_screen(
-                    AgentModal(agent_name, active_label),
+                    AgentModal(agent_name, active_label, at_max=at_max),
                     self._handle_agent_modal,
                 )
             return
