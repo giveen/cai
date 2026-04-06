@@ -11,13 +11,17 @@ Matrix green-on-black throughout.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import json
+import time
+import re
 from datetime import datetime
 from typing import Optional
 
 from textual import work, on
 from textual.app import App, ComposeResult
+from textual import events
 from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, ScrollableContainer
@@ -36,6 +40,10 @@ from textual.widgets import (
     TabPane,
 )
 from rich.text import Text as RichText
+from rich.markdown import Markdown
+from rich.syntax import Syntax
+from rich.table import Table
+from textual.widgets._text_area import TextArea
 
 # ---------------------------------------------------------------------------
 # ASCII banner – Matrix green applied via Rich Text styles at render time
@@ -133,9 +141,54 @@ CaiHeader {
 #header-left {
     width: 1fr;
     height: 1;
+    layout: horizontal;
+}
+
+#header-left-text {
+    width: auto;
+    min-width: 0;
+    height: 1;
     content-align: left middle;
     padding: 0 1;
     color: #00ff00;
+}
+
+#header-menu {
+    width: 8;
+    height: 1;
+    min-width: 8;
+    background: #001a00;
+    color: #00cc00;
+    border: none;
+    padding: 0 1;
+}
+
+#header-menu:hover {
+    background: #002400;
+    color: #00ff00;
+}
+
+#header-nav {
+    width: 1fr;
+    height: 1;
+    layout: horizontal;
+}
+
+.top-nav-btn {
+    width: auto;
+    min-width: 8;
+    height: 1;
+    background: #001a00;
+    color: #006600;
+    border: none;
+    padding: 0 1;
+}
+
+.top-nav-btn:hover,
+.top-nav-btn.-active-top-nav {
+    background: #002c00;
+    color: #00ff00;
+    text-style: bold;
 }
 
 #header-right {
@@ -146,52 +199,43 @@ CaiHeader {
     color: #00cc00;
 }
 
-/* ─── Main body split: sidebar + main area ─── */
+/* ─── Main body ─── */
 #body {
-    layout: horizontal;
+    layout: vertical;
     height: 1fr;
 }
 
-/* ─── Left sidebar ─── */
-#sidebar {
-    width: 32;
-    min-width: 26;
-    background: #000000;
-    border-right: solid #003300;
-    height: 100%;
-    layout: vertical;
-}
-
-#sidebar TabbedContent {
+#sidebar-tabs {
     background: #000000;
     height: 1fr;
     color: #00ff00;
 }
 
-#sidebar TabbedContent Tabs {
+#sidebar-tabs Tabs {
     background: #001a00;
-    height: 3;
+    height: 0;
+    display: none;
     border-bottom: solid #003300;
 }
 
-#sidebar TabbedContent Tab {
+#sidebar-tabs Tab {
     background: #001a00;
     color: #006600;
     padding: 0 2;
 }
 
-#sidebar TabbedContent Tab.-active {
+#sidebar-tabs Tab.-active {
     background: #003300;
     color: #00ff00;
     text-style: bold;
 }
 
-#sidebar TabbedContent Tab:hover {
+#sidebar-tabs Tab:hover {
     background: #002200;
     color: #00cc00;
 }
 
-#sidebar TabbedContent ContentSwitcher {
+#sidebar-tabs ContentSwitcher {
     height: 1fr;
     background: #000000;
 }
@@ -254,6 +298,14 @@ CaiHeader {
     background: #000000;
     scrollbar-color: #003300 #000000;
     scrollbar-size: 1 1;
+}
+
+#team-playbook-preview {
+    height: 4;
+    background: #001200;
+    color: #00cc00;
+    border-top: solid #003300;
+    padding: 0 1;
 }
 
 .team-btn {
@@ -333,6 +385,21 @@ CaiHeader {
     width: 1fr;
 }
 
+#queue-status {
+    height: 2;
+    padding: 0 1;
+    color: #00aa00;
+    border-top: solid #003300;
+    background: #000000;
+}
+
+#queue-actions {
+    height: 3;
+    layout: horizontal;
+    border-top: solid #003300;
+    background: #000000;
+}
+
 #queue-input-row {
     height: 3;
     layout: horizontal;
@@ -357,6 +424,12 @@ CaiHeader {
     height: 3;
     width: 1fr;
     padding: 0 1;
+}
+
+#queue-broadcast {
+    width: 12;
+    height: 3;
+    text-align: center;
 }
 
 #queue-input:focus {
@@ -477,6 +550,18 @@ TerminalPanel.-active-panel {
     border: solid #00ff00;
 }
 
+TerminalPanel.-inactive-panel {
+    border: solid #002200;
+}
+
+TerminalPanel.-busy-panel {
+    border: solid #00aa55;
+}
+
+TerminalPanel.-error-panel {
+    border: solid #cc3333;
+}
+
 .term-header {
     height: 1;
     background: #001a00;
@@ -502,8 +587,18 @@ TerminalPanel.-active-panel {
     padding: 0 1;
 }
 
+TerminalPanel.-busy-panel .term-status {
+    background: #102300;
+    color: #66ff99;
+}
+
+TerminalPanel.-error-panel .term-status {
+    background: #220000;
+    color: #ff7777;
+}
+
 .term-input-row {
-    height: 3;
+    height: 4;
     layout: horizontal;
     background: #000000;
     border-top: solid #003300;
@@ -511,10 +606,17 @@ TerminalPanel.-active-panel {
 
 .term-input-prefix {
     width: 7;
-    height: 3;
+    height: 4;
     content-align: left middle;
     color: #00ff00;
     padding: 0 1;
+    background: #000000;
+}
+
+.term-input-column {
+    width: 1fr;
+    height: 1fr;
+    layout: vertical;
     background: #000000;
 }
 
@@ -536,6 +638,13 @@ TerminalPanel.-active-panel {
 
 .term-input > .input--placeholder {
     color: #004400;
+}
+
+.term-input-meta {
+    height: 1;
+    color: #006600;
+    background: #000000;
+    padding: 0 1;
 }
 
 /* ─── Agent action modal ─── */
@@ -593,6 +702,47 @@ AgentModal {
     background: #110000;
     color: #00aa44;
 }
+
+#palette-search {
+    margin-bottom: 1;
+}
+
+#palette-results-scroll {
+    height: 12;
+    border-top: solid #003300;
+    border-bottom: solid #003300;
+    background: #000000;
+}
+
+#palette-results {
+    height: auto;
+    layout: vertical;
+    background: #000000;
+}
+
+.palette-cmd {
+    width: 1fr;
+    height: 1;
+    background: #000000;
+    color: #00cc00;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+.palette-cmd:hover,
+.palette-cmd.-selected {
+    background: #002800;
+    color: #00ff00;
+    text-style: bold;
+}
+
+#palette-help {
+    height: 2;
+    color: #008800;
+    padding: 0 1;
+}
 """
 # Add small selection styles for the Sessions list
 _CSS += """
@@ -614,8 +764,122 @@ _CSS += """
 }
 """
 
+# Tools sidebar tab styling
+_CSS += """
+#tools-pane {
+    height: 1fr;
+    background: #000000;
+    layout: vertical;
+}
+
+#tools-list-scroll {
+    height: 1fr;
+    background: #000000;
+    scrollbar-color: #003300 #000000;
+    scrollbar-size: 1 1;
+}
+
+.tool-btn {
+    width: 1fr;
+    height: 1;
+    background: #000000;
+    color: #00cc00;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+.tool-btn:hover {
+    background: #001a00;
+    color: #00ff00;
+}
+
+.tool-btn.-active-tool {
+    background: #002800;
+    color: #00ff00;
+    text-style: bold;
+}
+
+#tools-actions {
+    height: 3;
+    layout: horizontal;
+    border-top: solid #003300;
+    background: #000000;
+}
+
+#tools-preview {
+    height: 8;
+    padding: 0 1;
+    background: #001400;
+    color: #00ff00;
+    border-top: solid #003300;
+}
+
+#tools-history-scroll {
+    height: 8;
+    border-top: solid #003300;
+    background: #000000;
+}
+
+#tools-inject-mode.-inject-input {
+    background: #001a00;
+    color: #00cc00;
+    border: solid #003300;
+}
+
+#tools-inject-mode.-inject-command {
+    background: #003000;
+    color: #00ff00;
+    border: solid #00aa00;
+    text-style: bold;
+}
+
+#metrics-pane {
+    height: 1fr;
+    background: #000000;
+    layout: vertical;
+}
+
+#metrics-summary {
+    height: 10;
+    padding: 0 1;
+    background: #001400;
+    color: #00ff00;
+    border-top: solid #003300;
+}
+
+#metrics-events-scroll {
+    height: 1fr;
+    background: #000000;
+    border-top: solid #003300;
+}
+
+#metrics-events {
+    height: auto;
+    color: #00cc00;
+    padding: 0 1;
+}
+
+#metrics-actions {
+    height: 3;
+    layout: horizontal;
+    border-top: solid #003300;
+    background: #000000;
+}
+"""
+
 # Simple on-disk config used by the TUI config screens.
 CONFIG_FILE = os.path.join(os.getcwd(), "tui_config.json")
+TOOL_CALLS_FILE = os.path.join(os.getcwd(), "logs", "tui_tool_calls.jsonl")
+TOOL_CALLS_MAX_BYTES = 2 * 1024 * 1024
+TOOL_CALLS_MAX_BACKUPS = 2
+TELEMETRY_FILE = os.path.join(os.getcwd(), "logs", "tui_telemetry.jsonl")
+TELEMETRY_MAX_BYTES = 2 * 1024 * 1024
+TELEMETRY_MAX_BACKUPS = 2
+CONTEXT_SNAPSHOTS_FILE = os.path.join(os.getcwd(), "logs", "tui_context_usage.jsonl")
+CONTEXT_SNAPSHOTS_MAX_BYTES = 2 * 1024 * 1024
+CONTEXT_SNAPSHOTS_MAX_BACKUPS = 2
 
 def _load_tui_config() -> dict:
     try:
@@ -694,15 +958,31 @@ CONFIG_VARIABLES = [
 # Preset team compositions (label, list of agent-type strings)
 # ---------------------------------------------------------------------------
 TEAM_PRESETS = [
-    ("2 Red + 2 Blue",  ["redteam_agent", "redteam_agent", "blueteam_agent",   "blueteam_agent"]),
-    ("1 Red Solo",      ["redteam_agent"]),
-    ("2 Red + 2 Bug",   ["redteam_agent", "redteam_agent", "bug_bounter_agent", "bug_bounter_agent"]),
-    ("2 Blue + 2 Red",  ["blueteam_agent", "blueteam_agent", "redteam_agent",   "redteam_agent"]),
-    ("Red + Blue",      ["redteam_agent", "blueteam_agent"]),
-    ("4 Red",           ["redteam_agent"] * 4),
-    ("4 Blue",          ["blueteam_agent"] * 4),
-    ("4 Bug",           ["bug_bounter_agent"] * 4),
-    ("Mixed 4",         ["redteam_agent", "blueteam_agent", "bug_bounter_agent", "retester_agent"]),
+    ("2 red + 2 bug", ["redteam_agent", "redteam_agent", "bug_bounter_agent", "bug_bounter_agent"]),
+    ("1 red + 3 bug", ["redteam_agent", "bug_bounter_agent", "bug_bounter_agent", "bug_bounter_agent"]),
+    ("2 red + 2 blue", ["redteam_agent", "redteam_agent", "blueteam_agent", "blueteam_agent"]),
+    ("2 blue + 2 bug", ["blueteam_agent", "blueteam_agent", "bug_bounter_agent", "bug_bounter_agent"]),
+    ("red + blue + retest + bug", ["redteam_agent", "blueteam_agent", "retester_agent", "bug_bounter_agent"]),
+    ("2 red + 2 retest", ["redteam_agent", "redteam_agent", "retester_agent", "retester_agent"]),
+    ("2 blue + 2 retest", ["blueteam_agent", "blueteam_agent", "retester_agent", "retester_agent"]),
+    ("4 red", ["redteam_agent", "redteam_agent", "redteam_agent", "redteam_agent"]),
+    ("4 blue", ["blueteam_agent", "blueteam_agent", "blueteam_agent", "blueteam_agent"]),
+    ("4 bug", ["bug_bounter_agent", "bug_bounter_agent", "bug_bounter_agent", "bug_bounter_agent"]),
+    ("4 retest", ["retester_agent", "retester_agent", "retester_agent", "retester_agent"]),
+]
+
+TEAM_PLAYBOOK_HINTS = [
+    "Best for: Comprehensive vulnerability discovery with red + bug workflows.",
+    "Best for: Bug bounty-heavy runs with red-team lead coverage.",
+    "Best for: Balanced adversarial testing with offense + defense.",
+    "Best for: Defense-led assessments with bug bounty validation.",
+    "Best for: End-to-end lifecycle from discovery to validation.",
+    "Best for: Aggressive offensive testing with immediate retest.",
+    "Best for: Defensive hardening with continuous retesting.",
+    "Best for: Maximum offensive throughput and coverage.",
+    "Best for: Comprehensive defensive posture and hardening reviews.",
+    "Best for: Intensive bug bounty hunting across multiple surfaces.",
+    "Best for: Large-scale retesting and fix verification campaigns.",
 ]
 
 
@@ -817,6 +1097,153 @@ class ConfirmModal(ModalScreen):
             self.dismiss(None)
 
 
+class CommandPaletteModal(ModalScreen):
+    """Command palette modal with fuzzy filtering and keyboard selection."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, commands: list[dict], recent: list[str]) -> None:
+        super().__init__()
+        self._commands = list(commands)
+        self._recent = list(recent)
+        self._selected_idx = 0
+        self._visible_commands: list[dict] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("Command Palette", id="modal-agent-label")
+            yield Input(placeholder="Type a command (fuzzy search)", id="palette-search")
+            with ScrollableContainer(id="palette-results-scroll"):
+                with Vertical(id="palette-results"):
+                    pass
+            yield Static("↑/↓ navigate · Enter run · Esc close", id="palette-help")
+
+    def _fuzzy_score(self, query: str, text: str) -> int:
+        q = query.lower().strip()
+        t = text.lower()
+        if not q:
+            return 1
+        if q in t:
+            return 100 + len(q)
+        score = 0
+        pos = 0
+        for ch in q:
+            found = t.find(ch, pos)
+            if found < 0:
+                return -1
+            score += 3 if found == pos else 1
+            pos = found + 1
+        return score
+
+    async def _refresh_results(self) -> None:
+        query = ""
+        try:
+            query = self.query_one("#palette-search", Input).value
+        except Exception:
+            query = ""
+
+        ranked: list[tuple[int, dict]] = []
+        for cmd in self._commands:
+            searchable = f"{cmd.get('id','')} {cmd.get('name','')} {cmd.get('description','')}"
+            score = self._fuzzy_score(query, searchable)
+            if score < 0:
+                continue
+            try:
+                recency = self._recent.index(str(cmd.get("id")))
+                score += max(0, 20 - recency)
+            except Exception:
+                pass
+            ranked.append((score, cmd))
+
+        ranked.sort(key=lambda x: (-x[0], str(x[1].get("name", ""))))
+        self._visible_commands = [cmd for _, cmd in ranked]
+
+        try:
+            holder = self.query_one("#palette-results", Vertical)
+        except Exception:
+            return
+
+        for child in list(holder.children):
+            try:
+                await child.remove()
+            except Exception:
+                pass
+
+        if not self._visible_commands:
+            await holder.mount(Static("No matching commands", classes="term-status"))
+            self._selected_idx = 0
+            return
+
+        self._selected_idx = max(0, min(self._selected_idx, len(self._visible_commands) - 1))
+        for idx, cmd in enumerate(self._visible_commands):
+            name = str(cmd.get("name", cmd.get("id", "")))
+            desc = str(cmd.get("description", ""))
+            shortcut = str(cmd.get("shortcut", ""))
+            label = f"{name:<8}  {desc}"
+            if shortcut:
+                label += f"  [{shortcut}]"
+            btn = Button(label, id=f"palette-cmd-{cmd.get('id','')}", classes="palette-cmd")
+            if idx == self._selected_idx:
+                btn.add_class("-selected")
+            await holder.mount(btn)
+
+    def _move_selection(self, delta: int) -> None:
+        if not self._visible_commands:
+            return
+        self._selected_idx = (self._selected_idx + delta) % len(self._visible_commands)
+        for idx, btn in enumerate(self.query(".palette-cmd")):
+            if idx == self._selected_idx:
+                btn.add_class("-selected")
+                try:
+                    btn.scroll_visible(animate=False)
+                except Exception:
+                    pass
+            else:
+                btn.remove_class("-selected")
+
+    def _run_selected(self) -> None:
+        if not self._visible_commands:
+            return
+        cmd_id = str(self._visible_commands[self._selected_idx].get("id", ""))
+        if cmd_id:
+            self.dismiss(("run", cmd_id))
+
+    async def on_mount(self) -> None:
+        await self._refresh_results()
+        try:
+            self.query_one("#palette-search", Input).focus()
+        except Exception:
+            pass
+
+    async def on_input_changed(self, event: Input.Changed) -> None:
+        if (event.input.id or "") != "palette-search":
+            return
+        self._selected_idx = 0
+        await self._refresh_results()
+
+    async def on_key(self, event: events.Key) -> None:
+        if event.key == "up":
+            event.stop()
+            self._move_selection(-1)
+            return
+        if event.key == "down":
+            event.stop()
+            self._move_selection(1)
+            return
+        if event.key == "enter":
+            event.stop()
+            self._run_selected()
+            return
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id or ""
+        if not bid.startswith("palette-cmd-"):
+            return
+        cmd_id = bid[len("palette-cmd-"):]
+        self.dismiss(("run", cmd_id))
+
+
 class ConfigModal(ModalScreen):
     """Modal to confirm opening a Config section. Returns ('open', action_key) or None."""
 
@@ -838,6 +1265,52 @@ class ConfigModal(ModalScreen):
         btn_id = event.button.id
         if btn_id == "config-open":
             self.dismiss(("open", self._action_key))
+        else:
+            self.dismiss(None)
+
+
+class ContextUsageModal(ModalScreen):
+    """Context usage menu modal.
+
+    Returns one of:
+      ("refresh",)
+      ("copy", summary_text)
+      ("inject", summary_text)
+      ("jump_metrics",)
+      None
+    """
+
+    BINDINGS = [Binding("escape", "dismiss", "Close")]
+
+    def __init__(self, title: str, content: str, summary_text: str) -> None:
+        super().__init__()
+        self._title = title
+        self._content = content
+        self._summary_text = summary_text
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static(self._title, id="modal-agent-label")
+            yield Static(self._content)
+            with Horizontal():
+                yield Button("Refresh", id="ctx-refresh", classes="modal-btn")
+                yield Button("Copy To Input", id="ctx-copy", classes="modal-btn")
+                yield Button("Inject Command", id="ctx-inject", classes="modal-btn")
+            with Horizontal():
+                yield Button("Jump Metrics", id="ctx-jump", classes="modal-btn")
+                yield Button("Close", id="ctx-close", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id or ""
+        if btn_id == "ctx-refresh":
+            self.dismiss(("refresh",))
+        elif btn_id == "ctx-copy":
+            self.dismiss(("copy", self._summary_text))
+        elif btn_id == "ctx-inject":
+            self.dismiss(("inject", self._summary_text))
+        elif btn_id == "ctx-jump":
+            self.dismiss(("jump_metrics",))
         else:
             self.dismiss(None)
 
@@ -1178,6 +1651,262 @@ class TerminalPanel(Widget):
         self._agent = agent
         self._agent_name = agent_name
         self._model_name = model_name
+        self._tool_outputs_by_call_id: dict[str, str] = {}
+        self._active_tool_calls: dict[str, dict] = {}
+        self._busy: bool = False
+        self._last_prompt_text: str = ""
+        self._run_worker = None
+        self._prompt_history: list[str] = []
+        self._history_index: Optional[int] = None
+
+    def _get_input_widget(self):
+        try:
+            return self.query_one(f"#term-input-{self._term_id}", TextArea)
+        except Exception:
+            return None
+
+    def _set_input_text(self, text: str) -> None:
+        inp = self._get_input_widget()
+        if inp is None:
+            return
+        try:
+            if hasattr(inp, "load_text"):
+                inp.load_text(text)
+            else:
+                inp.value = text
+        except Exception:
+            pass
+
+    def _get_input_text(self) -> str:
+        inp = self._get_input_widget()
+        if inp is None:
+            return ""
+        try:
+            if hasattr(inp, "text"):
+                return str(inp.text)
+            return str(inp.value)
+        except Exception:
+            return ""
+
+    def _infer_input_language(self, text: str) -> str:
+        raw = str(text or "")
+        first = raw.strip().splitlines()[0] if raw.strip() else ""
+        m = re.match(r"^```([A-Za-z0-9_+-]+)", first)
+        if m:
+            return m.group(1).lower()
+        if re.search(r"\b(def|class|import|from|async|await)\b", raw):
+            return "python"
+        if re.search(r"\b(function|const|let|var|=>)\b", raw):
+            return "javascript"
+        return "markdown"
+
+    def _resize_input_for_text(self, text: str) -> None:
+        lines = max(1, len(str(text or "").splitlines()))
+        visible_lines = min(8, max(1, lines))
+        input_height = visible_lines + 1
+        row_height = input_height + 1
+        try:
+            inp = self._get_input_widget()
+            if inp is not None:
+                inp.styles.height = input_height
+                try:
+                    inp.scroll_end(animate=False)
+                except Exception:
+                    pass
+            row = self.query_one(".term-input-row", Horizontal)
+            row.styles.height = row_height
+            prefix = self.query_one(".term-input-prefix", Static)
+            prefix.styles.height = row_height
+        except Exception:
+            pass
+
+    def _update_input_meta(self, text: str) -> None:
+        count = len(str(text or ""))
+        mode = "multi-line" if "\n" in str(text or "") else "single-line"
+        color = "#006600"
+        if count >= 3000:
+            color = "#ff6666"
+        elif count >= 1200:
+            color = "#ffcc66"
+        try:
+            self.query_one(f"#term-input-meta-{self._term_id}", Static).update(
+                f"[{color}]{count} chars · {mode} · Enter send · Shift+Enter newline · Ctrl+Enter send multiline · Ctrl+U clear · Up/Down history[/{color}]"
+            )
+        except Exception:
+            pass
+
+    async def _submit_from_input_widget(self) -> None:
+        text = self._get_input_text().strip()
+        if not text:
+            return
+
+        if not self._prompt_history or self._prompt_history[-1] != text:
+            self._prompt_history.append(text)
+            if len(self._prompt_history) > 200:
+                self._prompt_history = self._prompt_history[-200:]
+        self._history_index = None
+
+        self._set_input_text("")
+        self._resize_input_for_text("")
+        self._update_input_meta("")
+        msg, is_broadcast = self.app._parse_broadcast_suffix(text)
+        if is_broadcast and msg:
+            await self.app._broadcast_prompt(msg, source_tid=self._term_id)
+        else:
+            await self.dispatch(text)
+
+    def _history_nav(self, direction: int) -> bool:
+        if not self._prompt_history:
+            return False
+        if self._history_index is None:
+            self._history_index = len(self._prompt_history)
+
+        self._history_index = max(0, min(len(self._prompt_history), self._history_index + direction))
+        if self._history_index >= len(self._prompt_history):
+            self._set_input_text("")
+            self._update_input_meta("")
+            return True
+
+        self._set_input_text(self._prompt_history[self._history_index])
+        self._resize_input_for_text(self._prompt_history[self._history_index])
+        self._update_input_meta(self._prompt_history[self._history_index])
+        return True
+
+    def _set_visual_state(self, state: str) -> None:
+        """Apply CSS classes and input behavior for terminal visual states."""
+        normalized = state if state in {"ready", "busy", "error"} else "ready"
+        self.remove_class("-busy-panel")
+        self.remove_class("-error-panel")
+        if normalized == "busy":
+            self.add_class("-busy-panel")
+        elif normalized == "error":
+            self.add_class("-error-panel")
+        try:
+            inp = self.query_one(f"#term-input-{self._term_id}", TextArea)
+            inp.disabled = normalized == "busy"
+        except Exception:
+            pass
+
+    def cancel_active_run(self) -> bool:
+        """Cancel the in-flight run if present and return whether cancel occurred."""
+        cancelled = False
+        try:
+            if self._run_worker is not None:
+                self._run_worker.cancel()
+                cancelled = True
+        except Exception:
+            pass
+        if not cancelled:
+            try:
+                for worker in list(self._workers):
+                    worker.cancel()
+                    cancelled = True
+            except Exception:
+                pass
+        if cancelled:
+            self._busy = False
+            self._set_visual_state("ready")
+            self._set_status(f"T{self._term_id}> cancelled")
+            self._write_system_message("progress", "run cancelled (Ctrl+C / Esc)", style="#ffaa00")
+        return cancelled
+
+    def _write_system_message(self, msg_type: str, text: str, style: str = "#00aa00") -> None:
+        try:
+            log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+            log.write(RichText(f"[system/{msg_type}] {text}", style=style))
+        except Exception:
+            pass
+
+    def _render_structured_json(self, payload: str) -> bool:
+        try:
+            obj = json.loads(payload)
+        except Exception:
+            return False
+
+        try:
+            log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+            if isinstance(obj, dict):
+                table = Table(title="Structured Output", show_header=True, header_style="bold #00ff00")
+                table.add_column("Key", style="#00cc00")
+                table.add_column("Value", style="#00ff00")
+                for key, value in list(obj.items())[:30]:
+                    table.add_row(str(key), json.dumps(value, ensure_ascii=True)[:220])
+                log.write(table)
+                return True
+            if isinstance(obj, list):
+                table = Table(title=f"Structured Output ({len(obj)} items)", show_header=True, header_style="bold #00ff00")
+                table.add_column("Index", style="#00cc00")
+                table.add_column("Value", style="#00ff00")
+                for idx, value in enumerate(obj[:30]):
+                    table.add_row(str(idx), json.dumps(value, ensure_ascii=True)[:220])
+                log.write(table)
+                return True
+        except Exception:
+            return False
+        return False
+
+    def _render_agent_message(self, content: str) -> None:
+        text = str(content or "").strip()
+        if not text:
+            return
+        log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+
+        # Prefer structured table rendering when message is pure JSON.
+        if self._render_structured_json(text):
+            return
+
+        # Detect fenced code blocks and syntax-highlight when present.
+        code_match = re.search(r"```(\w+)?\n([\s\S]*?)```", text)
+        if code_match:
+            lang = (code_match.group(1) or "text").strip()
+            code = code_match.group(2)
+            prefix = text[: code_match.start()].strip()
+            suffix = text[code_match.end() :].strip()
+            if prefix:
+                log.write(Markdown(prefix))
+            log.write(Syntax(code, lang, line_numbers=False, word_wrap=True))
+            if suffix:
+                log.write(Markdown(suffix))
+            return
+
+        # Fallback to markdown render for rich formatting and tables.
+        log.write(Markdown(text))
+
+    def _format_tool_output_preview(self, output: str) -> tuple[str, bool]:
+        text = str(output or "")
+        lines = text.splitlines()
+        max_lines = 14
+        max_chars = 1200
+        collapsed = False
+
+        if len(lines) > max_lines:
+            text = "\n".join(lines[:max_lines])
+            collapsed = True
+        if len(text) > max_chars:
+            text = text[:max_chars]
+            collapsed = True
+        return text, collapsed
+
+    def _extract_stream_text_delta(self, raw_data) -> str:
+        data = raw_data
+        if hasattr(data, "model_dump"):
+            try:
+                data = data.model_dump()
+            except Exception:
+                pass
+
+        if isinstance(data, dict):
+            event_type = str(data.get("type", ""))
+            if "output_text" in event_type and "delta" in event_type:
+                return str(data.get("delta", "") or "")
+            if "delta" in data and isinstance(data.get("delta"), str):
+                return str(data.get("delta") or "")
+            return ""
+
+        event_type = str(getattr(data, "type", ""))
+        if "output_text" in event_type and "delta" in event_type:
+            return str(getattr(data, "delta", "") or "")
+        return str(getattr(data, "delta", "") or "")
 
     # header text helper
     def _header_text(self) -> str:
@@ -1209,15 +1938,23 @@ class TerminalPanel(Widget):
         yield Static("", id=f"term-status-{self._term_id}", classes="term-status")
         with Horizontal(classes="term-input-row"):
             yield Static("CAI>", classes="term-input-prefix")
-            yield Input(
-                placeholder="Type a message…",
-                id=f"term-input-{self._term_id}",
-                classes="term-input",
-            )
+            with Vertical(classes="term-input-column"):
+                yield TextArea(
+                    text="",
+                    language="markdown",
+                    soft_wrap=True,
+                    show_line_numbers=False,
+                    compact=True,
+                    placeholder="Type a prompt… Enter=send | Shift+Enter=new line | Ctrl+Enter=send multiline | Ctrl+U=clear | Up/Down=history",
+                    id=f"term-input-{self._term_id}",
+                    classes="term-input",
+                )
+                yield Static("0 chars · single-line", id=f"term-input-meta-{self._term_id}", classes="term-input-meta")
 
     async def on_mount(self) -> None:
         from rich.text import Text as RichText
         log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+        self._set_visual_state("ready")
         for line in _BANNER_LINES:
             log.write(RichText(line, style="#00ff00"))
         log.write(RichText("", style=""))
@@ -1225,7 +1962,69 @@ class TerminalPanel(Widget):
             f"T{self._term_id} ready — {_pretty_name(self._agent_name)}",
             style="#006600",
         ))
+        self._write_system_message(
+            "init",
+            f"agent={self._agent_name} model={self._model_name}",
+            style="#0088aa",
+        )
         log.write(RichText("", style=""))
+        self._resize_input_for_text("")
+        self._update_input_meta("")
+
+    @on(TextArea.Changed)
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        if (event.text_area.id or "") != f"term-input-{self._term_id}":
+            return
+        text = str(getattr(event.text_area, "text", "") or "")
+        self._resize_input_for_text(text)
+        self._update_input_meta(text)
+        try:
+            lang = self._infer_input_language(text)
+            if getattr(event.text_area, "language", None) != lang:
+                event.text_area.language = lang
+        except Exception:
+            pass
+
+    async def on_key(self, event: events.Key) -> None:
+        focused = getattr(self.app.screen, "focused", None)
+        if focused is None or (focused.id or "") != f"term-input-{self._term_id}":
+            return
+
+        key = event.key
+        text = self._get_input_text()
+
+        if key == "ctrl+u":
+            event.prevent_default()
+            event.stop()
+            self._set_input_text("")
+            self._resize_input_for_text("")
+            self._update_input_meta("")
+            return
+
+        if key == "up" and "\n" not in text:
+            event.prevent_default()
+            event.stop()
+            self._history_nav(-1)
+            return
+
+        if key == "down" and "\n" not in text:
+            event.prevent_default()
+            event.stop()
+            self._history_nav(1)
+            return
+
+        if key == "ctrl+enter":
+            event.prevent_default()
+            event.stop()
+            await self._submit_from_input_widget()
+            return
+
+        if key == "enter":
+            if "\n" not in text:
+                event.prevent_default()
+                event.stop()
+                await self._submit_from_input_widget()
+            return
 
     def on_click(self) -> None:
         self.post_message(self.Activated(self._term_id))
@@ -1256,16 +2055,74 @@ class TerminalPanel(Widget):
             log.write(RichText(
                 "  /exit /quit     Exit the TUI\n"
                 "  /clear          Clear this terminal\n"
+                "  /retry          Retry last prompt after an error\n"
+                "  /cancel         Cancel current run (same as Ctrl+C / Esc)\n"
                 "  /help           Show this message\n"
+                "  tip             Append ' all' to broadcast a prompt to T1-T4\n"
                 "\n"
-                "  ^q  Exit    ^l  Clear    ^s  Sidebar\n"
+                "  ^q  Exit    ^l  Clear    ^c  Cancel    ^s  Sidebar\n"
                 "  Esc Cancel",
                 style="#00cc00",
             ))
             return
         if cmd in ("/clear", "/cls"):
             log.clear()
+            self._write_system_message("context", "terminal output reset", style="#ffaa00")
             return
+
+        if cmd == "/expand":
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                log.write(RichText("  usage: /expand <tool_call_id>", style="#ffcc00"))
+                return
+            call_id = parts[1].strip()
+            full = self._tool_outputs_by_call_id.get(call_id)
+            if full is None:
+                log.write(RichText(f"  no stored output for call_id={call_id}", style="#ff6600"))
+                return
+            log.write(RichText(f"  [expanded output] call_id={call_id}", style="#00cc00"))
+            self._render_agent_message(full)
+            return
+
+        if cmd in ("/cancel", "/stop"):
+            if self.cancel_active_run():
+                log.write(RichText("  cancelled active run", style="#ffaa00"))
+            else:
+                log.write(RichText("  no active run", style="#ffcc00"))
+            return
+
+        if cmd == "/retry":
+            if self._busy:
+                log.write(RichText("  terminal is busy; retry unavailable", style="#ffcc00"))
+                return
+            if not self._last_prompt_text:
+                log.write(RichText("  no previous prompt to retry", style="#ffcc00"))
+                return
+            log.write(RichText(f"  retrying: {self._last_prompt_text[:120]}", style="#00cc00"))
+            self._set_visual_state("ready")
+            self._set_status(f"T{self._term_id}> retrying previous prompt")
+            self._busy = True
+            self._set_visual_state("busy")
+            self._run_worker = self._run_agent(self._last_prompt_text)
+            return
+
+        if self._busy:
+            log.write(RichText(
+                "  [busy] Working... cancel with Ctrl+C, Esc, or /cancel",
+                style="#ffcc00",
+            ))
+            return
+
+        if not cmd:
+            try:
+                if not self.app._can_dispatch_prompt():
+                    log.write(RichText(
+                        "  [paused] Price limit exceeded. Increase CAI_PRICE_LIMIT or start a new session.",
+                        style="#ff4444",
+                    ))
+                    return
+            except Exception:
+                pass
 
         if self._agent is None:
             log.write(RichText(
@@ -1292,37 +2149,73 @@ class TerminalPanel(Widget):
             return
 
         ts = datetime.now().strftime("%H:%M:%S")
-        self._set_status(f"T{self._term_id}> [{ts}] ⟳ Thinking…")
-        self._run_agent(text)
+        self._last_prompt_text = text
+        self._busy = True
+        self._set_visual_state("busy")
+        self._set_status(f"T{self._term_id}> [{ts}] ⟳ Working… (Ctrl+C to cancel)")
+        self._run_worker = self._run_agent(text)
 
     @work(exclusive=True)
     async def _run_agent(self, text: str) -> None:
         from rich.text import Text as RichText
         from cai.sdk.agents import Runner
-        from cai.sdk.agents.stream_events import RunItemStreamEvent
+        from cai.sdk.agents.stream_events import RunItemStreamEvent, RawResponsesStreamEvent
         from cai.sdk.agents.items import ToolCallOutputItem
 
         log = self.query_one(f"#term-log-{self._term_id}", RichLog)
         stream_iter = None
+        result = None
+        run_status = "completed"
+        run_error: str | None = None
+        streamed_chars = 0
+        try:
+            self.app._telemetry_run_started(self._term_id, self._agent_name, text)
+        except Exception:
+            pass
         try:
             result = Runner.run_streamed(self._agent, text)
             stream_iter = result.stream_events()
 
             async for event in stream_iter:
+                if isinstance(event, RawResponsesStreamEvent):
+                    delta = self._extract_stream_text_delta(event.data)
+                    if delta:
+                        streamed_chars += len(delta)
+                        self._set_status(
+                            f"T{self._term_id}> ⟳ Streaming… {streamed_chars} chars"
+                        )
+                    continue
+
                 if not isinstance(event, RunItemStreamEvent):
                     continue
                 ev_name = event.name
                 item = event.item
 
+                try:
+                    self.app._emit_telemetry(
+                        self._term_id,
+                        self._agent_name,
+                        "stream_event",
+                        {"name": ev_name, "item_type": getattr(item, "type", "unknown")},
+                    )
+                except Exception:
+                    pass
+
                 if ev_name == "message_output_created":
+                    try:
+                        self.app._telemetry_first_token(self._term_id, self._agent_name)
+                    except Exception:
+                        pass
                     try:
                         from cai.sdk.agents.items import ItemHelpers
                         content = ItemHelpers.text_message_output(item)
                     except Exception:
                         content = str(getattr(item, "content", ""))
                     if content:
-                        for line in content.splitlines():
-                            log.write(RichText(f"CAI>  {line}", style="#00ff00"))
+                        self._render_agent_message(content)
+
+                elif ev_name == "reasoning_item_created":
+                    self._write_system_message("progress", "reasoning step created", style="#00cc88")
 
                 elif ev_name == "tool_called":
                     raw = getattr(item, "raw_item", item)
@@ -1331,36 +2224,116 @@ class TerminalPanel(Widget):
                         getattr(getattr(raw, "function", None), "name", "tool"),
                     )
                     fn_args = str(getattr(raw, "arguments", "…"))
+                    call_id = str(getattr(raw, "call_id", "unknown"))
                     if len(fn_args) > 80:
                         fn_args = fn_args[:80] + "…"
-                    log.write(RichText(f"  ↳ {fn_name}({fn_args})", style="#006600"))
+                    self._active_tool_calls[call_id] = {
+                        "name": str(fn_name),
+                        "args": fn_args,
+                    }
+                    log.write(RichText(f"  ▶ {fn_name}({fn_args}) [running]", style="#006600"))
+                    try:
+                        self.app._telemetry_tool_called(
+                            self._term_id,
+                            self._agent_name,
+                            str(fn_name),
+                            call_id,
+                            str(getattr(raw, "arguments", "")),
+                        )
+                    except Exception:
+                        pass
 
                 elif ev_name == "tool_output":
                     if isinstance(item, ToolCallOutputItem):
-                        lines = str(item.output).splitlines()
-                        for line in lines[:15]:
-                            log.write(RichText(f"    {line}", style="#00aa00"))
-                        if len(lines) > 15:
-                            log.write(RichText(
-                                f"    … {len(lines) - 15} more lines …",
-                                style="#004400",
-                            ))
+                        call_id = "unknown"
+                        try:
+                            raw_item = getattr(item, "raw_item", {}) or {}
+                            if isinstance(raw_item, dict):
+                                call_id = str(raw_item.get("call_id", "unknown"))
+                            else:
+                                call_id = str(getattr(raw_item, "call_id", "unknown"))
+                        except Exception:
+                            call_id = "unknown"
+
+                        full_output = str(item.output)
+                        self._tool_outputs_by_call_id[call_id] = full_output
+                        preview, collapsed = self._format_tool_output_preview(full_output)
+                        name = self._active_tool_calls.get(call_id, {}).get("name", "tool")
+                        log.write(RichText(f"  ✓ {name} [success] call_id={call_id}", style="#00cc00"))
+                        self._render_agent_message(preview)
+                        if collapsed:
+                            remaining = max(0, len(full_output.splitlines()) - len(preview.splitlines()))
+                            log.write(
+                                RichText(
+                                    f"    … collapsed {remaining} lines, use /expand {call_id} for full output",
+                                    style="#004400",
+                                )
+                            )
+                        try:
+                            out_preview = preview.splitlines()[0] if preview else full_output
+                            self.app._telemetry_tool_output(
+                                self._term_id,
+                                self._agent_name,
+                                call_id,
+                                out_preview,
+                            )
+                        except Exception:
+                            pass
+                        if call_id in self._active_tool_calls:
+                            self._active_tool_calls.pop(call_id, None)
 
         except asyncio.CancelledError:
+            run_status = "cancelled"
             log.write(RichText("  [cancelled]", style="#ff6600"))
+            self._write_system_message("progress", "run cancelled", style="#ffaa00")
         except Exception as exc:
+            run_status = "error"
+            run_error = str(exc)
             log.write(RichText(f"  [error] {exc}", style="#ff4444"))
+            # Mark any running tool calls as errored in the log.
+            for call_id, meta in list(self._active_tool_calls.items()):
+                log.write(
+                    RichText(
+                        f"  ✗ {meta.get('name', 'tool')} [error] call_id={call_id}",
+                        style="#ff4444",
+                    )
+                )
+            self._active_tool_calls.clear()
+            self._write_system_message("error", str(exc), style="#ff4444")
+            self._write_system_message("error", "use /retry to run the last prompt again", style="#ff6666")
         finally:
+            self._busy = False
+            self._run_worker = None
             if stream_iter is not None:
                 try:
                     await stream_iter.aclose()
                 except Exception:
                     pass
-            self._set_status("")
+            try:
+                status_text = self.app._telemetry_run_finished(
+                    self._term_id,
+                    self._agent_name,
+                    result,
+                    run_status,
+                    run_error,
+                )
+            except Exception:
+                status_text = ""
+            self._set_status(status_text)
+            if run_status == "error":
+                self._set_visual_state("error")
+            else:
+                self._set_visual_state("ready")
 
     def _set_status(self, text: str) -> None:
         try:
-            self.query_one(f"#term-status-{self._term_id}", Static).update(text)
+            out = str(text or "")
+            try:
+                if getattr(self.app, "_responsive_mode", "medium") == "small" and len(out) > 52:
+                    out = out[:51] + "…"
+            except Exception:
+                pass
+            self.query_one(f"#term-status-{self._term_id}", Static).update(out)
         except Exception:
             pass
 
@@ -1392,13 +2365,22 @@ class CaiHeader(Widget):
         self._ctx = ctx
 
     def compose(self) -> ComposeResult:
-        yield Static(
-            "[bold #00ff00]T1[/bold #00ff00]"
-            "[#004400] | [/#004400]"
-            "[#00ff00]Terminal[/#00ff00]"
-            "[#003300]  Add  Graph  Help[/#003300]",
-            id="header-left",
-        )
+        with Horizontal(id="header-left"):
+            yield Static(
+                "[bold #00ff00]T1[/bold #00ff00]"
+                "[#004400] | [/#004400]"
+                "[#00ff00]Terminal[/#00ff00]",
+                id="header-left-text",
+            )
+            with Horizontal(id="header-nav"):
+                yield Button("Terminal", id="top-nav-terminal", classes="top-nav-btn")
+                yield Button("Agents", id="top-nav-agents", classes="top-nav-btn")
+                yield Button("Queue", id="top-nav-queue", classes="top-nav-btn")
+                yield Button("Sessions", id="top-nav-sessions", classes="top-nav-btn")
+                yield Button("Config", id="top-nav-config", classes="top-nav-btn")
+                yield Button("Tools", id="top-nav-tools", classes="top-nav-btn")
+                yield Button("Stats", id="top-nav-metrics", classes="top-nav-btn")
+                yield Button("Menu", id="header-menu")
         yield Static(
             f"[#00cc00]{self._agent_name}[/#00cc00][#004400] ▼ [/#004400]"
             f"[#00cc00]{self._model}[/#00cc00][#004400] ▼ [/#004400]"
@@ -1419,6 +2401,7 @@ class CAIApp(App):
     BINDINGS = [
         Binding("ctrl+q", "quit",           "Exit",    show=True),
         Binding("ctrl+l", "clear_active",   "Clear",   show=True),
+        Binding("ctrl+c", "cancel_active",  "Cancel",  show=True),
         Binding("ctrl+s", "toggle_sidebar", "Sidebar", show=True),
         Binding("escape", "cancel_active",  "Cancel",  show=True),
         Binding("ctrl+p", "command_palette","Palette", show=True),
@@ -1441,70 +2424,1254 @@ class CAIApp(App):
         self._sidebar_visible = True
         self._available_agents: dict = {}
         self._active_team: Optional[int] = None
-        self._queue_items: list[tuple[bool, str]] = []
+        self._queue_items: list[dict] = []
+        self._queue_selected_idx: Optional[int] = None
+        self._queue_running: bool = False
+        self._queue_broadcast_mode: bool = False
+        self._tool_registry: dict[str, dict] = {}
+        self._tool_call_history: list[dict] = []
+        self._selected_tool_id: Optional[str] = None
+        self._selected_tool_call_idx: Optional[int] = None
+        self._tool_button_id_to_tool_id: dict[str, str] = {}
+        self._tool_tool_id_to_button_id: dict[str, str] = {}
+        self._tool_calls_file: str = TOOL_CALLS_FILE
+        self._tool_calls_max_bytes: int = TOOL_CALLS_MAX_BYTES
+        self._tool_calls_max_backups: int = TOOL_CALLS_MAX_BACKUPS
+        self._inject_mode: str = "input"
+        self._telemetry_file: str = TELEMETRY_FILE
+        self._telemetry_max_bytes: int = TELEMETRY_MAX_BYTES
+        self._telemetry_max_backups: int = TELEMETRY_MAX_BACKUPS
+        self._context_snapshots_file: str = CONTEXT_SNAPSHOTS_FILE
+        self._context_snapshots_max_bytes: int = CONTEXT_SNAPSHOTS_MAX_BYTES
+        self._context_snapshots_max_backups: int = CONTEXT_SNAPSHOTS_MAX_BACKUPS
+        self._telemetry_pending_runs: dict[int, dict] = {}
+        self._telemetry_pending_tool_calls: dict[str, dict] = {}
+        self._telemetry_stats_by_term: dict[int, dict] = {}
+        self._context_snapshot_by_term: dict[int, dict] = self._load_context_snapshots_latest_by_term()
+        self._stats_started_ts: float = time.time()
+        self._price_limit_warned: bool = False
+        self._price_limit_paused: bool = False
+        self._responsive_mode: str = "medium"
+        self._responsive_label_cache: dict[str, str] = {}
+        self._command_palette_recent: list[str] = []
         # terminal tracking
         self._next_term_id = 1
         self._active_term_id = 1
 
+    def _now_ms(self) -> int:
+        return int(time.time() * 1000)
+
+    def _ensure_term_stats(self, term_id: int) -> dict:
+        stats = self._telemetry_stats_by_term.get(term_id)
+        if stats is None:
+            stats = {
+                "runs": 0,
+                "errors": 0,
+                "cancelled": 0,
+                "tool_calls": 0,
+                "retrieval_calls": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "cost_total": 0.0,
+                "last_cost": 0.0,
+                "model": self._model_name,
+                "input_price_per_token": 0.0,
+                "output_price_per_token": 0.0,
+                "sum_first_token_ms": 0,
+                "sum_total_latency_ms": 0,
+                "last_first_token_ms": None,
+                "last_total_latency_ms": None,
+                "last_status": "idle",
+            }
+            self._telemetry_stats_by_term[term_id] = stats
+        return stats
+
+    def _is_retrieval_tool(self, tool_name: str) -> bool:
+        name = (tool_name or "").lower()
+        retrieval_markers = (
+            "search", "retriev", "rag", "file_search", "web_search", "google", "shodan", "mcp"
+        )
+        return any(marker in name for marker in retrieval_markers)
+
+    def _rotate_telemetry_if_needed(self) -> None:
+        try:
+            if not os.path.exists(self._telemetry_file):
+                return
+            if os.path.getsize(self._telemetry_file) <= self._telemetry_max_bytes:
+                return
+
+            max_backups = max(1, int(self._telemetry_max_backups))
+            oldest = f"{self._telemetry_file}.{max_backups}"
+            if os.path.exists(oldest):
+                try:
+                    os.remove(oldest)
+                except Exception:
+                    pass
+
+            for i in range(max_backups - 1, 0, -1):
+                src = f"{self._telemetry_file}.{i}"
+                dst = f"{self._telemetry_file}.{i + 1}"
+                if os.path.exists(src):
+                    try:
+                        os.replace(src, dst)
+                    except Exception:
+                        pass
+
+            try:
+                os.replace(self._telemetry_file, f"{self._telemetry_file}.1")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _persist_telemetry_record(self, record: dict) -> None:
+        try:
+            os.makedirs(os.path.dirname(self._telemetry_file), exist_ok=True)
+            self._rotate_telemetry_if_needed()
+            with open(self._telemetry_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=True) + "\n")
+        except Exception:
+            pass
+
+    def _emit_telemetry(self, term_id: int, agent_name: str, event_type: str, data: dict) -> None:
+        rec = {
+            "event": event_type,
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "ts_ms": self._now_ms(),
+            "terminal_id": term_id,
+            "agent_name": agent_name,
+            "data": data,
+        }
+        self._persist_telemetry_record(rec)
+
+    def _load_recent_telemetry_events(self, limit: int = 20) -> list[dict]:
+        records: list[dict] = []
+        try:
+            paths: list[str] = []
+            for i in range(self._telemetry_max_backups, 0, -1):
+                p = f"{self._telemetry_file}.{i}"
+                if os.path.exists(p):
+                    paths.append(p)
+            if os.path.exists(self._telemetry_file):
+                paths.append(self._telemetry_file)
+
+            for path in paths:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        raw = line.strip()
+                        if not raw:
+                            continue
+                        try:
+                            obj = json.loads(raw)
+                            if isinstance(obj, dict):
+                                records.append(obj)
+                        except Exception:
+                            continue
+        except Exception:
+            return []
+        if limit <= 0:
+            return records
+        return records[-limit:]
+
+    def _render_metrics_summary_text(self) -> str:
+        if not self._telemetry_stats_by_term:
+            return "No stats yet. Run a prompt to collect cost and usage metrics."
+
+        def _fmt_cost(value: float) -> str:
+            return f"${float(value):.2f}"
+
+        def _fmt_elapsed(seconds: float) -> str:
+            total = max(0, int(seconds))
+            h = total // 3600
+            m = (total % 3600) // 60
+            s = total % 60
+            if h > 0:
+                return f"{h}h {m}m {s}s"
+            if m > 0:
+                return f"{m}m {s}s"
+            return f"{s}s"
+
+        total_runs = 0
+        total_tokens = 0
+        total_tools = 0
+        total_retr = 0
+        total_errors = 0
+        total_cost = 0.0
+        active_terms = 0
+
+        lines: list[str] = ["[bold]Stats[/bold]"]
+        lines.append(f"Total Cost: {_fmt_cost(self._session_cost_total())}")
+        lines.append("═══════════════════════")
+
+        pricing_lines: list[str] = []
+
+        for term_id in sorted(self._telemetry_stats_by_term.keys()):
+            s = self._telemetry_stats_by_term[term_id]
+            total_runs += int(s.get("runs", 0) or 0)
+            total_tokens += int(s.get("total_tokens", 0) or 0)
+            total_tools += int(s.get("tool_calls", 0) or 0)
+            total_retr += int(s.get("retrieval_calls", 0) or 0)
+            total_errors += int(s.get("errors", 0) or 0)
+            term_cost = float(s.get("cost_total", 0.0) or 0.0)
+            total_cost += term_cost
+            if s.get("last_status") == "running":
+                active_terms += 1
+
+            lines.append(f"Terminal {term_id}: {_fmt_cost(term_cost)}")
+
+            model_name = str(s.get("model", self._model_name) or self._model_name)
+            in_price = float(s.get("input_price_per_token", 0.0) or 0.0)
+            out_price = float(s.get("output_price_per_token", 0.0) or 0.0)
+            pricing_lines.append(f"T{term_id}: model={model_name} in={in_price:.8f} out={out_price:.8f}")
+
+        if active_terms <= 0:
+            try:
+                active_terms = len(list(self.query(TerminalPanel)))
+            except Exception:
+                active_terms = 0
+
+        avg_cost_per_turn = total_cost / max(1, total_runs)
+        elapsed = _fmt_elapsed(time.time() - self._stats_started_ts)
+
+        lines.append("")
+        lines.append("[bold]Usage Metrics[/bold]")
+        lines.append(f"Interactions: {total_runs}")
+        lines.append(f"Total tokens: {total_tokens}")
+        lines.append(f"Average cost per turn: {_fmt_cost(avg_cost_per_turn)}")
+        lines.append(f"Time elapsed: {elapsed}")
+        lines.append(f"Active terminals: {active_terms}")
+        lines.append("")
+        lines.append("[bold]Model pricing details[/bold]")
+        lines.extend(pricing_lines)
+        lines.append("")
+
+        price_limit, enabled = self._get_price_limit()
+        if enabled:
+            pct = (total_cost / max(price_limit, 1e-9)) * 100.0
+            state = "PAUSED" if self._price_limit_paused else ("WARNING" if pct >= 80.0 else "OK")
+            lines.append(
+                f"Cost limit: CAI_PRICE_LIMIT={price_limit:.2f} · used={_fmt_cost(total_cost)} ({pct:.1f}%) · {state}"
+            )
+        else:
+            lines.append("Cost limit: disabled (set CAI_PRICE_LIMIT > 0 to enable)")
+
+        lines.append(f"Diagnostics: tools={total_tools} retr={total_retr} errors={total_errors}")
+        return "\n".join(lines)
+
+    def _get_price_limit(self) -> tuple[float, bool]:
+        raw = os.getenv("CAI_PRICE_LIMIT", "").strip()
+        if not raw:
+            return (0.0, False)
+        try:
+            value = float(raw)
+            if value <= 0:
+                return (0.0, False)
+            return (value, True)
+        except Exception:
+            return (0.0, False)
+
+    def _session_cost_total(self) -> float:
+        total = 0.0
+        for s in self._telemetry_stats_by_term.values():
+            try:
+                total += float(s.get("cost_total", 0.0) or 0.0)
+            except Exception:
+                continue
+        return total
+
+    def _refresh_price_limit_state(self, emit_logs: bool = True) -> None:
+        limit, enabled = self._get_price_limit()
+        if not enabled:
+            self._price_limit_warned = False
+            self._price_limit_paused = False
+            return
+
+        total_cost = self._session_cost_total()
+        ratio = total_cost / max(limit, 1e-9)
+
+        if ratio >= 1.0:
+            if emit_logs and not self._price_limit_paused:
+                self._log_to_active_terminal(
+                    f"[cost] limit exceeded ({total_cost:.4f}/{limit:.4f}). Auto-pausing new prompts.",
+                    style="#ff4444",
+                )
+            self._price_limit_paused = True
+            return
+
+        self._price_limit_paused = False
+        if ratio >= 0.8 and not self._price_limit_warned:
+            self._price_limit_warned = True
+            if emit_logs:
+                self._log_to_active_terminal(
+                    f"[cost] warning: approaching limit ({total_cost:.4f}/{limit:.4f}).",
+                    style="#ffcc00",
+                )
+        elif ratio < 0.8:
+            self._price_limit_warned = False
+
+    def _can_dispatch_prompt(self) -> bool:
+        self._refresh_price_limit_state(emit_logs=True)
+        return not self._price_limit_paused
+
+    def _render_metrics_events_text(self, limit: int = 20) -> str:
+        events = self._load_recent_telemetry_events(limit=limit)
+        if not events:
+            return "No telemetry events yet."
+
+        lines: list[str] = []
+        for rec in events[-limit:]:
+            ts = rec.get("timestamp", "?")
+            terminal = rec.get("terminal_id", "?")
+            event_name = rec.get("event", "?")
+            data = rec.get("data", {}) or {}
+            if isinstance(data, dict):
+                if "tool_name" in data:
+                    detail = f" tool={data.get('tool_name')}"
+                elif "latency_ms" in data:
+                    detail = f" latency={data.get('latency_ms')}ms"
+                elif "status" in data:
+                    detail = f" status={data.get('status')}"
+                else:
+                    detail = ""
+            else:
+                detail = ""
+            lines.append(f"{ts} · T{terminal} · {event_name}{detail}")
+        return "\n".join(lines)
+
+    def _update_metrics_view(self) -> None:
+        try:
+            summary = self.query_one("#metrics-summary", Static)
+            summary_text = self._render_metrics_summary_text()
+            try:
+                summary.update(RichText.from_markup(summary_text))
+            except Exception:
+                summary.update(summary_text)
+        except Exception:
+            pass
+
+        try:
+            events = self.query_one("#metrics-events", Static)
+            events_text = self._render_metrics_events_text(limit=20)
+            events.update(events_text)
+        except Exception:
+            pass
+
+    @work(exclusive=False)
+    async def _refresh_metrics_view_worker(self) -> None:
+        self._update_metrics_view()
+
+    def _run_key(self, term_id: int) -> int:
+        return term_id
+
+    def _tool_key(self, term_id: int, call_id: str) -> str:
+        return f"{term_id}:{call_id}"
+
+    def _estimate_tokens_from_text(self, text: str) -> int:
+        raw = str(text or "")
+        # Fast and deterministic token estimate for UI-only attribution.
+        return max(0, (len(raw) + 3) // 4)
+
+    def _format_k_tokens(self, count: int) -> str:
+        value = int(count or 0)
+        if value >= 1000:
+            return f"{value / 1000:.1f}k"
+        return str(value)
+
+    def _usage_field(self, obj, key: str, default=None):
+        if obj is None:
+            return default
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    def _usage_details_to_dict(self, details) -> dict:
+        if details is None:
+            return {}
+        if isinstance(details, dict):
+            return details
+        if hasattr(details, "model_dump"):
+            try:
+                dumped = details.model_dump()
+                if isinstance(dumped, dict):
+                    return dumped
+            except Exception:
+                pass
+        if hasattr(details, "__dict__"):
+            try:
+                as_dict = dict(details.__dict__)
+                if isinstance(as_dict, dict):
+                    return as_dict
+            except Exception:
+                pass
+        return {}
+
+    def _extract_usage_detail_totals(self, usage) -> dict:
+        """Extract normalized usage totals from provider responses when available."""
+        input_tokens = int(
+            self._usage_field(usage, "input_tokens", 0)
+            or self._usage_field(usage, "prompt_tokens", 0)
+            or 0
+        )
+        output_tokens = int(
+            self._usage_field(usage, "output_tokens", 0)
+            or self._usage_field(usage, "completion_tokens", 0)
+            or 0
+        )
+        total_tokens = int(self._usage_field(usage, "total_tokens", 0) or 0)
+        if total_tokens <= 0:
+            total_tokens = input_tokens + output_tokens
+
+        input_details = self._usage_details_to_dict(
+            self._usage_field(usage, "input_tokens_details", None)
+            or self._usage_field(usage, "prompt_tokens_details", None)
+        )
+        output_details = self._usage_details_to_dict(
+            self._usage_field(usage, "output_tokens_details", None)
+            or self._usage_field(usage, "completion_tokens_details", None)
+        )
+
+        cached_tokens = int(input_details.get("cached_tokens", 0) or 0)
+        reasoning_tokens = int(
+            output_details.get("reasoning_tokens", 0)
+            or self._usage_field(usage, "reasoning_tokens", 0)
+            or 0
+        )
+
+        return {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "cached_tokens": cached_tokens,
+            "reasoning_tokens": reasoning_tokens,
+        }
+
+    def _context_usage_level(self, pct: float) -> tuple[str, str]:
+        if pct < 50.0:
+            return ("GREEN", "green")
+        if pct < 80.0:
+            return ("YELLOW", "yellow")
+        return ("RED", "red")
+
+    def _resolve_model_context_max_tokens(self, model_name: str) -> int:
+        name = str(model_name or "").lower().strip()
+        try:
+            from cai.util import get_model_input_tokens
+            max_tokens = int(get_model_input_tokens(name) or 0)
+            if max_tokens > 0:
+                return max_tokens
+        except Exception:
+            pass
+
+        # Fallback map for safety when util lookup is unavailable.
+        fallback_map = {
+            "alias1": 128000,
+            "gpt-4": 128000,
+            "gpt-4o": 128000,
+            "gpt-5": 200000,
+            "claude": 200000,
+            "sonnet": 200000,
+        }
+        for key, value in fallback_map.items():
+            if key in name:
+                return value
+        return 128000
+
+    def _context_categories_blank(self) -> dict:
+        return {
+            "system_prompt_tokens": 0,
+            "tool_definitions_tokens": 0,
+            "memory_rag_tokens": 0,
+            "user_prompt_tokens": 0,
+            "assistant_response_tokens": 0,
+            "tool_calls_tokens": 0,
+            "tool_results_tokens": 0,
+        }
+
+    def _context_snapshot_summary_text(self, snapshot: dict) -> str:
+        used = int(snapshot.get("used_tokens", 0) or 0)
+        max_tokens = int(snapshot.get("max_tokens", 0) or 0)
+        pct = float(snapshot.get("pct_used", 0.0) or 0.0)
+        free = int(snapshot.get("free_tokens", 0) or 0)
+        last_input = int(snapshot.get("last_input_tokens", 0) or 0)
+        return (
+            f"Context usage T{snapshot.get('terminal_id', '?')}: "
+            f"used {used}/{max_tokens} ({pct:.1f}%), free {free}, last_input {last_input}"
+        )
+
+    def _render_context_usage_menu_text(self, snapshot: dict) -> str:
+        if not snapshot:
+            return "No context data yet. Run one prompt to initialize."
+
+        used = int(snapshot.get("used_tokens", 0) or 0)
+        max_tokens = int(snapshot.get("max_tokens", 0) or 0)
+        free = int(snapshot.get("free_tokens", 0) or 0)
+        pct = float(snapshot.get("pct_used", 0.0) or 0.0)
+        last_input = int(snapshot.get("last_input_tokens", 0) or 0)
+        categories = snapshot.get("categories", {}) or {}
+
+        bar_width = 28
+        fill = 0
+        if max_tokens > 0:
+            fill = min(bar_width, max(0, int(round((used / max_tokens) * bar_width))))
+        bar = ("#" * fill) + ("-" * (bar_width - fill))
+
+        lines: list[str] = [
+            f"[bold]Context Usage · T{snapshot.get('terminal_id', '?')}[/bold]",
+            f"Model: {snapshot.get('model', '?')} · Agent: {snapshot.get('agent_name', '?')}",
+            f"Used: {self._format_k_tokens(used)} / {self._format_k_tokens(max_tokens)} ({pct:.1f}%)",
+            f"Free: {self._format_k_tokens(free)} · Last input: {self._format_k_tokens(last_input)}",
+            f"[{bar}]",
+            "",
+            "[bold]Context Level[/bold]",
+            f"Level: [{self._context_usage_level(pct)[1]}]{self._context_usage_level(pct)[0]}[/{self._context_usage_level(pct)[1]}]",
+            "Legend: [green]GREEN[/green] < 50% · [yellow]YELLOW[/yellow] 50-79% · [red]RED[/red] >= 80%",
+            "",
+            "[bold]Category Breakdown[/bold]",
+        ]
+
+        ordered = [
+            ("System prompt", "system_prompt_tokens"),
+            ("Tool definitions", "tool_definitions_tokens"),
+            ("Memory / RAG", "memory_rag_tokens"),
+            ("User prompts", "user_prompt_tokens"),
+            ("Assistant responses", "assistant_response_tokens"),
+            ("Tool calls", "tool_calls_tokens"),
+            ("Tool results", "tool_results_tokens"),
+        ]
+        denom = max(1, used)
+        for label, key in ordered:
+            value = int(categories.get(key, 0) or 0)
+            cpct = (value / denom) * 100.0
+            lines.append(f"- {label}: {self._format_k_tokens(value)} ({cpct:.1f}%)")
+
+        lines.append("")
+        lines.append(f"Updated: {snapshot.get('timestamp', '?')}")
+        return "\n".join(lines)
+
+    def _build_context_snapshot(
+        self,
+        term_id: int,
+        agent_name: str,
+        model_name: str,
+        run_data: dict,
+        input_tokens: int,
+        output_tokens: int,
+        total_tokens: int,
+        usage_details: dict | None = None,
+    ) -> dict:
+        categories = self._context_categories_blank()
+        details = usage_details or {}
+
+        run_categories = (run_data or {}).get("categories", {}) or {}
+        for key in categories.keys():
+            categories[key] = int(run_categories.get(key, 0) or 0)
+
+        # Prefer usage-reported values when available.
+        if input_tokens > 0:
+            categories["user_prompt_tokens"] = input_tokens
+        if output_tokens > 0:
+            categories["assistant_response_tokens"] = output_tokens
+
+        # Provider-side details (when available) refine attribution.
+        # cached_tokens are usually prompt prefix/system/tool material reused across calls.
+        # reasoning_tokens are part of assistant generation budget.
+        cached_tokens = int(details.get("cached_tokens", 0) or 0)
+        reasoning_tokens = int(details.get("reasoning_tokens", 0) or 0)
+        if cached_tokens > 0:
+            categories["system_prompt_tokens"] += cached_tokens
+            categories["user_prompt_tokens"] = max(0, int(categories["user_prompt_tokens"]) - cached_tokens)
+        if reasoning_tokens > 0:
+            categories["assistant_response_tokens"] += reasoning_tokens
+
+        used_tokens = int(total_tokens or 0)
+        estimated_sum = sum(int(v or 0) for v in categories.values())
+        if used_tokens <= 0:
+            used_tokens = estimated_sum
+
+        # Keep breakdown bounded to used tokens for sane percentages.
+        fixed = (
+            int(categories["system_prompt_tokens"])
+            + int(categories["tool_definitions_tokens"])
+            + int(categories["memory_rag_tokens"])
+            + int(categories["user_prompt_tokens"])
+            + int(categories["assistant_response_tokens"])
+        )
+        remaining = max(0, used_tokens - fixed)
+        categories["tool_calls_tokens"] = min(int(categories["tool_calls_tokens"]), remaining)
+        remaining -= int(categories["tool_calls_tokens"])
+        categories["tool_results_tokens"] = min(int(categories["tool_results_tokens"]), remaining)
+
+        max_tokens = max(1, self._resolve_model_context_max_tokens(model_name))
+        free_tokens = max(0, max_tokens - used_tokens)
+        pct_used = min(100.0, (used_tokens / max_tokens) * 100.0)
+
+        return {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "terminal_id": term_id,
+            "agent_name": agent_name,
+            "model": model_name,
+            "used_tokens": used_tokens,
+            "max_tokens": max_tokens,
+            "pct_used": round(pct_used, 2),
+            "free_tokens": free_tokens,
+            "last_input_tokens": int(categories["user_prompt_tokens"]),
+            "provider_usage_details": {
+                "cached_tokens": cached_tokens,
+                "reasoning_tokens": reasoning_tokens,
+            },
+            "categories": categories,
+        }
+
+    def _rotate_context_snapshots_if_needed(self) -> None:
+        try:
+            if not os.path.exists(self._context_snapshots_file):
+                return
+            if os.path.getsize(self._context_snapshots_file) <= self._context_snapshots_max_bytes:
+                return
+
+            max_backups = max(1, int(self._context_snapshots_max_backups))
+            oldest = f"{self._context_snapshots_file}.{max_backups}"
+            if os.path.exists(oldest):
+                try:
+                    os.remove(oldest)
+                except Exception:
+                    pass
+
+            for i in range(max_backups - 1, 0, -1):
+                src = f"{self._context_snapshots_file}.{i}"
+                dst = f"{self._context_snapshots_file}.{i + 1}"
+                if os.path.exists(src):
+                    try:
+                        os.replace(src, dst)
+                    except Exception:
+                        pass
+
+            try:
+                os.replace(self._context_snapshots_file, f"{self._context_snapshots_file}.1")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _persist_context_snapshot(self, snapshot: dict) -> None:
+        try:
+            os.makedirs(os.path.dirname(self._context_snapshots_file), exist_ok=True)
+            self._rotate_context_snapshots_if_needed()
+            with open(self._context_snapshots_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(snapshot, ensure_ascii=True) + "\n")
+        except Exception:
+            pass
+
+    def _load_context_snapshots_latest_by_term(self) -> dict[int, dict]:
+        latest: dict[int, dict] = {}
+        try:
+            paths: list[str] = []
+            for i in range(self._context_snapshots_max_backups, 0, -1):
+                p = f"{self._context_snapshots_file}.{i}"
+                if os.path.exists(p):
+                    paths.append(p)
+            if os.path.exists(self._context_snapshots_file):
+                paths.append(self._context_snapshots_file)
+
+            for path in paths:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        raw = line.strip()
+                        if not raw:
+                            continue
+                        try:
+                            obj = json.loads(raw)
+                            if not isinstance(obj, dict):
+                                continue
+                            term_id = int(obj.get("terminal_id", 0) or 0)
+                            if term_id <= 0:
+                                continue
+                            latest[term_id] = obj
+                        except Exception:
+                            continue
+        except Exception:
+            return {}
+        return latest
+
+    def _get_context_snapshot(self, term_id: int | None = None) -> dict | None:
+        tid = int(term_id or self._active_term_id)
+        snap = self._context_snapshot_by_term.get(tid)
+        if snap is not None:
+            return snap
+        # Fallback to latest from any terminal if active has no data yet.
+        if self._context_snapshot_by_term:
+            return self._context_snapshot_by_term[sorted(self._context_snapshot_by_term.keys())[-1]]
+        return None
+
+    @work(exclusive=False)
+    async def _open_context_usage_menu_worker(self) -> None:
+        while True:
+            snapshot = self._get_context_snapshot(self._active_term_id)
+            if snapshot is None:
+                title = "Context Usage"
+                content = "No context data yet. Run one prompt to initialize."
+                summary_text = ""
+            else:
+                title = f"Context Usage · T{snapshot.get('terminal_id', '?')}"
+                content = self._render_context_usage_menu_text(snapshot)
+                summary_text = self._context_snapshot_summary_text(snapshot)
+
+            result = await self.push_screen_wait(ContextUsageModal(title, content, summary_text))
+            if not result:
+                return
+
+            action = result[0] if isinstance(result, (tuple, list)) and result else None
+            if action == "refresh":
+                self._update_metrics_view()
+                continue
+            if action == "copy":
+                payload = result[1] if len(result) > 1 else ""
+                try:
+                    inp = self.query_one(f"#term-input-{self._active_term_id}", TextArea)
+                    if hasattr(inp, "load_text"):
+                        inp.load_text(str(payload))
+                    else:
+                        inp.value = str(payload)
+                    inp.focus()
+                    self._log_to_active_terminal("[context] copied summary to input", style="#00ff00")
+                except Exception:
+                    pass
+                continue
+            if action == "inject":
+                payload = result[1] if len(result) > 1 else ""
+                try:
+                    panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                    await panel.dispatch(str(payload))
+                except Exception as exc:
+                    self._log_to_active_terminal(f"[context] inject failed: {exc}", style="#ff4444")
+                continue
+            if action == "jump_metrics":
+                self._switch_top_tab("tab-metrics")
+                continue
+            return
+
+    def _telemetry_run_started(self, term_id: int, agent_name: str, prompt: str) -> None:
+        stats = self._ensure_term_stats(term_id)
+        stats["runs"] += 1
+        stats["last_status"] = "running"
+        self._telemetry_pending_runs[self._run_key(term_id)] = {
+            "start_ms": self._now_ms(),
+            "first_token_ms": None,
+            "agent_name": agent_name,
+            "prompt_chars": len(prompt or ""),
+            "categories": {
+                "system_prompt_tokens": 0,
+                "tool_definitions_tokens": 0,
+                "memory_rag_tokens": 0,
+                "user_prompt_tokens": self._estimate_tokens_from_text(prompt),
+                "assistant_response_tokens": 0,
+                "tool_calls_tokens": 0,
+                "tool_results_tokens": 0,
+            },
+        }
+        self._emit_telemetry(term_id, agent_name, "run_started", {"prompt_chars": len(prompt or "")})
+
+    def _telemetry_first_token(self, term_id: int, agent_name: str) -> None:
+        run = self._telemetry_pending_runs.get(self._run_key(term_id))
+        if not run:
+            return
+        if run.get("first_token_ms") is not None:
+            return
+        now_ms = self._now_ms()
+        first_ms = max(0, now_ms - int(run.get("start_ms", now_ms)))
+        run["first_token_ms"] = first_ms
+        stats = self._ensure_term_stats(term_id)
+        stats["sum_first_token_ms"] += first_ms
+        stats["last_first_token_ms"] = first_ms
+        self._emit_telemetry(term_id, agent_name, "first_token", {"latency_ms": first_ms})
+
+    def _telemetry_tool_called(
+        self,
+        term_id: int,
+        agent_name: str,
+        tool_name: str,
+        call_id: str,
+        args_preview: str,
+    ) -> None:
+        stats = self._ensure_term_stats(term_id)
+        stats["tool_calls"] += 1
+        self._telemetry_pending_tool_calls[self._tool_key(term_id, call_id)] = {
+            "start_ms": self._now_ms(),
+            "tool_name": tool_name,
+            "is_retrieval": self._is_retrieval_tool(tool_name),
+        }
+        payload = {
+            "tool_name": tool_name,
+            "tool_call_id": call_id,
+            "args_preview": args_preview[:200],
+        }
+        self._emit_telemetry(term_id, agent_name, "tool_called", payload)
+        run = self._telemetry_pending_runs.get(self._run_key(term_id))
+        if run and isinstance(run.get("categories"), dict):
+            run["categories"]["tool_calls_tokens"] += self._estimate_tokens_from_text(args_preview)
+        if self._is_retrieval_tool(tool_name):
+            stats["retrieval_calls"] += 1
+            if run and isinstance(run.get("categories"), dict):
+                # Best-effort attribution: retrieval calls often pull memory/RAG context.
+                run["categories"]["memory_rag_tokens"] += self._estimate_tokens_from_text(args_preview)
+            self._emit_telemetry(
+                term_id,
+                agent_name,
+                "retrieval_called",
+                {"tool_name": tool_name, "tool_call_id": call_id},
+            )
+
+    def _telemetry_tool_output(
+        self,
+        term_id: int,
+        agent_name: str,
+        call_id: str,
+        output_preview: str,
+    ) -> None:
+        key = self._tool_key(term_id, call_id)
+        pending = self._telemetry_pending_tool_calls.get(key, {})
+        start_ms = int(pending.get("start_ms", self._now_ms()))
+        duration_ms = max(0, self._now_ms() - start_ms)
+        tool_name = str(pending.get("tool_name", "tool"))
+        self._emit_telemetry(
+            term_id,
+            agent_name,
+            "tool_output",
+            {
+                "tool_name": tool_name,
+                "tool_call_id": call_id,
+                "duration_ms": duration_ms,
+                "output_preview": output_preview[:200],
+            },
+        )
+        run = self._telemetry_pending_runs.get(self._run_key(term_id))
+        if run and isinstance(run.get("categories"), dict):
+            run["categories"]["tool_results_tokens"] += self._estimate_tokens_from_text(output_preview)
+        if pending.get("is_retrieval"):
+            if run and isinstance(run.get("categories"), dict):
+                run["categories"]["memory_rag_tokens"] += self._estimate_tokens_from_text(output_preview)
+            self._emit_telemetry(
+                term_id,
+                agent_name,
+                "retrieval_output",
+                {
+                    "tool_name": tool_name,
+                    "tool_call_id": call_id,
+                    "duration_ms": duration_ms,
+                },
+            )
+        if key in self._telemetry_pending_tool_calls:
+            self._telemetry_pending_tool_calls.pop(key, None)
+
+    def _telemetry_run_finished(
+        self,
+        term_id: int,
+        agent_name: str,
+        result,
+        status: str,
+        error_text: str | None = None,
+    ) -> str:
+        run = self._telemetry_pending_runs.pop(self._run_key(term_id), None)
+        stats = self._ensure_term_stats(term_id)
+        now_ms = self._now_ms()
+        total_latency_ms = 0
+        if run:
+            total_latency_ms = max(0, now_ms - int(run.get("start_ms", now_ms)))
+        stats["sum_total_latency_ms"] += total_latency_ms
+        stats["last_total_latency_ms"] = total_latency_ms
+        stats["last_status"] = status
+
+        if status == "error":
+            stats["errors"] += 1
+        elif status == "cancelled":
+            stats["cancelled"] += 1
+
+        input_tokens = 0
+        output_tokens = 0
+        total_tokens = 0
+        usage_detail_totals = {"cached_tokens": 0, "reasoning_tokens": 0}
+        try:
+            if result is not None:
+                for resp in list(getattr(result, "raw_responses", []) or []):
+                    usage = getattr(resp, "usage", None)
+                    if usage is None:
+                        continue
+                    usage_totals = self._extract_usage_detail_totals(usage)
+                    input_tokens += int(usage_totals.get("input_tokens", 0) or 0)
+                    output_tokens += int(usage_totals.get("output_tokens", 0) or 0)
+                    total_tokens += int(usage_totals.get("total_tokens", 0) or 0)
+                    usage_detail_totals["cached_tokens"] += int(usage_totals.get("cached_tokens", 0) or 0)
+                    usage_detail_totals["reasoning_tokens"] += int(usage_totals.get("reasoning_tokens", 0) or 0)
+        except Exception:
+            pass
+
+        stats["input_tokens"] += input_tokens
+        stats["output_tokens"] += output_tokens
+        stats["total_tokens"] += total_tokens
+
+        payload = {
+            "status": status,
+            "latency_ms_total": total_latency_ms,
+            "latency_ms_first_token": run.get("first_token_ms") if run else None,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "usage_details": usage_detail_totals,
+            "categories": (run or {}).get("categories", {}),
+        }
+        if error_text:
+            payload["error"] = str(error_text)[:300]
+        self._emit_telemetry(term_id, agent_name, "run_finished", payload)
+
+        interaction_cost = 0.0
+        input_price = 0.0
+        output_price = 0.0
+        model_name = self._model_name
+        try:
+            from cai.util import COST_TRACKER
+
+            interaction_cost = float(
+                COST_TRACKER.calculate_cost(model_name, input_tokens, output_tokens, label="TUI_STATS")
+            )
+            input_price, output_price = COST_TRACKER.get_model_pricing(model_name)
+        except Exception:
+            interaction_cost = 0.0
+            input_price, output_price = (0.0, 0.0)
+
+        stats["cost_total"] = float(stats.get("cost_total", 0.0) or 0.0) + interaction_cost
+        stats["last_cost"] = interaction_cost
+        stats["model"] = model_name
+        stats["input_price_per_token"] = float(input_price or 0.0)
+        stats["output_price_per_token"] = float(output_price or 0.0)
+
+        try:
+            snapshot = self._build_context_snapshot(
+                term_id=term_id,
+                agent_name=agent_name,
+                model_name=self._model_name,
+                run_data=(run or {}),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                usage_details=usage_detail_totals,
+            )
+            self._context_snapshot_by_term[term_id] = snapshot
+            self._persist_context_snapshot(snapshot)
+            self._emit_telemetry(term_id, agent_name, "context_snapshot", snapshot)
+        except Exception:
+            pass
+
+        try:
+            self._refresh_price_limit_state(emit_logs=True)
+        except Exception:
+            pass
+
+        # Refresh Metrics tab widgets if present.
+        try:
+            self._update_metrics_view()
+        except Exception:
+            pass
+
+        avg_total = int(stats["sum_total_latency_ms"] / max(1, stats["runs"]))
+        avg_first = int(stats["sum_first_token_ms"] / max(1, stats["runs"]))
+        return (
+            f"lat(avg {avg_total}ms / first {avg_first}ms) · "
+            f"tok {stats['total_tokens']} · tools {stats['tool_calls']} · "
+            f"retr {stats['retrieval_calls']} · {status}"
+        )
+
+    def _load_inject_mode_pref(self) -> str:
+        """Load persisted inject mode from TUI config."""
+        try:
+            cfg = _load_tui_config()
+            mode = str(cfg.get("tools", {}).get("inject_mode", "input")).strip().lower()
+            if mode in ("input", "command"):
+                return mode
+        except Exception:
+            pass
+        return "input"
+
+    def _persist_inject_mode_pref(self) -> None:
+        """Persist current inject mode to TUI config."""
+        try:
+            cfg = _load_tui_config()
+            cfg.setdefault("tools", {})["inject_mode"] = self._inject_mode
+            _save_tui_config(cfg)
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------ layout
+
+    def _responsive_mode_for_size(self, width: int, height: int) -> str:
+        if width < 120 or height < 40:
+            return "small"
+        if width < 160 or height < 50:
+            return "medium"
+        return "large"
+
+    def _truncate_label(self, text: str, max_len: int) -> str:
+        raw = str(text or "")
+        if len(raw) <= max_len:
+            return raw
+        if max_len <= 3:
+            return raw[:max_len]
+        return raw[: max_len - 1] + "…"
+
+    def _responsive_capacity(self, mode: str) -> int:
+        if mode == "small":
+            return 1
+        if mode == "medium":
+            return 3
+        return 4
+
+    def _visible_panel_ids_for_mode(self, mode: str) -> set[int]:
+        panels = sorted(list(self.query(TerminalPanel)), key=lambda p: p._term_id)
+        if not panels:
+            return set()
+        capacity = self._responsive_capacity(mode)
+        if capacity >= len(panels):
+            return {p._term_id for p in panels}
+        if mode == "small":
+            return {self._active_term_id}
+
+        selected = [p._term_id for p in panels[:capacity]]
+        if self._active_term_id not in selected:
+            selected[-1] = self._active_term_id
+        return set(selected)
+
+    def _apply_terminal_visibility(self, mode: str) -> None:
+        visible_ids = self._visible_panel_ids_for_mode(mode)
+        for panel in self.query(TerminalPanel):
+            panel.display = panel._term_id in visible_ids
+
+        try:
+            top = self.query_one("#term-row-top", Horizontal)
+            top_visible = any(getattr(child, "display", True) for child in top.query(TerminalPanel))
+            top.display = top_visible
+        except Exception:
+            pass
+
+        try:
+            bottom = self.query_one("#term-row-bottom", Horizontal)
+            bottom_visible = any(getattr(child, "display", True) for child in bottom.query(TerminalPanel))
+            bottom.display = bottom_visible
+        except Exception:
+            pass
+
+    def _apply_responsive_labels(self, mode: str) -> None:
+        if mode == "small":
+            max_len = 12
+        elif mode == "medium":
+            max_len = 24
+        else:
+            max_len = 40
+
+        for btn in self.query(Button):
+            bid = btn.id or ""
+            if not bid:
+                continue
+            if bid not in self._responsive_label_cache:
+                self._responsive_label_cache[bid] = str(btn.label)
+            base = self._responsive_label_cache.get(bid, str(btn.label))
+
+            if mode == "small" and bid.startswith("team-"):
+                compact = self._truncate_label(base.replace("#", "T"), 8)
+                btn.label = compact
+            elif mode == "small" and bid.startswith("agent-"):
+                btn.label = self._truncate_label(base, max_len)
+            elif mode == "small" and bid in {
+                "sessions-refresh", "sessions-load", "sessions-resume", "sessions-export", "sessions-rename", "sessions-delete",
+                "queue-run", "queue-delete", "queue-clear", "queue-broadcast-mode", "tools-run", "tools-inspect", "tools-replay", "tools-inject", "tools-inject-mode",
+            }:
+                btn.label = self._truncate_label(base, 10)
+            else:
+                btn.label = self._truncate_label(base, max_len)
+
+            try:
+                if mode == "large":
+                    if bid.startswith("team-"):
+                        idx = int(bid.split("-")[-1])
+                        label, composition = TEAM_PRESETS[idx]
+                        btn.tooltip = self._team_tooltip_text(idx, label, composition) + "\nViewport: large"
+                    elif bid.startswith("agent-"):
+                        btn.tooltip = f"Agent: {base}"
+                elif mode == "small" and not btn.tooltip:
+                    btn.tooltip = base
+            except Exception:
+                pass
+
+    def _apply_responsive_chrome(self, mode: str, width: int, height: int) -> None:
+        try:
+            sidebar = self.query_one("#sidebar", Vertical)
+            if mode == "small":
+                sidebar.styles.width = 12
+            elif mode == "medium":
+                sidebar.styles.width = 32
+            else:
+                sidebar.styles.width = 36
+        except Exception:
+            pass
+
+        try:
+            playbook = self.query_one("#team-playbook-preview", Static)
+            playbook.display = mode != "small"
+        except Exception:
+            pass
+
+        try:
+            tools_history = self.query_one("#tools-history-scroll", ScrollableContainer)
+            tools_history.display = mode != "small"
+        except Exception:
+            pass
+
+        try:
+            metrics_events = self.query_one("#metrics-events-scroll", ScrollableContainer)
+            metrics_events.display = mode != "small"
+        except Exception:
+            pass
+
+        try:
+            header_left = self.query_one("#header-left-text", Static)
+            if mode == "small":
+                header_left.update("[#00ff00]T[/#00ff00]")
+            elif mode == "medium":
+                header_left.update("[#00ff00]Terminal[/#00ff00]")
+            else:
+                header_left.update("[#00ff00]Terminal[/#00ff00]")
+        except Exception:
+            pass
+
+        if width < 80 or height < 24:
+            self._log_to_active_terminal(
+                f"[layout] terminal below minimum {width}x{height} (recommended >= 80x24)",
+                style="#ff6600",
+            )
+
+    def _apply_responsive_layout(self, width: int, height: int) -> None:
+        mode = self._responsive_mode_for_size(width, height)
+        self._responsive_mode = mode
+        self.remove_class("-small-screen")
+        self.remove_class("-medium-screen")
+        self.remove_class("-large-screen")
+        self.add_class(f"-{mode}-screen")
+        self._apply_terminal_visibility(mode)
+        self._apply_responsive_chrome(mode, width, height)
+        self._apply_responsive_labels(mode)
+
+    def _set_top_nav_active(self, tab_id: str) -> None:
+        target = str(tab_id or "")
+        for btn in self.query(".top-nav-btn"):
+            btn.remove_class("-active-top-nav")
+        map_to_btn = {
+            "tab-terminal": "top-nav-terminal",
+            "tab-agents": "top-nav-agents",
+            "tab-queue": "top-nav-queue",
+            "tab-sessions": "top-nav-sessions",
+            "tab-config": "top-nav-config",
+            "tab-tools": "top-nav-tools",
+            "tab-metrics": "top-nav-metrics",
+        }
+        btn_id = map_to_btn.get(target)
+        if not btn_id:
+            return
+        try:
+            self.query_one(f"#{btn_id}", Button).add_class("-active-top-nav")
+        except Exception:
+            pass
+
+    def _switch_top_tab(self, tab_id: str) -> None:
+        try:
+            tabs = self.query_one("#sidebar-tabs", TabbedContent)
+            tabs.active = tab_id
+            self._set_top_nav_active(tab_id)
+        except Exception:
+            pass
 
     def compose(self) -> ComposeResult:
         yield CaiHeader(
             agent_name=self._agent_name,
             model=self._model_name,
         )
-        with Horizontal(id="body"):
-            # ── Left sidebar ─────────────────────────────────────────────
-            with Vertical(id="sidebar"):
-                with TabbedContent(id="sidebar-tabs"):
-                    with TabPane("Agents", id="tab-agents"):
-                        with Vertical(id="agents-pane"):
-                            with ScrollableContainer(id="agents-scroll"):
-                                pass  # populated in on_mount
-                            with Vertical(id="teams-section"):
-                                yield Static("Teams", id="teams-label")
-                                with ScrollableContainer(id="teams-scroll"):
-                                    for i, (label, _) in enumerate(TEAM_PRESETS):
-                                        yield Button(
-                                            f"#{i + 1} {label}",
-                                            id=f"team-{i}",
-                                            classes="team-btn",
-                                        )
-                                yield Button("+ Create Team", id="new-team-btn")
-                    with TabPane("Queue", id="tab-queue"):
-                        with Vertical(id="queue-pane"):
-                            yield ListView(id="queue-list")
-                            with Horizontal(id="queue-input-row"):
-                                yield Static("+", id="queue-prefix")
-                                yield Input(
-                                    placeholder="Add task / command…",
-                                    id="queue-input",
-                                )
-                    with TabPane("Sessions", id="tab-sessions"):
-                        with Vertical(id="sessions-pane"):
-                            with ScrollableContainer(id="sessions-scroll"):
-                                pass  # populated in on_mount
-                            yield Static("", id="session-preview")
-                            with Horizontal(id="sessions-controls"):
-                                yield Button("Refresh", id="sessions-refresh", classes="team-btn")
-                                yield Button("Load Selected", id="sessions-load", classes="agent-btn")
-                                yield Button("Resume Selected", id="sessions-resume", classes="agent-btn")
-                                yield Button("Export Selected", id="sessions-export", classes="agent-btn")
-                                yield Button("Rename Selected", id="sessions-rename", classes="agent-btn")
-                                yield Button("Delete Selected", id="sessions-delete", classes="modal-btn modal-btn--cancel")
-                    with TabPane("Config", id="tab-config"):
-                        with Vertical(id="config-pane"):
-                            yield Button("Providers", id="config-providers", classes="menu-btn")
-                            yield Button("Model Params", id="config-model-params", classes="menu-btn")
-                            yield Button("Memory / RAG", id="config-memory", classes="menu-btn")
-                            yield Button("Export / Import", id="config-export-import", classes="menu-btn")
-                            yield Button("Environment", id="config-env", classes="menu-btn")
-                            yield Button("Toggle Session Recording", id="config-session-recording", classes="menu-btn")
-                            yield Button("Reset Defaults", id="config-reset-defaults", classes="menu-btn")
-            # ── Right: vertical stack of (up to 2) terminal rows ─────────
-            with Vertical(id="terminals"):
-                with Horizontal(id="term-row-top", classes="term-row"):
-                    pass  # first panel added in on_mount
+        with Vertical(id="body"):
+            with TabbedContent(id="sidebar-tabs"):
+                with TabPane("Terminal", id="tab-terminal"):
+                    with Vertical(id="terminals"):
+                        with Horizontal(id="term-row-top", classes="term-row"):
+                            pass  # first panel added in on_mount
+                with TabPane("Agents", id="tab-agents"):
+                    with Vertical(id="agents-pane"):
+                        with ScrollableContainer(id="agents-scroll"):
+                            pass  # populated in on_mount
+                        with Vertical(id="teams-section"):
+                            yield Static("Teams", id="teams-label")
+                            with ScrollableContainer(id="teams-scroll"):
+                                for i, (label, _) in enumerate(TEAM_PRESETS):
+                                    yield Button(
+                                        f"#{i + 1}: {label}",
+                                        id=f"team-{i}",
+                                        classes="team-btn",
+                                    )
+                            yield Static("Select a team to see strategy hints.", id="team-playbook-preview")
+                            yield Button("+ Create Team", id="new-team-btn")
+                with TabPane("Queue", id="tab-queue"):
+                    with Vertical(id="queue-pane"):
+                        yield ListView(id="queue-list")
+                        yield Static("Queue: 0 pending · broadcast OFF", id="queue-status")
+                        with Horizontal(id="queue-actions"):
+                            yield Button("Run Queue", id="queue-run", classes="agent-btn")
+                            yield Button("Delete Selected", id="queue-delete", classes="team-btn")
+                            yield Button("Clear All", id="queue-clear", classes="modal-btn modal-btn--cancel")
+                            yield Button("Broadcast: OFF", id="queue-broadcast-mode", classes="team-btn")
+                        with Horizontal(id="queue-input-row"):
+                            yield Static("+", id="queue-prefix")
+                            yield Input(
+                                placeholder="Add task / command… (append ' all' to broadcast)",
+                                id="queue-input",
+                            )
+                            yield Button("Add", id="queue-add", classes="team-btn")
+                with TabPane("Sessions", id="tab-sessions"):
+                    with Vertical(id="sessions-pane"):
+                        with ScrollableContainer(id="sessions-scroll"):
+                            pass  # populated in on_mount
+                        yield Static("", id="session-preview")
+                        with Horizontal(id="sessions-controls"):
+                            yield Button("Refresh", id="sessions-refresh", classes="team-btn")
+                            yield Button("Load Selected", id="sessions-load", classes="agent-btn")
+                            yield Button("Resume Selected", id="sessions-resume", classes="agent-btn")
+                            yield Button("Export Selected", id="sessions-export", classes="agent-btn")
+                            yield Button("Rename Selected", id="sessions-rename", classes="agent-btn")
+                            yield Button("Delete Selected", id="sessions-delete", classes="modal-btn modal-btn--cancel")
+                with TabPane("Config", id="tab-config"):
+                    with Vertical(id="config-pane"):
+                        yield Button("Providers", id="config-providers", classes="menu-btn")
+                        yield Button("Model Params", id="config-model-params", classes="menu-btn")
+                        yield Button("Memory / RAG", id="config-memory", classes="menu-btn")
+                        yield Button("Export / Import", id="config-export-import", classes="menu-btn")
+                        yield Button("Environment", id="config-env", classes="menu-btn")
+                        yield Button("Toggle Session Recording", id="config-session-recording", classes="menu-btn")
+                        yield Button("Reset Defaults", id="config-reset-defaults", classes="menu-btn")
+                with TabPane("Tools", id="tab-tools"):
+                    with Vertical(id="tools-pane"):
+                        with ScrollableContainer(id="tools-list-scroll"):
+                            pass
+                        with Horizontal(id="tools-actions"):
+                            yield Button("Run", id="tools-run", classes="agent-btn")
+                            yield Button("Inspect", id="tools-inspect", classes="team-btn")
+                            yield Button("Replay", id="tools-replay", classes="agent-btn")
+                            yield Button("Inject", id="tools-inject", classes="team-btn")
+                            yield Button("Mode: input", id="tools-inject-mode", classes="team-btn")
+                        yield Static("", id="tools-preview")
+                        with ScrollableContainer(id="tools-history-scroll"):
+                            pass
+                with TabPane("Stats", id="tab-metrics"):
+                    with Vertical(id="metrics-pane"):
+                        yield Static("", id="metrics-summary")
+                        with ScrollableContainer(id="metrics-events-scroll"):
+                            yield Static("", id="metrics-events")
+                        with Horizontal(id="metrics-actions"):
+                            yield Button("Refresh", id="metrics-refresh", classes="team-btn")
+                            yield Button("Context", id="metrics-context", classes="agent-btn")
         yield Footer()
 
     # ------------------------------------------------------------------ lifecycle
@@ -1521,6 +3688,17 @@ class CAIApp(App):
         for name in sorted(self._available_agents.keys()):
             label = _pretty_name(name)
             await scroll.mount(Button(label, id=f"agent-{name}", classes="agent-btn"))
+
+        self._inject_mode = self._load_inject_mode_pref()
+        self._tool_call_history = self._load_tool_call_history()
+        self._tool_registry = self._build_tool_registry()
+        await self._populate_tools_list()
+        self._update_metrics_view()
+        self._refresh_price_limit_state(emit_logs=False)
+        self._sync_team_buttons_metadata()
+        self._update_team_playbook_preview(None)
+        self._sync_queue_broadcast_button()
+        self._update_queue_view()
 
         self._highlight_active_agent(self._agent_name)
 
@@ -1539,15 +3717,471 @@ class CAIApp(App):
         )
         await self.query_one("#term-row-top", Horizontal).mount(first)
         self._set_active_terminal(1)
+        self._switch_top_tab("tab-terminal")
+        try:
+            size = self.size
+            self._apply_responsive_layout(int(size.width), int(size.height))
+        except Exception:
+            pass
 
         # Focus the first input
         try:
-            self.query_one("#term-input-1", Input).focus()
+            self.query_one("#term-input-1", TextArea).focus()
         except Exception:
             pass
 
         if self._initial_prompt:
             await first.dispatch(self._initial_prompt)
+
+    def on_resize(self, event: events.Resize) -> None:
+        self._apply_responsive_layout(int(event.size.width), int(event.size.height))
+
+    def _build_tool_registry(self) -> dict[str, dict]:
+        """Build TUI tool registry from built-ins plus active terminal agent tools."""
+        from cai.sdk.agents.run_context import RunContextWrapper
+        from cai.sdk.agents.tool import FunctionTool
+
+        def _tool_echo(params: dict) -> dict:
+            text = str(params.get("text", ""))
+            return {"output": text, "length": len(text)}
+
+        def _tool_now(_: dict) -> dict:
+            return {"now": datetime.now().isoformat(timespec="seconds")}
+
+        def _tool_list_agents(_: dict) -> dict:
+            keys = sorted(list(self._available_agents.keys()))
+            return {"count": len(keys), "agents": keys}
+
+        def _tool_last_tool_call(_: dict) -> dict:
+            if not self._tool_call_history:
+                return {"has_calls": False}
+            last = self._tool_call_history[-1]
+            return {
+                "has_calls": True,
+                "last_call_id": last.get("call_id"),
+                "tool_id": last.get("tool_id"),
+                "timestamp": last.get("timestamp"),
+            }
+
+        registry = {
+            "echo": {
+                "name": "Echo",
+                "description": "Return provided text as tool output.",
+                "schema": {"text": "string"},
+                "runner": _tool_echo,
+            },
+            "now": {
+                "name": "Current Time",
+                "description": "Return local timestamp.",
+                "schema": {},
+                "runner": _tool_now,
+            },
+            "list_agents": {
+                "name": "List Agents",
+                "description": "Show currently available CAI agents.",
+                "schema": {},
+                "runner": _tool_list_agents,
+            },
+            "last_tool_call": {
+                "name": "Last Tool Call",
+                "description": "Inspect metadata of the most recent tool call.",
+                "schema": {},
+                "runner": _tool_last_tool_call,
+            },
+        }
+
+        # Pull real function tools from the currently active terminal's agent.
+        active_agent = None
+        try:
+            panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+            active_agent = panel._agent
+        except Exception:
+            active_agent = self._agent
+
+        for tool in list(getattr(active_agent, "tools", []) or []):
+            try:
+                tool_name = getattr(tool, "name", None)
+                if not tool_name:
+                    continue
+
+                if isinstance(tool, FunctionTool):
+
+                    async def _invoke_function_tool(params: dict, fn_tool=tool):
+                        ctx = RunContextWrapper(context=None)
+                        tool_input = json.dumps(params or {}, ensure_ascii=True)
+                        output = await fn_tool.on_invoke_tool(ctx, tool_input)
+                        return {"output": str(output)}
+
+                    registry[f"agent::{tool_name}"] = {
+                        "name": f"{tool_name} (agent)",
+                        "description": getattr(tool, "description", "") or "Agent function tool",
+                        "schema": getattr(tool, "params_json_schema", {}) or {},
+                        "runner": _invoke_function_tool,
+                        "async_runner": True,
+                        "source": "agent",
+                    }
+                else:
+                    # Hosted tools are inspect-only in this panel for now.
+                    registry[f"agent::{tool_name}"] = {
+                        "name": f"{tool_name} (inspect)",
+                        "description": "Hosted tool (inspect only in TUI panel)",
+                        "schema": {},
+                        "runner": None,
+                        "source": "agent",
+                    }
+            except Exception:
+                continue
+
+        return registry
+
+    async def _populate_tools_list(self) -> None:
+        """Render tool buttons in the Tools tab."""
+        try:
+            scroll = self.query_one("#tools-list-scroll", ScrollableContainer)
+        except Exception:
+            return
+
+        self._tool_button_id_to_tool_id.clear()
+        self._tool_tool_id_to_button_id.clear()
+
+        for child in list(scroll.children):
+            try:
+                await child.remove()
+            except Exception:
+                pass
+
+        for idx, tool_id in enumerate(sorted(self._tool_registry.keys()), start=1):
+            meta = self._tool_registry.get(tool_id, {})
+            name = meta.get("name", tool_id)
+            btn_id = f"tool-select-{idx}"
+            self._tool_button_id_to_tool_id[btn_id] = tool_id
+            self._tool_tool_id_to_button_id[tool_id] = btn_id
+            await scroll.mount(Button(name, id=btn_id, classes="tool-btn"))
+
+        if self._tool_registry:
+            self._selected_tool_id = sorted(self._tool_registry.keys())[0]
+            self._highlight_active_tool(self._selected_tool_id)
+            self._sync_inject_mode_button()
+            self._update_tools_preview()
+            await self._refresh_tools_history_ui()
+
+    def _highlight_active_tool(self, tool_id: str) -> None:
+        for btn in self.query(".tool-btn"):
+            btn.remove_class("-active-tool")
+        try:
+            btn_id = self._tool_tool_id_to_button_id.get(tool_id)
+            if not btn_id:
+                return
+            self.query_one(f"#{btn_id}", Button).add_class("-active-tool")
+        except Exception:
+            pass
+
+    def _append_tool_call(self, tool_id: str, inputs: dict, output: dict, replayed: bool = False) -> dict:
+        call_id = f"tool-{len(self._tool_call_history) + 1}"
+        record = {
+            "call_id": call_id,
+            "tool_id": tool_id,
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "inputs": inputs,
+            "output": output,
+            "replayed": replayed,
+        }
+        self._tool_call_history.append(record)
+        self._persist_tool_call_record(record)
+        self._selected_tool_call_idx = len(self._tool_call_history) - 1
+        return record
+
+    def _load_tool_call_history(self) -> list[dict]:
+        records: list[dict] = []
+        try:
+            paths: list[str] = []
+            # oldest backup first, then newest/current file
+            for i in range(self._tool_calls_max_backups, 0, -1):
+                backup_path = f"{self._tool_calls_file}.{i}"
+                if os.path.exists(backup_path):
+                    paths.append(backup_path)
+            if os.path.exists(self._tool_calls_file):
+                paths.append(self._tool_calls_file)
+
+            for path in paths:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        raw = line.strip()
+                        if not raw:
+                            continue
+                        try:
+                            item = json.loads(raw)
+                            if isinstance(item, dict):
+                                records.append(item)
+                        except Exception:
+                            continue
+        except Exception:
+            return []
+        return records
+
+    def _rotate_tool_calls_if_needed(self) -> None:
+        """Rotate `tui_tool_calls.jsonl` when the file grows beyond max bytes."""
+        try:
+            if not os.path.exists(self._tool_calls_file):
+                return
+            if os.path.getsize(self._tool_calls_file) <= self._tool_calls_max_bytes:
+                return
+
+            max_backups = max(1, int(self._tool_calls_max_backups))
+
+            # Drop the oldest backup if needed.
+            oldest = f"{self._tool_calls_file}.{max_backups}"
+            if os.path.exists(oldest):
+                try:
+                    os.remove(oldest)
+                except Exception:
+                    pass
+
+            # Shift existing backups up: .1 -> .2, etc.
+            for i in range(max_backups - 1, 0, -1):
+                src = f"{self._tool_calls_file}.{i}"
+                dst = f"{self._tool_calls_file}.{i + 1}"
+                if os.path.exists(src):
+                    try:
+                        os.replace(src, dst)
+                    except Exception:
+                        pass
+
+            # Rotate current file to .1
+            try:
+                os.replace(self._tool_calls_file, f"{self._tool_calls_file}.1")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _persist_tool_call_record(self, record: dict) -> None:
+        try:
+            os.makedirs(os.path.dirname(self._tool_calls_file), exist_ok=True)
+            self._rotate_tool_calls_if_needed()
+            with open(self._tool_calls_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=True) + "\n")
+        except Exception:
+            pass
+
+    async def _refresh_tools_history_ui(self) -> None:
+        """Render tool call history entries as buttons."""
+        try:
+            scroll = self.query_one("#tools-history-scroll", ScrollableContainer)
+        except Exception:
+            return
+
+        for child in list(scroll.children):
+            try:
+                await child.remove()
+            except Exception:
+                pass
+
+        # Show newest first and keep recent window to avoid overgrowing the UI.
+        history_window = list(enumerate(self._tool_call_history[-20:]))
+        history_window.reverse()
+        base_idx = max(0, len(self._tool_call_history) - 20)
+        for local_idx, record in history_window:
+            actual_idx = base_idx + local_idx
+            call_id = record.get("call_id", f"call-{actual_idx + 1}")
+            tool_id = record.get("tool_id", "?")
+            stamp = record.get("timestamp", "")
+            tag = " (replay)" if record.get("replayed") else ""
+            label = f"{call_id} · {tool_id} · {stamp}{tag}"
+            await scroll.mount(Button(label, id=f"tool-call-{actual_idx}", classes="team-btn"))
+
+    def _update_tools_preview(self) -> None:
+        try:
+            preview = self.query_one("#tools-preview", Static)
+        except Exception:
+            return
+
+        tool_id = self._selected_tool_id
+        if not tool_id or tool_id not in self._tool_registry:
+            preview.update("Select a tool to inspect or run.")
+            return
+
+        meta = self._tool_registry.get(tool_id, {})
+        lines = [
+            f"[bold]{meta.get('name', tool_id)}[/bold] ({tool_id})",
+            meta.get("description", ""),
+            "",
+            f"Schema: {json.dumps(meta.get('schema', {}), ensure_ascii=True)}",
+            f"Inject mode: {self._inject_mode}",
+        ]
+
+        if self._selected_tool_call_idx is not None:
+            try:
+                rec = self._tool_call_history[self._selected_tool_call_idx]
+                lines.extend(
+                    [
+                        "",
+                        f"Last selected call: {rec.get('call_id')} @ {rec.get('timestamp')}",
+                        f"Inputs: {json.dumps(rec.get('inputs', {}), ensure_ascii=True)}",
+                        f"Output: {json.dumps(rec.get('output', {}), ensure_ascii=True)[:220]}",
+                    ]
+                )
+            except Exception:
+                pass
+
+        try:
+            preview.update(RichText.from_markup("\n".join(lines)))
+        except Exception:
+            preview.update("\n".join(lines))
+
+    def _log_to_active_terminal(self, line: str, style: str = "#00aa00") -> None:
+        try:
+            panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+            log = panel.query_one(f"#term-log-{panel._term_id}", RichLog)
+            log.write(RichText(line, style=style))
+        except Exception:
+            pass
+
+    def _sync_inject_mode_button(self) -> None:
+        try:
+            btn = self.query_one("#tools-inject-mode", Button)
+            btn.label = f"Mode: {self._inject_mode}"
+            btn.remove_class("-inject-input")
+            btn.remove_class("-inject-command")
+            if self._inject_mode == "command":
+                btn.add_class("-inject-command")
+            else:
+                btn.add_class("-inject-input")
+        except Exception:
+            pass
+
+    def _toggle_inject_mode(self) -> None:
+        self._inject_mode = "command" if self._inject_mode == "input" else "input"
+        self._persist_inject_mode_pref()
+        self._sync_inject_mode_button()
+        self._update_tools_preview()
+        self._log_to_active_terminal(f"[inject] mode set to {self._inject_mode}")
+
+    @work(exclusive=False)
+    async def _run_selected_tool_worker(self) -> None:
+        tool_id = self._selected_tool_id
+        if not tool_id or tool_id not in self._tool_registry:
+            return
+
+        raw_args = await self.push_screen_wait(PromptModal("Tool JSON args:", "{}"))
+        if raw_args is None:
+            return
+
+        try:
+            params = json.loads(raw_args) if str(raw_args).strip() else {}
+            if not isinstance(params, dict):
+                params = {}
+        except Exception:
+            self._log_to_active_terminal("[tool] Invalid JSON args; expected an object.", style="#ff4444")
+            return
+
+        meta = self._tool_registry.get(tool_id, {})
+        runner = meta.get("runner")
+        if not callable(runner):
+            self._log_to_active_terminal("[tool] Runner unavailable.", style="#ff4444")
+            return
+
+        try:
+            output_or_awaitable = runner(params)
+            if inspect.isawaitable(output_or_awaitable):
+                output = await output_or_awaitable
+            else:
+                output = output_or_awaitable
+            if not isinstance(output, dict):
+                output = {"output": str(output)}
+            record = self._append_tool_call(tool_id, params, output)
+            self._log_to_active_terminal(
+                f"[tool] {record['call_id']} {tool_id} -> {json.dumps(output, ensure_ascii=True)[:220]}"
+            )
+            await self._refresh_tools_history_ui()
+            self._update_tools_preview()
+        except Exception as exc:
+            self._log_to_active_terminal(f"[tool] Execution failed: {exc}", style="#ff4444")
+
+    @work(exclusive=False)
+    async def _replay_selected_tool_call_worker(self) -> None:
+        idx = self._selected_tool_call_idx
+        if idx is None:
+            return
+        try:
+            record = self._tool_call_history[idx]
+        except Exception:
+            return
+
+        tool_id = record.get("tool_id")
+        if not tool_id or tool_id not in self._tool_registry:
+            self._log_to_active_terminal("[tool] Replay failed: tool not found.", style="#ff4444")
+            return
+
+        runner = self._tool_registry[tool_id].get("runner")
+        if not callable(runner):
+            return
+
+        default_params = record.get("inputs", {})
+        try:
+            default_json = json.dumps(default_params, ensure_ascii=True)
+        except Exception:
+            default_json = "{}"
+
+        edited = await self.push_screen_wait(
+            PromptModal("Replay JSON args (edit or keep):", default_json)
+        )
+        if edited is None:
+            return
+
+        try:
+            params = json.loads(edited) if str(edited).strip() else {}
+            if not isinstance(params, dict):
+                params = {}
+        except Exception:
+            self._log_to_active_terminal("[tool] Replay args must be valid JSON object.", style="#ff4444")
+            return
+
+        try:
+            meta = self._tool_registry.get(tool_id, {})
+            output_or_awaitable = runner(params)
+            if inspect.isawaitable(output_or_awaitable):
+                output = await output_or_awaitable
+            else:
+                output = output_or_awaitable
+            if not isinstance(output, dict):
+                output = {"output": str(output)}
+            replay_record = self._append_tool_call(tool_id, params, output, replayed=True)
+            self._log_to_active_terminal(
+                f"[tool] Replayed {record.get('call_id')} as {replay_record['call_id']}"
+            )
+            await self._refresh_tools_history_ui()
+            self._update_tools_preview()
+        except Exception as exc:
+            self._log_to_active_terminal(f"[tool] Replay failed: {exc}", style="#ff4444")
+
+    @work(exclusive=False)
+    async def _inject_selected_tool_output(self) -> None:
+        idx = self._selected_tool_call_idx
+        if idx is None:
+            return
+        try:
+            record = self._tool_call_history[idx]
+            output_obj = record.get("output", {})
+            payload = json.dumps(output_obj, ensure_ascii=True)
+
+            if self._inject_mode == "command":
+                self._log_to_active_terminal(f"[inject/command] {payload}", style="#00ff00")
+                try:
+                    panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                    await panel.dispatch(payload)
+                except Exception as exc:
+                    self._log_to_active_terminal(f"[inject] command dispatch failed: {exc}", style="#ff4444")
+            else:
+                self._log_to_active_terminal(f"[inject/input] {payload}", style="#00ff00")
+                inp = self.query_one(f"#term-input-{self._active_term_id}", TextArea)
+                if hasattr(inp, "load_text"):
+                    inp.load_text(payload)
+                else:
+                    inp.value = payload
+                inp.focus()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ terminal panel messages
 
@@ -1582,8 +4216,15 @@ class CAIApp(App):
         for panel in self.query(TerminalPanel):
             if panel._term_id == term_id:
                 panel.add_class("-active-panel")
+                panel.remove_class("-inactive-panel")
             else:
                 panel.remove_class("-active-panel")
+                panel.add_class("-inactive-panel")
+        try:
+            size = self.size
+            self._apply_terminal_visibility(self._responsive_mode_for_size(int(size.width), int(size.height)))
+        except Exception:
+            pass
         # Update header to reflect active terminal
         try:
             panel = self.query_one(f"#terminal-panel-{term_id}", TerminalPanel)
@@ -1598,6 +4239,16 @@ class CAIApp(App):
             )
         except Exception:
             pass
+        # Rebuild tool registry from the active terminal's agent and refresh UI.
+        try:
+            self._tool_registry = self._build_tool_registry()
+            self._populate_tools_list_worker()
+        except Exception:
+            pass
+
+    @work(exclusive=True)
+    async def _populate_tools_list_worker(self) -> None:
+        await self._populate_tools_list()
 
     async def _add_terminal(self, agent, agent_name: str) -> None:
         panels = list(self.query(TerminalPanel))
@@ -1624,7 +4275,12 @@ class CAIApp(App):
         await row.mount(panel)
         self._set_active_terminal(tid)
         try:
-            self.query_one(f"#term-input-{tid}", Input).focus()
+            size = self.size
+            self._apply_responsive_layout(int(size.width), int(size.height))
+        except Exception:
+            pass
+        try:
+            self.query_one(f"#term-input-{tid}", TextArea).focus()
         except Exception:
             pass
 
@@ -1634,14 +4290,104 @@ class CAIApp(App):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
 
+        if btn_id.startswith("top-nav-"):
+            tab_map = {
+                "top-nav-terminal": "tab-terminal",
+                "top-nav-agents": "tab-agents",
+                "top-nav-queue": "tab-queue",
+                "top-nav-sessions": "tab-sessions",
+                "top-nav-config": "tab-config",
+                "top-nav-tools": "tab-tools",
+                "top-nav-metrics": "tab-metrics",
+            }
+            target = tab_map.get(btn_id)
+            if target:
+                self._switch_top_tab(target)
+            return
+
+        if btn_id == "header-menu":
+            self.action_command_palette()
+            return
+
         if btn_id.startswith("agent-"):
             agent_name = btn_id[len("agent-"):]
             if agent_name in self._available_agents:
                 self._open_agent_modal(agent_name)
             return
 
+        if btn_id.startswith("tool-select-"):
+            tool_id = self._tool_button_id_to_tool_id.get(btn_id)
+            if tool_id in self._tool_registry:
+                self._selected_tool_id = tool_id
+                self._highlight_active_tool(tool_id)
+                self._update_tools_preview()
+            return
+
+        if btn_id.startswith("tool-call-"):
+            try:
+                idx = int(btn_id[len("tool-call-"):])
+                if idx < 0 or idx >= len(self._tool_call_history):
+                    return
+                self._selected_tool_call_idx = idx
+                self._selected_tool_id = self._tool_call_history[idx].get("tool_id")
+                if self._selected_tool_id:
+                    self._highlight_active_tool(self._selected_tool_id)
+                self._update_tools_preview()
+            except Exception:
+                pass
+            return
+
+        if btn_id == "tools-run":
+            self._run_selected_tool_worker()
+            return
+
+        if btn_id == "tools-inspect":
+            self._update_tools_preview()
+            self._log_to_active_terminal("[tool] Updated tool inspection view.")
+            return
+
+        if btn_id == "tools-replay":
+            self._replay_selected_tool_call_worker()
+            return
+
+        if btn_id == "tools-inject":
+            self._inject_selected_tool_output()
+            return
+
+        if btn_id == "tools-inject-mode":
+            self._toggle_inject_mode()
+            return
+
+        if btn_id == "metrics-refresh":
+            self._refresh_metrics_view_worker()
+            return
+
+        if btn_id == "metrics-context":
+            self._open_context_usage_menu_worker()
+            return
+
         if btn_id.startswith("team-"):
             self._activate_team(int(btn_id[len("team-"):]))
+            return
+
+        if btn_id == "queue-add":
+            self._add_from_queue_input()
+            return
+
+        if btn_id == "queue-run":
+            self._run_queue_worker()
+            return
+
+        if btn_id == "queue-delete":
+            self._delete_selected_queue_item()
+            return
+
+        if btn_id == "queue-clear":
+            self._clear_queue()
+            return
+
+        if btn_id == "queue-broadcast-mode":
+            self._toggle_queue_broadcast_mode()
             return
 
         if btn_id == "new-team-btn":
@@ -1706,6 +4452,17 @@ class CAIApp(App):
                 elif hasattr(self, '_session_files') and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_delete_worker(int(first))
+            except Exception:
+                pass
+            return
+
+        if btn_id.startswith("session-toggle-"):
+            try:
+                idx = int(btn_id.rsplit("-", 1)[-1])
+            except Exception:
+                return
+            try:
+                self._toggle_session_actions(idx)
             except Exception:
                 pass
             return
@@ -2095,29 +4852,304 @@ class CAIApp(App):
                 self._add_queue_item(text)
             return
 
-        if input_id.startswith("term-input-"):
-            tid = int(input_id[len("term-input-"):])
-            self._set_active_terminal(tid)
-            if text:
-                try:
-                    panel = self.query_one(f"#terminal-panel-{tid}", TerminalPanel)
-                    await panel.dispatch(text)
-                except Exception:
-                    pass
-            return
-
     # ------------------------------------------------------------------ queue
 
+    def _parse_broadcast_suffix(self, text: str) -> tuple[str, bool]:
+        raw = str(text or "").strip()
+        if not raw:
+            return "", False
+        lower = raw.lower()
+        if lower.endswith(" all"):
+            return raw[:-4].rstrip(), True
+        return raw, False
+
+    async def _broadcast_prompt(self, text: str, source_tid: int | None = None) -> None:
+        message = str(text or "").strip()
+        if not message:
+            return
+        panels = sorted(list(self.query(TerminalPanel)), key=lambda p: p._term_id)
+        for panel in panels[:4]:
+            try:
+                await panel.dispatch(message)
+            except Exception:
+                continue
+        try:
+            self._log_to_active_terminal(
+                f"[broadcast] sent to {min(4, len(panels))} terminals: {message[:120]}",
+                style="#00ff00",
+            )
+        except Exception:
+            pass
+        if source_tid is not None:
+            try:
+                self._set_active_terminal(source_tid)
+            except Exception:
+                pass
+
+    def _queue_item_label(self, idx: int, item: dict) -> str:
+        status = str(item.get("status", "pending"))
+        marker = "○"
+        if status == "running":
+            marker = "▶"
+        elif status == "completed":
+            marker = "✓"
+        elif status == "error":
+            marker = "✗"
+
+        broadcast = bool(item.get("broadcast", False))
+        mode_tag = " [ALL]" if broadcast else ""
+        text = str(item.get("text", ""))
+        return f"{marker} [{idx + 1}]{mode_tag} {text}"
+
+    def _sync_queue_broadcast_button(self) -> None:
+        try:
+            btn = self.query_one("#queue-broadcast-mode", Button)
+            if self._queue_broadcast_mode:
+                btn.label = "Broadcast: ON"
+                btn.add_class("-active-team")
+            else:
+                btn.label = "Broadcast: OFF"
+                btn.remove_class("-active-team")
+        except Exception:
+            return
+
+    def _update_queue_status(self) -> None:
+        pending = sum(1 for i in self._queue_items if i.get("status") == "pending")
+        running = sum(1 for i in self._queue_items if i.get("status") == "running")
+        completed = sum(1 for i in self._queue_items if i.get("status") == "completed")
+        errors = sum(1 for i in self._queue_items if i.get("status") == "error")
+        mode = "ON" if self._queue_broadcast_mode else "OFF"
+        run_state = "running" if self._queue_running else "idle"
+        if self._responsive_mode == "small":
+            text = f"Q p:{pending} r:{running} d:{completed} e:{errors} b:{mode} {run_state}"
+        else:
+            text = (
+                f"Queue: {pending} pending · {running} running · {completed} done · {errors} errors · "
+                f"broadcast {mode} · {run_state}"
+            )
+        try:
+            self.query_one("#queue-status", Static).update(text)
+        except Exception:
+            pass
+
+    def _update_queue_view(self) -> None:
+        try:
+            lv = self.query_one("#queue-list", ListView)
+        except Exception:
+            return
+
+        for child in list(lv.children):
+            try:
+                child.remove()
+            except Exception:
+                pass
+
+        for idx, item in enumerate(self._queue_items):
+            label = self._queue_item_label(idx, item)
+            lv.mount(ListItem(Label(label), id=f"queue-item-{idx}"))
+
+        self._update_queue_status()
+
+    def _toggle_queue_broadcast_mode(self) -> None:
+        self._queue_broadcast_mode = not self._queue_broadcast_mode
+        self._sync_queue_broadcast_button()
+        self._update_queue_status()
+        self._log_to_active_terminal(
+            f"[queue] broadcast mode {'ON' if self._queue_broadcast_mode else 'OFF'}"
+        )
+
+    def _add_from_queue_input(self) -> None:
+        try:
+            inp = self.query_one("#queue-input", Input)
+            raw = inp.value.strip()
+            if not raw:
+                return
+            inp.clear()
+        except Exception:
+            return
+
+        self._add_queue_item(raw)
+
+    @on(ListView.Highlighted, "#queue-list")
+    def _on_queue_highlighted(self, event: ListView.Highlighted) -> None:
+        try:
+            self._queue_selected_idx = int(getattr(event.list_view, "index", -1))
+        except Exception:
+            self._queue_selected_idx = None
+
+    def _selected_queue_index(self) -> Optional[int]:
+        idx = self._queue_selected_idx
+        try:
+            lv = self.query_one("#queue-list", ListView)
+            current_idx = int(getattr(lv, "index", -1))
+            if current_idx >= 0:
+                idx = current_idx
+        except Exception:
+            pass
+
+        if idx is None:
+            return None
+        if idx < 0 or idx >= len(self._queue_items):
+            return None
+        return idx
+
+    def _delete_selected_queue_item(self) -> None:
+        idx = self._selected_queue_index()
+        if idx is None:
+            self._log_to_active_terminal("[queue] no selected prompt to delete", style="#ff6600")
+            return
+        try:
+            removed = self._queue_items.pop(idx)
+            self._queue_selected_idx = None
+            self._update_queue_view()
+            self._log_to_active_terminal(f"[queue] deleted: {removed.get('text','')[:120]}")
+        except Exception:
+            pass
+
+    def _clear_queue(self) -> None:
+        self._queue_items = []
+        self._queue_selected_idx = None
+        self._update_queue_view()
+        self._log_to_active_terminal("[queue] cleared all queued prompts")
+
+    @work(exclusive=True)
+    async def _run_queue_worker(self) -> None:
+        if self._queue_running:
+            return
+
+        pending = [i for i in self._queue_items if i.get("status") == "pending"]
+        if not pending:
+            self._log_to_active_terminal("[queue] no pending prompts to run", style="#ff6600")
+            return
+
+        self._queue_running = True
+        self._update_queue_status()
+        total = len(pending)
+        current = 0
+
+        try:
+            for item in self._queue_items:
+                if item.get("status") != "pending":
+                    continue
+                current += 1
+                item["status"] = "running"
+                self._update_queue_view()
+
+                text = str(item.get("text", "")).strip()
+                try:
+                    broadcast = bool(item.get("broadcast", False) or self._queue_broadcast_mode)
+                    if broadcast:
+                        await self._broadcast_prompt(text)
+                    else:
+                        panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                        await panel.dispatch(text)
+                    item["status"] = "completed"
+                    self._log_to_active_terminal(f"[queue] ({current}/{total}) completed: {text[:120]}")
+                except Exception as exc:
+                    item["status"] = "error"
+                    item["error"] = str(exc)
+                    self._log_to_active_terminal(
+                        f"[queue] ({current}/{total}) failed: {text[:120]} · {exc}", style="#ff4444"
+                    )
+
+                self._update_queue_view()
+                await asyncio.sleep(0)
+        finally:
+            self._queue_running = False
+            self._update_queue_status()
+
     def _add_queue_item(self, text: str) -> None:
-        idx = len(self._queue_items)
-        self._queue_items.append((False, text))
-        item = ListItem(Label(f"○ {text}"), id=f"queue-item-{idx}")
-        self.query_one("#queue-list", ListView).mount(item)
+        msg, explicit_broadcast = self._parse_broadcast_suffix(text)
+        if not msg:
+            return
+        self._queue_items.append(
+            {
+                "text": msg,
+                "status": "pending",
+                "broadcast": bool(explicit_broadcast),
+            }
+        )
+        self._update_queue_view()
 
     # ------------------------------------------------------------------ teams
 
-    def _activate_team(self, idx: int) -> None:
+    def _team_tooltip_text(self, idx: int, label: str, agent_types: list[str]) -> str:
+        parts: list[str] = []
+        for agent_name in ("redteam_agent", "blueteam_agent", "bug_bounter_agent", "retester_agent"):
+            count = agent_types.count(agent_name)
+            if count > 0:
+                parts.append(f"{count} {agent_name}")
+        composition = f"#{idx + 1}: " + " + ".join(parts)
+        lines = [composition]
+        for i, name in enumerate(agent_types[:4], start=1):
+            lines.append(f"T{i}: {name}")
+        hint = self._team_playbook_hint(idx)
+        if hint:
+            lines.append(f"Best for: {hint}")
+        return "\n".join(lines)
+
+    def _team_playbook_hint(self, idx: int) -> str:
+        if 0 <= idx < len(TEAM_PLAYBOOK_HINTS):
+            return TEAM_PLAYBOOK_HINTS[idx]
+        return ""
+
+    def _update_team_playbook_preview(self, idx: int | None) -> None:
+        try:
+            preview = self.query_one("#team-playbook-preview", Static)
+        except Exception:
+            return
+
+        if idx is None or idx < 0 or idx >= len(TEAM_PRESETS):
+            preview.update("Select a team to see strategy hints.")
+            return
+
+        label, composition = TEAM_PRESETS[idx]
+        hint = self._team_playbook_hint(idx)
+        text = (
+            f"[bold]Team #{idx + 1}: {label}[/bold]\n"
+            f"T1-T4: {', '.join(composition[:4])}\n"
+            f"{hint}"
+        )
+        try:
+            preview.update(RichText.from_markup(text))
+        except Exception:
+            preview.update(text)
+
+    def _sync_team_buttons_metadata(self) -> None:
+        for i, (label, agent_types) in enumerate(TEAM_PRESETS):
+            try:
+                btn = self.query_one(f"#team-{i}", Button)
+                btn.label = f"#{i + 1}: {label}"
+                btn.tooltip = self._team_tooltip_text(i, label, agent_types)
+            except Exception:
+                pass
+
+    @work(exclusive=True)
+    async def _activate_team_worker(self, idx: int) -> None:
+        if idx < 0 or idx >= len(TEAM_PRESETS):
+            return
+
         label, agent_types = TEAM_PRESETS[idx]
+        previous_active = self._active_term_id
+
+        # Ensure we have 4 terminals available.
+        panels = sorted(list(self.query(TerminalPanel)), key=lambda p: p._term_id)
+        while len(panels) < 4:
+            next_slot = len(panels)
+            agent_name = agent_types[min(next_slot, len(agent_types) - 1)]
+            agent_obj = self._available_agents.get(agent_name, self._agent)
+            await self._add_terminal(agent_obj, agent_name)
+            panels = sorted(list(self.query(TerminalPanel)), key=lambda p: p._term_id)
+
+        # Apply the team mapping to T1..T4 preserving terminal logs/history.
+        for slot in range(4):
+            panel = panels[slot]
+            target_agent_name = agent_types[slot]
+            target_agent_obj = self._available_agents.get(target_agent_name)
+            if target_agent_obj is None:
+                continue
+            panel.update_agent(target_agent_obj, target_agent_name)
+
         if self._active_team is not None:
             try:
                 self.query_one(f"#team-{self._active_team}", Button).remove_class("-active-team")
@@ -2128,17 +5160,27 @@ class CAIApp(App):
             self.query_one(f"#team-{idx}", Button).add_class("-active-team")
         except Exception:
             pass
-        # Log to active terminal instead of a now-removed output-log
+        self._update_team_playbook_preview(idx)
+
+        # Restore active terminal and refresh dependent header/tool views.
+        try:
+            self._set_active_terminal(previous_active)
+        except Exception:
+            pass
+
         try:
             panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
             panel.query_one(f"#term-log-{self._active_term_id}", RichLog).write(
                 RichText.from_markup(
-                    f"  [dim]Team [bold]#{idx + 1} {label}[/bold] — "
-                    f"{len(agent_types)} agents: {', '.join(agent_types)}[/dim]"
+                    f"  [dim]Applied Team [bold]#{idx + 1}: {label}[/bold] to T1-T4 (history preserved)\n"
+                    f"  Playbook: {self._team_playbook_hint(idx)}[/dim]"
                 )
             )
         except Exception:
             pass
+
+    def _activate_team(self, idx: int) -> None:
+        self._activate_team_worker(idx)
 
     def _prompt_new_team(self) -> None:
         try:
@@ -2156,12 +5198,6 @@ class CAIApp(App):
             scroll = self.query_one("#sessions-scroll", ScrollableContainer)
         except Exception:
             return
-        # Ensure a ListView exists (create and mount if missing)
-        try:
-            lv = self.query_one("#sessions-list", ListView)
-        except Exception:
-            lv = ListView(id="sessions-list")
-            await scroll.mount(lv)
 
         # Collect current selection path so we can preserve it if possible
         prev_selected_path = None
@@ -2190,32 +5226,44 @@ class CAIApp(App):
 
         files_sorted = sorted(files, key=lambda t: t[1], reverse=True)
 
-        # Clear existing items only after we successfully computed the new list
-        for child in list(lv.query(ListItem)):
-            try:
-                child.remove()
-            except Exception:
-                pass
+        # Remove the old ListView entirely and create a fresh one so the Textual
+        # widget registry is fully cleared before we mount new items with the same IDs.
+        # (child.remove() is non-blocking and leaves stale IDs in the registry.)
+        try:
+            old_lv = self.query_one("#sessions-list", ListView)
+            await old_lv.remove()
+        except Exception:
+            pass
+        lv = ListView(id="sessions-list")
+        await scroll.mount(lv)
 
         self._session_files = {}
+        # mapping of idx -> actions container (to toggle visibility)
+        self._session_action_containers = {}
         for idx, (fname, mtime_ts) in enumerate(files_sorted):
             path = os.path.join(logs_dir, fname)
             try:
                 mtime = datetime.fromtimestamp(mtime_ts).strftime("%Y-%m-%d %H:%M") if mtime_ts else "?"
             except Exception:
                 mtime = "?"
-            display = f"{fname}  ({mtime})"
-            item = ListItem(Label(display), id=f"session-item-{idx}")
+            header = f"{fname}  ({mtime})"
+            item = ListItem(id=f"session-item-{idx}")
             await lv.mount(item)
-            # Per-item action & selection buttons
-            await item.mount(Button("Select", id=f"session-select-{idx}", classes="team-btn"))
-            await item.mount(Button("Open", id=f"session-open-{idx}", classes="agent-btn"))
-            await item.mount(Button("Resume", id=f"session-resume-{idx}", classes="agent-btn"))
-            await item.mount(Button("Export", id=f"session-export-{idx}", classes="agent-btn"))
-            await item.mount(Button("Rename", id=f"session-rename-{idx}", classes="team-btn"))
-            await item.mount(Button("Delete", id=f"session-delete-{idx}", classes="modal-btn modal-btn--cancel"))
+            # Header button: toggles the action area for this session
+            await item.mount(Button(header, id=f"session-toggle-{idx}", classes="agent-btn"))
+            # Actions container starts hidden and is shown when header is clicked
+            actions = Vertical(id=f"session-actions-{idx}")
+            actions.display = False
+            await item.mount(actions)
+            await actions.mount(Button("Select", id=f"session-select-{idx}", classes="team-btn"))
+            await actions.mount(Button("Open", id=f"session-open-{idx}", classes="agent-btn"))
+            await actions.mount(Button("Resume", id=f"session-resume-{idx}", classes="agent-btn"))
+            await actions.mount(Button("Export", id=f"session-export-{idx}", classes="agent-btn"))
+            await actions.mount(Button("Rename", id=f"session-rename-{idx}", classes="team-btn"))
+            await actions.mount(Button("Delete", id=f"session-delete-{idx}", classes="modal-btn modal-btn--cancel"))
 
             self._session_files[idx] = path
+            self._session_action_containers[idx] = actions
 
         # Preserve previous selection if possible, otherwise pick the first
         if self._session_files:
@@ -2235,7 +5283,7 @@ class CAIApp(App):
         else:
             self._session_selected_idx = None
 
-    @work(exclusive=False)
+    @work(exclusive=True)
     async def _populate_sessions_list_worker(self) -> None:
         await self._populate_sessions_list()
 
@@ -2342,7 +5390,31 @@ class CAIApp(App):
                 os.remove(path)
             except Exception:
                 pass
-            await self._populate_sessions_list()
+            # Ensure any expanded action areas are collapsed and selection cleared
+            try:
+                if hasattr(self, "_session_action_containers"):
+                    for k, cont in list(self._session_action_containers.items()):
+                        try:
+                            cont.display = False
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            try:
+                self._session_selected_idx = None
+                self._update_session_preview(None)
+            except Exception:
+                pass
+
+            # Schedule a refresh worker rather than awaiting the populate directly
+            try:
+                self._populate_sessions_list_worker()
+            except Exception:
+                # Fallback: try to call populate directly
+                try:
+                    await self._populate_sessions_list()
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -2432,6 +5504,33 @@ class CAIApp(App):
         # Update preview for the newly selected session
         try:
             self._update_session_preview(self._session_selected_idx)
+        except Exception:
+            pass
+
+    def _toggle_session_actions(self, idx: int) -> None:
+        """Toggle the visibility of the action buttons for a session list item.
+
+        Collapses all other session action areas and toggles the chosen one.
+        Selecting a session also updates the preview and visual selection.
+        """
+        try:
+            if not hasattr(self, "_session_action_containers"):
+                return
+            for k, container in self._session_action_containers.items():
+                try:
+                    if k == idx:
+                        # toggle this container
+                        current = bool(getattr(container, "display", False))
+                        container.display = not current
+                    else:
+                        container.display = False
+                except Exception:
+                    pass
+            # Update selection/preview as if the session was selected
+            try:
+                self._set_selected_session(idx)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -2655,7 +5754,12 @@ class CAIApp(App):
             return
 
         try:
-            table_str = self._render_config_table(width=100)
+            table_width = 100
+            try:
+                table_width = max(60, min(160, int(self.size.width) - 6))
+            except Exception:
+                pass
+            table_str = self._render_config_table(width=table_width)
             # Write the table as a multiline RichText so it preserves formatting
             log.write(RichText(table_str))
         except Exception:
@@ -2663,6 +5767,156 @@ class CAIApp(App):
                 log.write(RichText("Failed to render config table"))
             except Exception:
                 pass
+
+    def _command_palette_commands(self) -> list[dict]:
+        return [
+            {
+                "id": "clear",
+                "name": "clear",
+                "description": "Clear terminal output",
+                "shortcut": "Ctrl+L",
+            },
+            {
+                "id": "save",
+                "name": "save",
+                "description": "Save current session",
+                "shortcut": "",
+            },
+            {
+                "id": "load",
+                "name": "load",
+                "description": "Load previous session",
+                "shortcut": "",
+            },
+            {
+                "id": "export",
+                "name": "export",
+                "description": "Export conversation",
+                "shortcut": "",
+            },
+            {
+                "id": "reset",
+                "name": "reset",
+                "description": "Reset agent context",
+                "shortcut": "",
+            },
+            {
+                "id": "help",
+                "name": "help",
+                "description": "Show help information",
+                "shortcut": "",
+            },
+        ]
+
+    def _record_palette_recent(self, cmd_id: str) -> None:
+        key = str(cmd_id or "").strip()
+        if not key:
+            return
+        self._command_palette_recent = [k for k in self._command_palette_recent if k != key]
+        self._command_palette_recent.insert(0, key)
+        self._command_palette_recent = self._command_palette_recent[:20]
+
+    def _selected_or_latest_session_idx(self) -> Optional[int]:
+        selected = getattr(self, "_session_selected_idx", None)
+        if selected is not None and hasattr(self, "_session_files") and selected in self._session_files:
+            return selected
+        try:
+            if hasattr(self, "_session_files") and self._session_files:
+                return sorted(self._session_files.keys())[0]
+        except Exception:
+            pass
+        return None
+
+    @work(exclusive=False)
+    async def _execute_palette_command_worker(self, cmd_id: str) -> None:
+        cmd = str(cmd_id or "").strip().lower()
+        if not cmd:
+            return
+
+        self._record_palette_recent(cmd)
+
+        if cmd == "clear":
+            self.action_clear_active()
+            self._log_to_active_terminal("[palette] cleared terminal output")
+            return
+
+        if cmd == "save":
+            try:
+                from cai.sdk.agents.run_to_jsonl import get_session_recorder
+
+                recorder = get_session_recorder()
+                filename = str(getattr(recorder, "filename", ""))
+                self._populate_sessions_list_worker()
+                if filename:
+                    self._log_to_active_terminal(f"[palette] session recorder active: {filename}")
+                else:
+                    self._log_to_active_terminal("[palette] session persisted", style="#00aa00")
+            except Exception as exc:
+                self._log_to_active_terminal(f"[palette] save failed: {exc}", style="#ff4444")
+            return
+
+        if cmd == "load":
+            idx = self._selected_or_latest_session_idx()
+            if idx is None:
+                self._log_to_active_terminal("[palette] no session found to load", style="#ff6600")
+                return
+            self._session_open_worker(idx)
+            return
+
+        if cmd == "export":
+            idx = self._selected_or_latest_session_idx()
+            if idx is None:
+                self._log_to_active_terminal("[palette] no session found to export", style="#ff6600")
+                return
+            self._session_export_worker(idx)
+            return
+
+        if cmd == "reset":
+            try:
+                from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+                from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
+
+                current_agent_name = AGENT_MANAGER._active_agent_name
+                if current_agent_name:
+                    AGENT_MANAGER._message_history[current_agent_name] = []
+                    PERSISTENT_MESSAGE_HISTORIES[current_agent_name] = []
+                    for (name, _inst_id), model_ref in list(ACTIVE_MODEL_INSTANCES.items()):
+                        if name != current_agent_name:
+                            continue
+                        try:
+                            model = model_ref() if model_ref else None
+                            if model is not None and hasattr(model, "message_history"):
+                                model.message_history.clear()
+                        except Exception:
+                            continue
+                    os.environ["CAI_CONTEXT_USAGE"] = "0.0"
+                self._log_to_active_terminal("[palette] agent context reset")
+            except Exception as exc:
+                self._log_to_active_terminal(f"[palette] reset failed: {exc}", style="#ff4444")
+            return
+
+        if cmd == "help":
+            try:
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                await panel.dispatch("/help")
+            except Exception as exc:
+                self._log_to_active_terminal(f"[palette] help failed: {exc}", style="#ff4444")
+            return
+
+        self._log_to_active_terminal(f"[palette] unknown command: {cmd}", style="#ff6600")
+
+    @work(exclusive=False)
+    async def _open_command_palette_worker(self) -> None:
+        result = await self.push_screen_wait(
+            CommandPaletteModal(
+                commands=self._command_palette_commands(),
+                recent=self._command_palette_recent,
+            )
+        )
+        if not result:
+            return
+        if isinstance(result, (tuple, list)) and len(result) >= 2 and result[0] == "run":
+            self._execute_palette_command_worker(str(result[1]))
 
     # ------------------------------------------------------------------ actions
 
@@ -2679,20 +5933,21 @@ class CAIApp(App):
             panel = self.query_one(
                 f"#terminal-panel-{self._active_term_id}", TerminalPanel
             )
-            panel._set_status("")
-            # Cancel the panel's worker if running
-            for w in panel._workers:
-                w.cancel()
+            if not panel.cancel_active_run():
+                panel._set_status("")
         except Exception:
             pass
 
     def action_toggle_sidebar(self) -> None:
-        sidebar = self.query_one("#sidebar", Vertical)
-        self._sidebar_visible = not self._sidebar_visible
-        sidebar.display = self._sidebar_visible
+        try:
+            tabs = self.query_one("#sidebar-tabs", TabbedContent)
+            current = str(getattr(tabs, "active", "tab-terminal") or "tab-terminal")
+            self._switch_top_tab("tab-agents" if current == "tab-terminal" else "tab-terminal")
+        except Exception:
+            pass
 
     def action_command_palette(self) -> None:
-        pass  # Reserved
+        self._open_command_palette_worker()
 
 
 # ---------------------------------------------------------------------------
