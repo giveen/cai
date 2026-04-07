@@ -10,6 +10,9 @@ from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=
 from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
     execute_code
 )
+from cai.tools.reconnaissance.ldap_search import (  # pylint: disable=import-error # noqa: E501
+    ldap_search
+)
 from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
     make_web_search_with_explanation,
 )
@@ -25,6 +28,7 @@ htb_agent_system_prompt = load_prompt_template("prompts/system_htb_agent.md")
 tools = [
     generic_linux_command,
     execute_code,
+    ldap_search,
 ]
 
 if os.getenv("PERPLEXITY_API_KEY"):
