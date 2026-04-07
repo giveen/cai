@@ -139,12 +139,19 @@ class SimpleAgentManager:
         
         # In single agent mode
         if not self._parallel_agents:
-            # In single agent mode, ONLY show the ONE active agent
+            # Prefer showing the ONE active agent when it is registered
             if self._active_agent_name and self._active_agent_name in self._agent_registry:
                 agent_id = self._agent_registry[self._active_agent_name]
                 history = self._message_history.get(self._active_agent_name, [])
                 result[f"{self._active_agent_name} [{agent_id}]"] = history
-            # That's it - no other agents in single agent mode
+            else:
+                # No active agent is registered; include any histories we have
+                # This supports model instances that have message_history but
+                # were not explicitly registered with the manager (tests
+                # and some components create model instances directly).
+                for agent_name, history in self._message_history.items():
+                    agent_id = self._agent_registry.get(agent_name, "P1")
+                    result[f"{agent_name} [{agent_id}]"] = history
         else:
             # In parallel mode, show all registered agents
             for agent_name, agent_id in sorted(self._agent_registry.items()):

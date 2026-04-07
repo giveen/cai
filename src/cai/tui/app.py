@@ -17,7 +17,7 @@ import json
 import time
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any, cast
 
 from textual import work, on
 from textual.app import App, ComposeResult
@@ -1587,7 +1587,8 @@ class ConfigOverviewScreen(ModalScreen):
             lv = self.query_one("#config-overview-list", ListView)
             # Populate rows with current values
             for idx, v in enumerate(self._variables):
-                name = v.get("name")
+                # Ensure 'name' is always a string for downstream lookups
+                name = str(v.get("name") or "")
                 # Prefer explicit env var, then persisted config, then default
                 cfg = _load_tui_config()
                 val = os.environ.get(name) or cfg.get("env", {}).get(name) or v.get("default", "Not set")
@@ -1656,6 +1657,7 @@ class TerminalPanel(Widget):
         self._busy: bool = False
         self._last_prompt_text: str = ""
         self._run_worker = None
+        self._workers: list[Any] = []
         self._prompt_history: list[str] = []
         self._history_index: Optional[int] = None
 
@@ -1673,7 +1675,7 @@ class TerminalPanel(Widget):
             if hasattr(inp, "load_text"):
                 inp.load_text(text)
             else:
-                inp.value = text
+                cast(Any, inp).value = text
         except Exception:
             pass
 
@@ -1684,7 +1686,7 @@ class TerminalPanel(Widget):
         try:
             if hasattr(inp, "text"):
                 return str(inp.text)
-            return str(inp.value)
+            return str(cast(Any, inp).value)
         except Exception:
             return ""
 
@@ -1749,9 +1751,24 @@ class TerminalPanel(Widget):
         self._set_input_text("")
         self._resize_input_for_text("")
         self._update_input_meta("")
-        msg, is_broadcast = self.app._parse_broadcast_suffix(text)
+        # Safely call CAIApp-specific helpers on the textual App instance
+        app_obj = getattr(self, "app", None)
+        if app_obj and hasattr(app_obj, "_parse_broadcast_suffix"):
+            try:
+                msg, is_broadcast = cast(Any, app_obj)._parse_broadcast_suffix(text)
+            except Exception:
+                msg, is_broadcast = text, False
+        else:
+            msg, is_broadcast = text, False
+
         if is_broadcast and msg:
-            await self.app._broadcast_prompt(msg, source_tid=self._term_id)
+            if app_obj and hasattr(app_obj, "_broadcast_prompt"):
+                try:
+                    await cast(Any, app_obj)._broadcast_prompt(msg, source_tid=self._term_id)
+                except Exception:
+                    await self.dispatch(text)
+            else:
+                await self.dispatch(text)
         else:
             await self.dispatch(text)
 
@@ -2115,12 +2132,19 @@ class TerminalPanel(Widget):
 
         if not cmd:
             try:
-                if not self.app._can_dispatch_prompt():
-                    log.write(RichText(
-                        "  [paused] Price limit exceeded. Increase CAI_PRICE_LIMIT or start a new session.",
-                        style="#ff4444",
-                    ))
-                    return
+                    try:
+                        app_obj = getattr(self, "app", None)
+                        can_dispatch = True
+                        if app_obj and hasattr(app_obj, "_can_dispatch_prompt"):
+                            can_dispatch = cast(Any, app_obj)._can_dispatch_prompt()
+                        if not can_dispatch:
+                            log.write(RichText(
+                                "  [paused] Price limit exceeded. Increase CAI_PRICE_LIMIT or start a new session.",
+                                style="#ff4444",
+                            ))
+                            return
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -2135,13 +2159,14 @@ class TerminalPanel(Widget):
         if cmd == "/config":
             try:
                 # Display a full config table in the active terminal's right-hand area
+                app_obj = getattr(self, "app", None)
                 try:
-                    self.app._display_config_table()
+                    getattr(cast(Any, app_obj), "_display_config_table", lambda: None)()
                 except Exception:
                     pass
                 # Also schedule the interactive full-config worker (overview/edit loop)
                 try:
-                    self.app._open_config_screen("full-config")
+                    getattr(cast(Any, app_obj), "_open_config_screen", lambda *a, **k: None)("full-config")
                 except Exception:
                     pass
             except Exception:
@@ -2169,7 +2194,9 @@ class TerminalPanel(Widget):
         run_error: str | None = None
         streamed_chars = 0
         try:
-            self.app._telemetry_run_started(self._term_id, self._agent_name, text)
+            getattr(cast(Any, self.app), "_telemetry_run_started", lambda *a, **k: None)(
+                self._term_id, self._agent_name, text
+            )
         except Exception:
             pass
         try:
@@ -2192,7 +2219,7 @@ class TerminalPanel(Widget):
                 item = event.item
 
                 try:
-                    self.app._emit_telemetry(
+                    getattr(cast(Any, self.app), "_emit_telemetry", lambda *a, **k: None)(
                         self._term_id,
                         self._agent_name,
                         "stream_event",
@@ -2203,12 +2230,12 @@ class TerminalPanel(Widget):
 
                 if ev_name == "message_output_created":
                     try:
-                        self.app._telemetry_first_token(self._term_id, self._agent_name)
+                        getattr(cast(Any, self.app), "_telemetry_first_token", lambda *a, **k: None)(self._term_id, self._agent_name)
                     except Exception:
                         pass
                     try:
                         from cai.sdk.agents.items import ItemHelpers
-                        content = ItemHelpers.text_message_output(item)
+                        content = ItemHelpers.text_message_output(cast(Any, item))
                     except Exception:
                         content = str(getattr(item, "content", ""))
                     if content:
@@ -2233,7 +2260,7 @@ class TerminalPanel(Widget):
                     }
                     log.write(RichText(f"  ▶ {fn_name}({fn_args}) [running]", style="#006600"))
                     try:
-                        self.app._telemetry_tool_called(
+                        getattr(cast(Any, self.app), "_telemetry_tool_called", lambda *a, **k: None)(
                             self._term_id,
                             self._agent_name,
                             str(fn_name),
@@ -2271,7 +2298,7 @@ class TerminalPanel(Widget):
                             )
                         try:
                             out_preview = preview.splitlines()[0] if preview else full_output
-                            self.app._telemetry_tool_output(
+                            getattr(cast(Any, self.app), "_telemetry_tool_output", lambda *a, **k: None)(
                                 self._term_id,
                                 self._agent_name,
                                 call_id,
@@ -2306,11 +2333,11 @@ class TerminalPanel(Widget):
             self._run_worker = None
             if stream_iter is not None:
                 try:
-                    await stream_iter.aclose()
+                    await cast(Any, stream_iter).aclose()
                 except Exception:
                     pass
             try:
-                status_text = self.app._telemetry_run_finished(
+                status_text = getattr(cast(Any, self.app), "_telemetry_run_finished", lambda *a, **k: "")(
                     self._term_id,
                     self._agent_name,
                     result,
@@ -3132,7 +3159,7 @@ class CAIApp(App):
                     if hasattr(inp, "load_text"):
                         inp.load_text(str(payload))
                     else:
-                        inp.value = str(payload)
+                        cast(Any, inp).value = str(payload)
                     inp.focus()
                     self._log_to_active_terminal("[context] copied summary to input", style="#00ff00")
                 except Exception:
@@ -4178,7 +4205,7 @@ class CAIApp(App):
                 if hasattr(inp, "load_text"):
                     inp.load_text(payload)
                 else:
-                    inp.value = payload
+                    cast(Any, inp).value = payload
                 inp.focus()
         except Exception:
             pass
@@ -4626,7 +4653,7 @@ class CAIApp(App):
                         if idx is None or idx < 0 or idx >= len(CONFIG_VARIABLES):
                             continue
                         var = CONFIG_VARIABLES[idx]
-                        name = var.get("name")
+                        name = str(var.get("name") or "")
                         cur_cfg = _load_tui_config()
                         current = os.environ.get(name) or cur_cfg.get("env", {}).get(name) or var.get("default", "")
                         newval = await self.push_screen_wait(PromptModal(f"Set value for {name} (empty to unset):", str(current)))
@@ -4655,7 +4682,7 @@ class CAIApp(App):
                         if idx is None or idx < 0 or idx >= len(CONFIG_VARIABLES):
                             continue
                         var = CONFIG_VARIABLES[idx]
-                        name = var.get("name")
+                        name = str(var.get("name") or "")
                         default = var.get("default")
                         try:
                             cfg2 = _load_tui_config()
@@ -5589,16 +5616,22 @@ class CAIApp(App):
                 pass
             return
 
+        # Import helpers if available; avoid leaving names unbound for static analysis
+        get_token_stats_fn = None
         try:
-            from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl, get_token_stats
+            from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl, get_token_stats as _get_token_stats
+            get_token_stats_fn = _get_token_stats
             messages = load_history_from_jsonl(path)
         except Exception:
             messages = []
 
         # Try to get token/cost stats
         try:
-            model_name, prompt_t, completion_t, total_cost, active, idle = get_token_stats(path)
-            stats = f"Model: {model_name or 'unknown'} · prompt:{prompt_t} completion:{completion_t} cost:{total_cost}"
+            if get_token_stats_fn is not None:
+                model_name, prompt_t, completion_t, total_cost, active, idle = get_token_stats_fn(path)
+                stats = f"Model: {model_name or 'unknown'} · prompt:{prompt_t} completion:{completion_t} cost:{total_cost}"
+            else:
+                raise Exception("token stats unavailable")
         except Exception:
             stats = "Model: ? · prompt:? completion:? cost:?"
 
@@ -5731,7 +5764,7 @@ class CAIApp(App):
         table.add_column("Description", width=60)
 
         for idx, v in enumerate(CONFIG_VARIABLES):
-            name = v.get("name")
+            name = str(v.get("name") or "")
             default = v.get("default", "")
             desc = v.get("description", "")
             value = os.environ.get(name) or cfg.get("env", {}).get(name) or default

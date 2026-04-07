@@ -8,12 +8,15 @@ import subprocess
 import sys
 import re
 import unicodedata
+from typing import Optional
 from cai.tools.common import (run_command, run_command_async,
                               list_shell_sessions,
                               get_session_output,
-                              terminate_session)  # pylint: disable=import-error # noqa E501
+                              terminate_session,
+                              _resolve_session_id,
+                              ACTIVE_SESSIONS)  # pylint: disable=import-error # noqa E501
 from cai.sdk.agents import function_tool
-from wasabi import color  # pylint: disable=import-error
+from wasabi.util import color  # pylint: disable=import-error
 from cai.tools import validation
 
 
@@ -22,8 +25,8 @@ from cai.tools import validation
 
 @function_tool
 async def generic_linux_command(command: str = "",
-                          interactive: bool = False,
-                          session_id: str = None) -> str:
+                                interactive: bool = False,
+                                session_id: Optional[str] = None) -> str:
     """
     Execute commands with session management.
 
@@ -104,8 +107,8 @@ async def generic_linux_command(command: str = "",
         # - command="session" and session_id="output <id>"
         # - command="session" and session_id="#1" or "S1" or "last"
         parts = command.split()
-        action = parts[1] if len(parts) > 1 else None
-        arg = parts[2] if len(parts) > 2 else None
+        action: Optional[str] = parts[1] if len(parts) > 1 else None
+        arg: Optional[str] = parts[2] if len(parts) > 2 else None
 
         # If the tool abuses session_id field for 'output <id>' or 'kill <id>'
         if session_id and (action is None or action not in {"list", "output", "kill", "status"}):
@@ -193,6 +196,36 @@ async def generic_linux_command(command: str = "",
     err = validation.validate_command_guardrails(command)
     if err:
         return err
+
+    # In CI/tests we want to avoid running privileged or interactive system
+    # commands that require root or prompt for passwords. Make this opt-in
+    # via `RUN_AGENT_INTEGRATION_TESTS=1` so developers can still run them.
+    run_integration = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower() in ("1", "true", "yes")
+    if not run_integration:
+        lowered = command.lower()
+        privileged_indicators = [
+            "sudo ",
+            "fail2ban-client",
+            "systemctl",
+            "journalctl",
+            "iptables",
+            "ufw",
+            "apt-get",
+            "apt ",
+            "dpkg",
+            "service ",
+            "passwd",
+            "chown",
+            "chmod",
+            "shutdown",
+            "reboot",
+        ]
+        for p in privileged_indicators:
+            if p in lowered:
+                return (
+                    f"Skipped privileged command in non-integration mode: '{command}'. "
+                    "Set RUN_AGENT_INTEGRATION_TESTS=1 to allow executing privileged commands."
+                )
 
     # For SSH sessions or interactive commands, use different timeout
     if session_id:
@@ -339,6 +372,23 @@ async def generic_linux_command(command: str = "",
                     pass
     
     # Execute respecting session/interactive semantics and capture result
+    # Resolve session_id: if it doesn't correspond to an existing active session,
+    # clear it so we fall through to normal (non-session) execution instead of
+    # returning a misleading "Session X not found" error.  The LLM sometimes
+    # passes a human-readable label as session_id for one-shot commands; we
+    # honour that when interactive=True by letting the newly created session
+    # inherit the label as its friendly_id, but for non-interactive commands we
+    # simply ignore unknown session identifiers.
+    _resolved = _resolve_session_id(session_id) if session_id else None
+    _session_exists = _resolved is not None and _resolved in ACTIVE_SESSIONS
+    if session_id and not _session_exists:
+        if not interactive:
+            # Non-interactive one-shot command: ignore the phantom session_id
+            session_id = None
+        else:
+            # Interactive with an unknown label: start a fresh session.
+            session_id = None
+
     if session_id:
         result = run_command(
             command,

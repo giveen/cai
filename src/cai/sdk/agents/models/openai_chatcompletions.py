@@ -116,8 +116,6 @@ class CustomResponseUsage(ResponseUsage):
         return self.output_tokens
 
 
-from cai.internal.components.metrics import process_intermediate_logs
-
 from .. import _debug
 from ..agent_output import AgentOutputSchema
 from ..exceptions import AgentsException, UserError
@@ -3599,13 +3597,8 @@ class OpenAIChatCompletionsModel(Model):
         return input, system_instructions, False
 
     def _intermediate_logs(self):
-        """Intermediate logging if conditions are met."""
-        if (
-            self.logger
-            and self.interaction_counter > 0
-            and self.interaction_counter % self.INTERMEDIATE_LOG_INTERVAL == 0
-        ):
-            process_intermediate_logs(self.logger.filename, self.logger.session_id)
+        """Intermediate logging placeholder (telemetry disabled)."""
+        pass
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
