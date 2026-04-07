@@ -435,13 +435,11 @@ async def generic_linux_command(command: str = "",
     # simply ignore unknown session identifiers.
     _resolved = _resolve_session_id(session_id) if session_id else None
     _session_exists = _resolved is not None and _resolved in ACTIVE_SESSIONS
-    if session_id and not _session_exists:
-        if not interactive:
-            # Non-interactive one-shot command: ignore the phantom session_id
-            session_id = None
-        else:
-            # Interactive with an unknown label: start a fresh session.
-            session_id = None
+    # If the provided session_id resolves to an active session, use its resolved id.
+    if _session_exists:
+        session_id = _resolved
+    # Otherwise, preserve the explicit session_id and let run_command decide
+    # how to handle missing sessions (it will return a helpful message).
 
     if session_id:
         result = run_command(
