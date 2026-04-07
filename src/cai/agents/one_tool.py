@@ -4,6 +4,7 @@ CTF Agent with one tool
 import os
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.reconnaissance.generic_linux_command import generic_linux_command  # noqa
+from cai.tools.reconnaissance.ldap_search import ldap_search  # noqa: E501
 from openai import AsyncOpenAI
 from cai.util import create_system_prompt_renderer
 from cai.agents.guardrails import get_security_guardrails
@@ -65,6 +66,7 @@ one_tool_agent = Agent(
     instructions=create_system_prompt_renderer(instructions),
     tools=[
         generic_linux_command,
+        ldap_search,
     ],
     input_guardrails=input_guardrails,
     output_guardrails=output_guardrails,

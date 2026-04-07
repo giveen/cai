@@ -29,6 +29,7 @@ from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-er
 from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
     generic_linux_command
 )
+from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
 from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
     make_web_search_with_explanation
 )
@@ -61,6 +62,7 @@ network_security_analyzer_prompt = load_prompt_template("prompts/system_network_
 # Define tools list based on available API keys
 tools = [
     generic_linux_command,
+    ldap_search,
     run_ssh_command_with_credentials,
     execute_code,
     capture_remote_traffic,
