@@ -4,7 +4,7 @@ querying and adding data to vector databases.
 """
 import os
 import uuid
-from cai.rag.vector_db import QdrantConnector
+from cai.rag.vector_db_adapter import get_vector_db_adapter
 from cai.sdk.agents import function_tool
 
 # CTF BASED MEMORY
@@ -24,10 +24,10 @@ def query_memory(query: str, top_k: int = 3, **kwargs) -> str:  # pylint: disabl
             with the most relevant matches
     """
     try:
-        qdrant = QdrantConnector()
+        adapter = get_vector_db_adapter()
 
         # First try semantic search
-        results = qdrant.search(
+        results = adapter.search(
             collection_name="_all_",
             query_text=query,
             limit=top_k,
@@ -39,8 +39,8 @@ def query_memory(query: str, top_k: int = 3, **kwargs) -> str:  # pylint: disabl
 
         return results
 
-    except Exception:  # pylint: disable=broad-exception-caught
-        return results
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return f"Error querying memory: {str(exc)}"
 
 @function_tool
 def add_to_memory_episodic(texts: str, step: int = 0, **kwargs) -> str:  # pylint: disable=unused-argument,line-too-long # noqa: E501
@@ -55,13 +55,13 @@ def add_to_memory_episodic(texts: str, step: int = 0, **kwargs) -> str:  # pylin
         str: Status message indicating success or failure
     """
     try:
-        qdrant = QdrantConnector()
+        adapter = get_vector_db_adapter()
         try:
-            qdrant.create_collection(collection_name)
+            adapter.create_collection(collection_name)
         except Exception:  # nosec # pylint: disable=broad-exception-caught
             pass
 
-        success = qdrant.add_points(
+        success = adapter.add_points(
             id_point=step,
             collection_name=collection_name,
             texts=[texts],
@@ -92,13 +92,13 @@ def add_to_memory_semantic(texts: str, step: int = 0, **kwargs) -> str:  # pylin
     """
     doc_id = str(uuid.uuid4())
     try:
-        qdrant = QdrantConnector()
+        adapter = get_vector_db_adapter()
         try:
-            qdrant.create_collection("_all_")
+            adapter.create_collection("_all_")
         except Exception:  # nosec # pylint: disable=broad-exception-caught
             pass
 
-        success = qdrant.add_points(
+        success = adapter.add_points(
             id_point=doc_id,
             collection_name="_all_",
             texts=[texts],

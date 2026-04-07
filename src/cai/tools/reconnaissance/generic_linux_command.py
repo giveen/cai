@@ -7,6 +7,7 @@ import uuid
 import subprocess
 import sys
 import re
+import json
 import unicodedata
 from typing import Optional
 from cai.tools.common import (run_command, run_command_async,
@@ -65,27 +66,75 @@ async def generic_linux_command(command: str = "",
     """
     # Handle special session management commands (tolerant parser)
     cmd_lower = command.strip().lower()
-    # Normalize session_id: treat empty strings or quoted-empty as None,
-    # and strip surrounding quotes if present (LLM outputs sometimes include them).
-    # Also guard against LLMs passing a dict ({}) or other non-string types.
-    if session_id is not None:
+    # Normalize session_id robustly: handle dict/list/bool, JSON-like strings,
+    # and extract common id fields when present. Empty objects/arrays and
+    # sentinel strings ('null','none','{}') become None.
+    def _sanitize_session_id(raw):
         try:
-            # Type guard: if LLM passed a dict/list/bool instead of a string, discard it.
-            if isinstance(session_id, (dict, list, bool)):
-                session_id = None
-            else:
-                sid = str(session_id).strip()
-                if (sid.startswith('"') and sid.endswith('"')) or (sid.startswith("'") and sid.endswith("'")):
-                    sid = sid[1:-1].strip()
-                # Treat common sentinel values emitted by LLMs as None
-                low = sid.lower()
-                if sid == "" or low in {"none", "null", "nil", "undefined", "{}", "[]"}:
-                    session_id = None
-                else:
-                    session_id = sid
+            # None or explicit falsy
+            if raw is None:
+                return None
+
+            # If it's already a dict, try to extract common id keys
+            if isinstance(raw, dict):
+                if not raw:
+                    return None
+                for key in ("session_id", "session", "id", "sid", "name"):
+                    if key in raw and raw[key] is not None:
+                        return _sanitize_session_id(raw[key])
+                # If dict has single key with simple value, try that
+                if len(raw) == 1:
+                    val = next(iter(raw.values()))
+                    return _sanitize_session_id(val)
+                return None
+
+            # If it's a list, prefer the first element
+            if isinstance(raw, (list, tuple)):
+                if not raw:
+                    return None
+                return _sanitize_session_id(raw[0])
+
+            # Booleans are invalid session ids
+            if isinstance(raw, bool):
+                return None
+
+            # Numbers → string
+            if isinstance(raw, (int, float)):
+                return str(raw)
+
+            # Coerce to string and strip
+            s = str(raw).strip()
+            # Remove outer quotes
+            if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+                s = s[1:-1].strip()
+
+            # If looks like JSON, try to parse and extract
+            if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
+                try:
+                    parsed = json.loads(s)
+                    return _sanitize_session_id(parsed)
+                except Exception:
+                    # Try a crude regex to extract common id fields from JSON-like string
+                    m = re.search(r'"(session_id|id|session|sid)"\s*:\s*"([^"]+)"', s)
+                    if m:
+                        return m.group(2)
+                    # empty JSON structures
+                    if s in ("{}", "[]"):
+                        return None
+
+            low = s.lower()
+            if s == "" or low in {"none", "null", "nil", "undefined"}:
+                return None
+            # braces/brackets-only
+            if re.fullmatch(r'[\{\}\[\]\s]*', s):
+                return None
+
+            return s
         except Exception:
-            # If normalization fails for any reason, fall back to None
-            session_id = None
+            return None
+
+    if session_id is not None:
+        session_id = _sanitize_session_id(session_id)
     if cmd_lower.startswith("output "):
         return get_session_output(command.split(None, 1)[1], clear=False, stdout=True)
     if cmd_lower.startswith("kill "):
