@@ -203,7 +203,8 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
         
         # If streaming is enabled and we have a call_id
         if stream:
-            # Use helper wrappers for streaming start/update/finish
+            # Import the streaming utilities from util
+            from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
             
             # Parse command into parts for display
             parts = command.strip().split(' ', 1)
@@ -236,8 +237,11 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             if not call_id:
                 call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
             
-            # Initialize streaming session and obtain token info
-            call_id, token_info = _start_tool_streaming_helper(tool_name, tool_args, call_id)
+            # Get token info for agent display
+            token_info = _get_agent_token_info()
+            
+            # Initialize/use the call_id for this streaming session
+            call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
             
             # Start the async process
             process = await asyncio.create_subprocess_shell(
@@ -276,8 +280,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                         buffer_size += 1
                         last_output = time.time()
                         if buffer_size >= update_interval:
-                            _update_tool_streaming_helper(tool_name, tool_args, ''.join(output_buffer), call_id, token_info)
-                            
+                            update_tool_streaming(tool_name, tool_args, ''.join(output_buffer), call_id, token_info)
                             buffer_size = 0
                     else:
                         break
@@ -326,7 +329,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             }
             
             # Complete the streaming session with final output
-            _finish_tool_streaming_helper(tool_name, tool_args, final_output, call_id, execution_info, token_info)
+            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
             
             return final_output
         else:
@@ -454,11 +457,12 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
         
         # If we're streaming, show the timeout in the tool output panel
         if stream and call_id:
+            from cai.util import finish_tool_streaming
             # Parse the command the same way we did for streaming
             parts = command.strip().split(' ', 1)
             cmd_var = parts[0] if parts else ""
             args_var = parts[1] if len(parts) > 1 else ""
-
+            
             # Ensure tool_args has complete information
             tool_args: dict[str, Any] = {
                 "command": cmd_var,
@@ -468,14 +472,15 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                 "workspace": os.path.basename(target_dir)
             }
             execution_info = {
-                "status": "timeout",
+                "status": "timeout", 
                 "error": str(e),
                 "environment": "Local",
                 "host": os.path.basename(target_dir)
             }
-
-            # Finish streaming session with timeout info (helper will fetch token_info)
-            _finish_tool_streaming_helper(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
+            
+            # Get token info for agent display  
+            token_info = _get_agent_token_info()
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
             
         if stdout:
             print("\033[32m" + error_msg + "\033[0m")
@@ -486,11 +491,12 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
         
         # If we're streaming, show the error in the tool output panel
         if stream and call_id:
+            from cai.util import finish_tool_streaming
             # Parse the command the same way we did for streaming
             parts = command.strip().split(' ', 1)
             cmd_var = parts[0] if parts else ""
             args_var = parts[1] if len(parts) > 1 else ""
-
+            
             # Ensure tool_args has complete information
             tool_args: dict[str, Any] = {
                 "command": cmd_var,
@@ -500,14 +506,15 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                 "workspace": os.path.basename(target_dir)
             }
             execution_info = {
-                "status": "error",
+                "status": "error", 
                 "error": str(e),
                 "environment": "Local",
                 "host": os.path.basename(target_dir)
             }
-
-            # Finish streaming session with error info (helper will fetch token_info)
-            _finish_tool_streaming_helper(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
+            
+            # Get token info for agent display  
+            token_info = _get_agent_token_info()
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
             
         print(color(error_msg, fg="red"))
         return error_msg
@@ -546,7 +553,7 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
         ]
         
         if stream:
-            # Use helper wrappers for streaming start/update/finish
+            from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
             
             # If args were provided (e.g., from execute_code), use them as base
             # Otherwise create tool args for display
@@ -570,8 +577,8 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
             if not call_id:
                 call_id = f"cmd_{cmd_name}_{str(uuid.uuid4())[:8]}"
             
-            # Initialize streaming session and obtain token info
-            call_id, token_info = _start_tool_streaming_helper(tool_name, tool_args, call_id)
+            token_info = _get_agent_token_info()
+            call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
             
             # Create async subprocess
             process = await asyncio.create_subprocess_exec(
@@ -604,7 +611,7 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
                         buffer_size += 1
                         last_output = time.time()
                         if buffer_size >= update_interval:
-                            _update_tool_streaming_helper(tool_name, tool_args, ''.join(output_buffer), call_id, token_info)
+                            update_tool_streaming(tool_name, tool_args, ''.join(output_buffer), call_id, token_info)
                             buffer_size = 0
                     else:
                         break
@@ -650,7 +657,7 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
                 "tool_time": execution_time
             }
             
-            _finish_tool_streaming_helper(tool_name, tool_args, final_output, call_id, execution_info, token_info)
+            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
             return final_output
             
         else:
@@ -765,7 +772,8 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
         
         # If streaming is enabled and we have a call_id
         if stream:
-            # Use helper wrappers for streaming start/update/finish
+            # Import the streaming utilities from util
+            from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
             
             # Parse command into parts for display
             parts = command.strip().split(' ', 1)
@@ -798,8 +806,11 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             if not call_id:
                 call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
             
-            # Initialize streaming session and obtain token info
-            call_id, token_info = _start_tool_streaming_helper(tool_name, tool_args, call_id)
+            # Get token info for agent display
+            token_info = _get_agent_token_info()
+            
+            # Initialize/use the call_id for this streaming session
+            call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
             
             # Start the process
             process = subprocess.Popen(
@@ -839,7 +850,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 # Only update periodically to reduce UI refreshes
                 if buffer_size >= update_interval:
                     current_output = ''.join(output_buffer)
-                    _update_tool_streaming_helper(tool_name, tool_args, current_output, call_id, token_info)
+                    update_tool_streaming(tool_name, tool_args, current_output, call_id, token_info)
                     buffer_size = 0
             
             # Finish process
@@ -868,7 +879,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             }
             
             # Complete the streaming session with final output
-            _finish_tool_streaming_helper(tool_name, tool_args, final_output, call_id, execution_info, token_info)
+            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
             
             return final_output
         else:
@@ -952,11 +963,12 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
         
         # If we're streaming, show the timeout in the tool output panel
         if stream and call_id:
+            from cai.util import finish_tool_streaming
             # Parse the command the same way we did for streaming
             parts = command.strip().split(' ', 1)
             cmd_var = parts[0] if parts else ""
             args_var = parts[1] if len(parts) > 1 else ""
-
+            
             # Ensure tool_args has complete information
             tool_args: dict[str, Any] = {
                 "command": cmd_var,
@@ -966,14 +978,15 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 "workspace": os.path.basename(target_dir)
             }
             execution_info = {
-                "status": "timeout",
+                "status": "timeout", 
                 "error": str(e),
                 "environment": "Local",
                 "host": os.path.basename(target_dir)
             }
-
-            # Finish streaming session with timeout info (helper will fetch token_info)
-            _finish_tool_streaming_helper(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
+            
+            # Get token info for agent display  
+            token_info = _get_agent_token_info()
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
             
         if stdout:
             print("\033[32m" + error_msg + "\033[0m")
@@ -986,11 +999,12 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
         
         # If we're streaming, show the error in the tool output panel
         if stream and call_id:
+            from cai.util import finish_tool_streaming
             # Parse the command the same way we did for streaming
             parts = command.strip().split(' ', 1)
             cmd_var = parts[0] if parts else ""
             args_var = parts[1] if len(parts) > 1 else ""
-
+            
             # Ensure tool_args has complete information
             tool_args: dict[str, Any] = {
                 "command": cmd_var,
@@ -1000,14 +1014,15 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 "workspace": os.path.basename(target_dir)
             }
             execution_info = {
-                "status": "error",
+                "status": "error", 
                 "error": str(e),
                 "environment": "Local",
                 "host": os.path.basename(target_dir)
             }
-
-            # Finish streaming session with error info (helper will fetch token_info)
-            _finish_tool_streaming_helper(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
+            
+            # Get token info for agent display  
+            token_info = _get_agent_token_info()
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
             
         print(color(error_msg, fg="red"))
         return error_msg
@@ -1378,7 +1393,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         if ctf and os.getenv('CTF_INSIDE', "True").lower() == "true":
             # If streaming is enabled and we have a call_id, show streaming UI for CTF too
             if stream:
-                    # Use helper wrappers for streaming start/update/finish
+                # Import the streaming utilities from util
+                from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
                 
                 # If args were provided (e.g., from execute_code), use them
                 # Otherwise create args dictionary with standardized format
@@ -1401,19 +1417,22 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 if tool_name == "generic_linux_command":
                     tool_args["refresh_rate"] = 2
                 
-                # Initialize the streaming session and obtain token info
-                call_id, token_info = _start_tool_streaming_helper(tool_name, tool_args, call_id)
+                # Get token info for agent display
+                token_info = _get_agent_token_info()
+                
+                # Initialize the streaming session with a consistent call_id format
+                call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
                 
                 target_dir = _get_workspace_dir()
                 #full_command = f"cd '{target_dir}' && {command}"
                 full_command = command
                 # Update with "executing" status
-                _update_tool_streaming_helper(
-                    tool_name,
-                    tool_args,
-                    f"Executing in CTF environment: {full_command}\n\nWaiting for response...",
+                update_tool_streaming(
+                    tool_name, 
+                    tool_args, 
+                    f"Executing in CTF environment: {full_command}\n\nWaiting for response...", 
                     call_id,
-                    token_info,
+                    token_info
                 )
                 
                 try:
@@ -1430,7 +1449,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     }
                     
                     # Complete the streaming with final output
-                    _finish_tool_streaming_helper(tool_name, tool_args, output, call_id, execution_info, token_info)
+                    finish_tool_streaming(tool_name, tool_args, output, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after CTF command completes
                     stop_active_timer()
@@ -1447,7 +1466,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     }
                     
                     # Complete the streaming with error output
-                    _finish_tool_streaming_helper(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after error
                     stop_active_timer()
@@ -1466,7 +1485,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         if is_ssh_env:
             # If streaming is enabled, show streaming UI for SSH too
             if stream:
-                    # Use helper wrappers for streaming start/update/finish
+                # Import the streaming utilities from util
+                from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
                 
                 # Add SSH connection info for display
                 ssh_user = os.environ.get('SSH_USER', 'user')
@@ -1494,16 +1514,19 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 if tool_name == "generic_linux_command":
                     tool_args["refresh_rate"] = 2
                 
-                # Initialize streaming session and obtain token info
-                call_id, token_info = _start_tool_streaming_helper(tool_name, tool_args, call_id)
+                # Get token info for agent display
+                token_info = _get_agent_token_info()
+                
+                # Initialize streaming session with a consistent call_id format
+                call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
                 
                 # Update with "executing" status  
-                _update_tool_streaming_helper(
-                    tool_name,
-                    tool_args,
-                    f"Executing on {ssh_connection}: {command}\n\nWaiting for response...",
+                update_tool_streaming(
+                    tool_name, 
+                    tool_args, 
+                    f"Executing on {ssh_connection}: {command}\n\nWaiting for response...", 
                     call_id,
-                    token_info,
+                    token_info
                 )
                 
                 try:
@@ -1548,7 +1571,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     token_info = _get_agent_token_info()
                     
                     # Complete the streaming with final output
-                    _finish_tool_streaming_helper(tool_name, tool_args, result_with_info, call_id, execution_info, token_info)
+                    finish_tool_streaming(tool_name, tool_args, result_with_info, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after SSH command completes
                     stop_active_timer()
@@ -1571,7 +1594,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     token_info = _get_agent_token_info()
                     
                     # Complete the streaming with timeout error
-                    _finish_tool_streaming_helper(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after timeout
                     stop_active_timer()
@@ -1593,7 +1616,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     token_info = _get_agent_token_info()
                     
                     # Complete the streaming with error
-                    _finish_tool_streaming_helper(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after error
                     stop_active_timer()
