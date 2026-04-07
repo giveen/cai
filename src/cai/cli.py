@@ -288,9 +288,8 @@ from rich.console import Console
 
 from cai import is_pentestperf_available
 
-# CAI agents and metrics imports
+# CAI agents imports
 from cai.agents import get_agent_by_name
-from cai.internal.components.metrics import process_metrics
 
 # CAI REPL imports
 from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
@@ -917,19 +916,6 @@ def run_cai_cli(
                     console.print(time_panel, end="")
 
                 print_session_summary(console, metrics, logging_path)
-
-                # Upload logs if telemetry is enabled by checking the
-                # env. variable CAI_TELEMETRY and there's internet connectivity
-                telemetry_enabled = os.getenv("CAI_TELEMETRY", "true").lower() != "false"
-                if (
-                    telemetry_enabled
-                    and hasattr(session_logger, "session_id")
-                    and hasattr(session_logger, "filename")
-                ):
-                    process_metrics(
-                        session_logger.filename,  # should match logging_path
-                        sid=session_logger.session_id,
-                    )
 
                 # Log session end
                 if session_logger:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pytest
 
 from cai.sdk.agents.models import _openai_shared
@@ -65,6 +66,17 @@ def disable_real_model_clients(monkeypatch, request):
     monkeypatch.setattr(OpenAIResponsesModel, "stream_response", failing_version)
     monkeypatch.setattr(OpenAIChatCompletionsModel, "get_response", failing_version)
     monkeypatch.setattr(OpenAIChatCompletionsModel, "stream_response", failing_version)
+
+
+# Skip heavy integration-style agent tests by default to avoid running
+# tests that execute system tools or require elevated privileges. To
+# run these tests locally set `RUN_AGENT_INTEGRATION_TESTS=1`.
+@pytest.fixture(autouse=True)
+def skip_integration_agent_tests(request):
+    if request.node.get_closest_marker("allow_call_model_methods"):
+        enabled = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower()
+        if enabled not in ("1", "true", "yes"):
+            pytest.skip("Skipping integration tests that call real model/methods by default. Set RUN_AGENT_INTEGRATION_TESTS=1 to run them.")
 
 
 @pytest.fixture(autouse=True)

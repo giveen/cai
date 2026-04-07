@@ -12,8 +12,8 @@ from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-er
     run_ssh_command_with_credentials
 )
 
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
+from cai.tools.reconnaissance.blue_team_safe_command import (  # pylint: disable=import-error # noqa: E501
+    blue_team_safe_command
 )
 from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
     make_web_search_with_explanation
@@ -27,7 +27,7 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
 blueteam_agent_system_prompt = load_prompt_template("prompts/system_blue_team_agent.md")
 # Define tools list based on available API keys
 tools = [
-    generic_linux_command,
+    blue_team_safe_command,
     run_ssh_command_with_credentials,
     execute_code,
 ]

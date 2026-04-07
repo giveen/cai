@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 from mako.template import Template  # pylint: disable=import-error
 from rich.box import ROUNDED  # pylint: disable=import-error
@@ -562,16 +562,9 @@ class CostTracker:
                 # Cache the results
                 self.model_pricing_cache[model_name] = (input_cost_per_token, output_cost_per_token)
                 return input_cost_per_token, output_cost_per_token
-        except Exception as e:
-            # Check if it's a network connectivity issue by testing a simple connection
-            try:
-                import requests
-                test_response = requests.get("https://aliasrobotics.com/", timeout=1)
-                # The pricing URL failed
-                print(f"  WARNING: Error fetching model pricing: {str(e)}")
-            except Exception:
-                # No internet connection, silently skip the warning
-                pass
+        except Exception:
+            # Silently skip if pricing cannot be fetched
+            pass
 
         # Default to zero cost if no pricing found (local/free models)
         default_pricing = (0.0, 0.0)
@@ -2514,14 +2507,14 @@ def finish_agent_streaming(context, final_stats=None):
 
 
 def cli_print_tool_output(
-    tool_name="",
-    args="",
-    output="",
-    call_id=None,
-    execution_info=None,
-    token_info=None,
-    streaming=False,
-):
+    tool_name: str = "",
+    args: Any = "",
+    output: str = "",
+    call_id: Optional[str] = None,
+    execution_info: Optional[dict] = None,
+    token_info: Optional[dict] = None,
+    streaming: bool = False,
+) -> None:
     """
     Print a tool call output to the command line.
     Similar to cli_print_tool_call but for the output of the tool.
