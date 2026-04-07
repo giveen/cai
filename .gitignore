@@ -174,3 +174,6 @@ data/
 # ignore dev files
 cai-*
 tui_config.json
+
+# Ignore pytest failure dumps
+pytest_failures/
