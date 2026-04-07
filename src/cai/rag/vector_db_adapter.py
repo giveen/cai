@@ -15,6 +15,8 @@ import os
 import shlex
 import subprocess
 import time
+import hashlib
+import datetime as _dt
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Type
@@ -419,6 +421,40 @@ class LocalFallbackAdapter(VectorDBAdapter):
             metadata_list
         except NameError:
             metadata_list = [{} for _ in texts]
+
+        # Ensure provenance metadata exists for each text (best-effort)
+        try:
+            session = os.getenv("CAI_SESSION_ID") or os.getenv("SESSION_ID")
+        except Exception:
+            session = None
+
+        for i, t in enumerate(texts):
+            try:
+                md = metadata_list[i] if i < len(metadata_list) else {}
+            except Exception:
+                md = {}
+            if not isinstance(md, dict):
+                md = {}
+            if "provenance" not in md:
+                try:
+                    ch = hashlib.sha256((t or "").encode("utf-8")).hexdigest()
+                except Exception:
+                    ch = None
+                prov = {
+                    "source": __name__,
+                    "timestamp": _dt.datetime.utcnow().isoformat() + "Z",
+                    "session_id": session,
+                    "tool_name": "local_add_points",
+                    "original_text": t,
+                    "chunk_id": ids[i] if i < len(ids) else str(uuid.uuid4()),
+                    "content_hash": ch,
+                }
+                md["provenance"] = prov
+            # ensure metadata_list updated
+            if i < len(metadata_list):
+                metadata_list[i] = md
+            else:
+                metadata_list.append(md)
 
         # Compute embeddings (best-effort)
         try:
