@@ -14,7 +14,7 @@ import sys
 import shlex
 import select
 from wasabi.util import color  # pylint: disable=import-error
-from typing import Any
+from typing import Any, Optional, Tuple, Dict
 from cai.util import format_time, start_active_timer, stop_active_timer, start_idle_timer, stop_idle_timer, cli_print_tool_output
 
 
@@ -36,6 +36,28 @@ from cai.tools.sessions import (
     ACTIVE_SESSIONS,
     SESSION_OUTPUT_COUNTER,
 )
+
+
+def _start_tool_streaming_helper(tool_name: str, tool_args: dict, call_id: Optional[str] = None) -> Tuple[str, dict]:
+    """Start a streaming session and return (call_id, token_info)."""
+    from cai.util import start_tool_streaming
+    token_info = _get_agent_token_info()
+    new_call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
+    return new_call_id, token_info
+
+
+def _update_tool_streaming_helper(tool_name: str, tool_args: dict, content: str, call_id: str, token_info: dict) -> None:
+    """Update an existing streaming session."""
+    from cai.util import update_tool_streaming
+    update_tool_streaming(tool_name, tool_args, content, call_id, token_info)
+
+
+def _finish_tool_streaming_helper(tool_name: str, tool_args: dict, content: str, call_id: str, execution_info: dict, token_info: Optional[dict] = None) -> None:
+    """Finish a streaming session, ensuring token_info is available."""
+    from cai.util import finish_tool_streaming
+    if token_info is None:
+        token_info = _get_agent_token_info()
+    finish_tool_streaming(tool_name, tool_args, content, call_id, execution_info, token_info)
 
 
 def _get_workspace_dir() -> str:
