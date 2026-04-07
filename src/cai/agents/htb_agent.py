@@ -4,18 +4,7 @@ from dotenv import load_dotenv
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, ModelSettings
 from openai import AsyncOpenAI
 
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code
-)
-from cai.tools.reconnaissance.ldap_search import (  # pylint: disable=import-error # noqa: E501
-    ldap_search
-)
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_web_search_with_explanation,
-)
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.agents.guardrails import get_security_guardrails
 
@@ -25,14 +14,8 @@ api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-12345
 
 htb_agent_system_prompt = load_prompt_template("prompts/system_htb_agent.md")
 
-tools = [
-    generic_linux_command,
-    execute_code,
-    ldap_search,
-]
+tools = list(ALL_TOOLS)
 
-if os.getenv("PERPLEXITY_API_KEY"):
-    tools.append(make_web_search_with_explanation)
 
 input_guardrails, output_guardrails = get_security_guardrails()
 

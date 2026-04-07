@@ -4,16 +4,7 @@ from dotenv import load_dotenv
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from cai.util import load_prompt_template, create_system_prompt_renderer
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_google_search
-)
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code
-)
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
 
 load_dotenv()
@@ -24,14 +15,7 @@ api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-12345
 # Load the triage agent system prompt
 retester_system_prompt = load_prompt_template("prompts/system_triage_agent.md")
 
-tools = [
-    generic_linux_command,
-    ldap_search,
-    execute_code
-]
-
-if os.getenv('GOOGLE_SEARCH_API_KEY') and os.getenv('GOOGLE_SEARCH_CX'):
-    tools.append(make_google_search)
+tools = list(ALL_TOOLS)
 
 retester_agent = Agent(
     name="Retester Agent",

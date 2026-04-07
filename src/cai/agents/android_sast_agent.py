@@ -7,8 +7,7 @@ It includes:
 """
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from cai.tools.reconnaissance.generic_linux_command import generic_linux_command
-from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 from openai import AsyncOpenAI
 import os
 from dotenv import load_dotenv
@@ -26,11 +25,7 @@ app_logic_mapper_system_prompt = load_prompt_template("prompts/system_android_ap
 
 
 # Define tools list based on available API keys
-tools = [
-    generic_linux_command,
-    ldap_search,
-    execute_code,
-]
+tools = list(ALL_TOOLS)
 
 
 load_dotenv()
@@ -58,9 +53,7 @@ android_sast = Agent(
             tool_name="app_mapper",
             tool_description="application analysis to understand the logic of operation and return a complete map of it."
         ),
-        generic_linux_command,
-        ldap_search,
-        execute_code,
+        *ALL_TOOLS,
         ],
     model=OpenAIChatCompletionsModel(
         model=model_name,

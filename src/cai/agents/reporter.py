@@ -5,10 +5,7 @@ from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=
 from openai import AsyncOpenAI
 from cai.util import load_prompt_template  # Add this import
 
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
 from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
     execute_code
@@ -19,11 +16,7 @@ load_dotenv()
 reporting_agent_system_prompt = load_prompt_template("prompts/system_reporting_agent.md")
 
 # Define functions list
-functions = [
-    generic_linux_command,
-    ldap_search,
-    execute_code,
-]
+functions = list(ALL_TOOLS)
 
 
 # Create an instance of the reporting agent

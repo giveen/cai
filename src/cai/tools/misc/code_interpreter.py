@@ -9,7 +9,7 @@ from cai.sdk.agents import function_tool
 
 
 @function_tool
-def execute_python_code(code: str, context: Dict = None) -> str:
+def execute_python_code(code: str) -> str:
     """
     Execute Python code and return the output.
 
@@ -22,8 +22,6 @@ def execute_python_code(code: str, context: Dict = None) -> str:
     """
     try:
         local_vars = {}
-        if context:
-            local_vars.update(context)
 
         # Capture output using StringIO
         stdout = io.StringIO()
