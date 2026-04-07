@@ -474,6 +474,51 @@ def run_cai_cli(
         agent_name=None  # Will be updated when agent is selected
     )
 
+    # Initialize global WakeupIndex and load persisted wake-up summaries
+    try:
+        from cai.rag.wakeup_store import get_global_wakeup_index
+        from cai.rag.summaries import load_summaries_for_session
+
+        wakeup_idx = get_global_wakeup_index()
+        # Load persisted summaries only (do not attempt regeneration here)
+        try:
+            count = load_summaries_for_session(
+                session_id=session_logger.session_id,
+                palace_texts=None,
+                wakeup_index=wakeup_idx,
+                regenerate_if_missing=False,
+            )
+        except Exception:
+            count = 0
+
+        if os.getenv("CAI_DEBUG", "1") == "2":
+            print(f"Loaded {count} wakeup summaries into WakeupIndex for session {session_logger.session_id}")
+    except Exception:
+        # Best-effort: don't fail session startup if wakeup loading fails
+        pass
+
+    # Initialize TripleStore and run a best-effort contradiction check
+    try:
+        from cai.rag.triplestore_store import get_global_triplestore
+
+        ts = get_global_triplestore()
+        try:
+            window_sec = int(os.getenv("CAI_TRIPLESTORE_CONTRADICTION_WINDOW_SECONDS", str(24 * 3600)))
+        except Exception:
+            window_sec = 24 * 3600
+        try:
+            contradictions = ts.detect_contradictions(window_seconds=window_sec)
+            n = len(contradictions)
+            if os.getenv("CAI_DEBUG", "1") == "2":
+                print(f"TripleStore: detected {n} contradictions in last {window_sec} seconds")
+            logging.getLogger(__name__).info("TripleStore startup contradictions=%d", n)
+        except Exception:
+            # Best-effort: do not fail startup for triple-store checks
+            pass
+    except Exception:
+        # Best-effort: do not fail session startup if triplestore init fails
+        pass
+
     # Display banner
     display_banner(console)
     print("\n")

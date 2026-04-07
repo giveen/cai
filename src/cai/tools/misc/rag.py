@@ -7,6 +7,8 @@ import uuid
 import hashlib
 import datetime as _dt
 from cai.rag.vector_db_adapter import get_vector_db_adapter
+from cai.rag.ingestion import get_ingestor
+from cai.rag.metrics import collector
 from cai.rag.chunking import chunk_text, fingerprint_chunks
 from cai.sdk.agents import function_tool
 
@@ -123,6 +125,18 @@ def query_memory(query: str, top_k: int = 3) -> str:  # pylint: disable=line-too
             limit=top_k,
         )
 
+        # Metrics: record queries and hits (best-effort)
+        try:
+            collector().incr("search_queries")
+            if results is None:
+                collector().incr("search_hits", 0)
+            elif isinstance(results, (list, tuple)):
+                collector().incr("search_hits", len(results))
+            else:
+                collector().incr("search_hits", 1)
+        except Exception:
+            pass
+
         # If no results, fall back to retrieving all documents
         return _format_search_results(results, top_k=top_k)
 
@@ -159,15 +173,26 @@ def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable
         # If chunking produced no pieces (empty input), fall back to single-add
         if not chunks:
             prov = _build_provenance("add_to_memory_episodic", original_text=texts, chunk_id=f"episodic-{step}-{uuid.uuid4()}")
-            success = adapter.add_points(
-                id_point=step,
-                collection_name=collection_name,
-                texts=[texts],
-                metadata=[{"CTF": True, "provenance": prov}],
-            )
-            if success:
-                return f"Successfully added document to collection {collection_name}"
-            return "Failed to add documents to vector database"
+            try:
+                ing = get_ingestor(adapter)
+                ing.enqueue(collection_name, step, [texts], [{"CTF": True, "provenance": prov}])
+                if os.getenv("CAI_RAG_INGEST_SYNC", "0") in ("1", "true", "True"):
+                    try:
+                        ing.flush_sync()
+                    except Exception:
+                        pass
+                return f"Queued 1 document for ingestion to collection {collection_name}"
+            except Exception:
+                # fallback to direct add
+                success = adapter.add_points(
+                    id_point=step,
+                    collection_name=collection_name,
+                    texts=[texts],
+                    metadata=[{"CTF": True, "provenance": prov}],
+                )
+                if success:
+                    return f"Successfully added document to collection {collection_name}"
+                return "Failed to add documents to vector database"
 
         chunk_texts = [c["text"] for c in chunks]
         try:
@@ -229,16 +254,28 @@ def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable
         if not texts_to_add:
             return "No new chunks to add (duplicates)"
 
-        success = adapter.add_points(
-            id_point=ids_to_add if len(ids_to_add) > 1 else ids_to_add[0],
-            collection_name=collection_name,
-            texts=texts_to_add,
-            metadata=metas_to_add,
-        )
-
-        if success:
-            return f"Successfully added {len(texts_to_add)} chunk(s) to collection {collection_name}"
-        return "Failed to add documents to vector database"
+        try:
+            ing = get_ingestor(adapter)
+            ing.enqueue(collection_name, ids_to_add if len(ids_to_add) > 1 else ids_to_add[0], texts_to_add, metas_to_add)
+            if os.getenv("CAI_RAG_INGEST_SYNC", "0") in ("1", "true", "True"):
+                try:
+                    ing.flush_sync()
+                except Exception:
+                    pass
+            return f"Queued {len(texts_to_add)} chunk(s) for ingestion to collection {collection_name}"
+        except Exception as e:  # fallback to direct add if ingestion manager fails
+            try:
+                success = adapter.add_points(
+                    id_point=ids_to_add if len(ids_to_add) > 1 else ids_to_add[0],
+                    collection_name=collection_name,
+                    texts=texts_to_add,
+                    metadata=metas_to_add,
+                )
+                if success:
+                    return f"Successfully added {len(texts_to_add)} chunk(s) to collection {collection_name}"
+            except Exception:
+                pass
+            return f"Failed to add documents to vector database: {str(e)}"
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         return f"Error adding documents to vector database: {str(e)}"
@@ -276,15 +313,25 @@ def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable
         chunks = chunk_text(texts, chunk_size=chunk_size, overlap=overlap)
         if not chunks:
             prov = _build_provenance("add_to_memory_semantic", original_text=texts, chunk_id=f"semantic-{doc_id}-0")
-            success = adapter.add_points(
-                id_point=doc_id,
-                collection_name="_all_",
-                texts=[texts],
-                metadata=[{"CTF": collection_name, "step": step, "provenance": prov}],
-            )
-            if success:
-                return f"Successfully added document to collection {collection_name}"
-            return "Failed to add documents to vector database"
+            try:
+                ing = get_ingestor(adapter)
+                ing.enqueue("_all_", doc_id, [texts], [{"CTF": collection_name, "step": step, "provenance": prov}])
+                if os.getenv("CAI_RAG_INGEST_SYNC", "0") in ("1", "true", "True"):
+                    try:
+                        ing.flush_sync()
+                    except Exception:
+                        pass
+                return f"Queued 1 document for ingestion to collection _all_"
+            except Exception:
+                success = adapter.add_points(
+                    id_point=doc_id,
+                    collection_name="_all_",
+                    texts=[texts],
+                    metadata=[{"CTF": collection_name, "step": step, "provenance": prov}],
+                )
+                if success:
+                    return f"Successfully added document to collection {collection_name}"
+                return "Failed to add documents to vector database"
 
         chunk_texts = [c["text"] for c in chunks]
         try:
@@ -344,16 +391,28 @@ def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable
         if not texts_to_add:
             return "No new chunks to add (duplicates)"
 
-        success = adapter.add_points(
-            id_point=ids_to_add if len(ids_to_add) > 1 else ids_to_add[0],
-            collection_name="_all_",
-            texts=texts_to_add,
-            metadata=metas_to_add,
-        )
-
-        if success:
-            return f"Successfully added {len(texts_to_add)} chunk(s) to collection {collection_name}"
-        return "Failed to add documents to vector database"
+        try:
+            ing = get_ingestor(adapter)
+            ing.enqueue("_all_", ids_to_add if len(ids_to_add) > 1 else ids_to_add[0], texts_to_add, metas_to_add)
+            if os.getenv("CAI_RAG_INGEST_SYNC", "0") in ("1", "true", "True"):
+                try:
+                    ing.flush_sync()
+                except Exception:
+                    pass
+            return f"Queued {len(texts_to_add)} chunk(s) for ingestion to collection _all_"
+        except Exception as e:  # fallback to direct add if ingestion manager fails
+            try:
+                success = adapter.add_points(
+                    id_point=ids_to_add if len(ids_to_add) > 1 else ids_to_add[0],
+                    collection_name="_all_",
+                    texts=texts_to_add,
+                    metadata=metas_to_add,
+                )
+                if success:
+                    return f"Successfully added {len(texts_to_add)} chunk(s) to collection {collection_name}"
+            except Exception:
+                pass
+            return f"Failed to add documents to vector database: {str(e)}"
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         return f"Error adding documents to vector database: {str(e)}"

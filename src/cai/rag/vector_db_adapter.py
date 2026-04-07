@@ -20,6 +20,7 @@ import datetime as _dt
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Type
+from cai.rag.metrics import collector
 
 
 @dataclass
@@ -201,7 +202,16 @@ class QdrantAdapter(VectorDBAdapter):
     @with_retries(retries=3)
     def search(self, collection_name: str, query_text: str, limit: int = 3):
         self._ensure_client()
-        return self._client.search(collection_name=collection_name, query_text=query_text, limit=limit)
+        res = self._client.search(collection_name=collection_name, query_text=query_text, limit=limit)
+        try:
+            collector().incr("search_queries")
+            if isinstance(res, (list, tuple)):
+                collector().incr("search_hits", len(res))
+            else:
+                collector().incr("search_hits", 1)
+        except Exception:
+            pass
+        return res
 
     @with_retries(retries=2)
     def create_collection(self, collection_name: str) -> bool:
@@ -514,16 +524,102 @@ class LocalFallbackAdapter(VectorDBAdapter):
             })
         return out
 
-    def search(self, collection_name: str, query_text: str, limit: int = 3):
+    def delete_points(self, collection_name: str, ids: List[str]) -> bool:
+        """Delete points by id from the local collection. Returns True if any removed."""
         if collection_name not in self._collections:
+            return False
+        col = self._collections[collection_name]
+        removed = False
+        # build new lists excluding ids to remove
+        new_ids, new_texts, new_meta, new_vectors = [], [], [], []
+        for i, existing_id in enumerate(col["ids"]):
+            if existing_id in ids:
+                removed = True
+                continue
+            new_ids.append(existing_id)
+            new_texts.append(col["texts"][i])
+            new_meta.append(col["metadata"][i])
+            new_vectors.append(col["vectors"][i])
+        if removed:
+            col["ids"] = new_ids
+            col["texts"] = new_texts
+            col["metadata"] = new_meta
+            col["vectors"] = new_vectors
+        return removed
+
+    def list_collections(self) -> List[str]:
+        return list(self._collections.keys())
+
+    def purge_older_than(self, cutoff_ts: float) -> int:
+        """Purge documents whose provenance timestamp is older than cutoff_ts.
+
+        Returns the number of deleted items.
+        """
+        deleted = 0
+        for cname, col in self._collections.items():
+            keep_ids = []
+            keep_texts = []
+            keep_meta = []
+            keep_vectors = []
+            for i, md in enumerate(col.get("metadata", [])):
+                prov = md.get("provenance") if isinstance(md, dict) else None
+                ts_ok = True
+                if isinstance(prov, dict):
+                    ts = prov.get("timestamp")
+                    if ts:
+                        try:
+                            # support both with and without fractional seconds
+                            if "." in ts:
+                                fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
+                            else:
+                                fmt = "%Y-%m-%dT%H:%M:%SZ"
+                            import datetime as _dt
+
+                            t = _dt.datetime.strptime(ts, fmt)
+                            tsec = t.replace(tzinfo=_dt.timezone.utc).timestamp()
+                        except Exception:
+                            tsec = None
+                        if tsec is not None and tsec < cutoff_ts:
+                            ts_ok = False
+                if ts_ok:
+                    keep_ids.append(col["ids"][i])
+                    keep_texts.append(col["texts"][i])
+                    keep_meta.append(col["metadata"][i])
+                    keep_vectors.append(col["vectors"][i])
+                else:
+                    deleted += 1
+            col["ids"] = keep_ids
+            col["texts"] = keep_texts
+            col["metadata"] = keep_meta
+            col["vectors"] = keep_vectors
+        return deleted
+
+    def search(self, collection_name: str, query_text: str, limit: int = 3):
+        try:
+            collector().incr("search_queries")
+        except Exception:
+            pass
+        if collection_name not in self._collections:
+            try:
+                collector().incr("search_hits", 0)
+            except Exception:
+                pass
             return []
         col = self._collections[collection_name]
         if not col["texts"]:
+            try:
+                collector().incr("search_hits", 0)
+            except Exception:
+                pass
             return []
 
         try:
             qvec = self.embed_texts([query_text])[0]
         except Exception:
+            try:
+                collector().incr("search_hits", 0)
+            except Exception:
+                pass
             return []
 
         # Filter out vectors that are None or the wrong dimension
@@ -550,6 +646,10 @@ class LocalFallbackAdapter(VectorDBAdapter):
                         "metadata": col["metadata"][orig_i],
                         "score": float(score),
                     })
+                try:
+                    collector().incr("search_hits", len(results))
+                except Exception:
+                    pass
                 return results
             except Exception:
                 # Fall back to naive
@@ -575,6 +675,10 @@ class LocalFallbackAdapter(VectorDBAdapter):
                 "metadata": col["metadata"][i],
                 "score": float(score),
             })
+        try:
+            collector().incr("search_hits", len(results))
+        except Exception:
+            pass
         return results
 
     def health_check(self) -> Dict[str, Any]:
