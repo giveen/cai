@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import math
 import re
+import os
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
@@ -166,6 +168,72 @@ class Reranker:
         return [it for _, it in scored[:top_k]]
 
 
+class CrossEncoderReranker(Reranker):
+    """Reranker that prefers a sentence-transformers CrossEncoder model.
+
+    Falls back to the embedding-based `Reranker` behavior or a cheap
+    token-overlap heuristic when CrossEncoder isn't available.
+    """
+
+    def __init__(self, model_name: Optional[str] = None, embeddings_provider: Optional[Any] = None, device: str = "cpu"):
+        super().__init__(embeddings_provider=embeddings_provider)
+        self.model_name = model_name or os.getenv("CAI_CE_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+        self.device = device
+        self._ce_model = None
+        try:
+            from sentence_transformers import CrossEncoder  # type: ignore
+
+            # instantiate the cross-encoder; allow runtime failure to fall back
+            self._ce_model = CrossEncoder(self.model_name, device=self.device)
+        except Exception:
+            logging.debug("CrossEncoder model not available; falling back to cheaper rerankers")
+            self._ce_model = None
+
+    def rerank(self, query: str, candidates: List[Dict[str, Any]], top_k: Optional[int] = None) -> List[Dict[str, Any]]:
+        if not candidates:
+            return []
+        top_k = top_k or len(candidates)
+
+        # If we have a cross-encoder model, use it directly on (query, doc)
+        if self._ce_model is not None:
+            try:
+                texts = [c.get("text", "") for c in candidates]
+                pairs = [[query, t] for t in texts]
+                scores = self._ce_model.predict(pairs)
+                scored = []
+                for s, c in zip(scores, candidates):
+                    item = dict(c)
+                    item["score"] = float(s)
+                    scored.append((float(s), item))
+                scored.sort(key=lambda x: x[0], reverse=True)
+                return [it for _, it in scored[:top_k]]
+            except Exception:
+                logging.debug("CrossEncoder prediction failed; falling back")
+
+        # Fallback: try embeddings-based reranker (cosine)
+        try:
+            return super().rerank(query, candidates, top_k=top_k)
+        except Exception:
+            logging.debug("Embedding-based reranker failed; using token-overlap heuristic")
+
+        # Cheap heuristic: token overlap ratio combined with original score
+        qtokens = set(_tokenize(query))
+        scored = []
+        for c in candidates:
+            t = c.get("text", "")
+            tks = set(_tokenize(t))
+            overlap = 0.0
+            if qtokens or tks:
+                overlap = len(qtokens & tks) / max(1, len(qtokens | tks))
+            base_score = float(c.get("score") or 0.0)
+            combined = base_score + overlap
+            item = dict(c)
+            item["score"] = float(combined)
+            scored.append((combined, item))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [it for _, it in scored[:top_k]]
+
+
 class RetrieverPipeline:
     def __init__(
         self,
@@ -246,5 +314,6 @@ __all__ = [
     "SimpleBM25",
     "RetrieverCombiner",
     "Reranker",
+    "CrossEncoderReranker",
     "RetrieverPipeline",
 ]
