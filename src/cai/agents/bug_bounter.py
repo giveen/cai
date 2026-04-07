@@ -4,26 +4,7 @@ from dotenv import load_dotenv
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from cai.util import load_prompt_template, create_system_prompt_renderer
-from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
-    run_ssh_command_with_credentials
-)
-
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_google_search
-)
-
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code
-)
-
-from cai.tools.reconnaissance.shodan import (  # pylint: disable=import-error # noqa: E501
-    shodan_search,
-    shodan_host_info
-)
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
 from cai.agents.guardrails import get_security_guardrails
 
@@ -33,17 +14,7 @@ load_dotenv()
 api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
 # Prompts
 bug_bounter_system_prompt = load_prompt_template("prompts/system_bug_bounter.md")
-# Define tools list based on available API keys
-tools = [
-    generic_linux_command,
-    ldap_search,
-    execute_code,
-    shodan_search,
-    shodan_host_info
-]
-
-if os.getenv('GOOGLE_SEARCH_API_KEY') and os.getenv('GOOGLE_SEARCH_CX'):
-    tools.append(make_google_search)
+tools = list(ALL_TOOLS)
 
 # Get security guardrails
 input_guardrails, output_guardrails = get_security_guardrails()

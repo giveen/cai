@@ -16,46 +16,11 @@ from openai import AsyncOpenAI
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
 from cai.util import load_prompt_template, create_system_prompt_renderer
 from dotenv import load_dotenv
-from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
-    run_ssh_command_with_credentials
-)
-
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_web_search_with_explanation
-)
-
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code
-)
-
-from cai.tools.reconnaissance.shodan import shodan_search
-from cai.tools.web.google_search import google_search
-from cai.tools.misc.reasoning import think  # pylint: disable=import-error
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
 # Prompts
 dfir_agent_system_prompt = load_prompt_template("prompts/system_dfir_agent.md")
-# Define tool list based on available API keys
-tools = [
-    generic_linux_command,
-    ldap_search,
-    run_ssh_command_with_credentials,
-    execute_code,
-    think,
-]
-
-if os.getenv('PERPLEXITY_API_KEY'):
-    tools.append(make_web_search_with_explanation)
-
-# Add Shodan and Google search capabilities conditionally
-if os.getenv('SHODAN_API_KEY'):
-    tools.append(shodan_search)
-
-if os.getenv('GOOGLE_SEARCH_API_KEY') and os.getenv('GOOGLE_SEARCH_CX'):
-    tools.append(google_search)
+tools = list(ALL_TOOLS)
 
 
 dfir_agent = Agent(

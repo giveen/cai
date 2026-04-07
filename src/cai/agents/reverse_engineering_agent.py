@@ -4,38 +4,14 @@ from dotenv import load_dotenv
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
 from openai import AsyncOpenAI
 from cai.util import load_prompt_template  # Add this import
-from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
-    run_ssh_command_with_credentials
-)
-
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_web_search_with_explanation,
-)
-
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code
-)
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
 load_dotenv()
 # Prompts
 reverse_engineering_agent_system_prompt = load_prompt_template("prompts/reverse_engineering_agent.md")
 
-# Define functions list
-functions = [
-    generic_linux_command,
-    ldap_search,
-    run_ssh_command_with_credentials,
-    execute_code,
-]
+tools = list(ALL_TOOLS)
 
-# Add make_web_search_with_explanation function if PERPLEXITY_API_KEY environment variable is set
-if os.getenv('PERPLEXITY_API_KEY'):
-    functions.append(make_web_search_with_explanation)
-    
 # Create the agent
 reverse_engineering_agent = Agent(
     name="Reverse Engineering Specialist",
@@ -44,7 +20,7 @@ reverse_engineering_agent = Agent(
                    Specializes in firmware analysis, binary disassembly,
                    decompilation, and vulnerability discovery using tools
                    like Ghidra, Binwalk, and various binary analysis utilities.""",
-    tools=functions,
+    tools=tools,
     model=OpenAIChatCompletionsModel(
         model=os.getenv('CAI_MODEL', "alias1"),
         openai_client=AsyncOpenAI(),
