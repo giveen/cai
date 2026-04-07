@@ -8,8 +8,9 @@ import subprocess
 import sys
 import re
 import json
+import ast
 import unicodedata
-from typing import Optional, Any
+from typing import Optional
 from cai.tools.common import (run_command, run_command_async,
                               list_shell_sessions,
                               get_session_output,
@@ -24,10 +25,10 @@ from cai.tools import validation
 
 
 
-@function_tool
+@function_tool(strict_mode=False)
 async def generic_linux_command(command: str = "",
                                 interactive: bool = False,
-                                session_id: Any = None) -> str:
+                                session_id: str = "") -> str:
     """
     Execute commands with session management.
 
@@ -108,12 +109,18 @@ async def generic_linux_command(command: str = "",
             if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
                 s = s[1:-1].strip()
 
-            # If looks like JSON, try to parse and extract
+            # If looks like JSON/Python literal, try to parse and extract
             if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
                 try:
                     parsed = json.loads(s)
                     return _sanitize_session_id(parsed)
                 except Exception:
+                    # Handle Python-style dict/list strings like "{'session_id': 1}"
+                    try:
+                        parsed = ast.literal_eval(s)
+                        return _sanitize_session_id(parsed)
+                    except Exception:
+                        pass
                     # Try a crude regex to extract common id fields from JSON-like string
                     m = re.search(r'"(session_id|id|session|sid)"\s*:\s*"([^"]+)"', s)
                     if m:
