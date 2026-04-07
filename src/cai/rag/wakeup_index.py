@@ -10,6 +10,8 @@ from __future__ import annotations
 import math
 import os
 import time
+import hashlib
+import datetime as _dt
 from typing import Any, Dict, List, Optional
 
 from cai.rag.embeddings import (
@@ -91,10 +93,30 @@ class WakeupIndex:
         now = self._now()
         expires_at = (now + float(ttl)) if ttl is not None else None
 
+        # Ensure provenance in metadata for auditing and deletion
+        md = metadata or {}
+        if not isinstance(md, dict):
+            md = {}
+        if "provenance" not in md:
+            try:
+                ch = hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+            except Exception:
+                ch = None
+            prov = {
+                "source": __name__,
+                "timestamp": _dt.datetime.utcnow().isoformat() + "Z",
+                "session_id": session_id,
+                "tool_name": "wakeup_add_fact",
+                "original_text": text,
+                "chunk_id": key,
+                "content_hash": ch,
+            }
+            md["provenance"] = prov
+
         entry = {
             "key": key,
             "text": text,
-            "metadata": metadata or {},
+            "metadata": md,
             "vector": vector,
             "priority": float(priority),
             "created_at": now,
