@@ -68,8 +68,12 @@ class VectorDBAdapter(ABC):
     structures where practical (e.g. list-of-dicts for `search`).
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None):
         self.config = VectorDBConfig(**(config or {})) if config is not None else VectorDBConfig()
+        # Optional embeddings provider instance. If not provided, a
+        # provider will be lazily created by `embed_texts()` using the
+        # `get_embeddings_provider` factory from `cai.rag.embeddings`.
+        self.embeddings_provider = embeddings_provider
 
     @abstractmethod
     def search(self, collection_name: str, query_text: str, limit: int = 3) -> Any:
@@ -91,6 +95,25 @@ class VectorDBAdapter(ABC):
         """
         raise NotImplementedError()
 
+    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        """Return embeddings for the provided texts using the configured
+        embeddings provider. If no provider was supplied at construction
+        time, a default provider is created lazily.
+        """
+        if self.embeddings_provider is None:
+            try:
+                # Lazy import to avoid import-time cycles
+                from cai.rag.embeddings import get_embeddings_provider  # type: ignore
+
+                self.embeddings_provider = get_embeddings_provider()
+            except Exception:
+                # Fall back to a trivial deterministic provider if factory fails
+                from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider  # type: ignore
+
+                self.embeddings_provider = LocalDeterministicEmbeddingsProvider()
+
+        return self.embeddings_provider.embed_texts(texts)
+
 
 def get_vector_db_adapter(name: Optional[str] = None, **kwargs) -> VectorDBAdapter:
     """Factory to get an adapter by name or environment `CAI_VECTOR_DB`.
@@ -98,6 +121,17 @@ def get_vector_db_adapter(name: Optional[str] = None, **kwargs) -> VectorDBAdapt
     Supported names: "qdrant" (default), "mempalace".
     """
     source = (name or os.getenv("CAI_VECTOR_DB", "qdrant")).lower()
+    # If the caller didn't provide an embeddings provider instance, create
+    # one via the centralized factory so all adapters share the same
+    # embeddings configuration by default.
+    if "embeddings_provider" not in kwargs:
+        try:
+            from cai.rag.embeddings import get_embeddings_provider  # type: ignore
+
+            kwargs["embeddings_provider"] = get_embeddings_provider()
+        except Exception:
+            # Non-fatal: fall back to adapters creating providers lazily.
+            pass
     # Prefer registry if backends have been registered
     try:
         if source in _BACKEND_REGISTRY:  # type: ignore[name-defined]
@@ -120,8 +154,8 @@ class QdrantAdapter(VectorDBAdapter):
     that environments without the connector won't fail import-time.
     """
 
-    def __init__(self, client: Optional[Any] = None, config: Optional[Dict[str, Any]] = None):
-        super().__init__(config=config)
+    def __init__(self, client: Optional[Any] = None, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None):
+        super().__init__(config=config, embeddings_provider=embeddings_provider)
         self._client = client
 
     def _ensure_client(self):
@@ -150,6 +184,23 @@ class QdrantAdapter(VectorDBAdapter):
     @with_retries(retries=2)
     def add_points(self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]) -> bool:
         self._ensure_client()
+        # Attempt to compute embeddings and pass them to the client if the
+        # client's `add_points` supports an explicit `vectors` argument.
+        vectors = None
+        try:
+            vectors = self.embed_texts(texts)
+        except Exception:
+            vectors = None
+
+        if vectors is not None:
+            try:
+                return self._client.add_points(
+                    id_point=id_point, collection_name=collection_name, texts=texts, metadata=metadata, vectors=vectors
+                )
+            except TypeError:
+                # Client does not accept `vectors`; fall back to original call
+                pass
+
         return self._client.add_points(id_point=id_point, collection_name=collection_name, texts=texts, metadata=metadata)
 
     def health_check(self) -> Dict[str, Any]:
@@ -208,8 +259,8 @@ class MemPalaceAdapter(VectorDBAdapter):
       then CLI via the `mempalace` command.
     """
 
-    def __init__(self, palace_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
-        super().__init__(config=config)
+    def __init__(self, palace_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None):
+        super().__init__(config=config, embeddings_provider=embeddings_provider)
         # Allow palace_path to be provided via explicit arg, config options, or env
         self.palace_path = (
             palace_path
@@ -292,3 +343,191 @@ register_vector_db_backend("mp", MemPalaceAdapter)
 def list_registered_backends() -> List[str]:
     """Return names of currently registered vector DB backends."""
     return list(_BACKEND_REGISTRY.keys())
+
+
+class LocalFallbackAdapter(VectorDBAdapter):
+    """Lightweight in-memory vector store with optional FAISS acceleration.
+
+    This adapter is intended for local development and testing. It stores
+    vectors, texts, and metadata in-process and performs a linear scan
+    search when FAISS is not available. If `use_faiss` is set in the
+    adapter config options and `faiss` + `numpy` are installed, searches
+    will use FAISS for speed.
+    """
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None):
+        super().__init__(config=config, embeddings_provider=embeddings_provider)
+        opts = self.config.options or {}
+        env_use = os.getenv("CAI_USE_FAISS", "").strip()
+        self.use_faiss = bool(opts.get("use_faiss") or env_use in ("1", "true", "True"))
+        self._faiss_available = False
+        self._faiss = None
+        self._np = None
+        if self.use_faiss:
+            try:
+                import faiss  # type: ignore
+                import numpy as np  # type: ignore
+
+                self._faiss = faiss
+                self._np = np
+                self._faiss_available = True
+            except Exception:
+                self._faiss_available = False
+
+        # collections: name -> {'ids':[], 'texts':[], 'metadata':[], 'vectors':[]}
+        self._collections: Dict[str, Dict[str, List[Any]]] = {}
+
+    def create_collection(self, collection_name: str) -> bool:
+        if collection_name in self._collections:
+            return True
+        self._collections[collection_name] = {"ids": [], "texts": [], "metadata": [], "vectors": []}
+        return True
+
+    def add_points(self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]) -> bool:
+        # Ensure collection
+        self.create_collection(collection_name)
+        col = self._collections[collection_name]
+
+        # Normalize ids and metadata lists to match texts length
+        if isinstance(id_point, (list, tuple)) and len(id_point) == len(texts):
+            ids = list(id_point)
+        else:
+            if len(texts) == 1:
+                ids = [id_point]
+            else:
+                # generate per-item ids when a single id is provided for multiple texts
+                import uuid
+
+                base = id_point or ""
+                ids = [f"{base}-{i}" if base else str(uuid.uuid4()) for i in range(len(texts))]
+
+        if metadata is None:
+            metadata = [{} for _ in texts]
+        elif isinstance(metadata, (list, tuple)) and len(metadata) == len(texts):
+            metadata_list = list(metadata)
+        elif isinstance(metadata, dict):
+            metadata_list = [metadata for _ in texts]
+        else:
+            # Fallback: try to coerce
+            metadata_list = [m if isinstance(m, dict) else {} for m in (metadata if isinstance(metadata, list) else [metadata])]
+            if len(metadata_list) < len(texts):
+                metadata_list = metadata_list * (len(texts) // len(metadata_list) + 1)
+            metadata_list = metadata_list[: len(texts)]
+
+        # If metadata_list variable not defined above
+        try:
+            metadata_list
+        except NameError:
+            metadata_list = [{} for _ in texts]
+
+        # Compute embeddings (best-effort)
+        try:
+            vectors = self.embed_texts(texts)
+        except Exception:
+            vectors = [None for _ in texts]
+
+        # Append to collection
+        for i, t in enumerate(texts):
+            col["ids"].append(ids[i])
+            col["texts"].append(t)
+            col["metadata"].append(metadata_list[i])
+            col["vectors"].append(vectors[i] if vectors and i < len(vectors) else None)
+
+        return True
+
+    def export_collection(self, collection_name: str) -> List[Dict[str, Any]]:
+        """Return a list of documents for the collection with optional vectors.
+
+        Each document is a dict: {id, text, metadata, vector}
+        """
+        if collection_name not in self._collections:
+            return []
+        col = self._collections[collection_name]
+        out: List[Dict[str, Any]] = []
+        for i in range(len(col["ids"])):
+            out.append({
+                "id": col["ids"][i],
+                "text": col["texts"][i],
+                "metadata": col["metadata"][i],
+                "vector": col["vectors"][i],
+            })
+        return out
+
+    def search(self, collection_name: str, query_text: str, limit: int = 3):
+        if collection_name not in self._collections:
+            return []
+        col = self._collections[collection_name]
+        if not col["texts"]:
+            return []
+
+        try:
+            qvec = self.embed_texts([query_text])[0]
+        except Exception:
+            return []
+
+        # Filter out vectors that are None or the wrong dimension
+        vectors = col["vectors"]
+        valid = [i for i, v in enumerate(vectors) if v is not None and len(v) == len(qvec)]
+        if not valid:
+            return []
+
+        # FAISS path
+        if self._faiss_available:
+            try:
+                arr = self._np.array([vectors[i] for i in valid], dtype="float32")
+                index = self._faiss.IndexFlatIP(arr.shape[1])
+                index.add(arr)
+                qarr = self._np.array([qvec], dtype="float32")
+                k = min(limit, arr.shape[0])
+                D, I = index.search(qarr, k)
+                results = []
+                for score, idx in zip(D[0], I[0]):
+                    orig_i = valid[int(idx)]
+                    results.append({
+                        "id": col["ids"][orig_i],
+                        "text": col["texts"][orig_i],
+                        "metadata": col["metadata"][orig_i],
+                        "score": float(score),
+                    })
+                return results
+            except Exception:
+                # Fall back to naive
+                pass
+
+        # Naive linear scan (dot product)
+        scores = []
+        for i in valid:
+            v = vectors[i]
+            score = 0.0
+            try:
+                score = sum(float(a) * float(b) for a, b in zip(qvec, v))
+            except Exception:
+                score = 0.0
+            scores.append((score, i))
+
+        scores.sort(key=lambda x: x[0], reverse=True)
+        results = []
+        for score, i in scores[:limit]:
+            results.append({
+                "id": col["ids"][i],
+                "text": col["texts"][i],
+                "metadata": col["metadata"][i],
+                "score": float(score),
+            })
+        return results
+
+    def health_check(self) -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "details": {
+                "type": "local-fallback",
+                "faiss_available": bool(self._faiss_available),
+                "collections": list(self._collections.keys()),
+            },
+        }
+
+
+# Register local fallback adapter aliases
+register_vector_db_backend("local", LocalFallbackAdapter)
+register_vector_db_backend("faiss", LocalFallbackAdapter)
+register_vector_db_backend("inmemory", LocalFallbackAdapter)

@@ -9,7 +9,7 @@ import sys
 import re
 import json
 import unicodedata
-from typing import Optional
+from typing import Optional, Any
 from cai.tools.common import (run_command, run_command_async,
                               list_shell_sessions,
                               get_session_output,
@@ -27,7 +27,7 @@ from cai.tools import validation
 @function_tool
 async def generic_linux_command(command: str = "",
                                 interactive: bool = False,
-                                session_id: Optional[str] = None) -> str:
+                                session_id: Any = None) -> str:
     """
     Execute commands with session management.
 
