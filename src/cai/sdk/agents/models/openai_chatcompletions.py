@@ -90,8 +90,71 @@ from cai.util import (
     update_agent_streaming_content,
 )
 
+# ---------------------------------------------------------------------------
+# LLM output sanitiser – strips hallucinated markup from local/small models
+# (Gemma-4, Qwen, Mistral, etc.) before we attempt JSON parsing.
+# ---------------------------------------------------------------------------
+import re as _re
 
-class InputTokensDetails(BaseModel):
+# Patterns emitted by some models that are NOT valid JSON and must be removed.
+# IMPORTANT: greedy/DOTALL stop-tag patterns must come BEFORE the generic
+# <|...|> pattern so they consume the trailing hallucinated text before the
+# shorter pattern eats just the tag itself.
+_LLM_TAG_PATTERNS = [
+    _re.compile(r'<\|tool_response\|>.*', _re.DOTALL),  # hallucinated inline response (greedy, first)
+    _re.compile(r'<tool_response>.*', _re.DOTALL),       # undecorated variant
+    _re.compile(r'</tool_call>.*', _re.DOTALL),          # everything after </tool_call>
+    _re.compile(r'<\|"\|>'),                             # <|"|>  (Gemma-4 quote tokens)
+    _re.compile(r'<\|[^>]{0,30}\|>'),                    # remaining generic <|...|> tokens
+]
+
+# Stop-tags that signal the LLM tried to "one-shot" its own tool response.
+_STREAM_STOP_SUBSTRINGS = (
+    "</tool_call>",
+    "<|tool_response|>",
+    "<tool_response>",
+)
+
+
+def _sanitize_llm_tool_args(raw: str | None) -> str:
+    """Strip malformed tokens from LLM-generated tool-call arguments.
+
+    Returns a string that is safe to pass to json.loads(), falling back to
+    '{}' for None / empty / hopelessly broken input.
+    """
+    if not raw or not raw.strip():
+        return "{}"
+    cleaned = raw
+    for pat in _LLM_TAG_PATTERNS:
+        cleaned = pat.sub("", cleaned)
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return "{}"
+    return cleaned
+
+
+def _parse_tool_args(raw: str | None, tool_name: str = "") -> dict:
+    """Parse tool-call arguments with a layered fallback strategy.
+
+    1. Sanitise then json.loads.
+    2. If that fails, try to extract the 'command' value via regex and
+       return {'command': <value>} so the tool can still execute.
+    3. If all else fails, return {}.
+    """
+    import json as _json
+    cleaned = _sanitize_llm_tool_args(raw)
+    try:
+        parsed = _json.loads(cleaned)
+        if isinstance(parsed, dict):
+            return parsed
+        return {}
+    except _json.JSONDecodeError:
+        pass
+    # Regex fallback: pull out "command": "..." or "command": '...'
+    m = _re.search(r'["\']command["\']\s*:\s*["\']([^"\']+)["\']', cleaned)
+    if m:
+        return {"command": m.group(1)}
+    return {}
     prompt_tokens: int
     """The number of prompt tokens."""
     cached_tokens: int = 0
@@ -845,14 +908,9 @@ class OpenAIChatCompletionsModel(Model):
                         has_auto_output = False
                         is_regular_command = False
                         try:
-                            import json
-
-                            # Handle empty arguments before trying to parse JSON
+                            # Handle empty/malformed arguments robustly
                             tool_args = tool_call.function.arguments
-                            if tool_args is None or (isinstance(tool_args, str) and tool_args.strip() == ""):
-                                tool_args = "{}"
-                            
-                            args = json.loads(tool_args)
+                            args = _parse_tool_args(tool_args, tool_call.function.name)
                             # Check if this is a regular command (not a session command)
                             if (
                                 isinstance(args, dict)
@@ -989,10 +1047,9 @@ class OpenAIChatCompletionsModel(Model):
                             tool_call.id = uuid.uuid4().hex[:16]
 
                 for tool_call in assistant_msg.tool_calls:
-                    # Handle empty arguments before storing
+                    # Handle empty/malformed arguments robustly
                     tool_args = tool_call.function.arguments
-                    if tool_args is None or (isinstance(tool_args, str) and tool_args.strip() == ""):
-                        tool_args = "{}"
+                    tool_args = _sanitize_llm_tool_args(tool_args)
                     
                     # Compose a message for the tool call
                     tool_call_msg = {
@@ -1528,7 +1585,25 @@ class OpenAIChatCompletionsModel(Model):
                             content = delta["content"]
 
                         if content:
-                            # IMPORTANT: If we have content and thinking_context is active,
+                            # Hard-stop: some local models emit a self-predicted tool
+                            # response before the tool actually runs.  Truncate the
+                            # stream at the first stop-tag so we never forward the
+                            # hallucinated content to the rest of the pipeline.
+                            for _stop in _STREAM_STOP_SUBSTRINGS:
+                                if _stop in content:
+                                    # Keep content up to but not including the stop tag
+                                    content = content[:content.index(_stop)]
+                                    # Signal the outer loop to break after this chunk
+                                    if content:
+                                        # still emit the clean prefix
+                                        pass
+                                    else:
+                                        content = None
+                                    # Mark stream as logically finished
+                                    stream_interrupted = True
+                                    break
+
+                        if content:
                             # it means thinking is complete and normal content is starting
                             # Close the thinking display automatically
                             if thinking_context:
@@ -1813,11 +1888,12 @@ class OpenAIChatCompletionsModel(Model):
 
                                 # --- Accumulate tool call for message_history ---
                                 # Only add if not already present (avoid duplicates in streaming)
-                                # Handle empty arguments before storing
-                                tool_args = state.function_calls[tc_index].arguments
-                                if tool_args is None or (isinstance(tool_args, str) and tool_args.strip() == ""):
-                                    tool_args = "{}"
-                                
+                                # Sanitise arguments: strip LLM-generated markup tokens and
+                                # truncate any hallucinated <|tool_response|> continuation.
+                                tool_args = _sanitize_llm_tool_args(
+                                    state.function_calls[tc_index].arguments
+                                )
+
                                 tool_call_msg = {
                                     "role": "assistant",
                                     "content": None,

@@ -67,20 +67,25 @@ async def generic_linux_command(command: str = "",
     cmd_lower = command.strip().lower()
     # Normalize session_id: treat empty strings or quoted-empty as None,
     # and strip surrounding quotes if present (LLM outputs sometimes include them).
+    # Also guard against LLMs passing a dict ({}) or other non-string types.
     if session_id is not None:
         try:
-            sid = str(session_id).strip()
-            if (sid.startswith('"') and sid.endswith('"')) or (sid.startswith("'") and sid.endswith("'")):
-                sid = sid[1:-1].strip()
-            # Treat common sentinel values emitted by LLMs as None
-            low = sid.lower()
-            if sid == "" or low in {"none", "null", "nil", "undefined"}:
+            # Type guard: if LLM passed a dict/list/bool instead of a string, discard it.
+            if isinstance(session_id, (dict, list, bool)):
                 session_id = None
             else:
-                session_id = sid
+                sid = str(session_id).strip()
+                if (sid.startswith('"') and sid.endswith('"')) or (sid.startswith("'") and sid.endswith("'")):
+                    sid = sid[1:-1].strip()
+                # Treat common sentinel values emitted by LLMs as None
+                low = sid.lower()
+                if sid == "" or low in {"none", "null", "nil", "undefined", "{}", "[]"}:
+                    session_id = None
+                else:
+                    session_id = sid
         except Exception:
-            # If normalization fails for any reason, fall back to original value
-            pass
+            # If normalization fails for any reason, fall back to None
+            session_id = None
     if cmd_lower.startswith("output "):
         return get_session_output(command.split(None, 1)[1], clear=False, stdout=True)
     if cmd_lower.startswith("kill "):
