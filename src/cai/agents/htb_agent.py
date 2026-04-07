@@ -38,6 +38,8 @@ htb_agent = Agent(
                    Expert in enumeration, exploitation, and privilege escalation
                    on both Linux and Windows HTB targets.""",
     instructions=create_system_prompt_renderer(htb_agent_system_prompt),
+    tool_choice="required",
+    temperature=0,
     tools=tools,
     input_guardrails=input_guardrails,
     output_guardrails=output_guardrails,
