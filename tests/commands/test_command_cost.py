@@ -3,6 +3,7 @@ Tests for the cost command.
 """
 import json
 import tempfile
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -92,6 +93,12 @@ class TestCostCommand:
                 ]
             }
             json.dump(usage_data, f)
+            # Ensure data is written to disk before yielding filename
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
             yield f.name
         
         # Cleanup

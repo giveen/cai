@@ -120,9 +120,34 @@ class VectorDBAdapter(ABC):
 def get_vector_db_adapter(name: Optional[str] = None, **kwargs) -> VectorDBAdapter:
     """Factory to get an adapter by name or environment `CAI_VECTOR_DB`.
 
-    Supported names: "qdrant" (default), "mempalace".
+    Behavior:
+    - If the caller provides `name` or `CAI_VECTOR_DB` env is set, that value
+      is used.
+    - If no backend is configured, the factory will prefer an in-process
+      local fallback (FAISS-accelerated when available) when running in CI
+      or when no Qdrant URL is configured. This avoids requiring an external
+      Qdrant instance for developer/CI runs.
+
+    Supported names: "qdrant" (remote), "mempalace", "local", "faiss",
+    "inmemory", "chroma" (alias to local fallback).
     """
-    source = (name or os.getenv("CAI_VECTOR_DB", "qdrant")).lower()
+    env_value = os.getenv("CAI_VECTOR_DB")
+    source = (name or env_value or "").lower().strip()
+
+    # If the caller didn't explicitly choose a backend, pick a sensible
+    # default: prefer remote Qdrant only when a QDRANT_URL is configured and
+    # prefer the local in-process fallback for CI/dev environments.
+    if not source:
+        # Common CI indicators -> prefer local fallback to avoid external deps
+        if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):
+            source = "local"
+        # If a Qdrant HTTP URL is configured, prefer qdrant
+        elif os.getenv("QDRANT_URL") or os.getenv("CAI_QDRANT_URL"):
+            source = "qdrant"
+        else:
+            # Default to local in-process adapter to make developer/CI runs
+            # convenient without a running Qdrant instance.
+            source = "local"
     # If the caller didn't provide an embeddings provider instance, create
     # one via the centralized factory so all adapters share the same
     # embeddings configuration by default.
@@ -567,3 +592,4 @@ class LocalFallbackAdapter(VectorDBAdapter):
 register_vector_db_backend("local", LocalFallbackAdapter)
 register_vector_db_backend("faiss", LocalFallbackAdapter)
 register_vector_db_backend("inmemory", LocalFallbackAdapter)
+register_vector_db_backend("chroma", LocalFallbackAdapter)

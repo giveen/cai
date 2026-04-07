@@ -350,8 +350,6 @@ if is_pentestperf_available() and os.getenv("CTF_NAME", None):
 global START_TIME
 START_TIME = time.time()
 
-set_tracing_disabled(True)
-
 
 def update_agent_models_recursively(agent, new_model, visited=None):
     """
@@ -1831,6 +1829,15 @@ def main():
                 color="red",
             )
         )
+
+    # Disable tracing for interactive CLI sessions. Do this at runtime
+    # rather than at import time so importing this module (e.g. in tests)
+    # doesn't globally disable tracing for the whole process.
+    try:
+        set_tracing_disabled(True)
+    except Exception:
+        # If tracing API isn't available for some reason, ignore.
+        pass
 
     # Check for command-line arguments to use as initial prompt.
     # --tui flag triggers the Textual TUI and is consumed here.
