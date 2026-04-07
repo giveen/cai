@@ -11,6 +11,7 @@ from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-er
 from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
     generic_linux_command
 )
+from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
 from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
     make_web_search_with_explanation,
 )
@@ -26,6 +27,7 @@ memory_analysis_agent_system_prompt = load_prompt_template("prompts/memory_analy
 # Define functions list
 functions = [
     generic_linux_command,
+    ldap_search,
     run_ssh_command_with_credentials,
     execute_code,
 ]

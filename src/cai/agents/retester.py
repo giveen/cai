@@ -7,6 +7,7 @@ from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
     generic_linux_command
 )
+from cai.tools.reconnaissance.ldap_search import ldap_search  # pylint: disable=import-error # noqa: E501
 from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
     make_google_search
 )
@@ -25,6 +26,7 @@ retester_system_prompt = load_prompt_template("prompts/system_triage_agent.md")
 
 tools = [
     generic_linux_command,
+    ldap_search,
     execute_code
 ]
 
