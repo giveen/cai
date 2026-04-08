@@ -325,6 +325,58 @@ def cli_print_tool_output(tool_name: str, output: str, call_id: Optional[str] = 
     except Exception:
         print(output)
 
+def cli_print_tool_call(tool_name: str,
+                        tool_args: Optional[dict] = None,
+                        tool_output: Optional[str] = None,
+                        call_id: Optional[str] = None,
+                        interaction_input_tokens: int = 0,
+                        interaction_output_tokens: int = 0,
+                        interaction_reasoning_tokens: int = 0,
+                        total_input_tokens: int = 0,
+                        total_output_tokens: int = 0,
+                        total_reasoning_tokens: int = 0,
+                        model: Optional[str] = None,
+                        agent_name: Optional[str] = None,
+                        debug: bool = False,
+                        **_kwargs) -> None:
+    """Minimal backward-compatible printer for tool calls used in templates."""
+    if call_id:
+        _STREAMING_SESSIONS[call_id] = {
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "current_output": str(tool_output) if tool_output is not None else "",
+            "agent_name": agent_name,
+            "is_complete": True,
+            "tokens": {
+                "interaction": {
+                    "input": interaction_input_tokens,
+                    "output": interaction_output_tokens,
+                    "reasoning": interaction_reasoning_tokens,
+                },
+                "total": {
+                    "input": total_input_tokens,
+                    "output": total_output_tokens,
+                    "reasoning": total_reasoning_tokens,
+                },
+                "model": model,
+            },
+        }
+    try:
+        if tool_output is None:
+            console.print(f"[tool][{tool_name}][/tool] (no output)")
+        else:
+            out = str(tool_output)
+            display = out if len(out) <= 500 else out[:500] + "…"
+            console.print(f"[tool][{tool_name}][/tool] {display}")
+        if debug:
+            console.print(f"[debug] tokens={total_input_tokens}+{total_output_tokens} model={model}")
+    except Exception:
+        try:
+            if tool_output is not None:
+                print(tool_output)
+        except Exception:
+            pass
+
 def cli_print_agent_messages(agent_name: str, messages: list, **_kwargs) -> None:
     try:
         console.print(f"[agent]{agent_name}[/agent] {len(messages)} messages")
@@ -448,6 +500,15 @@ def visualize_agent_graph(start_agent: Any) -> None:
 def fix_litellm_transcription_annotations() -> bool:
     return False
 
+def setup_ctf():
+    """Minimal shim for CTF setup used by the CLI during startup.
+
+    Returns a tuple of (ctf_object_or_None, messages_ctf_str).
+    This is a lightweight no-op implementation intended only to satisfy
+    import-time usage in tests and simple CLI runs during the refactor.
+    """
+    return None, ""
+
 def get_ollama_api_base() -> str:
     return os.environ.get("OLLAMA_API_BASE") or os.environ.get("OPENAI_BASE_URL") or "http://localhost:8000/v1"
 
@@ -481,7 +542,9 @@ __all__ = [
     "get_active_time_seconds",
     "get_idle_time_seconds",
     "fix_message_list",
+    "setup_ctf",
     "cli_print_tool_output",
+    "cli_print_tool_call",
     "cli_print_agent_messages",
     "start_tool_streaming",
     "update_tool_streaming",

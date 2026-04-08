@@ -115,6 +115,8 @@ from cai.bootstrap import initialize_env
 
 # Initialize environment early (load .env, configure warnings and logging filters)
 initialize_env()
+import os
+import time
 
 # OpenAI imports
 from rich.console import Console  # noqa: E402
