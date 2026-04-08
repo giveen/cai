@@ -16,9 +16,6 @@ Usage:
 import os
 
 from dotenv import load_dotenv
-
-load_dotenv()
-
 import argparse
 import asyncio
 import re
@@ -40,6 +37,8 @@ from cai.sdk.agents.stream_events import RunItemStreamEvent
 
 # Import UseCase agent
 from src.cai.agents.usecase import use_case_agent
+
+load_dotenv()
 
 console = Console()
 
@@ -64,7 +63,7 @@ def extract_php_code(text: str) -> Optional[str]:
 async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional[str]:
     """
     Generate a PHP case study from a JSONL file using streaming output.
-    
+
     Args:
         jsonl_file: Path to the JSONL file to load context from
         output_php_file: Path to save the PHP output to
@@ -121,11 +120,13 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
                         break
 
     # Generate case study prompt with context
-    prompt = "Generate the PHP code for a cybersecurity case study based on the template. "
-    prompt += "Analyze the conversation context that has been loaded and create a comprehensive case study. "
-    prompt += "Fill in all TEMPLATE-TODO sections with relevant information from the session. "
-    prompt += "Explain step by step the problem and the solution in this scenario. "
-    prompt += "The output should be complete PHP code ready to save to a file."
+    prompt = (
+        "Generate the PHP code for a cybersecurity case study based on the template. "
+        "Analyze the conversation context that has been loaded and create a comprehensive case study. "
+        "Fill in all TEMPLATE-TODO sections with relevant information from the session. "
+        "Explain step by step the problem and the solution in this scenario. "
+        "The output should be complete PHP code ready to save to a file."
+    )
 
     # Add a summary of the JSONL conversation to the prompt
     if messages:
@@ -176,8 +177,6 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
             console.print("[dim]Using streaming mode...[/dim]")
 
             # Track if we've seen any output
-            has_output = False
-            accumulated_text = []
             php_code = None
 
             # Run the streaming process like CLI does
@@ -246,7 +245,7 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
             console.print("[dim]Using non-streaming mode...[/dim]")
 
             # Show progress
-            with console.status("[bold green]Generating case study...") as status:
+            with console.status("[bold green]Generating case study..."):
                 # Instead of passing the conversation history directly,
                 # just use the prompt with all the context embedded in it
                 # This avoids issues with incomplete tool call/response pairs
