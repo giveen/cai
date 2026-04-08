@@ -2,13 +2,14 @@
 CTF Flag Discriminator Agent with test
 """
 import os
+
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff
 from cai.agents.one_tool import one_tool_agent
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff
 
 model = os.getenv('CAI_MODEL', "alias1")
 

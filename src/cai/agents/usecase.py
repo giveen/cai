@@ -1,5 +1,6 @@
 """Use Case Agent"""
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -13,7 +14,7 @@ except Exception:
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.reconnaissance.generic_linux_command import null_tool
-from cai.util import load_prompt_template, create_system_prompt_renderer
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 load_dotenv()
 model_name = os.getenv("CAI_MODEL", "alias1")

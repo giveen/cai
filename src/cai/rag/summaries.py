@@ -7,10 +7,10 @@ session at startup.
 """
 from __future__ import annotations
 
+import datetime as _dt
+import json
 import os
 import re
-import json
-import datetime as _dt
 from typing import Dict, List, Optional
 
 # Small stopword set for deterministic extractive summarization
@@ -143,7 +143,7 @@ def read_persisted_summaries(store_path: Optional[str] = None) -> Dict[str, Dict
     try:
         if not os.path.exists(path):
             return {}
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except Exception:
         return {}

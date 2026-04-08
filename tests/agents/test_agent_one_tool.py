@@ -6,27 +6,27 @@ generic_linux_command tool.
 """
 
 import pytest
-from tests.fake_model import FakeModel
-from tests.core.test_responses import (
-    get_text_message,
-    get_function_tool_call,
-    get_function_tool,
-)
+
+from cai.agents.one_tool import transfer_to_one_tool_agent
 from cai.sdk.agents import Runner
-from cai.agents.one_tool import transfer_to_one_tool_agent  
-from cai.agents.one_tool import one_tool_agent  
+from tests.core.test_responses import (
+    get_function_tool_call,
+    get_text_message,
+)
+from tests.fake_model import FakeModel
+
 
 @pytest.mark.asyncio
 async def test_ctf_agent_instructions_and_configuration():
     """Test the CTF agent's instructions and configuration."""
     agent = transfer_to_one_tool_agent()
-    
+
     # Check if the agent has the expected tool
     assert any(tool.name == "generic_linux_command" for tool in agent.tools)
-    
+
     # Ensure the agent has instructions set
     assert agent.instructions is not None
-    
+
     # Verify the agent's name
     assert agent.name == "CTF agent"
 
@@ -36,7 +36,7 @@ async def test_ctf_agent_executes_linux_command():
     model = FakeModel()
     agent = transfer_to_one_tool_agent()
     agent.model = model
-    
+
     # Set up the model's expected outputs for the command execution
     model.add_multiple_turn_outputs(
         [
@@ -55,7 +55,7 @@ async def test_ctf_agent_executes_linux_command():
 
     # Verify the final output of the command execution
     assert result.final_output == "result of the command: flag{12345}"
-    
+
     # Ensure the number of raw responses is as expected
     assert len(result.raw_responses) == 2
 

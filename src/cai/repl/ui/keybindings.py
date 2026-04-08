@@ -3,9 +3,12 @@ Module for CAI REPL key bindings.
 """
 import os
 import subprocess  # nosec B404 - Required for screen clearing
+
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+
 # pylint: disable=import-error
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+
 from cai.repl.commands import FuzzyCommandCompleter
 
 

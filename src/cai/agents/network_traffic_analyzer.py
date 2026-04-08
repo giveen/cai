@@ -18,6 +18,7 @@ Objectives:
 - Vulnerability impact understanding: Assessing how vulnerabilities affect network security
 """
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -29,11 +30,16 @@ try:
 except Exception:
     AsyncOpenAI = None
 
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff  # pylint: disable=import-error
-from cai.util import load_prompt_template, create_system_prompt_renderer
 from dotenv import load_dotenv
-from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+
 from cai.agents.dfir import dfir_agent
+from cai.sdk.agents import (  # pylint: disable=import-error
+    Agent,
+    OpenAIChatCompletionsModel,
+    handoff,
+)
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 load_dotenv()
 

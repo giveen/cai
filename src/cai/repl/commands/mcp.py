@@ -56,8 +56,8 @@ QUICK START:
 import asyncio
 import atexit
 import functools
-import warnings
 import logging
+import warnings
 from typing import Dict, List, Optional
 
 # Third-party imports
@@ -124,8 +124,8 @@ class GlobalMCPUtil(MCPUtil):
         elif isinstance(server, MCPServerStdio):
             server_config["command"] = server.params.command
             server_config["args"] = server.params.args
-            server_config["env"] = getattr(server.params, "env")
-            server_config["cwd"] = getattr(server.params, "cwd")
+            server_config["env"] = server.params.env
+            server_config["cwd"] = server.params.cwd
             server_config["encoding"] = getattr(server.params, "encoding", "utf-8")
             server_config["encoding_error_handler"] = getattr(
                 server.params, "encoding_error_handler", "strict"
@@ -354,7 +354,7 @@ def cleanup_mcp_servers():
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=RuntimeWarning)
                 warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
-                
+
                 # Create new event loop for cleanup if needed
                 try:
                     loop = asyncio.get_running_loop()
@@ -985,7 +985,7 @@ Example: `/mcp add burp 13`
 
             # Add the new tools
             agent.tools.extend(tools)
-            
+
             # Persist the association
             # Get the agent's real name (not display name)
             agent_real_name = agent_identifier.lower()
@@ -999,7 +999,7 @@ Example: `/mcp add burp 13`
                 idx = int(agent_identifier)
                 if 1 <= idx <= len(agent_list):
                     agent_real_name, _ = agent_list[idx - 1]
-            
+
             add_mcp_server_to_agent(agent_real_name, server_name)
 
             console.print(
@@ -1229,12 +1229,12 @@ Example: `/mcp add burp 13`
         if not _AGENT_MCP_ASSOCIATIONS:
             console.print("[yellow]No agent-MCP associations configured[/yellow]")
             return True
-            
+
         table = Table(title="Agent-MCP Associations")
         table.add_column("Agent", style="cyan")
         table.add_column("MCP Servers", style="magenta")
         table.add_column("Total Tools", style="yellow")
-        
+
         for agent_name, server_names in _AGENT_MCP_ASSOCIATIONS.items():
             if server_names:
                 # Count total tools
@@ -1245,16 +1245,16 @@ Example: `/mcp add burp 13`
                             async def count_tools(srv):
                                 tools = await srv.list_tools()
                                 return len(tools)
-                            
+
                             server = _GLOBAL_MCP_SERVERS[server_name]
                             tool_count = self._run_async(count_tools(server))
                             total_tools += tool_count
                         except Exception:
                             pass
-                
+
                 servers_str = ", ".join(server_names)
                 table.add_row(agent_name, servers_str, str(total_tools))
-        
+
         console.print(table)
         return True
 
@@ -1271,29 +1271,29 @@ Example: `/mcp add burp 13`
             console.print("[red]Error: No server name specified[/red]")
             console.print("Usage: /mcp test <server_name>")
             return False
-            
+
         server_name = args[0]
-        
+
         if server_name not in _GLOBAL_MCP_SERVERS:
             console.print(f"[red]Error: Server '{server_name}' not found[/red]")
             return False
-            
+
         server = _GLOBAL_MCP_SERVERS[server_name]
-        
+
         console.print(f"[cyan]Testing MCP server '{server_name}'...[/cyan]")
-        
+
         try:
             async def test_server():
                 # Test 1: List tools
                 console.print("[yellow]Test 1: Listing tools...[/yellow]")
                 tools = await server.list_tools()
                 console.print(f"[green]✓ Found {len(tools)} tools[/green]")
-                
+
                 # Test 2: Test a simple tool if available
                 if tools:
                     test_tool = tools[0]
                     console.print(f"[yellow]Test 2: Testing tool '{test_tool.name}'...[/yellow]")
-                    
+
                     # Create a test invocation
                     try:
                         # Use empty input for testing
@@ -1304,7 +1304,7 @@ Example: `/mcp add burp 13`
                     except Exception as tool_error:
                         console.print("[yellow]⚠ Tool test failed (this is normal for tools requiring input)[/yellow]")
                         console.print(f"[dim]Error: {str(tool_error)[:100]}[/dim]")
-                
+
                 # Test 3: Test reconnection
                 console.print("[yellow]Test 3: Testing reconnection...[/yellow]")
                 if hasattr(server, 'session'):
@@ -1312,13 +1312,13 @@ Example: `/mcp add burp 13`
                     server.session = None
                 await server.connect()
                 console.print("[green]✓ Reconnection successful[/green]")
-                
+
                 return True
-            
+
             self._run_async(test_server())
             console.print(f"[green]✓ All tests passed for server '{server_name}'[/green]")
             return True
-            
+
         except Exception as e:
             console.print(f"[red]✗ Test failed: {type(e).__name__}: {str(e)}[/red]")
             return False
@@ -1346,7 +1346,7 @@ def add_mcp_server_to_agent(agent_name: str, server_name: str):
     agent_name_lower = agent_name.lower()
     if agent_name_lower not in _AGENT_MCP_ASSOCIATIONS:
         _AGENT_MCP_ASSOCIATIONS[agent_name_lower] = []
-    
+
     if server_name not in _AGENT_MCP_ASSOCIATIONS[agent_name_lower]:
         _AGENT_MCP_ASSOCIATIONS[agent_name_lower].append(server_name)
 
@@ -1375,7 +1375,7 @@ def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
     """
     tools = []
     server_names = get_mcp_servers_for_agent(agent_name)
-    
+
     for server_name in server_names:
         if server_name in _GLOBAL_MCP_SERVERS:
             server = _GLOBAL_MCP_SERVERS[server_name]
@@ -1384,7 +1384,7 @@ def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
                 import asyncio
                 async def get_tools():
                     return await server.list_tools()
-                
+
                 # Try to get existing loop or create new one
                 try:
                     _loop = asyncio.get_running_loop()
@@ -1396,21 +1396,21 @@ def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
                             return new_loop.run_until_complete(get_tools())
                         finally:
                             new_loop.close()
-                    
+
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(run_in_thread)
                         mcp_tools = future.result(timeout=10)
                 except RuntimeError:
                     mcp_tools = asyncio.run(get_tools())
-                
+
                 # Convert to function tools
                 for mcp_tool in mcp_tools:
                     function_tool = GlobalMCPUtil.to_function_tool(mcp_tool, server_name)
                     tools.append(function_tool)
-                    
+
             except Exception as e:
                 logging.warning(f"Failed to get tools from MCP server '{server_name}': {e}")
-    
+
     return tools
 
 

@@ -7,10 +7,11 @@ to local execution when needed.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import time
 import uuid
-import shlex
+
 from wasabi import color
 
 
@@ -18,10 +19,17 @@ async def run_docker_async(command, container_id, stdout=False, timeout=100, str
     """Async version of Docker command execution (extracted from common.py).
     """
     import asyncio
-    from cai.tools.workspace import _get_container_workspace_path
+
     from cai.tools.agent_info import _get_agent_token_info
-    from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
-    from cai.util import stop_idle_timer, start_active_timer, start_idle_timer
+    from cai.tools.workspace import _get_container_workspace_path
+    from cai.util import (
+        finish_tool_streaming,
+        start_active_timer,
+        start_idle_timer,
+        start_tool_streaming,
+        stop_idle_timer,
+        update_tool_streaming,
+    )
 
     stop_idle_timer()
     start_active_timer()
@@ -218,11 +226,17 @@ def run_docker(command, container_id, stdout=False, timeout=100, stream=False, c
     This function implements both streaming and non-streaming container
     execution and preserves the fallback-to-local behavior.
     """
-    from cai.tools.workspace import _get_container_workspace_path
     from cai.tools.agent_info import _get_agent_token_info
-    from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
-    from cai.util import stop_idle_timer, start_active_timer, start_idle_timer
     from cai.tools.runners.local import run_local as _run_local
+    from cai.tools.workspace import _get_container_workspace_path
+    from cai.util import (
+        finish_tool_streaming,
+        start_active_timer,
+        start_idle_timer,
+        start_tool_streaming,
+        stop_idle_timer,
+        update_tool_streaming,
+    )
 
     stop_idle_timer()
     start_active_timer()

@@ -6,8 +6,8 @@ controlled shutdown (Ctrl+C) events.
 """
 from __future__ import annotations
 
-import os
-from typing import Callable, Iterable, List, Optional
+from collections.abc import Iterable
+from typing import Callable, List, Optional
 
 
 class ShutdownCoordinator:

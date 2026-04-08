@@ -6,13 +6,17 @@ Afterward, a separate agent is used to evaluate and pick the best result.
 
 import asyncio
 import os
-import asyncio
-from openai import AsyncOpenAI
-from cai.sdk.agents import function_tool
-from cai.tools.common import run_command
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, HandoffInputData, Runner, function_tool, handoff, trace, ItemHelpers
-from cai.sdk.agents.extensions import handoff_filters
 
+from openai import AsyncOpenAI
+
+from cai.sdk.agents import (
+    Agent,
+    ItemHelpers,
+    OpenAIChatCompletionsModel,
+    Runner,
+    function_tool,
+)
+from cai.tools.common import run_command
 
 
 @function_tool

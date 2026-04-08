@@ -7,9 +7,8 @@ from pydantic import BaseModel
 from cai.sdk.agents import Agent, Runner
 from cai.sdk.agents.agent_output import _WRAPPER_DICT_KEY
 from cai.sdk.agents.util._pretty_print import pretty_print_result, pretty_print_run_result_streaming
-from tests.fake_model import FakeModel
-
 from tests.core.test_responses import get_final_output_message, get_text_message
+from tests.fake_model import FakeModel
 
 
 @pytest.mark.asyncio

@@ -33,8 +33,8 @@ class ResumeCommand(Command):
 
     def handle_resume_last(self) -> bool:
         try:
-            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
             from cai.sdk.agents.run import Runner
+            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
             agent = AGENT_MANAGER.get_active_agent()
             if agent is None:

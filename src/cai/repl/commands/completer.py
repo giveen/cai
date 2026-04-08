@@ -16,20 +16,14 @@ from typing import (
 
 # Third-party imports
 import requests  # pylint: disable=import-error,unused-import,line-too-long # noqa: E501
-from prompt_toolkit.completion import (  # pylint: disable=import-error
-    Completer,
-    Completion
-)
+from prompt_toolkit.completion import Completer, Completion  # pylint: disable=import-error
 from prompt_toolkit.formatted_text import HTML  # pylint: disable=import-error
 from prompt_toolkit.styles import Style  # pylint: disable=import-error
 from rich.console import Console  # pylint: disable=import-error
 
-from cai.util import get_ollama_api_base
-from cai.repl.commands.base import (
-    COMMANDS,
-    COMMAND_ALIASES
-)
+from cai.repl.commands.base import COMMAND_ALIASES, COMMANDS
 from cai.repl.commands.model import get_predefined_model_names
+from cai.util import get_ollama_api_base
 
 console = Console()
 
@@ -65,12 +59,12 @@ class FuzzyCommandCompleter(Completer):
     _cached_agent_numbers = {}
     _last_agent_fetch = datetime.datetime.now() - datetime.timedelta(minutes=10)
     _agent_fetch_lock = threading.Lock()
-    
+
     def __init__(self):
         """Initialize the command completer with cached model and agent information."""
         super().__init__()
         self.command_history = {}  # Store command usage frequency
-        
+
         # Fetch models in background thread to avoid blocking
         threading.Thread(
             target=self._background_fetch_models,
@@ -91,7 +85,7 @@ class FuzzyCommandCompleter(Completer):
             'scrollbar.background': 'bg:#2b2b2b',
             'scrollbar.button': 'bg:#004b6b',
         })
-    
+
     def _background_fetch_agents(self):
         """Fetch agents in background to avoid blocking the UI."""
         try:
@@ -104,21 +98,21 @@ class FuzzyCommandCompleter(Completer):
         """Fetch all available agents to match /agent command."""
         # Only fetch every 60 seconds to avoid excessive calls
         now = datetime.datetime.now()
-        
+
         # Use a lock to prevent multiple threads from fetching simultaneously
         with self._agent_fetch_lock:
             if (now - self._last_agent_fetch).total_seconds() < 60:
                 return
-            
+
             self._last_agent_fetch = now
-            
+
             try:
                 from cai.agents import get_available_agents
-                
+
                 # Get agents and filter out parallel patterns (like /agent list does)
                 all_agents = get_available_agents()
                 regular_agents = []
-                
+
                 for agent_key, agent in all_agents.items():
                     # Skip parallel patterns in completion (matches /agent list behavior)
                     if hasattr(agent, "_pattern"):
@@ -128,18 +122,18 @@ class FuzzyCommandCompleter(Completer):
                             if pattern_type_value == "parallel":
                                 continue
                     regular_agents.append(agent_key)
-                
+
                 self._cached_agents = regular_agents
-                
+
                 # Create number mappings (1-based indexing)
                 self._cached_agent_numbers = {}
                 for i, agent_key in enumerate(self._cached_agents, 1):
                     self._cached_agent_numbers[str(i)] = agent_key
-                    
+
             except Exception:  # pylint: disable=broad-except
                 # Silently fail if agent fetching is not available
                 pass
-    
+
     def _background_fetch_models(self):
         """Fetch models in background to avoid blocking the UI."""
         try:
@@ -151,14 +145,14 @@ class FuzzyCommandCompleter(Completer):
         """Fetch all available models (predefined + LiteLLM + Ollama) to match /model command."""
         # Only fetch every 60 seconds to avoid excessive API calls
         now = datetime.datetime.now()
-        
+
         # Use a lock to prevent multiple threads from fetching simultaneously
         with self._fetch_lock:
             if (now - self._last_model_fetch).total_seconds() < 60:
                 return
-            
+
             self._last_model_fetch = now
-            
+
             # Start with predefined models from the shared source of truth
             all_models = get_predefined_model_names()
 
@@ -169,7 +163,7 @@ class FuzzyCommandCompleter(Completer):
                     "model_prices_and_context_window.json"
                 )
                 response = requests.get(litellm_url, timeout=2)
-                
+
                 if response.status_code == 200:
                     litellm_data = response.json()
                     # Add LiteLLM models (sorted for consistency)
@@ -183,14 +177,14 @@ class FuzzyCommandCompleter(Completer):
             try:
                 # Get Ollama models with a short timeout to prevent hanging
                 api_base = get_ollama_api_base()
-                
+
                 # Add authentication headers for Ollama Cloud if using OPENAI_BASE_URL
                 headers = {}
                 if "ollama.com" in api_base:
                     api_key = os.getenv("OPENAI_API_KEY")
                     if api_key:
                         headers["Authorization"] = f"Bearer {api_key}"
-                
+
                 response = requests.get(
                     f"{api_base.replace('/v1', '')}/api/tags",
                     headers=headers,
@@ -294,12 +288,12 @@ class FuzzyCommandCompleter(Completer):
         # Check cache first
         current_time = time.time()
         cache_key = current_word
-        
+
         if (cache_key in self._command_suggestions_cache and
-                current_time - self._command_suggestions_last_update < 
+                current_time - self._command_suggestions_last_update <
                 self._command_suggestions_update_interval):
             return self._command_suggestions_cache[cache_key]
-        
+
         suggestions = []
 
         # Get command descriptions
@@ -355,11 +349,11 @@ class FuzzyCommandCompleter(Completer):
                         f"{cmd} - {cmd_description}"),
                     style="fg:ansigreen"
                 ))
-        
+
         # Update cache
         self._command_suggestions_cache[cache_key] = suggestions
         self._command_suggestions_last_update = current_time
-        
+
         return suggestions
 
     # Cache for command shadow
@@ -402,26 +396,26 @@ class FuzzyCommandCompleter(Completer):
         """
         # Check cache first
         current_time = time.time()
-        
+
         if (text in self._command_shadow_cache and
-                current_time - self._command_shadow_last_update < 
+                current_time - self._command_shadow_last_update <
                 self._command_shadow_update_interval):
             return self._command_shadow_cache[text]
-        
+
         # Get shadow from cached function
         result = self._get_command_shadow_cached(text)
-        
+
         # Update cache
         self._command_shadow_cache[text] = result
         self._command_shadow_last_update = current_time
-        
+
         return result
 
     # Cache for subcommand suggestions
     _subcommand_suggestions_cache = {}
     _subcommand_suggestions_last_update = 0
     _subcommand_suggestions_update_interval = 1.0  # Update every second
-    
+
     def get_subcommand_suggestions(
             self, cmd: str, current_word: str) -> List[Completion]:
         """Get subcommand suggestions with fuzzy matching.
@@ -436,12 +430,12 @@ class FuzzyCommandCompleter(Completer):
         # Check cache first
         current_time = time.time()
         cache_key = f"{cmd}:{current_word}"
-        
+
         if (cache_key in self._subcommand_suggestions_cache and
-                current_time - self._subcommand_suggestions_last_update < 
+                current_time - self._subcommand_suggestions_last_update <
                 self._subcommand_suggestions_update_interval):
             return self._subcommand_suggestions_cache[cache_key]
-            
+
         suggestions = []
 
         # If using an alias, get the real command
@@ -477,11 +471,11 @@ class FuzzyCommandCompleter(Completer):
                             f"{subcmd_description}"),
                         style="fg:ansiyellow"
                     ))
-        
+
         # Update cache
         self._subcommand_suggestions_cache[cache_key] = suggestions
         self._subcommand_suggestions_last_update = current_time
-        
+
         return suggestions
 
     def get_model_suggestions(self, current_word: str) -> List[Completion]:
@@ -509,7 +503,7 @@ class FuzzyCommandCompleter(Completer):
 
         # Then try to complete model names
         for model in self._cached_models:
-            model_name = model[0] if isinstance(model, tuple) else model            
+            model_name = model[0] if isinstance(model, tuple) else model
             if model_name.startswith(current_word):
                 suggestions.append(Completion(
                     model_name,
@@ -547,7 +541,7 @@ class FuzzyCommandCompleter(Completer):
                     display_name = getattr(agent_obj, "name", agent_name) if agent_obj else agent_name
                 except (ImportError, AttributeError, KeyError):  # pylint: disable=broad-except
                     display_name = agent_name
-                    
+
                 suggestions.append(Completion(
                     num,
                     start_position=-len(current_word),
@@ -588,17 +582,17 @@ class FuzzyCommandCompleter(Completer):
             A list of completions for MCP servers
         """
         suggestions = []
-        
+
         try:
             # Import the global MCP servers registry
             from cai.repl.commands.mcp import _GLOBAL_MCP_SERVERS
-            
+
             # Get all active MCP server names
             for server_name in _GLOBAL_MCP_SERVERS.keys():
                 # Get server type for display
                 server = _GLOBAL_MCP_SERVERS[server_name]
                 server_type = type(server).__name__.replace("MCPServer", "")
-                
+
                 # Exact prefix match
                 if server_name.startswith(current_word):
                     suggestions.append(Completion(
@@ -622,7 +616,7 @@ class FuzzyCommandCompleter(Completer):
                     ))
         except (ImportError, AttributeError):
             pass  # No MCP servers available
-            
+
         return suggestions
 
     def get_mcp_suggestions(self, words: List[str], current_word: str) -> List[Completion]:
@@ -636,19 +630,19 @@ class FuzzyCommandCompleter(Completer):
             List of completion suggestions
         """
         suggestions = []
-        
+
         # Get the actual typed words (excluding empty strings from trailing spaces)
         actual_words = [w for w in words if w]
-        
+
         # Position 2: Completing subcommand (e.g., "/mcp <tab>")
         # Use the default subcommand handler - no need to duplicate!
         if len(words) == 2:
             return self.get_subcommand_suggestions(words[0], current_word)
-        
+
         # Position 3: After subcommand (e.g., "/mcp load <tab>")
         elif len(words) == 3 and len(actual_words) > 1:
             subcommand = actual_words[1]
-            
+
             if subcommand == "load":
                 # Suggest transport types for load command
                 if not current_word.startswith("http"):  # Don't suggest if typing URL
@@ -666,19 +660,19 @@ class FuzzyCommandCompleter(Completer):
                                     f"<ansiwhite>- {desc}</ansiwhite>"),
                                 style="fg:ansiyellow bold"
                             ))
-                            
+
             elif subcommand in ["add", "remove", "tools"]:
                 # These commands need an MCP server name
                 suggestions.extend(self.get_mcp_server_suggestions(current_word))
-        
+
         # Position 4: After server name in add command (e.g., "/mcp add server <tab>")
         elif len(words) == 4 and len(actual_words) > 1:
             subcommand = actual_words[1]
-            
+
             if subcommand == "add":
                 # After server name, suggest agent names
                 suggestions.extend(self.get_agent_suggestions(current_word))
-                
+
         return suggestions
 
     # pylint: disable=unused-argument
@@ -697,7 +691,7 @@ class FuzzyCommandCompleter(Completer):
         text_original = document.text_before_cursor
         text = text_original.strip()
         words = text.split()
-        
+
         # Check if there's a trailing space (user finished typing a word)
         has_trailing_space = text_original and text_original[-1] == ' '
 
@@ -730,7 +724,7 @@ class FuzzyCommandCompleter(Completer):
         if text.startswith('/'):
             # Determine current word and effective word count based on trailing space
             # Example: "/mcp " has trailing space, so current_word="" and we add empty string to words
-            # Example: "/mcp" has no trailing space, so current_word="/mcp" 
+            # Example: "/mcp" has no trailing space, so current_word="/mcp"
             if has_trailing_space:
                 current_word = ""
                 effective_words = words + [""]  # Add empty string to represent new word position
@@ -764,18 +758,18 @@ class FuzzyCommandCompleter(Completer):
             elif len(effective_words) == 3:
                 cmd = words[0]
                 subcommand = words[1] if len(words) > 1 else ""
-                
+
                 # Agent select completion
                 if cmd in ["/agent", "/a"] and subcommand in ["select", "info"]:
                     yield from self.get_agent_suggestions(current_word)
                 # MCP command completion for third word
                 elif cmd in ["/mcp", "/m"]:
                     yield from self.get_mcp_suggestions(effective_words, current_word)
-            
+
             # Fourth word completion (for MCP add command)
             elif len(effective_words) == 4:
                 cmd = words[0]
-                
+
                 # MCP add command needs agent name as fourth word
                 if cmd in ["/mcp", "/m"]:
                     yield from self.get_mcp_suggestions(effective_words, current_word)

@@ -23,8 +23,6 @@ from cai.sdk.agents import (
 from cai.sdk.agents.items import RunItem
 from cai.sdk.agents.run import RunConfig
 from cai.sdk.agents.stream_events import AgentUpdatedStreamEvent
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
@@ -33,6 +31,7 @@ from tests.core.test_responses import (
     get_text_input_item,
     get_text_message,
 )
+from tests.fake_model import FakeModel
 
 
 @pytest.mark.asyncio

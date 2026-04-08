@@ -9,7 +9,6 @@ from typing import Any, cast
 from openai.types.responses import ResponseCompletedEvent
 
 # removed duplicate: logger = logging.getLogger(__name__)
-
 from ._run_impl import (  # noqa: E402
     AgentToolUseTracker,
     NextStepFinalOutput,
@@ -30,7 +29,12 @@ from .exceptions import (  # noqa: E402
     ModelBehaviorError,
     OutputGuardrailTripwireTriggered,
 )
-from .guardrail import InputGuardrail, InputGuardrailResult, OutputGuardrail, OutputGuardrailResult  # noqa: E402
+from .guardrail import (  # noqa: E402
+    InputGuardrail,
+    InputGuardrailResult,
+    OutputGuardrail,
+    OutputGuardrailResult,
+)
 from .handoffs import Handoff, HandoffInputFilter, handoff  # noqa: E402
 from .items import ItemHelpers, ModelResponse, RunItem, TResponseInputItem  # noqa: E402
 from .lifecycle import RunHooks  # noqa: E402
@@ -293,7 +297,7 @@ class Runner:
                         # Get the previous agent before switching
                         previous_agent = current_agent
                         current_agent = cast(Agent[TContext], turn_result.next_step.new_agent)
-                        
+
                         # Transfer message history for swarm patterns
                         # Check if both agents have models with message_history
                         if (hasattr(previous_agent, 'model') and hasattr(previous_agent.model, 'message_history') and
@@ -307,7 +311,9 @@ class Runner:
                                     current_agent.model.message_history = previous_agent.model.message_history
                                     # Also share history in AGENT_MANAGER
                                     if hasattr(previous_agent, 'name') and hasattr(current_agent, 'name'):
-                                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+                                        from cai.sdk.agents.simple_agent_manager import (
+                                            AGENT_MANAGER,
+                                        )
                                         AGENT_MANAGER.share_swarm_history(previous_agent.name, current_agent.name)
                             except ImportError:
                                 # If we can't import, check if agents have bidirectional handoffs
@@ -318,7 +324,7 @@ class Runner:
                                             # Bidirectional handoff detected, share history
                                             current_agent.model.message_history = previous_agent.model.message_history
                                             break
-                        
+
                         # Register the handoff agent with AGENT_MANAGER for tracking
                         # This ensures patterns/swarms work with commands like /history and /graph
                         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
@@ -326,7 +332,7 @@ class Runner:
                             # For non-parallel patterns, use set_active_agent which will handle it as single agent
                             # This maintains compatibility with single agent commands
                             AGENT_MANAGER.set_active_agent(current_agent, current_agent.name)
-                        
+
                         current_span.finish(reset_current=True)
                         current_span = None
                         should_run_agent_start_hooks = True
@@ -624,7 +630,7 @@ class Runner:
                         all_tools,
                     )
                     should_run_agent_start_hooks = False
-                    
+
                     # Process the turn result
                     streamed_result.raw_responses = streamed_result.raw_responses + [
                         turn_result.model_response
@@ -636,7 +642,7 @@ class Runner:
                         # Get the previous agent before switching
                         previous_agent = current_agent
                         current_agent = turn_result.next_step.new_agent
-                        
+
                         # Transfer message history for swarm patterns
                         # Check if both agents have models with message_history
                         if (hasattr(previous_agent, 'model') and hasattr(previous_agent.model, 'message_history') and
@@ -650,7 +656,9 @@ class Runner:
                                     current_agent.model.message_history = previous_agent.model.message_history
                                     # Also share history in AGENT_MANAGER
                                     if hasattr(previous_agent, 'name') and hasattr(current_agent, 'name'):
-                                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+                                        from cai.sdk.agents.simple_agent_manager import (
+                                            AGENT_MANAGER,
+                                        )
                                         AGENT_MANAGER.share_swarm_history(previous_agent.name, current_agent.name)
                             except ImportError:
                                 # If we can't import, check if agents have bidirectional handoffs
@@ -661,7 +669,7 @@ class Runner:
                                             # Bidirectional handoff detected, share history
                                             current_agent.model.message_history = previous_agent.model.message_history
                                             break
-                        
+
                         current_span.finish(reset_current=True)
                         current_span = None
                         should_run_agent_start_hooks = True

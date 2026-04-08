@@ -7,6 +7,7 @@ variables. Behaves identically to the original implementations.
 from __future__ import annotations
 
 import os
+
 from wasabi import color  # pylint: disable=import-error
 
 

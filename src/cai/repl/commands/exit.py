@@ -32,7 +32,7 @@ class ExitCommand(Command):
         """
         # End global usage tracking session before exit
         GLOBAL_USAGE_TRACKER.end_session(final_cost=COST_TRACKER.session_total_cost)
-        
+
         sys.exit(0)
 
 

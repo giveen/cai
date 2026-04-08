@@ -7,11 +7,10 @@ of agent relationships, where each agent can transfer context (message history)
 to another agent through handoff functions, creating a complete communication network
 for comprehensive security analysis.
 """
+from cai.agents.mail import dns_smtp_agent
 from cai.agents.red_teamer import redteam_agent
 from cai.agents.thought import thought_agent
-from cai.agents.mail import dns_smtp_agent
 from cai.sdk.agents import handoff
-
 
 # Clone agents to avoid modifying the original instances
 _redteam_agent_copy = redteam_agent.clone()

@@ -24,7 +24,6 @@ import requests  # type: ignore
 
 from cai.sdk.agents import function_tool
 
-
 _FULL_URL_RE = re.compile(r"https?://[^\s\"'<>\\)]+")
 _WS_URL_RE = re.compile(r"wss?://[^\s\"'<>\\)]+")
 _GQL_ENDPOINT_RE = re.compile(r"/graphql\b|/gql\b", re.IGNORECASE)

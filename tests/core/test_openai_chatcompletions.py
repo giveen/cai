@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -31,7 +32,7 @@ from cai.sdk.agents import (
     generation_span,
 )
 from cai.sdk.agents.models.fake_id import FAKE_RESPONSES_ID
-import os
+
 cai_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
 
 @pytest.mark.allow_call_model_methods
@@ -222,7 +223,7 @@ async def test_fetch_response_non_stream(monkeypatch) -> None:
             tracing=ModelTracing.DISABLED,
             stream=False,
         )
-   
+
     # Ensure expected args were passed through to OpenAI client.
     kwargs = completions.kwargs
     assert kwargs["stream"] is False
@@ -306,8 +307,8 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
         function=Function(name="do_thing", arguments='{"x":1}'),
     )
     msg = ChatCompletionMessage(
-        role="assistant", 
-        content="I'll help you with that. Let me use a tool.", 
+        role="assistant",
+        content="I'll help you with that. Let me use a tool.",
         tool_calls=[tool_call]
     )
     choice = Choice(index=0, finish_reason="stop", message=msg)
@@ -325,10 +326,10 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
 
     monkeypatch.setattr(OpenAIChatCompletionsModel, "_fetch_response", patched_fetch_response)
     model = OpenAIProvider(use_responses=False).get_model(cai_model)
-    
+
     # Initial counter should be 0
     assert model.interaction_counter == 0
-    
+
     # Make the request
     resp: ModelResponse = await model.get_response(
         system_instructions="You are a helpful assistant",
@@ -339,15 +340,15 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
         handoffs=[],
         tracing=ModelTracing.DISABLED,
     )
-    
+
     # Counter should be incremented only once for the entire turn
     assert model.interaction_counter == 1
-    
+
     # Verify response contains both message and tool call
     assert len(resp.output) == 2  # One message item, one tool call item
     assert isinstance(resp.output[0], ResponseOutputMessage)
     assert isinstance(resp.output[1], ResponseFunctionToolCall)
-    
+
     # Make another request to ensure counter increments properly
     resp2: ModelResponse = await model.get_response(
         system_instructions="You are a helpful assistant",
@@ -358,6 +359,6 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
         handoffs=[],
         tracing=ModelTracing.DISABLED,
     )
-    
+
     # Counter should now be 2 (one increment per turn, not per item)
     assert model.interaction_counter == 2

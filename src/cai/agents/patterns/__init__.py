@@ -10,7 +10,7 @@ from typing import Dict, Optional, Union
 
 __all__ = [
     'Pattern',
-    'PatternType', 
+    'PatternType',
     'get_pattern',
     'get_patterns_by_type',
     'get_parallel_patterns',
@@ -39,51 +39,51 @@ def discover_patterns() -> Dict[str, 'Pattern']:
     """
     # Import Pattern here to avoid circular imports
     from .pattern import Pattern, PatternType
-    
+
     patterns = {}
-    
+
     # Get the current package
     package = __name__
     prefix = package + "."
-    
+
     # Iterate through all modules in this package
     for importer, modname, ispkg in pkgutil.iter_modules(__path__, prefix):
         if ispkg:
             continue
-            
+
         # Skip special modules
         module_name = modname.replace(prefix, "")
         if module_name in ["__init__", "pattern", "utils"]:
             continue
-            
+
         try:
             module = importlib.import_module(modname)
-            
+
             # Look for Pattern class instances
             for attr_name in dir(module):
                 # Skip private attributes
                 if attr_name.startswith("_"):
                     continue
-                    
+
                 attr = getattr(module, attr_name)
-                
+
                 # Check if it's a Pattern instance
                 if isinstance(attr, Pattern):
                     # Use the pattern's name or the attribute name
                     pattern_name = attr.name or attr_name
                     patterns[pattern_name] = attr
-                    
+
                     # Add to __all__ if not already there
                     if attr_name not in __all__:
                         __all__.append(attr_name)
-                        
+
                 # Check for legacy swarm patterns
-                elif hasattr(attr, "pattern") and getattr(attr, "pattern") == "swarm":
+                elif hasattr(attr, "pattern") and attr.pattern == "swarm":
                     # Always use the attribute name as the key to avoid duplicates
                     # The pattern's display name is stored in pattern.name
                     pattern_key = attr_name
                     pattern_display_name = getattr(attr, "name", attr_name)
-                    
+
                     # Create swarm pattern wrapper
                     pattern = Pattern(
                         name=pattern_display_name,
@@ -93,30 +93,30 @@ def discover_patterns() -> Dict[str, 'Pattern']:
                     )
                     pattern.agents = [attr]  # Add to agents list
                     patterns[pattern_key] = pattern
-                    
+
                     if attr_name not in __all__:
                         __all__.append(attr_name)
-                        
+
                 # Check if it's a Pattern class (not instance)
-                elif (isinstance(attr, type) and 
-                      issubclass(attr, Pattern) and 
+                elif (isinstance(attr, type) and
+                      issubclass(attr, Pattern) and
                       attr is not Pattern):
                     # Create an instance of the pattern class
                     try:
                         pattern_instance = attr()
                         pattern_name = pattern_instance.name
                         patterns[pattern_name] = pattern_instance
-                        
+
                         # Add class name to __all__
                         if attr_name not in __all__:
                             __all__.append(attr_name)
                     except Exception:
                         # Skip if we can't instantiate
                         continue
-                        
+
                 # Check for dict-based pattern definitions
-                elif (isinstance(attr, dict) and 
-                      'name' in attr and 
+                elif (isinstance(attr, dict) and
+                      'name' in attr and
                       'type' in attr and
                       attr_name.endswith('_pattern')):
                     # Convert dict to Pattern instance
@@ -124,20 +124,20 @@ def discover_patterns() -> Dict[str, 'Pattern']:
                         pattern_config = attr.copy()
                         pattern_name = pattern_config.pop('name')
                         pattern_type = pattern_config.pop('type')
-                        
+
                         pattern = Pattern(
                             name=pattern_name,
                             type=pattern_type,
                             **pattern_config
                         )
                         patterns[pattern_name] = pattern
-                        
+
                         if attr_name not in __all__:
                             __all__.append(attr_name)
                     except Exception:
                         # Skip if we can't create pattern
                         continue
-                        
+
         except Exception as e:
             # Skip modules that cannot be imported
             # Silently ignore circular import errors for pattern files
@@ -145,7 +145,7 @@ def discover_patterns() -> Dict[str, 'Pattern']:
                 import sys
                 print(f"Error importing {module_name}: {e}", file=sys.stderr)
             continue
-            
+
     return patterns
 
 # Defer pattern discovery until after all imports are done
@@ -157,9 +157,13 @@ def _initialize_patterns():
 
 # Import Pattern and related items after defining functions to avoid circular imports
 from .pattern import (  # noqa: E402
-    Pattern, PatternType,
-    parallel_pattern, swarm_pattern, hierarchical_pattern,
-    sequential_pattern, conditional_pattern
+    Pattern,
+    PatternType,
+    conditional_pattern,
+    hierarchical_pattern,
+    parallel_pattern,
+    sequential_pattern,
+    swarm_pattern,
 )
 
 # Initialize patterns after imports
@@ -186,18 +190,18 @@ def get_patterns_by_type(pattern_type: Union[str, 'PatternType']) -> Dict[str, '
         Dictionary mapping pattern names to Pattern instances
     """
     from .pattern import PatternType
-    
+
     if isinstance(pattern_type, str):
         try:
             pattern_type = PatternType(pattern_type)
         except ValueError:
             return {}  # Invalid type
-    
+
     result = {}
     for name, pattern in PATTERNS.items():
         if pattern.type == pattern_type:
             result[name] = pattern
-            
+
     return result
 
 def get_parallel_patterns() -> Dict[str, 'Pattern']:
@@ -236,7 +240,7 @@ def create_pattern(
         New Pattern instance
     """
     from .pattern import Pattern
-    
+
     return Pattern(
         name=name,
         type=pattern_type,

@@ -2,10 +2,8 @@
 Platform command for CAI REPL.
 This module provides commands for interacting with platform-specific features.
 """
-from typing import (
-    List,
-    Optional
-)
+from typing import List, Optional
+
 from rich.console import Console  # pylint: disable=import-error
 from rich.panel import Panel  # pylint: disable=import-error
 
@@ -28,7 +26,9 @@ class PlatformCommand(Command):
 
         # Add subcommands dynamically based on available platforms
         if is_caiextensions_platform_available():
-            from caiextensions.platform.base import platform_manager  # pylint: disable=import-error,import-outside-toplevel,unused-import,line-too-long,no-name-in-module # noqa: E501
+            from caiextensions.platform.base import (
+                platform_manager,  # pylint: disable=import-error,import-outside-toplevel,unused-import,line-too-long,no-name-in-module # noqa: E501
+            )
 
             # Add list subcommand
             self.add_subcommand(
@@ -83,7 +83,9 @@ class PlatformCommand(Command):
             console.print("[red]Platform extensions are not available[/red]")
             return False
 
-        from caiextensions.platform.base import platform_manager  # pylint: disable=import-error,import-outside-toplevel,unused-import,line-too-long,no-name-in-module # noqa: E501
+        from caiextensions.platform.base import (
+            platform_manager,  # pylint: disable=import-error,import-outside-toplevel,unused-import,line-too-long,no-name-in-module # noqa: E501
+        )
         platforms = platform_manager.list_platforms()
 
         console.print(Panel(
@@ -100,7 +102,9 @@ class PlatformCommand(Command):
             console.print("[red]Platform extensions are not available[/red]")
             return False
 
-        from caiextensions.platform.base import platform_manager  # pylint: disable=import-error,import-outside-toplevel,unused-import,line-too-long,no-name-in-module # noqa: E501
+        from caiextensions.platform.base import (
+            platform_manager,  # pylint: disable=import-error,import-outside-toplevel,unused-import,line-too-long,no-name-in-module # noqa: E501
+        )
 
         if not args:
             # Show available platforms
@@ -149,7 +153,9 @@ class PlatformCommand(Command):
 
         try:
             from caiextensions.platform.htb.cli import (  # pylint: disable=import-error,import-outside-toplevel,line-too-long # noqa: E501
-                is_vpn_connected, get_vpn_ip, vpn_active
+                get_vpn_ip,
+                is_vpn_connected,
+                vpn_active,
             )
             # Check VPN connection status
             if is_vpn_connected():
@@ -193,7 +199,7 @@ class PlatformCommand(Command):
 
         try:
             from caiextensions.platform.htb.cli import (  # pylint: disable=import-error,import-outside-toplevel,line-too-long # noqa: E501
-                is_vpn_connected
+                is_vpn_connected,
             )
             if not is_vpn_connected():
                 console.print("[red]No active VPN connection found[/red]")

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 from cai.tui.app import (
-    ProvidersScreen,
-    ModelParamsScreen,
-    MemoryInspectorScreen,
-    ExportImportScreen,
     EnvScreen,
-    SessionRecordingScreen,
+    ExportImportScreen,
+    MemoryInspectorScreen,
+    ModelParamsScreen,
+    ProvidersScreen,
     ResetDefaultsScreen,
+    SessionRecordingScreen,
 )
 
 screens = [

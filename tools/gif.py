@@ -51,16 +51,16 @@ def check_dependencies():
 
     # Check for asciinema
     try:
-        subprocess.run(["asciinema", "--version"], 
-                     check=True, 
+        subprocess.run(["asciinema", "--version"],
+                     check=True,
                      capture_output=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         missing_deps.append("asciinema")
 
     # Check for agg
     try:
-        subprocess.run(["agg", "--version"], 
-                     check=True, 
+        subprocess.run(["agg", "--version"],
+                     check=True,
                      capture_output=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         missing_deps.append("agg")
@@ -68,10 +68,10 @@ def check_dependencies():
     if missing_deps:
         print("Error: Missing required dependencies:", file=sys.stderr)
         if "asciinema" in missing_deps:
-            print("  - asciinema: Install with 'pip install asciinema'", 
+            print("  - asciinema: Install with 'pip install asciinema'",
                   file=sys.stderr)
         if "agg" in missing_deps:
-            print("  - agg: Install with 'npm install -g @asciinema/agg'", 
+            print("  - agg: Install with 'npm install -g @asciinema/agg'",
                   file=sys.stderr)
         sys.exit(1)
 
@@ -117,7 +117,7 @@ def main():
         return 0
 
     except subprocess.CalledProcessError as e:
-        print(f"Error: Command failed with exit code {e.returncode}", 
+        print(f"Error: Command failed with exit code {e.returncode}",
               file=sys.stderr)
         return e.returncode
     except Exception as e:  # pylint: disable=broad-except
@@ -132,4 +132,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

@@ -6,9 +6,10 @@ of the main agent by providing structured analysis without making tool calls.
 """
 
 import os
-from typing import Optional, Callable, Union
+from typing import Callable, Optional, Union
+
 from cai.sdk.agents import Agent  # pylint: disable=import-error
-from cai.util import load_prompt_template, create_system_prompt_renderer
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 
 def create_reasoner_agent(

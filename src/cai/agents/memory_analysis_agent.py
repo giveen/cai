@@ -1,5 +1,6 @@
 """Memory Analysis and Manipulation Agent"""
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -10,11 +11,12 @@ try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
-    
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
+
 from openai import AsyncOpenAI
-from cai.util import load_prompt_template  # Add this import
+
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from cai.util import load_prompt_template  # Add this import
 
 load_dotenv()
 # Prompts

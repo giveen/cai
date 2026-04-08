@@ -2,18 +2,20 @@
 Model command for CAI REPL.
 This module provides commands for viewing and changing the current LLM model.
 """
-import os
 import datetime
+import os
+
 # Standard library imports
-from typing import List, Optional, Dict, Any 
+from typing import Any, Dict, List, Optional
 
 # Third-party imports
 import requests  # pylint: disable=import-error
 from rich.console import Console  # pylint: disable=import-error
-from rich.table import Table  # pylint: disable=import-error
 from rich.panel import Panel  # pylint: disable=import-error
-from cai.util import get_ollama_api_base, get_ollama_auth_headers, COST_TRACKER
+from rich.table import Table  # pylint: disable=import-error
+
 from cai.repl.commands.base import Command, register_command
+from cai.util import COST_TRACKER, get_ollama_api_base, get_ollama_auth_headers
 
 console = Console()
 
@@ -137,19 +139,19 @@ def get_all_predefined_models() -> List[Dict[str, Any]]:
     """
     model_categories = get_predefined_model_categories()
     all_models = []
-    
+
     # Simple mapping from category to provider name
     category_to_provider = {
         "Alias": "OpenAI",  # Alias models use OpenAI as base
         "Anthropic Claude": "Anthropic",
-        "OpenAI": "OpenAI", 
+        "OpenAI": "OpenAI",
         "DeepSeek": "DeepSeek",
         "Ollama Cloud": "Ollama Cloud"
     }
-    
+
     for category, models in model_categories.items():
         provider = category_to_provider.get(category, "Unknown")
-        
+
         for model in models:
             # Get pricing info using COST_TRACKER
             input_cost_per_token, output_cost_per_token = COST_TRACKER.get_model_pricing(model["name"])
@@ -171,7 +173,7 @@ def get_all_predefined_models() -> List[Dict[str, Any]]:
                 "input_cost": input_cost_per_million,
                 "output_cost": output_cost_per_million
             })
-    
+
     return all_models
 
 
@@ -196,7 +198,7 @@ def load_all_available_models() -> tuple[List[str], List[Dict[str, Any]]]:
     """
     # Predefined models
     predefined = [model["name"] for model in get_all_predefined_models()]
-    
+
     # LiteLLM models
     litellm_names = []
     try:
@@ -209,22 +211,22 @@ def load_all_available_models() -> tuple[List[str], List[Dict[str, Any]]]:
             ]
     except Exception:  # pylint: disable=broad-except
         pass
-    
+
     # Ollama models
     ollama_data = []
     ollama_names = []
     try:
         api_base = get_ollama_api_base()
         ollama_base = api_base.replace('/v1', '')
-        
+
         # Add authentication headers for Ollama Cloud if needed
         headers = {}
         is_cloud = "ollama.com" in api_base
         timeout = 5 if is_cloud else 1  # Cloud needs more time
-        
+
         if is_cloud:
             headers = get_ollama_auth_headers()
-        
+
         response = requests.get(f"{ollama_base}/api/tags", headers=headers, timeout=timeout)
         if response.status_code == 200:
             data = response.json()
@@ -232,7 +234,7 @@ def load_all_available_models() -> tuple[List[str], List[Dict[str, Any]]]:
             ollama_names = [m.get('name', '') for m in ollama_data if m.get('name')]
     except Exception:  # pylint: disable=broad-except
         pass
-    
+
     all_models = predefined + litellm_names + ollama_names
     return all_models, ollama_data
 
@@ -287,11 +289,11 @@ class ModelCommand(Command):
         }
         self.cached_models = _GLOBAL_MODEL_CACHE
         self.cached_model_numbers = _GLOBAL_MODEL_NUMBERS
-        
+
         # Get predefined and litellm counts for display
         ALL_MODELS = get_all_predefined_models()
         predefined_model_names = [model["name"] for model in ALL_MODELS]
-        litellm_model_names = [m for m in self.cached_models[len(predefined_model_names):] 
+        litellm_model_names = [m for m in self.cached_models[len(predefined_model_names):]
                                if m not in [d.get('name') for d in ollama_models_data]]
 
         if not args:  # pylint: disable=too-many-nested-blocks
@@ -360,11 +362,11 @@ class ModelCommand(Command):
                         else:
                             size_gb = size_mb / 1024
                             size_str = f"{size_gb:.1f} GB"
-                    
+
                     model_description = "Local model"
                     if size_str:
                         model_description += f" ({size_str})"
-                    
+
                     model_table.add_row(
                         str(i),
                         model_name,
@@ -492,7 +494,7 @@ class ModelShowCommand(Command):
             str(i): model_name
             for i, model_name in enumerate(_GLOBAL_MODEL_CACHE, 1)
         }
-        
+
         # Fetch model pricing data from LiteLLM GitHub repository
         try:
             with console.status(
@@ -544,20 +546,20 @@ class ModelShowCommand(Command):
             predefined_models = get_all_predefined_models()
             for model in predefined_models:
                 model_name = model["name"]
-                
+
                 # Skip if search term provided and not in model name
                 if search_term and search_term not in model_name.lower():
                     continue
-                
+
                 displayed_models += 1
                 total_models += 1
-                
+
                 # Find index from global cache
                 try:
                     model_index = _GLOBAL_MODEL_CACHE.index(model_name) + 1
                 except ValueError:
                     continue
-                
+
                 # Format pricing info
                 input_cost_str = (
                     f"${model['input_cost']:.2f}"
@@ -567,7 +569,7 @@ class ModelShowCommand(Command):
                     f"${model['output_cost']:.2f}"
                     if model['output_cost'] is not None else "Unknown"
                 )
-                
+
                 # Add row to table
                 model_table.add_row(
                     str(model_index),
@@ -672,20 +674,20 @@ class ModelShowCommand(Command):
             # Add Ollama models to the table (already loaded in global cache)
             for model in ollama_models_data:
                 model_name = model.get('name', '')
-                
+
                 # Skip if search term provided and not in model name
                 if search_term and search_term not in model_name.lower():
                     continue
-                
+
                 # Find index from global cache
                 try:
                     model_index = _GLOBAL_MODEL_CACHE.index(model_name) + 1
                 except ValueError:
                     continue
-                
+
                 total_models += 1
                 displayed_models += 1
-                
+
                 model_size = model.get('size', 0)
                 size_str = ""
                 if model_size:
@@ -695,11 +697,11 @@ class ModelShowCommand(Command):
                     else:
                         size_gb = size_mb / 1024
                         size_str = f"{size_gb:.1f} GB"
-                
+
                 model_description = "Local model"
                 if size_str:
                     model_description += f" ({size_str})"
-                
+
                 model_table.add_row(
                     str(model_index),
                     model_name,

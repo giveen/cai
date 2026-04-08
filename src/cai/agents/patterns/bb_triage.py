@@ -7,11 +7,10 @@ implements a directed graph of agent relationships, where each agent can transfe
 context (message history) to another agent through handoff functions, creating a 
 complete communication network for comprehensive bug bounty and triage analysis.
 """
-from cai.agents.retester import retester_agent
 from cai.agents.bug_bounter import bug_bounter_agent
+from cai.agents.retester import retester_agent
 from cai.sdk.agents import handoff
 from cai.util import append_instructions
-
 
 # Clone agents to avoid modifying the original instances
 _retester_agent_copy = retester_agent.clone()

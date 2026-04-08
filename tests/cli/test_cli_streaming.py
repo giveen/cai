@@ -14,9 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 from cai.sdk.agents.models.openai_chatcompletions import (
-    get_agent_message_history,
-    get_all_agent_histories,
     ACTIVE_MODEL_INSTANCES,
+    get_all_agent_histories,
 )
 
 
@@ -36,7 +35,7 @@ class TestCLIStreaming(unittest.TestCase):
         # Import here to avoid circular imports
         from cai.sdk.agents.models.openai_chatcompletions import PERSISTENT_MESSAGE_HISTORIES
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        
+
         # Clear all active model instances
         ACTIVE_MODEL_INSTANCES.clear()
         # Clear persistent message histories
@@ -52,33 +51,32 @@ class TestCLIStreaming(unittest.TestCase):
         ACTIVE_MODEL_INSTANCES.clear()
         # Keep a strong reference to prevent garbage collection
         self._test_model = None
-        
+
         # Clear any existing message histories
         from cai.sdk.agents.models.openai_chatcompletions import (
-            OpenAIChatCompletionsModel,
-            PERSISTENT_MESSAGE_HISTORIES
+            PERSISTENT_MESSAGE_HISTORIES,
         )
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        
+
         # Clear persistent message histories to ensure clean state
         PERSISTENT_MESSAGE_HISTORIES.clear()
-        
+
         # Clear AGENT_MANAGER state
         AGENT_MANAGER.clear_all_histories()
         AGENT_MANAGER.reset_registry()
-        
+
         # Ensure we start with clean histories for each test
         for (name, instance_id), model_ref in list(ACTIVE_MODEL_INSTANCES.items()):
             model = model_ref() if model_ref else None
             if model and hasattr(model, 'message_history'):
                 model.message_history.clear()
-    
+
     def tearDown(self):
         """Clean up after each test."""
         # Import here to avoid circular imports
         from cai.sdk.agents.models.openai_chatcompletions import PERSISTENT_MESSAGE_HISTORIES
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        
+
         # Clear all active model instances
         ACTIVE_MODEL_INSTANCES.clear()
         # Clear persistent message histories
@@ -100,11 +98,12 @@ class TestCLIStreaming(unittest.TestCase):
     def add_to_test_message_history(self, msg):
         """Add a message to the test agent's history."""
         # Create a mock model instance for testing
-        from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        from openai import AsyncOpenAI
         import os
-        
+
+        from openai import AsyncOpenAI
+
+        from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+
         test_agent_name = "test_agent"
         # Check if we already have a test model instance
         test_model = None
@@ -114,7 +113,7 @@ class TestCLIStreaming(unittest.TestCase):
                 if model:
                     test_model = model
                     break
-        
+
         # Create one if it doesn't exist
         if not test_model:
             client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", "test-key"))
@@ -122,7 +121,7 @@ class TestCLIStreaming(unittest.TestCase):
             test_model = OpenAIChatCompletionsModel("gpt-4", client, test_agent_name, agent_id="P1")
             # Store a strong reference to prevent garbage collection
             self._test_model = test_model
-        
+
         # Add the message to the model's history
         # This will automatically add to AGENT_MANAGER via add_to_message_history
         test_model.add_to_message_history(msg)
@@ -165,7 +164,7 @@ class TestCLIStreaming(unittest.TestCase):
         # This is where the real cleanup logic would kick in
         def simulate_ctrl_c_cleanup():
             """Simulate the exact cleanup logic from cli.py"""
-            
+
             # Get the test model instance
             test_model = None
             for (name, instance_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
@@ -174,10 +173,10 @@ class TestCLIStreaming(unittest.TestCase):
                     if model:
                         test_model = model
                         break
-            
+
             if not test_model:
                 return 0
-            
+
             # Simulate a tool call that was started but interrupted
             test_model._converter.recent_tool_calls[tool_call_id] = {
                 "name": "generic_linux_command",
@@ -280,7 +279,7 @@ class TestCLIStreaming(unittest.TestCase):
     def test_fix_message_list_with_interrupted_tools(self):
         """Test fix_message_list handles interrupted tool sequences correctly."""
         from cai.util import fix_message_list
-        
+
         # No need for _Converter cleanup since it's now instance-based
 
         # Create an incomplete sequence (tool call without result)
@@ -377,7 +376,7 @@ class TestCLIStreaming(unittest.TestCase):
         if initial_messages:
             for i, msg in enumerate(initial_messages):
                 print(f"  Unexpected initial message {i}: {msg}")
-        
+
         # Test various message types that should maintain OpenAI format
         test_messages = [
             # User message
@@ -567,10 +566,10 @@ class TestCLIStreaming(unittest.TestCase):
                 if model:
                     test_model = model
                     break
-        
+
         if not test_model:
             self.fail("Could not find test model instance")
-        
+
         # Add ONLY our specific tool call to recent_tool_calls
         test_model._converter.recent_tool_calls[call_id] = {
             "name": tool_name,

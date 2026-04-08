@@ -1,5 +1,6 @@
 """Sub-GHz Radio Frequency Analysis Agent using HackRF One"""
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -12,8 +13,8 @@ except Exception:
     AsyncOpenAI = None
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from cai.util import load_prompt_template  # Add this import
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from cai.util import load_prompt_template  # Add this import
 
 load_dotenv()
 # Prompts

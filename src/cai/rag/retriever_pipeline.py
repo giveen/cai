@@ -9,12 +9,11 @@ local development and benchmarking. The pipeline composes:
 """
 from __future__ import annotations
 
-import math
-import re
-import os
 import logging
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+import math
+import os
+import re
+from typing import Any, Dict, List, Optional
 
 from cai.rag.vector_db_adapter import VectorDBAdapter
 

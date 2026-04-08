@@ -11,7 +11,6 @@ package-import time.
 from importlib import import_module
 from typing import Any
 
-
 _LAZY_SUBMODULES = ("commands", "ui", "history", "toolbar")
 
 

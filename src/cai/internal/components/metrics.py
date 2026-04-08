@@ -11,4 +11,4 @@ def process_metrics(path: str, sid: Optional[str] = None) -> bool:
 
 def process_intermediate_logs(path: str, sid: Optional[str] = None) -> bool:
     """Telemetry uploads are disabled."""
-    return False 
+    return False

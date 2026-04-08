@@ -6,10 +6,10 @@ sanity/contradiction checks over recent facts.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
-import json
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 
 class TripleStore:

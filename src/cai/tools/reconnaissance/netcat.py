@@ -1,17 +1,17 @@
 """
  Here are the tools for netcat command
 """
-import tempfile
 import os
+import tempfile
 
-from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
+from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.tools.validation import (
     contains_shell_metacharacters,
-    is_valid_host,
     has_disallowed_nc_flags,
+    is_valid_host,
 )  # pylint: disable=import-error
-from cai.tools import validation  # pylint: disable=import-error
 
 
 def _validate_netcat_input(args: str, host: str, port: int, data: str):

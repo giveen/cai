@@ -34,12 +34,12 @@ def scripting_tool(
         SecurityError: If potentially dangerous operations are detected
     """
     # pylint: disable=import-outside-toplevel
-    import re
-    import sys
-    from io import StringIO
     import ast
     import json
+    import re
+    import sys
     import traceback
+    from io import StringIO
 
     if not command or not isinstance(command, str):
         raise ValueError("Command must be a non-empty string")

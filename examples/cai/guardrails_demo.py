@@ -4,9 +4,9 @@ Demo script to demonstrate prompt injection guardrail protection
 """
 
 import asyncio
+
 from cai.agents.one_tool import one_tool_agent
-from cai.sdk.agents import Runner, InputGuardrailTripwireTriggered
-from cai.agents.guardrails import detect_injection_patterns, sanitize_external_content
+from cai.sdk.agents import InputGuardrailTripwireTriggered, Runner
 
 
 async def demo_guardrails():

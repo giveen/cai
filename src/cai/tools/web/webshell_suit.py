@@ -4,8 +4,8 @@ This module provides helpers for generating a minimal PHP webshell string and
 constructing a curl command to upload it. Intended for CTF and testing utilities
 within the CAI project. Keep outputs inert (do not execute uploads).
 """
-from typing import Optional, Tuple
 import shlex
+from typing import Optional, Tuple
 from urllib.parse import quote_plus
 
 

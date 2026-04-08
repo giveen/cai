@@ -4,13 +4,14 @@ Shodan search utility for reconnaissance.
 This module provides functions to search Shodan for information about hosts,
 services, and vulnerabilities using the Shodan API.
 """
-import os
-import requests
-from typing import Dict, List, Optional, Any
-from dotenv import load_dotenv
-from cai.sdk.agents import function_tool
 import ipaddress
+import os
+from typing import Any, Dict, List, Optional
 
+import requests
+from dotenv import load_dotenv
+
+from cai.sdk.agents import function_tool
 
 # Default HTTP timeout for Shodan API calls
 _SHODAN_HTTP_TIMEOUT = 10

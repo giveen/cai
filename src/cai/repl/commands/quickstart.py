@@ -4,16 +4,16 @@ Provides essential setup information and guidance for new users.
 Automatically runs on first launch if ~/.cai doesn't exist.
 """
 
+import asyncio
 import os
 from pathlib import Path
 from typing import List
-import asyncio
 
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich import box
 
 from cai.repl.commands.base import Command, register_command
 
@@ -87,8 +87,8 @@ class QuickstartCommand(Command):
         except ImportError:
             # Fallback if httpx not available
             try:
-                import urllib.request
                 import urllib.error
+                import urllib.request
                 with urllib.request.urlopen(url, timeout=2) as response:
                     if response.status == 200:
                         return True, "✅ Accessible"
@@ -133,8 +133,8 @@ class QuickstartCommand(Command):
         except ImportError:
             # Fallback if httpx not available
             try:
-                import urllib.request
                 import json
+                import urllib.request
                 with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2) as response:
                     if response.status == 200:
                         data = json.loads(response.read())
@@ -156,7 +156,7 @@ class QuickstartCommand(Command):
         """
         # Remove _API_KEY suffix to get provider name
         provider_part = api_key.replace("_API_KEY", "")
-        
+
         # Convert SOME_PROVIDER to Some Provider
         # Handle special cases for better formatting
         if provider_part == "OPENAI":
@@ -172,17 +172,17 @@ class QuickstartCommand(Command):
         else:
             # General case: convert SOME_PROVIDER to Some Provider
             return provider_part.replace("_", " ").title()
-    
+
     def check_api_keys(self) -> dict[str, bool]:
         """Check which API keys are configured dynamically."""
         keys = {}
-        
+
         # Scan all environment variables for *_API_KEY pattern
         for env_var in os.environ:
             if env_var.endswith("_API_KEY"):
                 # Check if the value is set and not empty
                 keys[env_var] = bool(os.getenv(env_var))
-        
+
         # Also check .env file for any API keys not in current environment
         try:
             from pathlib import Path
@@ -190,9 +190,9 @@ class QuickstartCommand(Command):
             if not env_file.exists():
                 # Try current directory
                 env_file = Path(".env")
-            
+
             if env_file.exists():
-                with open(env_file, 'r') as f:
+                with open(env_file) as f:
                     for line in f:
                         line = line.strip()
                         if '=' in line and not line.startswith('#'):
@@ -203,7 +203,7 @@ class QuickstartCommand(Command):
                                 keys[key] = bool(os.getenv(key))
         except Exception:
             pass
-        
+
         # Sort keys alphabetically for consistent display
         return dict(sorted(keys.items()))
 
@@ -227,23 +227,23 @@ class QuickstartCommand(Command):
         # Step 1: API Requirements
         console.print("\n[bold yellow]📋 Step 1: API Requirements[/bold yellow]\n")
         console.print("CAI requires at least one AI provider API key to function:")
-        
+
         api_keys = self.check_api_keys()
-        
+
         # Create API status table
         api_table = Table(show_header=True, header_style="bold")
         api_table.add_column("Provider", style="cyan")
         api_table.add_column("Environment Variable", style="yellow")
         api_table.add_column("Status", style="green")
-        
+
         # Dynamically build provider list from detected API keys
         for env_var, is_set in api_keys.items():
             provider_name = self.get_provider_name(env_var)
             status = "✅ Set" if is_set else "❌ Not set"
             api_table.add_row(provider_name, env_var, status)
-        
+
         console.print(api_table)
-        
+
         if not any(api_keys.values()):
             console.print(
                 Panel(
@@ -259,30 +259,30 @@ class QuickstartCommand(Command):
         # Step 2: Local Models (Ollama)
         console.print("\n[bold yellow]🖥️  Step 2: Local Models (Optional)[/bold yellow]\n")
         console.print("For local model support, CAI can use Ollama:")
-        
+
         # Check Ollama endpoints
         ollama_table = Table(show_header=True, header_style="bold")
         ollama_table.add_column("Endpoint", style="cyan")
         ollama_table.add_column("Status", style="green")
         ollama_table.add_column("Models", style="yellow")
-        
+
         # Check standard Ollama port
         is_accessible, status = self.check_local_endpoint("http://localhost:11434")
         models = self.check_ollama_models() if is_accessible else []
         model_str = f"{len(models)} models" if models else "N/A"
         ollama_table.add_row("http://localhost:11434", status, model_str)
-        
+
         # Check Docker internal
         is_docker_accessible, docker_status = self.check_local_endpoint("http://host.docker.internal:11434")
         ollama_table.add_row("http://host.docker.internal:11434", docker_status, "Docker access")
-        
+
         console.print(ollama_table)
-        
+
         if is_accessible and models:
             console.print(f"\n[green]Available Ollama models:[/green] {', '.join(models[:5])}")
             if len(models) > 5:
                 console.print(f"[dim]... and {len(models) - 5} more[/dim]")
-        
+
         console.print(
             Panel(
                 "[cyan]To use Ollama:[/cyan]\n"
@@ -297,10 +297,10 @@ class QuickstartCommand(Command):
 
         # Step 3: Choose Your Model
         console.print("\n[bold yellow]🤖 Step 3: Choose Your Model[/bold yellow]\n")
-        
+
         # Check which API keys are available
         has_api_keys = any(api_keys.values())
-        
+
         if has_api_keys:
             console.print("Great! You have API keys configured. Now you need to select a model.")
             console.print("\n[cyan]To see which models are available for your API keys:[/cyan]")
@@ -319,15 +319,15 @@ class QuickstartCommand(Command):
                     border_style="red",
                 )
             )
-        
+
         # Step 4: Core Commands
         console.print("\n[bold yellow]🎯 Step 4: Essential Commands[/bold yellow]\n")
-        
+
         commands_table = Table(show_header=True, header_style="bold", box=box.SIMPLE)
         commands_table.add_column("Command", style="cyan")
         commands_table.add_column("Description", style="white")
         commands_table.add_column("Example", style="green")
-        
+
         essential_commands = [
             ("/agent list", "View available agents", "/agent list"),
             ("/agent select <name>", "Switch to specific agent", "/agent select red_teamer"),
@@ -339,15 +339,15 @@ class QuickstartCommand(Command):
             ("/shell <cmd>", "Run shell command", "/shell ls -la"),
             ("$ <cmd>", "Quick shell command", "$ whoami"),
         ]
-        
+
         for cmd, desc, example in essential_commands:
             commands_table.add_row(cmd, desc, example)
-        
+
         console.print(commands_table)
 
         # Step 5: Quick Examples
         console.print("\n[bold yellow]💡 Step 5: Quick Examples[/bold yellow]\n")
-        
+
         examples = [
             ("[bold]Basic CTF Challenge:[/bold]", [
                 "# Select the CTF agent",
@@ -368,7 +368,7 @@ class QuickstartCommand(Command):
                 "Scan the network 192.168.1.0/24 for open ports",
             ]),
         ]
-        
+
         for title, commands in examples:
             console.print(f"{title}")
             for cmd in commands:
@@ -380,11 +380,11 @@ class QuickstartCommand(Command):
 
         # Step 6: Features Overview
         console.print("\n[bold yellow]🛠️  Step 6: Key Features[/bold yellow]\n")
-        
+
         features_table = Table(show_header=False, box=None)
         features_table.add_column(style="cyan", width=25)
         features_table.add_column(style="white")
-        
+
         features = [
             ("Multiple Agents", "Specialized AI agents for different security tasks"),
             ("Tool Integration", "Execute commands, analyze code, search web"),
@@ -393,17 +393,17 @@ class QuickstartCommand(Command):
             ("MCP Support", "Extend with external tool servers"),
             ("Docker Integration", "Run tools in isolated containers"),
         ]
-        
+
         for feature, desc in features:
             features_table.add_row(f"  • {feature}", desc)
-        
+
         console.print(features_table)
 
         # Configuration directory info
         cai_dir = Path.home() / ".cai"
         console.print("\n[bold yellow]📁 Configuration Directory[/bold yellow]\n")
         console.print(f"CAI stores configuration and logs in: [cyan]{cai_dir}[/cyan]")
-        
+
         if not cai_dir.exists():
             console.print("[yellow]→ This directory will be created on first run[/yellow]")
         else:

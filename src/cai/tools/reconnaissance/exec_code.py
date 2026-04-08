@@ -1,13 +1,13 @@
 """
 Tool for executing code via LLM tool calls.
 """
-import os
-import uuid
-import shlex
 import base64
+import os
+import shlex
+import uuid
 
-from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.sdk.agents import function_tool
+from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.tools.validation import is_valid_filename  # pylint: disable=import-error
 
 

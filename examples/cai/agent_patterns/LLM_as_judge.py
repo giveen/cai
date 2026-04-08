@@ -9,12 +9,20 @@ and allows cost optimization by combining smaller and larger models.
 from __future__ import annotations
 
 import asyncio
-import os
 import json
+import os
 from dataclasses import dataclass
 from typing import Literal
-from cai.sdk.agents import Agent, ItemHelpers, Runner, TResponseInputItem, OpenAIChatCompletionsModel
+
 from openai import AsyncOpenAI
+
+from cai.sdk.agents import (
+    Agent,
+    ItemHelpers,
+    OpenAIChatCompletionsModel,
+    Runner,
+    TResponseInputItem,
+)
 from cai.util import get_ollama_api_base
 
 # Enable debug mode
@@ -22,11 +30,12 @@ from cai.util import get_ollama_api_base
 #os.environ['LITELLM_VERBOSE'] = 'True'
 
 # Force Ollama mode if qwen model is used
-if os.getenv('CAI_MODEL', "qwen2.5:14b").startswith("qwen"): 
+if os.getenv('CAI_MODEL', "qwen2.5:14b").startswith("qwen"):
     os.environ['OLLAMA'] = 'true'
 
 # Modify OpenAIChatCompletionsModel._fetch_response_litellm_ollama to debug output
 import cai.sdk.agents.models.openai_chatcompletions
+
 original_fetch_response_litellm_ollama = cai.sdk.agents.models.openai_chatcompletions.OpenAIChatCompletionsModel._fetch_response_litellm_ollama
 
 async def debug_fetch_response_litellm_ollama(self, kwargs, model_settings, tool_choice, stream, parallel_tool_calls):
@@ -34,7 +43,7 @@ async def debug_fetch_response_litellm_ollama(self, kwargs, model_settings, tool
     print(f"Base URL: {get_ollama_api_base().rstrip('/v1')}")
     print(f"Model name: {kwargs.get('model')}")
     print(f"Messages: {json.dumps(kwargs.get('messages'))[:200]}...") # Truncated to avoid huge output
-    
+
     # Check if the model exists in Ollama
     import requests
     try:
@@ -42,7 +51,7 @@ async def debug_fetch_response_litellm_ollama(self, kwargs, model_settings, tool
         models = response.json().get("models", [])
         model_names = [model.get("name") for model in models]
         print(f"Available Ollama models: {model_names}")
-        
+
         model_name = kwargs.get('model')
         if model_name in model_names:
             print(f"✅ Model '{model_name}' is available in Ollama")
@@ -51,14 +60,14 @@ async def debug_fetch_response_litellm_ollama(self, kwargs, model_settings, tool
             similar_models = [name for name in model_names if model_name.split(":")[0] in name]
             if similar_models:
                 print(f"Similar models available: {similar_models}")
-                
+
                 # Try with first similar model
                 if similar_models:
                     print(f"⚠️ Trying with similar model: {similar_models[0]}")
                     kwargs["model"] = similar_models[0]
     except Exception as e:
         print(f"Error checking Ollama models: {e}")
-    
+
     # Call the original function
     return await original_fetch_response_litellm_ollama(self, kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
 
@@ -78,7 +87,7 @@ ctf_task_planner = Agent(
         model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
     ),
-    tools=[] 
+    tools=[]
 )
 
 
@@ -102,7 +111,7 @@ ctf_plan_evaluator = Agent[None](
         model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
     ),
-    tools=[],  
+    tools=[],
     output_type=EvaluationFeedback,
 )
 
@@ -112,7 +121,7 @@ async def main() -> None:
     input_items: list[TResponseInputItem] = [{"content": challenge_desc, "role": "user"}]
 
     latest_plan: str | None = None
-    
+
     while True:
         try:
             print("\n[INFO] Running CTF Task Planner...")

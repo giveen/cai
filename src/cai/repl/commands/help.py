@@ -79,7 +79,7 @@ class HelpCommand(Command):
         self.add_subcommand("agent", "Display help for agent commands", self.handle_agent)
         self.add_subcommand("parallel", "Display help for parallel execution", self.handle_parallel)
         self.add_subcommand("run", "Display help for queued execution", self.handle_run)
-        
+
         # Memory & History
         self.add_subcommand("memory", "Display help for memory persistence", self.handle_memory)
         self.add_subcommand("history", "Display help for conversation history", self.handle_history)
@@ -87,24 +87,24 @@ class HelpCommand(Command):
         self.add_subcommand("flush", "Display help for clearing histories", self.handle_flush)
         self.add_subcommand("load", "Display help for loading JSONL files", self.handle_load)
         self.add_subcommand("merge", "Display help for merging agent histories", self.handle_merge_help)
-        
+
         # Environment & Config
         self.add_subcommand("config", "Display help for configuration", self.handle_config)
         self.add_subcommand("env", "Display help for environment variables", self.handle_env)
         self.add_subcommand("workspace", "Display help for workspace management", self.handle_workspace)
         self.add_subcommand("virtualization", "Display help for Docker containers", self.handle_virtualization)
-        
+
         # Tools & Integration
         self.add_subcommand("mcp", "Display help for Model Context Protocol", self.handle_mcp)
         self.add_subcommand("platform", "Display help for platform commands", self.handle_platform)
         self.add_subcommand("shell", "Display help for shell commands", self.handle_shell)
-        
+
         # Utilities
         self.add_subcommand("model", "Display help for model selection", self.handle_model)
         self.add_subcommand("graph", "Display help for visualization", self.handle_graph)
         self.add_subcommand("aliases", "Display all command aliases", self.handle_aliases)
         self.add_subcommand("kill", "Display help for process management", self.handle_kill)
-        
+
         # General
         self.add_subcommand("commands", "List all available commands", self.handle_commands)
         self.add_subcommand("quick", "Quick reference guide", self.handle_quick)
@@ -1064,10 +1064,10 @@ class HelpCommand(Command):
             table.add_column("Command", style="cyan")
             table.add_column("Aliases", style="green")
             table.add_column("Description", style="white")
-            
+
             for cmd, aliases, desc in commands:
                 table.add_row(cmd, aliases, desc)
-            
+
             console.print(table)
 
         console.print("\n[dim]Use /help <command> for detailed information about any command.[/dim]")
@@ -1093,7 +1093,7 @@ class HelpCommand(Command):
             ("[cyan]/config[/cyan]", "View all settings"),
             ("[cyan]/help <topic>[/cyan]", "Get detailed help"),
         ]
-        
+
         table = Table(show_header=False, box=None)
         table.add_column(width=35)
         table.add_column()
@@ -1120,7 +1120,7 @@ class HelpCommand(Command):
                 "Scan 192.168.1.0/24",
             ]),
         ]
-        
+
         for title, steps in workflows:
             console.print(f"\n  {title}")
             for step in steps:
@@ -1135,7 +1135,7 @@ class HelpCommand(Command):
             ("[cyan]Ctrl+L[/cyan]", "Clear screen"),
             ("[cyan]Ctrl+D[/cyan]", "Exit CAI"),
         ]
-        
+
         table = Table(show_header=False, box=None)
         table.add_column(width=20)
         table.add_column()
@@ -1150,10 +1150,10 @@ class HelpCommand(Command):
             "Set CAI_PARALLEL=3 to always run 3 agents",
             "Check /mcp for external tool integration",
         ]
-        
+
         console.print("\n")
         console.print(create_notes_panel(tips, "💡 Pro Tips", "cyan"))
-        
+
         return True
 
     def handle_merge_help(self, _: Optional[List[str]] = None) -> bool:

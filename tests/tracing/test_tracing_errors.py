@@ -18,8 +18,6 @@ from cai.sdk.agents import (
     Runner,
     TResponseInputItem,
 )
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
@@ -27,6 +25,7 @@ from tests.core.test_responses import (
     get_handoff_tool_call,
     get_text_message,
 )
+from tests.fake_model import FakeModel
 from tests.testing_processor import fetch_normalized_spans
 
 

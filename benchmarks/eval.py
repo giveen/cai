@@ -47,38 +47,30 @@ If you want to see the current cost of the benchmark in real-time, add the prici
             "output_per_million": $/M tokens
         }
 """
-import json
-import re
-import time
-import os
-import datetime
-import random
-import string
 import argparse
-from tqdm import tqdm
-import litellm
-import requests
 import csv
-import os
 import datetime
-import dotenv
+import json
+import os
+import re
 import sys
+
+import dotenv
+import litellm
 import pandas as pd
-from typing import Set
+import requests
 
 # Import functions from annotation_metrics.py
 sys.path.append(os.path.join(os.path.dirname(__file__), 'cyberPII-bench'))
 from annotation_metrics import (
-    find_entities_with_positions,
-    normalize_annotations,
     calculate_metrics,
-    generate_overall_report,
     generate_entity_report,
-    generate_mistakes_report,
     generate_metrics_report,
-    get_output_dir
+    generate_mistakes_report,
+    generate_overall_report,
+    get_output_dir,
+    normalize_annotations,
 )
-
 
 dotenv.load_dotenv()
 
@@ -96,7 +88,7 @@ def fetch_model_pricing(model_name):
     Updates the global token cost variables.
     """
     global input_cost_per_token, output_cost_per_token
-    
+
     # Check cache first
     if model_name in model_pricing_cache:
         input_cost_per_token, output_cost_per_token = model_pricing_cache[model_name]
@@ -224,7 +216,7 @@ Anonymize this text, JUST RETURN THE TEXT ANONYMIZED PLEASE:
 def load_dataset(dataset_file, eval_type):
     questions = []  # list of questions: {question: str, answers: dict, solution: str}
     if eval_type == "seceval":
-        with open(dataset_file, "r") as f:
+        with open(dataset_file) as f:
             data = json.load(f)
             for question in data:
                 questions.append(
@@ -236,7 +228,7 @@ def load_dataset(dataset_file, eval_type):
                 )
 
     elif eval_type == "cybermetric":
-        with open(dataset_file, "r") as f:
+        with open(dataset_file) as f:
             data = json.load(f)
             for question in data.get("questions", []):
                 questions.append(
@@ -249,7 +241,7 @@ def load_dataset(dataset_file, eval_type):
                     }
                 )
     elif eval_type == "cti_bench":
-        with open(dataset_file, "r") as f:
+        with open(dataset_file) as f:
             reader = csv.reader(f, delimiter="\t")
             header = next(reader, None)
             for row in reader:
@@ -306,7 +298,7 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
 
     # Read the original CSV file
     original_rows = []
-    with open(dataset_file, "r", encoding="utf-8") as f:
+    with open(dataset_file, encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter=";")
         fieldnames = list(reader.fieldnames)
         for row in reader:
@@ -318,7 +310,7 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
         fieldnames.append(new_column)
 
     start_time = datetime.datetime.now()
-    print(f"\nStarting PII Anonymization Benchmark")
+    print("\nStarting PII Anonymization Benchmark")
     print(f"Model: {model}")
     print(f"Dataset: {dataset_file}")
     print(f"Total texts to process: {len(original_rows)}")
@@ -413,7 +405,7 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
     # Print summary metrics
     if safe_model in stats["metrics_per_annotator"]:
         metrics = stats["metrics_per_annotator"][safe_model]
-        print(f"\nOverall Performance:")
+        print("\nOverall Performance:")
         print(f"  Precision: {metrics['precision']:.4f}")
         print(f"  Recall: {metrics['recall']:.4f}")
         print(f"  F1 Score: {metrics['f1_score']:.4f}")
@@ -459,20 +451,20 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
         # Save intermediate results if save_interval is set and we've reached that interval
         if save_interval and (idx + 1) % save_interval == 0:
             current_time = datetime.datetime.now()
-            
+
             # Calculate current accuracy
             if eval_type and dataset_file:
                 accuracy, correct_count, total_count = compute_accuracy(results, eval_type, dataset_file)
-                
+
                 # Save intermediate results
                 intermediate_dir = os.path.join(os.getcwd(), "benchmarks", "outputs", eval_type, f"{safe_model}_{run_timestamp}", "intermediate")
                 if not os.path.exists(intermediate_dir):
                     os.makedirs(intermediate_dir)
-                    
+
                 checkpoint_file = os.path.join(intermediate_dir, f"checkpoint_{idx+1}.json")
                 with open(checkpoint_file, "w", encoding="utf-8") as f:
                     json.dump(results, f, ensure_ascii=False, indent=2)
-                
+
                 # Save intermediate information
                 info_file = os.path.join(intermediate_dir, f"info_{idx+1}.txt")
                 with open(info_file, "w") as f:
@@ -482,7 +474,7 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
                     f.write(f"Dataset: {os.path.basename(dataset_file)}\n")
                     f.write(f"Start Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write(f"Questions Processed: {idx+1}/{len(dataset)}\n")
-                    
+
                     # Display appropriate metrics based on evaluation type
                     if eval_type.lower() == "cti_bench" and 'cti-vsp' in dataset_file:
                         f.write(f"Mean Absolute Deviation: {accuracy:.2f}\n")
@@ -492,16 +484,16 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
                     else:
                         f.write(f"Correct Answers: {correct_count}\n")
                         f.write(f"Accuracy: {accuracy:.2f}%\n")
-                        
+
                     f.write(f"Current Time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write(f"Duration so far: {current_time - start_time}\n")
-                    
+
                 print(f"Saved intermediate results at question {idx+1}/{len(dataset)}")
-                
-        if total_cost > 20: 
+
+        if total_cost > 20:
             print("Cost limit exceeded. Stopping evaluation.")
             break
-            
+
     return results, start_time, total_cost
 
 

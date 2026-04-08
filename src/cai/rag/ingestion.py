@@ -12,11 +12,11 @@ used in CI/development without extra dependencies.
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 import traceback
 from typing import Any, Dict, List, Optional, Tuple
-import os
 
 from cai.rag.metrics import collector
 

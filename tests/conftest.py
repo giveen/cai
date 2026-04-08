@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import os
+
 import pytest
 
-import inspect
 from cai.sdk.agents.models import _openai_shared
 from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from cai.sdk.agents.models.openai_responses import OpenAIResponsesModel
-from unittest.mock import AsyncMock as _AsyncMock
 from cai.sdk.agents.tracing import set_trace_processors
 from cai.sdk.agents.tracing.setup import GLOBAL_TRACE_PROVIDER
-
 from tests.testing_processor import SPAN_PROCESSOR_TESTING
 
 

@@ -8,7 +8,7 @@ Includes multi-agent support and persistent message history features.
 import json
 import os
 import sys
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -610,7 +610,7 @@ class TestHistoryCommand:
 
     # Note: The 'save' subcommand doesn't exist in the current implementation
     # These tests are commented out as placeholders for when/if this feature is added
-    
+
     # @patch("builtins.open", new_callable=mock_open)
     # @patch("os.makedirs")
     # def test_handle_save_subcommand(
@@ -775,23 +775,23 @@ class TestHistoryCommandIntegration:
     @patch("cai.agents.get_available_agents")
     def test_handle_agent_with_id(self, mock_get_available_agents, mock_agent_manager):
         """Test showing history for agent by ID."""
-        from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
-        
+        from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
+
         # Mock agent
         mock_agent = MagicMock()
         mock_agent.name = "Red Team Agent"
         mock_get_available_agents.return_value = {"red_teamer": mock_agent}
-        
+
         # Save original configs and clear
         original_configs = PARALLEL_CONFIGS[:]
         PARALLEL_CONFIGS.clear()
-        
+
         try:
             # Create parallel config with ID
             config1 = ParallelConfig("red_teamer")
             config1.id = "P1"
             PARALLEL_CONFIGS.append(config1)
-            
+
             # Mock history
             test_history = [
                 {"role": "user", "content": "Test message"},
@@ -801,7 +801,7 @@ class TestHistoryCommandIntegration:
             mock_agent_manager.get_agent_by_id.return_value = "Red Team Agent"
             mock_agent_manager.get_message_history.return_value = test_history
             mock_agent_manager.get_id_by_name.return_value = "P1"
-            
+
             cmd = HistoryCommand()
             result = cmd.handle(["P1"])
             assert result is True
@@ -810,7 +810,7 @@ class TestHistoryCommandIntegration:
             # Restore original configs
             PARALLEL_CONFIGS.clear()
             PARALLEL_CONFIGS.extend(original_configs)
-    
+
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_all_agent_histories")
     @patch("cai.repl.commands.parallel.PARALLEL_CONFIGS")
     @patch("cai.agents.get_available_agents")
@@ -819,28 +819,28 @@ class TestHistoryCommandIntegration:
     ):
         """Test control panel shows configured agents even without history."""
         from cai.repl.commands.parallel import ParallelConfig
-        
+
         # Mock agents
         mock_agent1 = MagicMock()
         mock_agent1.name = "Red Team Agent"
         mock_agent2 = MagicMock()
         mock_agent2.name = "Bug Bounty Hunter"
-        
+
         mock_get_available_agents.return_value = {
             "red_teamer": mock_agent1,
             "bug_bounter": mock_agent2
         }
-        
+
         # Create parallel configs
         config1 = ParallelConfig("red_teamer")
         config1.id = "P1"
         config2 = ParallelConfig("bug_bounter")
         config2.id = "P2"
-        
+
         mock_parallel_configs.clear()
         mock_parallel_configs.append(config1)
         mock_parallel_configs.append(config2)
-        
+
         # Only one agent has history
         mock_get_all_histories.return_value = {
             "Red Team Agent": [
@@ -848,45 +848,45 @@ class TestHistoryCommandIntegration:
                 {"role": "assistant", "content": "Response"}
             ]
         }
-        
+
         cmd = HistoryCommand()
         result = cmd.handle([])
         assert result is True
         # Should still succeed and show both agents (one with history, one configured)
-    
+
     @patch("cai.sdk.agents.simple_agent_manager.AGENT_MANAGER")
     @patch("cai.agents.get_available_agents")
     def test_handle_numbered_agent_with_id(
         self, mock_get_available_agents, mock_agent_manager
     ):
         """Test handling numbered agents (duplicates) with IDs."""
-        from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
-        
+        from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
+
         # Mock agent
         mock_agent = MagicMock()
         mock_agent.name = "Bug Bounty Hunter"
         mock_get_available_agents.return_value = {"bug_bounter": mock_agent}
-        
+
         # Save original configs and clear
         original_configs = PARALLEL_CONFIGS[:]
         PARALLEL_CONFIGS.clear()
-        
+
         try:
             # Create multiple configs for same agent type
             config1 = ParallelConfig("bug_bounter")
             config1.id = "P1"
             config2 = ParallelConfig("bug_bounter")
             config2.id = "P2"
-            
+
             PARALLEL_CONFIGS.append(config1)
             PARALLEL_CONFIGS.append(config2)
-            
+
             # Mock history for second instance
             test_history = [
                 {"role": "user", "content": "Instance 2 test"},
                 {"role": "assistant", "content": "Instance 2 response"}
             ]
-            
+
             # Mock AGENT_MANAGER methods
             mock_agent_manager.get_agent_by_id.return_value = "Bug Bounty Hunter"
             mock_agent_manager.get_message_history.return_value = test_history
@@ -896,7 +896,7 @@ class TestHistoryCommandIntegration:
                 "Bug Bounty Hunter #2 [P2]": test_history
             }
             mock_agent_manager.get_registered_agents.return_value = ["Bug Bounty Hunter"]
-            
+
             cmd = HistoryCommand()
             result = cmd.handle(["P2"])
             assert result is True

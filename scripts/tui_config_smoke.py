@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import os
 import json
+import os
 import shutil
-import sys
+
 from cai.tui.app import CONFIG_FILE, _load_tui_config, _save_tui_config
 
 
@@ -78,7 +78,7 @@ try:
     imported = {"imported_key": "imported_value"}
     with open(import_path, "w") as f:
         json.dump(imported, f)
-    with open(import_path, "r") as f:
+    with open(import_path) as f:
         imported_loaded = json.load(f)
     cfg = _load_tui_config()
     cfg.update(imported_loaded)

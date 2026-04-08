@@ -1,7 +1,7 @@
 import time
 
-from cai.rag.wakeup_index import WakeupIndex
 from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
+from cai.rag.wakeup_index import WakeupIndex
 
 
 def test_add_and_search_basic():

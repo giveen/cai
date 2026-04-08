@@ -1,6 +1,8 @@
-from cai.tools import validation
-import pytest
 import socket
+
+import pytest
+
+from cai.tools import validation
 
 
 def test_contains_shell_metacharacters():

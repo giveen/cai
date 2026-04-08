@@ -50,7 +50,7 @@ class FuncSchema:
             # If the function takes a RunContextWrapper and this is the first parameter, skip it.
             if self.takes_context and idx == 0:
                 continue
-                
+
             # Skip parameters named 'ctf' or 'CTF'
             if name.lower() == 'ctf':
                 continue

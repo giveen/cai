@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import hashlib
 import inspect
 import os
+from collections import deque
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
@@ -64,8 +66,6 @@ from .tracing import (
     trace,
 )
 from .util import _coro, _error_tracing
-import hashlib
-from collections import deque
 
 if TYPE_CHECKING:
     from .run import RunConfig
@@ -93,7 +93,7 @@ def truncate_output(output: Any, max_length: int = 10000) -> str:
     output_str = str(output)
     if len(output_str) <= max_length:
         return output_str
-    
+
     # Show first 5000 and last 5000 characters
     first_part = output_str[:5000]
     last_part = output_str[-5000:]
@@ -249,18 +249,18 @@ class RunImpl:
                 config=run_config,
             )
         )
-        
+
         function_results = []
         computer_results = []
         interrupt_exception = None
-        
+
         try:
             function_results, computer_results = await asyncio.gather(
                 function_task, computer_task
             )
         except (KeyboardInterrupt, asyncio.CancelledError) as e:
             interrupt_exception = e
-            
+
             # Try to get partial results from the tasks
             if function_task.done() and not function_task.cancelled():
                 try:
@@ -297,7 +297,7 @@ class RunImpl:
                         ),
                     )
                     function_results.append(result)
-                    
+
             if computer_task.done() and not computer_task.cancelled():
                 try:
                     computer_results = computer_task.result()
@@ -305,10 +305,10 @@ class RunImpl:
                     computer_results = []
             else:
                 computer_results = []
-            
+
         new_step_items.extend([result.run_item for result in function_results])
         new_step_items.extend(computer_results)
-        
+
         # Re-raise the interruption after ensuring results are added
         if interrupt_exception:
             raise interrupt_exception
@@ -574,7 +574,7 @@ class RunImpl:
                         results.append("Tool execution interrupted")
                 else:
                     results.append("Tool execution interrupted")
-            
+
             # Re-raise the exception after collecting results
             raise e
 

@@ -3,15 +3,16 @@ Mail Agent module for checking email configuration security.
 
 """
 import os
+
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 
 import dns.resolver  # pylint: disable=import-error
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, function_tool
 from cai.tools.misc.cli_utils import execute_cli_command
-from cai.sdk.agents import function_tool
 
 # Determine API key
 api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))

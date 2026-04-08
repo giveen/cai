@@ -4,10 +4,8 @@ This module provides commands for terminating active processes or sessions.
 """
 import os
 import signal
-from typing import (
-    List,
-    Optional
-)
+from typing import List, Optional
+
 from rich.console import Console  # pylint: disable=import-error
 
 from cai.repl.commands.base import Command, register_command

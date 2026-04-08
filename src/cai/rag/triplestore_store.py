@@ -7,10 +7,9 @@ or circular imports.
 from __future__ import annotations
 
 import os
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 from cai.rag.triplestore import TripleStore
-
 
 _GLOBAL_TRIPLESTORE: Optional[TripleStore] = None
 

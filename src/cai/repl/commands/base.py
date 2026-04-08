@@ -2,13 +2,8 @@
 Base module for CAI REPL commands.
 This module provides the base structure for all commands in the CAI REPL.
 """
-from typing import (
-    List,
-    Optional,
-    Dict,
-    Any,
-    Callable
-)
+from typing import Any, Callable, Dict, List, Optional
+
 from rich.console import Console  # pylint: disable=import-error
 
 console = Console()

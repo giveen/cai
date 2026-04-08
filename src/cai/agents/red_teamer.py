@@ -1,5 +1,6 @@
 """Red Team Base Agent"""
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -11,15 +12,14 @@ try:
 except Exception:
     AsyncOpenAI = None
 
+from cai.agents.guardrails import get_security_guardrails
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+
 # from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
 #     run_ssh_command_with_credentials
 # )
-
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
-from cai.util import load_prompt_template, create_system_prompt_renderer
-from cai.agents.guardrails import get_security_guardrails
-
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 load_dotenv()
 model_name = os.getenv("CAI_MODEL", "alias1")

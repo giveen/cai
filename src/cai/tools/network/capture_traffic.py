@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-import paramiko
-import tempfile
 import os
 import shutil
-import time
 import socket
 import sys
+import tempfile
 import threading
+import time
 from contextlib import contextmanager
+
+import paramiko
+
 from cai.sdk.agents import function_tool
 
 # Stores (tmp_dir, pipe_thread) for active captures, keyed by fifo_path
@@ -179,13 +181,13 @@ if __name__ == "__main__":
     if len(sys.argv) < 5:
         print("Usage: capture_traffic.py <ip> <username> <password> <interface> [filter]")
         sys.exit(1)
-    
+
     ip = sys.argv[1]
     username = sys.argv[2]
     password = sys.argv[3]
     interface = sys.argv[4]
     capture_filter = sys.argv[5] if len(sys.argv) > 5 else ""
-    
+
     try:
         with remote_capture_session(ip, username, password, interface, capture_filter) as fifo_path:
             # Keep the script running until interrupted

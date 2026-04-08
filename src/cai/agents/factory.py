@@ -37,17 +37,17 @@ def create_generic_agent_factory(
 
         # Get model configuration - check multiple sources
         model_name = model_override  # First priority: explicit override
-        
+
         if not model_name:
             # Second priority: agent-specific environment variable
             agent_key = agent_var_name.upper()
             model_name = os.getenv(f"CAI_{agent_key}_MODEL")
-        
+
         if not model_name:
             # Third priority: global CAI_MODEL
             model_name = os.environ.get("CAI_MODEL", "alias1")
-            
-            
+
+
         api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
 
         # Create a new model instance with the original agent name
@@ -64,7 +64,7 @@ def create_generic_agent_factory(
                 )
             except Exception:
                 new_model = None
-        
+
         # Mark as parallel agent if running in parallel mode
         parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
         if parallel_count > 1 and agent_id and agent_id.startswith("P"):
@@ -72,33 +72,33 @@ def create_generic_agent_factory(
 
         # Clone the agent with the new model
         cloned_agent = original_agent.clone(model=new_model)
-        
+
         # Update agent name if custom name was provided
         if custom_name:
             cloned_agent.name = custom_name
-            
+
         # Check if this agent has any MCP tools configured
         try:
             from cai.repl.commands.mcp import get_mcp_tools_for_agent
-            
+
             # Get MCP tools for this agent and add them
             mcp_tools = get_mcp_tools_for_agent(agent_var_name)
             if mcp_tools:
                 # Ensure the agent has tools list
                 if not hasattr(cloned_agent, 'tools'):
                     cloned_agent.tools = []
-                
+
                 # Remove any existing tools with the same names to avoid duplicates
                 existing_tool_names = {t.name for t in mcp_tools}
                 cloned_agent.tools = [t for t in cloned_agent.tools if t.name not in existing_tool_names]
-                
+
                 # Add the MCP tools
                 cloned_agent.tools.extend(mcp_tools)
-                
+
         except ImportError:
             # MCP command not available, skip
             pass
-            
+
         return cloned_agent
 
     return factory

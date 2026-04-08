@@ -1,10 +1,10 @@
+from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
 from cai.rag.summaries import (
+    load_summaries_for_session,
     persist_summaries,
     read_persisted_summaries,
-    load_summaries_for_session,
 )
 from cai.rag.wakeup_index import WakeupIndex
-from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
 
 
 def test_persist_and_read_summaries(tmp_path):
@@ -35,8 +35,8 @@ def test_load_persisted_only(tmp_path):
 
     # internal storage should contain keys
     assert "sess1" in idx.list_sessions()
-    assert f"palace2_L0" in idx._sessions["sess1"]
-    assert f"palace2_L1" in idx._sessions["sess1"]
+    assert "palace2_L0" in idx._sessions["sess1"]
+    assert "palace2_L1" in idx._sessions["sess1"]
 
 
 def test_regenerate_if_missing(tmp_path):

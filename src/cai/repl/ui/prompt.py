@@ -3,13 +3,16 @@ Module for CAI REPL prompt functionality.
 """
 import time
 from functools import lru_cache
-from prompt_toolkit import prompt  # pylint: disable=import-error
-from prompt_toolkit.history import FileHistory  # pylint: disable=import-error
-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory  # pylint: disable=import-error # noqa: E501
-from prompt_toolkit.styles import Style  # pylint: disable=import-error
-from prompt_toolkit.formatted_text import HTML  # pylint: disable=import-error
-from cai.repl.commands import FuzzyCommandCompleter
 
+from prompt_toolkit import prompt  # pylint: disable=import-error
+from prompt_toolkit.auto_suggest import (
+    AutoSuggestFromHistory,  # pylint: disable=import-error # noqa: E501
+)
+from prompt_toolkit.formatted_text import HTML  # pylint: disable=import-error
+from prompt_toolkit.history import FileHistory  # pylint: disable=import-error
+from prompt_toolkit.styles import Style  # pylint: disable=import-error
+
+from cai.repl.commands import FuzzyCommandCompleter
 
 # Cache for command shadow to avoid recalculating it too frequently
 shadow_cache = {
@@ -29,28 +32,28 @@ def get_command_shadow_cached(text):
 def get_command_shadow(text):
     """Get command shadow suggestion with throttling."""
     current_time = time.time()
-    
+
     # If the text hasn't changed, return the cached result
     if text == shadow_cache['text']:
         return shadow_cache['result']
-    
+
     # If we've updated recently, return the cached result
-    if (current_time - shadow_cache['last_update'] < shadow_cache['update_interval'] 
+    if (current_time - shadow_cache['last_update'] < shadow_cache['update_interval']
             and shadow_cache['result']):
         return shadow_cache['result']
-    
+
     # Update the cache
     shadow = get_command_shadow_cached(text)
     if shadow and shadow.startswith(text):
         result = shadow[len(text):]
     else:
         result = ""
-    
+
     # Store in cache
     shadow_cache['text'] = text
     shadow_cache['result'] = result
     shadow_cache['last_update'] = current_time
-    
+
     return result
 
 

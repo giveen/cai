@@ -25,8 +25,6 @@ from cai.sdk.agents import (
 )
 from cai.sdk.agents.agent import ToolsToFinalOutputResult
 from cai.sdk.agents.tool import FunctionToolResult, function_tool
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
@@ -35,6 +33,7 @@ from tests.core.test_responses import (
     get_text_input_item,
     get_text_message,
 )
+from tests.fake_model import FakeModel
 
 
 @pytest.mark.asyncio

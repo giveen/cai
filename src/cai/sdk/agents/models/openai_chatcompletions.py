@@ -7,15 +7,16 @@ import inspect
 import json
 import os
 import re
-import time
 import sys
+import time
+import uuid
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
-import uuid
 import litellm
 import tiktoken
+
 try:
     from openai import NOT_GIVEN, AsyncOpenAI, AsyncStream, NotGiven
 except Exception:  # pragma: no cover - optional OpenAI SDK
@@ -23,10 +24,15 @@ except Exception:  # pragma: no cover - optional OpenAI SDK
     AsyncOpenAI = None
     AsyncStream = None
     NotGiven = None
+# ---------------------------------------------------------------------------
+# LLM output sanitiser – strips hallucinated markup from local/small models
+# (Gemma-4, Qwen, Mistral, etc.) before we attempt JSON parsing.
+# ---------------------------------------------------------------------------
+import re as _re
+
 import httpx
 
 # Create custom InputTokensDetails class since it's not available in current OpenAI version
-from openai._models import BaseModel
 from openai.types import ChatModel
 from openai.types.chat import (
     ChatCompletion,
@@ -75,10 +81,10 @@ from openai.types.responses import (
 from openai.types.responses.response_input_param import FunctionCallOutput, ItemReference, Message
 from openai.types.responses.response_usage import OutputTokensDetails
 
-from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
 from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
 from cai.sdk.agents.run_to_jsonl import get_session_recorder
-from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
+from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 from cai.util import (
     _LIVE_STREAMING_PANELS,
     COST_TRACKER,
@@ -87,8 +93,8 @@ from cai.util import (
     cli_print_tool_output,
     create_agent_streaming_context,
     finish_agent_streaming,
-    get_ollama_api_base,
     get_minimax_api_base,
+    get_ollama_api_base,
     start_active_timer,
     start_claude_thinking_if_applicable,
     start_idle_timer,
@@ -96,12 +102,6 @@ from cai.util import (
     stop_idle_timer,
     update_agent_streaming_content,
 )
-
-# ---------------------------------------------------------------------------
-# LLM output sanitiser – strips hallucinated markup from local/small models
-# (Gemma-4, Qwen, Mistral, etc.) before we attempt JSON parsing.
-# ---------------------------------------------------------------------------
-import re as _re
 
 # Patterns emitted by some models that are NOT valid JSON and must be removed.
 # IMPORTANT: greedy/DOTALL stop-tag patterns must come BEFORE the generic
@@ -216,8 +216,8 @@ _HEADERS = {"User-Agent": _USER_AGENT}
 
 # Global registry to track active model instances
 # This allows us to access instance-based histories for commands like /history
-import weakref  # noqa: E402
 import contextvars  # noqa: E402
+import weakref  # noqa: E402
 
 # DEPRECATED: Use AGENT_REGISTRY instead
 ACTIVE_MODEL_INSTANCES = {}
@@ -251,7 +251,7 @@ def get_agent_message_history(agent_name: str) -> list:
         base_name = agent_name.rsplit("[", 1)[0].strip()
     else:
         base_name = agent_name
-    
+
     # Get history from SimpleAgentManager
     return AGENT_MANAGER.get_message_history(base_name)
 
@@ -298,10 +298,10 @@ def clear_agent_history(agent_name: str):
         base_name = agent_name.rsplit("[", 1)[0].strip()
     else:
         base_name = agent_name
-    
+
     # Clear from SimpleAgentManager
     AGENT_MANAGER.clear_history(base_name)
-    
+
     # Also clear the current instance if it matches
     active_agent = AGENT_MANAGER.get_active_agent()
     if active_agent and hasattr(active_agent, 'message_history'):
@@ -315,15 +315,15 @@ def clear_all_histories():
     """Clear all agent histories."""
     # Clear from SimpleAgentManager
     AGENT_MANAGER.clear_all_histories()
-    
+
     # Clear active agent's history if present
     active_agent = AGENT_MANAGER.get_active_agent()
     if active_agent and hasattr(active_agent, 'message_history'):
         active_agent.message_history.clear()
-    
+
     # Clear all persistent histories
     PERSISTENT_MESSAGE_HISTORIES.clear()
-    
+
     # Reset context usage since all histories are cleared
     os.environ['CAI_CONTEXT_USAGE'] = '0.0'
 
@@ -492,7 +492,7 @@ class OpenAIChatCompletionsModel(Model):
         self.agent_name = agent_name
         self.agent_type = agent_type or agent_name.lower().replace(" ", "_")  # For registry tracking
         self.uses_unified_context = False  # Flag to indicate if using shared message history
-        
+
         # For SimpleAgentManager, we don't auto-register
         # The agent will be registered when explicitly created by cli.py
         self.agent_id = agent_id or AGENT_MANAGER.get_agent_id()
@@ -518,11 +518,11 @@ class OpenAIChatCompletionsModel(Model):
                 self.message_history = []
                 if self.agent_name not in AGENT_MANAGER._message_history:
                     AGENT_MANAGER._message_history[self.agent_name] = self.message_history
-        
+
         # NOTE: Models should NOT register themselves with AGENT_MANAGER
         # The agent that owns this model will handle registration
         # This prevents duplicate registrations with agent keys
-        
+
         # CRITICAL: Ensure AGENT_MANAGER uses the same list reference as the model
         # This is necessary for proper history clearing to work
         if agent_id is not None and not PARALLEL_ISOLATION.is_parallel_mode():
@@ -539,7 +539,7 @@ class OpenAIChatCompletionsModel(Model):
 
         # Initialize the session logger
         self.logger = get_session_recorder()
-        
+
         # DEPRECATED: Still maintain backward compatibility with ACTIVE_MODEL_INSTANCES
         # Centralize registration so future removals are simpler.
         register_active_model_instance(self._display_name, self.agent_id, self)
@@ -547,21 +547,21 @@ class OpenAIChatCompletionsModel(Model):
         self._last_stream_request = None
         self._last_stream_partial = ""
         self._resume_available = False
-    
+
     def get_full_display_name(self) -> str:
         """Get the full display name including ID."""
         return f"{self._display_name} [{self.agent_id}]"
-    
+
     def __del__(self):
         """Clean up when the model instance is destroyed."""
         try:
             # DEPRECATED: Remove from old registry for backward compatibility
                 if hasattr(self, '_display_name') and hasattr(self, 'agent_id'):
                     unregister_active_model_instance(self._display_name, self.agent_id)
-            
+
             # SimpleAgentManager handles history persistence
             # No need to save to PERSISTENT_MESSAGE_HISTORIES
-                        
+
         except Exception:
             # Ignore any errors during cleanup
             pass
@@ -615,7 +615,7 @@ class OpenAIChatCompletionsModel(Model):
         Now only adds to the instance's local history, no global registry.
         """
         is_duplicate = False
-        
+
         if self.message_history:
             if msg.get("role") in ["system", "user"]:
                 is_duplicate = any(
@@ -644,7 +644,7 @@ class OpenAIChatCompletionsModel(Model):
                     and existing.get("tool_call_id") == msg.get("tool_call_id")
                     for existing in self.message_history
                 )
-        
+
         if not is_duplicate:
             self.message_history.append(msg)
             # Also update SimpleAgentManager ONLY if they're not the same list reference
@@ -835,7 +835,7 @@ class OpenAIChatCompletionsModel(Model):
         # Increment the interaction counter for CLI display
         self.interaction_counter += 1
         self._intermediate_logs()
-        
+
         # Set this as the current active model for tool execution context
         set_current_active_model(self)
 
@@ -857,7 +857,7 @@ class OpenAIChatCompletionsModel(Model):
             converted_messages = []
             new_messages = self._converter.items_to_messages(input, model_instance=self)
             converted_messages.extend(new_messages)
-            
+
             if system_instructions:
                 # Check if we already have a system message
                 has_system = any(msg.get("role") == "system" for msg in converted_messages)
@@ -966,7 +966,7 @@ class OpenAIChatCompletionsModel(Model):
             # (tests expect a minimal non-zero default for completions).
             if estimated_input_tokens == 0:
                 estimated_input_tokens = 5
-            
+
             # Calculate and set context usage for toolbar
             max_tokens = self._get_model_max_tokens(str(self.model))
             context_usage = estimated_input_tokens / max_tokens if max_tokens > 0 else 0.0
@@ -989,7 +989,7 @@ class OpenAIChatCompletionsModel(Model):
                 except Exception:
                     pass
                 raise
-            
+
             # If compaction occurred, recalculate tokens with new input
             if compacted:
                 converted_messages = self._converter.items_to_messages(input, model_instance=self)
@@ -1130,17 +1130,17 @@ class OpenAIChatCompletionsModel(Model):
                     reasoning_tokens = 0
 
                 self.total_reasoning_tokens += reasoning_tokens
-            
+
             # Process costs for non-streaming mode
             model_name = str(self.model)
             interaction_cost = calculate_model_cost(model_name, input_tokens, output_tokens)
-            
+
             # Process the costs through COST_TRACKER only once
             if interaction_cost > 0.0:
                 # Check price limit before processing
                 if hasattr(COST_TRACKER, "check_price_limit"):
                     COST_TRACKER.check_price_limit(interaction_cost)
-                
+
                 # Process interaction cost
                 COST_TRACKER.process_interaction_cost(
                     model_name,
@@ -1149,7 +1149,7 @@ class OpenAIChatCompletionsModel(Model):
                     reasoning_tokens,
                     interaction_cost
                 )
-                
+
                 # Process total cost
                 total_cost = COST_TRACKER.process_total_cost(
                     model_name,
@@ -1158,7 +1158,7 @@ class OpenAIChatCompletionsModel(Model):
                     self.total_reasoning_tokens,
                     None
                 )
-                
+
                 # Track usage globally
                 GLOBAL_USAGE_TRACKER.track_usage(
                     model_name=model_name,
@@ -1170,7 +1170,7 @@ class OpenAIChatCompletionsModel(Model):
             else:
                 # For free models
                 total_cost = COST_TRACKER.session_total_cost
-                
+
                 # Still track token usage even for free models
                 GLOBAL_USAGE_TRACKER.track_usage(
                     model_name=model_name,
@@ -1342,7 +1342,7 @@ class OpenAIChatCompletionsModel(Model):
                     # Handle empty/malformed arguments robustly
                     tool_args = tool_call.function.arguments
                     tool_args = _sanitize_llm_tool_args(tool_args)
-                    
+
                     # Compose a message for the tool call
                     tool_call_msg = {
                         "role": "assistant",
@@ -1714,7 +1714,7 @@ class OpenAIChatCompletionsModel(Model):
                     except Exception:
                         pass
                     raise
-                
+
                 # If compaction occurred, recalculate tokens with new input
                 if compacted:
                     converted_messages = self._converter.items_to_messages(input, model_instance=self)
@@ -2752,7 +2752,7 @@ class OpenAIChatCompletionsModel(Model):
                         else 0,
                         interaction_cost
                     )
-                    
+
                     # Process the total cost (updates session total correctly)
                     total_cost = COST_TRACKER.process_total_cost(
                         model_name,
@@ -2761,7 +2761,7 @@ class OpenAIChatCompletionsModel(Model):
                         getattr(self, "total_reasoning_tokens", 0),
                         None  # Let it calculate from tokens
                     )
-                    
+
                     # Track usage globally
                     GLOBAL_USAGE_TRACKER.track_usage(
                         model_name=model_name,
@@ -2922,7 +2922,7 @@ class OpenAIChatCompletionsModel(Model):
                         "content": "Tool execution interrupted"
                     }
                     self.add_to_message_history(tool_response_msg)
-                    
+
             except Exception as cleanup_error:
                 # Don't let cleanup errors mask the original KeyboardInterrupt
                 logger.debug(f"Error during interrupt cleanup: {cleanup_error}")
@@ -3234,12 +3234,12 @@ class OpenAIChatCompletionsModel(Model):
                 # Ollama Cloud configuration
                 ollama_api_key = os.getenv("OLLAMA_API_KEY")
                 ollama_api_base = os.getenv("OLLAMA_API_BASE", "https://ollama.com")
-                
+
                 if ollama_api_key:
                     kwargs["api_key"] = ollama_api_key
                 if ollama_api_base:
                     kwargs["api_base"] = ollama_api_base
-                    
+
                 # Drop params not supported by Ollama
                 litellm.drop_params = True
                 kwargs.pop("parallel_tool_calls", None)
@@ -3421,11 +3421,11 @@ class OpenAIChatCompletionsModel(Model):
         # Add retry logic for rate limits
         max_retries = 3
         retry_count = 0
-        
+
         # Check if this is Ollama Cloud (ollama_cloud/ prefix)
         # Ollama Cloud is OpenAI-compatible, so we bypass LiteLLM to avoid parsing issues
         is_ollama_cloud = "ollama_cloud/" in model_str
-        
+
         if is_ollama_cloud:
             # Use AsyncOpenAI client directly for Ollama Cloud
             # Ollama Cloud is fully OpenAI-compatible at /v1/chat/completions
@@ -3433,40 +3433,40 @@ class OpenAIChatCompletionsModel(Model):
                 # Configure the client with Ollama Cloud settings
                 ollama_api_key = os.getenv("OLLAMA_API_KEY") or os.getenv("OPENAI_API_KEY")
                 ollama_base_url = os.getenv("OLLAMA_API_BASE", "https://ollama.com")
-                
+
                 # Ensure the URL has /v1 for OpenAI compatibility
                 if not ollama_base_url.endswith("/v1"):
                     ollama_base_url = f"{ollama_base_url}/v1"
-                
+
                 # Create a temporary client configured for Ollama Cloud
                 ollama_client = AsyncOpenAI(
                     api_key=ollama_api_key,
                     base_url=ollama_base_url
                 )
-                
+
                 # Remove the ollama_cloud/ prefix from the model name
                 clean_model = kwargs["model"].replace("ollama_cloud/", "")
                 kwargs["model"] = clean_model
-                
+
                 # Remove LiteLLM-specific parameters
                 kwargs.pop("extra_headers", None)
                 kwargs.pop("api_key", None)
                 kwargs.pop("api_base", None)
                 kwargs.pop("custom_llm_provider", None)
-                
+
                 # Call Ollama Cloud using OpenAI-compatible API
                 if stream:
                     return await ollama_client.chat.completions.create(**kwargs)
                 else:
                     return await ollama_client.chat.completions.create(**kwargs)
-                    
+
             except Exception as e:
                 # If Ollama Cloud fails, raise with helpful message
                 raise Exception(
                     f"Error connecting to Ollama Cloud: {str(e)}\n"
                     f"Verify OLLAMA_API_KEY and OLLAMA_API_BASE are configured correctly."
                 ) from e
-        
+
         while retry_count < max_retries:
             try:
                 if self.is_ollama:
@@ -3483,7 +3483,7 @@ class OpenAIChatCompletionsModel(Model):
                 if retry_count >= max_retries:
                     print(f"\n❌ Rate limit exceeded after {max_retries} retries")
                     raise
-                
+
                 print(f"\n⏳ Rate limit reached - Too many requests (attempt {retry_count}/{max_retries})")
                 # Try to extract retry delay from error response or use default
                 retry_delay = 60  # Default delay in seconds
@@ -3506,7 +3506,7 @@ class OpenAIChatCompletionsModel(Model):
                     # Try other common formats
                     import re
                     error_str = str(e)
-                    
+
                     # Look for "Retry-After" header or similar patterns
                     retry_match = re.search(r'retry[_-]?after[:\s]+(\d+)', error_str, re.IGNORECASE)
                     if retry_match:
@@ -3522,7 +3522,7 @@ class OpenAIChatCompletionsModel(Model):
                 if retry_count > 1 and retry_delay == 60:
                     import random
                     retry_delay = min(300, retry_delay * retry_count) + random.randint(0, 10)
-                
+
                 print(f"💤 Waiting {retry_delay}s before retry... (Rate limit protection)")
                 await asyncio.sleep(retry_delay)  # Use async sleep instead of time.sleep
                 continue  # Retry the request
@@ -3572,7 +3572,7 @@ class OpenAIChatCompletionsModel(Model):
                 logger.debug(f"Network error during model call, retrying in {retry_delay:.1f}s: {e}")
                 await asyncio.sleep(retry_delay)
                 continue  # Retry
-                
+
             except litellm.exceptions.BadRequestError as e:
                 error_msg = str(e)
 
@@ -3769,7 +3769,7 @@ class OpenAIChatCompletionsModel(Model):
                                 f"All provider approaches failed. Original error: {str(e)}, Direct error: {str(direct_e)}"
                             )
                             raise e
-                
+
                 # Check for message sequence errors
                 if (
                     "An assistant message with 'tool_calls'" in str(e)
@@ -3882,7 +3882,7 @@ class OpenAIChatCompletionsModel(Model):
                     raise
                 # Check for context length errors in BadRequestError
                 if (
-                    "context_length_exceeded" in str(e) 
+                    "context_length_exceeded" in str(e)
                     or "prompt is too long" in str(e).lower()
                     or "maximum context length" in str(e).lower()
                     or "max_tokens" in str(e) and "exceeded" in str(e).lower()
@@ -3890,18 +3890,18 @@ class OpenAIChatCompletionsModel(Model):
                     or "token limit" in str(e).lower()
                 ):
                     print("\n📦 Context window exceeded - Message history too long")
-                    
+
                     # Try to extract token info from different error formats
                     import re
                     error_str = str(e)
-                    
+
                     # Pattern 1: "X tokens > Y maximum" (Anthropic)
                     match1 = re.search(r'(\d+)\s*tokens?\s*>\s*(\d+)\s*maximum', error_str)
                     # Pattern 2: "requested X tokens...maximum context length is Y" (OpenAI)
                     match2 = re.search(r'requested\s+(\d+)\s+tokens.*maximum.*?(\d+)', error_str)
                     # Pattern 3: "This model's maximum context length is X tokens, however you requested Y"
                     match3 = re.search(r'maximum context length is\s+(\d+).*requested\s+(\d+)', error_str)
-                    
+
                     if match1:
                         used_tokens = int(match1.group(1))
                         max_tokens = int(match1.group(2))
@@ -4256,9 +4256,9 @@ class OpenAIChatCompletionsModel(Model):
                         _did_compact = False
                         try:
                             from cai.repl.commands.memory import (
-                                MEMORY_COMMAND_INSTANCE,
-                                COMPACTED_SUMMARIES,
                                 APPLIED_MEMORY_IDS,
+                                COMPACTED_SUMMARIES,
+                                MEMORY_COMMAND_INSTANCE,
                             )
                             # Avoid mutating the global CompactCommand singleton in
                             # concurrent contexts. Instead, temporarily set the
@@ -4337,7 +4337,7 @@ class OpenAIChatCompletionsModel(Model):
         max_tokens = self._get_model_max_tokens(str(self.model))
         threshold_percent = float(os.getenv("CAI_AUTO_COMPACT_THRESHOLD", "0.8"))
         threshold = max_tokens * threshold_percent
-        
+
         if estimated_tokens <= threshold:
             # Context dropped below threshold — clear any previous failure record so we
             # can attempt compaction again the next time it's needed.
@@ -4362,21 +4362,21 @@ class OpenAIChatCompletionsModel(Model):
         # Auto-compaction needed
         from rich.console import Console
         console = Console()
-        
+
         # Update context usage in environment for toolbar
         context_usage = estimated_tokens / max_tokens
         os.environ['CAI_CONTEXT_USAGE'] = str(context_usage)
-        
+
         console.print(f"\n[yellow]⚠️  Context usage at {(estimated_tokens/max_tokens)*100:.1f}% ({estimated_tokens:,}/{max_tokens:,} tokens)[/yellow]")
         console.print("[yellow]Triggering automatic context compaction...[/yellow]\n")
-        
+
         # Import compact command components
         try:
             from cai.repl.commands.memory import MEMORY_COMMAND_INSTANCE
-            
+
             # Generate AI summary of the conversation
             summary = await MEMORY_COMMAND_INSTANCE._ai_summarize_history(self.agent_name)
-            
+
             if summary:
                 # Clear the failure record on success
                 if hasattr(self, '_compact_failed_tokens'):
@@ -4385,18 +4385,18 @@ class OpenAIChatCompletionsModel(Model):
                 # Store the summary
                 from cai.repl.commands.memory import COMPACTED_SUMMARIES
                 COMPACTED_SUMMARIES[self.agent_name] = summary
-                
+
                 # Clear the message history and keep only essential messages
                 self.message_history.clear()
                 # Reset context usage after clearing
                 os.environ['CAI_CONTEXT_USAGE'] = '0.0'
-                
+
                 # Create new input with summary
                 new_system_instructions = system_instructions or ""
                 if new_system_instructions:
                     new_system_instructions += "\n\n"
                 new_system_instructions += f"Previous conversation summary:\n{summary}"
-                
+
                 # Keep only the current input (user's latest message)
                 if isinstance(input, str):
                     new_input = input
@@ -4408,23 +4408,23 @@ class OpenAIChatCompletionsModel(Model):
                             new_input.append(item)
                         elif isinstance(item, dict) and item.get('role') == 'user':
                             new_input.append(item)
-                    
+
                     # If no user messages found, keep the original input
                     if not new_input:
                         new_input = input
-                
+
                 # Re-estimate tokens with compacted context
                 test_messages = self._converter.items_to_messages(new_input, model_instance=self)
                 if new_system_instructions:
                     test_messages.insert(0, {"role": "system", "content": new_system_instructions})
                 new_tokens, _ = count_tokens_with_tiktoken(test_messages)
-                
+
                 console.print(f"[green]✓ Context compacted: {estimated_tokens:,} → {new_tokens:,} tokens ({(1-new_tokens/estimated_tokens)*100:.1f}% reduction)[/green]\n")
-                
+
                 # Update context usage after compaction
                 new_context_usage = new_tokens / max_tokens if max_tokens > 0 else 0.0
                 os.environ['CAI_CONTEXT_USAGE'] = str(new_context_usage)
-                
+
                 return new_input, new_system_instructions, True
 
             # Summary returned None — treat the same as an exception (record failure).
@@ -4438,7 +4438,7 @@ class OpenAIChatCompletionsModel(Model):
             console.print("[yellow]Future compaction attempts will be suppressed until the conversation grows further.[/yellow]\n")
             # Record the failure so we don't spam the support model on every turn.
             self._compact_failed_tokens = estimated_tokens
-        
+
         return input, system_instructions, False
 
     def _intermediate_logs(self):
@@ -5078,7 +5078,7 @@ class _Converter:
                 # Use already-calculated costs from COST_TRACKER instead of recalculating
                 if model_instance and hasattr(model_instance, "model"):
                     from cai.util import COST_TRACKER
-                    
+
                     # Use the last recorded costs instead of recalculating
                     token_info["interaction_cost"] = getattr(COST_TRACKER, "last_interaction_cost", 0.0)
                     token_info["total_cost"] = getattr(COST_TRACKER, "last_total_cost", 0.0)
@@ -5120,7 +5120,7 @@ class _Converter:
                             except Exception as e:
                                 logger.exception("Failed parsing tool args to decide display: %s", e)
                                 should_display = False
-                        
+
 
                 # Only display if it hasn't been shown during streaming
                 if should_display:

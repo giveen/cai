@@ -12,22 +12,26 @@ cybersecurity help, like hacking, exploiting, or bypassing security measures.
 
 """
 from __future__ import annotations
-import os
+
 import asyncio
-from pydantic import BaseModel
+import os
+
 from openai import AsyncOpenAI
+from pydantic import BaseModel
+
 from cai.sdk.agents import (
     Agent,
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered,
+    OpenAIChatCompletionsModel,
     RunContextWrapper,
     Runner,
     TResponseInputItem,
-    input_guardrail,
-    OpenAIChatCompletionsModel,
     function_tool,
+    input_guardrail,
 )
 from cai.tools.common import run_command
+
 
 # Example tool: run a shell command (for demonstration)
 @function_tool
@@ -88,7 +92,7 @@ async def main():
 
     input_data: list[TResponseInputItem] = []
 
- 
+
     input_data.append(
             {
                 "role": "user",

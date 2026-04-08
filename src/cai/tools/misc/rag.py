@@ -2,15 +2,16 @@
 RAG (Retrieval Augmented Generation) utilities module for
 querying and adding data to vector databases.
 """
-import os
-import logging
-import uuid
-import hashlib
 import datetime as _dt
-from cai.rag.vector_db_adapter import get_vector_db_adapter
+import hashlib
+import logging
+import os
+import uuid
+
+from cai.rag.chunking import chunk_text, fingerprint_chunks
 from cai.rag.ingestion import get_ingestor
 from cai.rag.metrics import collector
-from cai.rag.chunking import chunk_text, fingerprint_chunks
+from cai.rag.vector_db_adapter import get_vector_db_adapter
 from cai.sdk.agents import function_tool
 
 logger = logging.getLogger(__name__)
@@ -325,7 +326,7 @@ def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable
                         ing.flush_sync()
                     except Exception:
                         pass
-                return f"Queued 1 document for ingestion to collection _all_"
+                return "Queued 1 document for ingestion to collection _all_"
             except Exception:
                 success = adapter.add_points(
                     id_point=doc_id,

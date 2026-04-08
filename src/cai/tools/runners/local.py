@@ -9,6 +9,7 @@ import os
 import subprocess
 import time
 import uuid
+
 from wasabi import color
 
 
@@ -19,11 +20,19 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
     """
     import asyncio
 
-    # Import timers/utilities lazily to avoid import cycles
-    from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
     from cai.tools.agent_info import _get_agent_token_info
     from cai.tools.workspace import _get_workspace_dir
-    from cai.util import stop_idle_timer, start_active_timer, start_idle_timer, stop_active_timer
+
+    # Import timers/utilities lazily to avoid import cycles
+    from cai.util import (
+        finish_tool_streaming,
+        start_active_timer,
+        start_idle_timer,
+        start_tool_streaming,
+        stop_active_timer,
+        stop_idle_timer,
+        update_tool_streaming,
+    )
 
     stop_idle_timer()
     start_active_timer()
@@ -276,9 +285,10 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
     Intentionally mirrors the original `_run_local` implementation.
     """
     import subprocess
+
     from cai.tools.agent_info import _get_agent_token_info
     from cai.tools.workspace import _get_workspace_dir
-    from cai.util import stop_idle_timer, start_active_timer, start_idle_timer
+    from cai.util import start_active_timer, stop_idle_timer
 
     stop_idle_timer()
     start_active_timer()
@@ -289,7 +299,7 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
         context_msg = f"(local:{target_dir})"
 
         if stream:
-            from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
+            from cai.util import finish_tool_streaming, start_tool_streaming, update_tool_streaming
 
             parts = command.strip().split(' ', 1)
             cmd_var = parts[0] if parts else ""

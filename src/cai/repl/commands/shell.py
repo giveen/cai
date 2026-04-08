@@ -5,14 +5,12 @@ This module provides commands for executing shell commands.
 import os
 import signal
 import subprocess  # nosec B404
-from typing import (
-    List,
-    Optional
-)
+from typing import List, Optional
+
 from rich.console import Console  # pylint: disable=import-error
 
 from cai.repl.commands.base import Command, register_command
-from cai.tools.common import _get_workspace_dir, _get_container_workspace_path
+from cai.tools.common import _get_container_workspace_path, _get_workspace_dir
 
 console = Console()
 

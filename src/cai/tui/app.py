@@ -12,20 +12,23 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import os
 import json
-import time
+import os
 import re
+import time
 from datetime import datetime
-from typing import Optional, Any, cast
+from typing import Any, Optional, cast
 
-from textual import work, on
+from rich.markdown import Markdown
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text as RichText
+from textual import events, on, work
 from textual.app import App, ComposeResult
-from textual import events
-from textual.screen import ModalScreen
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.message import Message
+from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
     Button,
@@ -39,10 +42,6 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
-from rich.text import Text as RichText
-from rich.markdown import Markdown
-from rich.syntax import Syntax
-from rich.table import Table
 from textual.widgets._text_area import TextArea
 
 # ---------------------------------------------------------------------------
@@ -883,7 +882,7 @@ CONTEXT_SNAPSHOTS_MAX_BACKUPS = 2
 
 def _load_tui_config() -> dict:
     try:
-        with open(CONFIG_FILE, "r") as f:
+        with open(CONFIG_FILE) as f:
             return json.load(f)
     except Exception:
         return {}
@@ -2183,9 +2182,10 @@ class TerminalPanel(Widget):
     @work(exclusive=True)
     async def _run_agent(self, text: str) -> None:
         from rich.text import Text as RichText
+
         from cai.sdk.agents import Runner
-        from cai.sdk.agents.stream_events import RunItemStreamEvent, RawResponsesStreamEvent
         from cai.sdk.agents.items import ToolCallOutputItem
+        from cai.sdk.agents.stream_events import RawResponsesStreamEvent, RunItemStreamEvent
 
         log = self.query_one(f"#term-log-{self._term_id}", RichLog)
         stream_iter = None
@@ -2584,7 +2584,7 @@ class CAIApp(App):
                 paths.append(self._telemetry_file)
 
             for path in paths:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     for line in f:
                         raw = line.strip()
                         if not raw:
@@ -3102,7 +3102,7 @@ class CAIApp(App):
                 paths.append(self._context_snapshots_file)
 
             for path in paths:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     for line in f:
                         raw = line.strip()
                         if not raw:
@@ -3931,7 +3931,7 @@ class CAIApp(App):
                 paths.append(self._tool_calls_file)
 
             for path in paths:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     for line in f:
                         raw = line.strip()
                         if not raw:
@@ -4777,7 +4777,7 @@ class CAIApp(App):
                 _, path = result
                 try:
                     if path and os.path.exists(path):
-                        with open(path, "r") as f:
+                        with open(path) as f:
                             imported = json.load(f)
                         cfg = _load_tui_config()
                         cfg.update(imported)
@@ -5327,9 +5327,12 @@ class CAIApp(App):
             messages = load_history_from_jsonl(path)
 
             # Merge into active agent similar to /load behavior
-            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-            from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
             from cai.repl.commands.parallel import ParallelCommand
+            from cai.sdk.agents.models.openai_chatcompletions import (
+                ACTIVE_MODEL_INSTANCES,
+                PERSISTENT_MESSAGE_HISTORIES,
+            )
+            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
             parallel_cmd = ParallelCommand()
             current_agent = AGENT_MANAGER.get_active_agent()
@@ -5619,7 +5622,10 @@ class CAIApp(App):
         # Import helpers if available; avoid leaving names unbound for static analysis
         get_token_stats_fn = None
         try:
-            from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl, get_token_stats as _get_token_stats
+            from cai.sdk.agents.run_to_jsonl import (
+                get_token_stats as _get_token_stats,
+                load_history_from_jsonl,
+            )
             get_token_stats_fn = _get_token_stats
             messages = load_history_from_jsonl(path)
         except Exception:
@@ -5750,9 +5756,10 @@ class CAIApp(App):
 
     def _render_config_table(self, width: int = 120) -> str:
         """Render the configuration variables as a table string using Rich."""
-        from rich.table import Table
-        from rich.console import Console
         import io
+
+        from rich.console import Console
+        from rich.table import Table
 
         cfg = _load_tui_config()
 
@@ -5906,8 +5913,11 @@ class CAIApp(App):
 
         if cmd == "reset":
             try:
+                from cai.sdk.agents.models.openai_chatcompletions import (
+                    ACTIVE_MODEL_INSTANCES,
+                    PERSISTENT_MESSAGE_HISTORIES,
+                )
                 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-                from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
 
                 current_agent_name = AGENT_MANAGER._active_agent_name
                 if current_agent_name:

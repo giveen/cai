@@ -6,7 +6,7 @@ Tests clearing message histories for individual agents or all agents.
 
 import os
 import sys
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -253,7 +253,7 @@ class TestFlushCommandIntegration:
         """Test flushing multiple agents sequentially."""
         mock_get_history.return_value = []
         cmd = FlushCommand()
-        
+
         agents_to_flush = [
             "red_teamer",
             "blue_teamer",
@@ -270,7 +270,7 @@ class TestFlushCommandIntegration:
 
         # Verify all agents were flushed
         assert mock_clear_agent.call_count == len(agents_to_flush)
-        
+
         # Verify correct agent names were passed
         called_agents = [call[0][0] for call in mock_clear_agent.call_args_list]
         assert called_agents == agents_to_flush
@@ -288,7 +288,7 @@ class TestFlushCommandIntegration:
         }
 
         cmd = FlushCommand()
-        
+
         # Flush all
         result = cmd.handle(["all"])
         assert result is True
@@ -303,7 +303,7 @@ class TestFlushCommandIntegration:
         """Test flushing agents with special characters in names."""
         mock_get_history.return_value = []
         cmd = FlushCommand()
-        
+
         special_agents = [
             "agent-with-hyphens",
             "agent_with_underscores",
@@ -325,26 +325,26 @@ class TestFlushCommandIntegration:
     @patch("cai.agents.get_available_agents")
     def test_handle_with_agent_id(self, mock_get_available_agents, mock_parallel_isolation, mock_clear_agent, mock_get_history):
         """Test flushing agent by ID."""
-        from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
-        
+        from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
+
         # Mock agent
         mock_agent = MagicMock()
         mock_agent.name = "Red Team Agent"
         mock_get_available_agents.return_value = {"red_teamer": mock_agent}
-        
+
         # Save original configs and clear
         original_configs = PARALLEL_CONFIGS[:]
         PARALLEL_CONFIGS.clear()
-        
+
         try:
             # Create parallel config with ID
             config1 = ParallelConfig("red_teamer")
             config1.id = "P1"
             PARALLEL_CONFIGS.append(config1)
-            
+
             mock_get_history.return_value = []
             mock_parallel_isolation.get_isolated_history.return_value = []
-            
+
             cmd = FlushCommand()
             result = cmd.handle(["P1"])
             assert result is True
@@ -354,39 +354,39 @@ class TestFlushCommandIntegration:
             # Restore original configs
             PARALLEL_CONFIGS.clear()
             PARALLEL_CONFIGS.extend(original_configs)
-    
+
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_agent_message_history")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_agent_history")
     @patch("cai.sdk.agents.parallel_isolation.PARALLEL_ISOLATION")
     @patch("cai.agents.get_available_agents")
     def test_handle_numbered_agent_with_id(self, mock_get_available_agents, mock_parallel_isolation, mock_clear_agent, mock_get_history):
         """Test flushing numbered agents with IDs."""
-        from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
-        
+        from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
+
         # Mock agent
         mock_agent = MagicMock()
         mock_agent.name = "Bug Bounty Hunter"
         mock_get_available_agents.return_value = {"bug_bounter": mock_agent}
-        
+
         # Save original configs and clear
         original_configs = PARALLEL_CONFIGS[:]
         PARALLEL_CONFIGS.clear()
-        
+
         try:
             # Create multiple configs for same agent type
             config1 = ParallelConfig("bug_bounter")
             config1.id = "P1"
             config2 = ParallelConfig("bug_bounter")
             config2.id = "P2"
-            
+
             PARALLEL_CONFIGS.append(config1)
             PARALLEL_CONFIGS.append(config2)
-            
+
             mock_get_history.return_value = []
             mock_parallel_isolation.get_isolated_history.return_value = []
-            
+
             cmd = FlushCommand()
-            
+
             # Flush second instance by ID
             result = cmd.handle(["P2"])
             assert result is True
@@ -396,7 +396,7 @@ class TestFlushCommandIntegration:
             # Restore original configs
             PARALLEL_CONFIGS.clear()
             PARALLEL_CONFIGS.extend(original_configs)
-    
+
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_agent_message_history")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_agent_history")
     @patch("cai.sdk.agents.parallel_isolation.PARALLEL_ISOLATION")
@@ -405,21 +405,21 @@ class TestFlushCommandIntegration:
     def test_handle_invalid_id(self, mock_get_available_agents, mock_parallel_configs, mock_parallel_isolation, mock_clear_agent, mock_get_history):
         """Test handling invalid agent ID."""
         from cai.repl.commands.parallel import ParallelConfig
-        
+
         # Mock agent
         mock_agent = MagicMock()
         mock_agent.name = "Test Agent"
         mock_get_available_agents.return_value = {"test_agent": mock_agent}
-        
+
         # Create config with ID
         config1 = ParallelConfig("test_agent")
         config1.id = "P1"
         mock_parallel_configs.clear()
         mock_parallel_configs.append(config1)
-        
+
         # Mock parallel isolation to return None for invalid ID
         mock_parallel_isolation.get_isolated_history.return_value = None
-        
+
         cmd = FlushCommand()
         result = cmd.handle(["P99"])  # Invalid ID
         # The actual implementation returns True even for invalid IDs

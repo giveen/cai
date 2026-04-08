@@ -8,8 +8,6 @@ from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsMo
 from cai.sdk.agents.models.openai_provider import OpenAIProvider
 from cai.sdk.agents.models.openai_responses import OpenAIResponsesModel
 
-
-import os
 cai_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
 
 def test_cc_no_default_key_errors(monkeypatch):

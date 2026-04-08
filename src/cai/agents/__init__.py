@@ -194,7 +194,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                 continue
             path = os.path.join(agents_dir, fname)
             try:
-                with open(path, 'r', encoding='utf-8') as f:
+                with open(path, encoding='utf-8') as f:
                     text = f.read()
             except Exception:
                 continue
@@ -236,7 +236,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                 self.handoffs = []
                 self.model = None
                 self.output_type = None
-        
+
         pseudo_agent = PatternAgent(pattern_obj)
         agents_to_display[pattern_name] = pseudo_agent
 
@@ -351,28 +351,28 @@ def get_agent_by_name(agent_name: str, custom_name: str = None, model_override: 
                 # Update the agent's name if custom name provided
                 if custom_name:
                     cloned_agent.name = custom_name
-                    
+
                 # Check if this agent has any MCP tools configured
                 try:
                     from cai.repl.commands.mcp import get_mcp_tools_for_agent
-                    
+
                     # Get MCP tools for this agent and add them
                     mcp_tools = get_mcp_tools_for_agent(agent_name_lower)
                     if mcp_tools:
                         # Ensure the agent has tools list
                         if not hasattr(cloned_agent, 'tools'):
                             cloned_agent.tools = []
-                        
+
                         # Remove any existing tools with the same names to avoid duplicates
                         existing_tool_names = {t.name for t in mcp_tools}
                         cloned_agent.tools = [t for t in cloned_agent.tools if t.name not in existing_tool_names]
-                        
+
                         # Add the MCP tools
                         cloned_agent.tools.extend(mcp_tools)
                 except ImportError:
                     # MCP command not available, skip
                     pass
-                    
+
                 return cloned_agent
         except Exception:
             # If cloning fails, return the original
@@ -381,22 +381,22 @@ def get_agent_by_name(agent_name: str, custom_name: str = None, model_override: 
     # For singleton agents without cloning, still check for MCP tools
     try:
         from cai.repl.commands.mcp import get_mcp_tools_for_agent
-        
+
         # Get MCP tools for this agent and add them
         mcp_tools = get_mcp_tools_for_agent(agent_name_lower)
         if mcp_tools:
             # Ensure the agent has tools list
             if not hasattr(agent, 'tools'):
                 agent.tools = []
-            
+
             # Remove any existing tools with the same names to avoid duplicates
             existing_tool_names = {t.name for t in mcp_tools}
             agent.tools = [t for t in agent.tools if t.name not in existing_tool_names]
-            
+
             # Add the MCP tools
             agent.tools.extend(mcp_tools)
     except ImportError:
         # MCP command not available, skip
         pass
-    
+
     return agent

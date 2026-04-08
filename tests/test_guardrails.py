@@ -5,12 +5,10 @@ Coverage strategy — one test class per logical section of each function so
 failures point directly at the broken branch.
 """
 import base64
-import os
 
 import pytest
 
 from cai.tools import validation as v
-
 
 # ---------------------------------------------------------------------------
 # Helpers

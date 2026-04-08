@@ -1,7 +1,7 @@
-import os
 import pytest
-from cai.sdk.agents import Runner
+
 from cai.agents import get_agent_by_name
+from cai.sdk.agents import Runner
 
 
 @pytest.mark.allow_call_model_methods
@@ -90,4 +90,4 @@ async def test_thought_agent_inference():
     result = await Runner.run(get_agent_by_name("thought_agent"), prompt)
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"
-    assert "reconnaissance" in final_output.lower(), f"Expected 'reconnaissance' in output, got: {final_output}"    
+    assert "reconnaissance" in final_output.lower(), f"Expected 'reconnaissance' in output, got: {final_output}"

@@ -4,13 +4,14 @@ The deterministic pattern here involves a fixed, sequential pipeline of agents, 
 This pattern ensures reproducibility and traceability, as the flow of information and agent responsibilities are strictly defined and do not vary between runs.
 """
 
-import os
 import asyncio
-from pydantic import BaseModel
+import os
+
 from openai import AsyncOpenAI
-from cai.sdk.agents import Agent, Runner, OpenAIChatCompletionsModel, function_tool
+
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, Runner, function_tool
 from cai.tools.common import run_command
-from cai.sdk.agents.extensions import handoff_filters
+
 
 # Function tool to execute CLI command
 @function_tool

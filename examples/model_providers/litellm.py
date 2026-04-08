@@ -1,9 +1,16 @@
 import os
+
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from cai.sdk.agents import OpenAIChatCompletionsModel,Agent,Runner
-from cai.sdk.agents import set_default_openai_client, set_tracing_disabled
 from openai.types.responses import ResponseTextDeltaEvent
+
+from cai.sdk.agents import (
+    Agent,
+    OpenAIChatCompletionsModel,
+    Runner,
+    set_default_openai_client,
+    set_tracing_disabled,
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -23,7 +30,7 @@ llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
 instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
 
 agent = Agent(
-    name="Assistant", 
+    name="Assistant",
     instructions=instructions,
     model=OpenAIChatCompletionsModel(
         model=llm_model,

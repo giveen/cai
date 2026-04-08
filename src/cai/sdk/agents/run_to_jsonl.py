@@ -2,19 +2,21 @@
 Data recorder
 """
 
-import os  # pylint: disable=import-error
-from datetime import datetime
+import atexit
+import getpass
 import json
+import os  # pylint: disable=import-error
+import platform
 import socket
 import urllib.request
-import getpass
-import platform
-from urllib.error import URLError
-import pytz  # pylint: disable=import-error
 import uuid  # Add uuid import
+from datetime import datetime
+from typing import Dict, List
+from urllib.error import URLError
+
+import pytz  # pylint: disable=import-error
+
 from cai.util import get_active_time, get_idle_time
-import atexit
-from typing import List, Dict
 
 # Global recorder instance for session-wide logging
 _session_recorder = None
@@ -32,11 +34,11 @@ def get_session_recorder(workspace_name=None):
         DataRecorder: The session recorder instance.
     """
     global _session_recorder
-    
+
     # Check if session recording is disabled (e.g., during replay)
     if os.environ.get("CAI_DISABLE_SESSION_RECORDING", "").lower() == "true":
         return None
-    
+
     if _session_recorder is None:
         _session_recorder = DataRecorder(workspace_name)
     return _session_recorder
@@ -198,7 +200,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
-        
+
         if hasattr(msg, "usage"):
             # Try input_tokens first (ResponseUsage)
             if hasattr(msg.usage, "input_tokens"):
@@ -206,14 +208,14 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             # Fall back to prompt_tokens (ChatCompletion)
             elif hasattr(msg.usage, "prompt_tokens"):
                 prompt_tokens = msg.usage.prompt_tokens
-                
+
             # Try output_tokens first (ResponseUsage)
             if hasattr(msg.usage, "output_tokens"):
                 completion_tokens = msg.usage.output_tokens
             # Fall back to completion_tokens (ChatCompletion)
             elif hasattr(msg.usage, "completion_tokens"):
                 completion_tokens = msg.usage.completion_tokens
-                
+
             # Get total tokens - calculate if not available
             if hasattr(msg.usage, "total_tokens"):
                 total_tokens = msg.usage.total_tokens
@@ -283,7 +285,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             }
             json.dump(user_data, f)
             f.write('\n')
-    
+
     def log_assistant_message(self, assistant_message, tool_calls=None):
         """
         Logs an assistant message to the JSONL file.
@@ -295,7 +297,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         # Store the last message in case we need to log it at exit
         self.last_assistant_message = assistant_message
         self.last_assistant_tool_calls = tool_calls
-        
+
         with open(self.filename, 'a', encoding='utf-8') as f:
             assistant_data = {
                 "event": "assistant_message",
@@ -307,10 +309,10 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
                 assistant_data["tool_calls"] = tool_calls
             json.dump(assistant_data, f)
             f.write('\n')
-            
+
         # Mark that the message has been logged
         self._last_message_logged = True
-    
+
     def log_session_end(self):
         """
         Logs the end of the session to the JSONL file.
@@ -318,9 +320,9 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         """
         # Set a flag to indicate we've already logged the session end
         self._session_end_logged = True
-        
+
         try:
-            from cai.util import get_active_time_seconds, get_idle_time_seconds, COST_TRACKER
+            from cai.util import COST_TRACKER, get_active_time_seconds, get_idle_time_seconds
             active_time = get_active_time_seconds()
             idle_time = get_idle_time_seconds()
             # Get the global session cost from COST_TRACKER
@@ -329,7 +331,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             active_time = 0.0
             idle_time = 0.0
             session_cost = self.total_cost
-            
+
         with open(self.filename, 'a', encoding='utf-8') as f:
             session_end = {
                 "event": "session_end",
@@ -365,9 +367,9 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
         List of message dictionaries in conversation order
     """
     records = []
-    
+
     # Load all records
-    with open(file_path, 'r') as f:
+    with open(file_path) as f:
         for line in f:
             if line.strip():
                 try:
@@ -375,36 +377,36 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                 except Exception as e:
                     print(f"Error loading line: {e}")
                     continue
-    
+
     # Simple approach: collect all messages and system prompts, then deduplicate
     messages = []
     system_prompts_by_agent = {}
     tool_outputs = {}
-    
+
     i = 0
     while i < len(records):
         record = records[i]
-        
+
         # Skip event records
         if "event" in record:
             i += 1
             continue
-        
+
         # Process model record
         if "model" in record and "messages" in record:
             model_messages = record["messages"]
-            
+
             # Get agent name from next completion record (Format 1) or infer from system message (Format 2)
             agent_name = None
             if i + 1 < len(records) and records[i + 1].get("agent_name"):
                 agent_name = records[i + 1]["agent_name"]
             elif i + 1 < len(records):
                 agent_name = "Agent"  # Default agent name
-            
+
             # Process messages
             for msg in model_messages:
                 role = msg.get("role")
-                
+
                 if role == "system" and system_prompt and agent_name:
                     # Store system prompt for this agent
                     system_prompts_by_agent[agent_name] = msg.get("content", "")
@@ -416,7 +418,7 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                 else:
                     # Regular message (user or assistant)
                     messages.append(msg)
-            
+
             # Process completion record if it exists (only if model record doesn't have assistant message)
             if i + 1 < len(records) and "choices" in records[i + 1]:
                 next_record = records[i + 1]
@@ -429,7 +431,7 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                     elif response_msg.get("role") == "assistant" and agent_name:
                         # For Format 2, use the inferred agent name
                         response_msg["agent_name"] = agent_name
-                    
+
                     # Only add if this exact assistant message is not already in model record
                     is_duplicate = any(
                         msg.get("role") == "assistant" and
@@ -440,15 +442,15 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                     if not is_duplicate:
                         messages.append(response_msg)
                 i += 1  # Skip the completion record
-        
+
         i += 1
-    
+
     # Simple deduplication: remove exact duplicates but preserve user messages that trigger different agents
     unique_messages = []
-    
+
     for i, msg in enumerate(messages):
         is_duplicate = False
-        
+
         # For user messages, check if there's a subsequent assistant message with a different agent
         if msg.get("role") == "user":
             # Look ahead to see which agent responds to this user message
@@ -457,20 +459,20 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                 if messages[j].get("role") == "assistant" and messages[j].get("agent_name"):
                     responding_agent = messages[j].get("agent_name")
                     break
-            
+
             # Check if we already have this user message with the same responding agent
             for existing_msg in unique_messages:
-                if (existing_msg.get("role") == "user" and 
+                if (existing_msg.get("role") == "user" and
                     existing_msg.get("content") == msg.get("content")):
                     # Find the agent that responded to the existing message
                     existing_responding_agent = None
                     existing_idx = unique_messages.index(existing_msg)
                     for k in range(existing_idx + 1, len(unique_messages)):
-                        if (unique_messages[k].get("role") == "assistant" and 
+                        if (unique_messages[k].get("role") == "assistant" and
                             unique_messages[k].get("agent_name")):
                             existing_responding_agent = unique_messages[k].get("agent_name")
                             break
-                    
+
                     # Only consider it a duplicate if same content AND same responding agent
                     if responding_agent == existing_responding_agent:
                         is_duplicate = True
@@ -478,26 +480,26 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
         else:
             # For non-user messages, use the original logic
             for existing_msg in unique_messages:
-                if (existing_msg.get("role") == msg.get("role") and 
+                if (existing_msg.get("role") == msg.get("role") and
                     existing_msg.get("content") == msg.get("content") and
                     existing_msg.get("tool_call_id") == msg.get("tool_call_id") and
                     str(existing_msg.get("tool_calls", [])) == str(msg.get("tool_calls", [])) and
                     existing_msg.get("agent_name") == msg.get("agent_name")):
                     is_duplicate = True
                     break
-        
+
         if not is_duplicate:
             unique_messages.append(msg)
-    
+
     messages = unique_messages
-    
+
     # Now insert system prompts and tool outputs
     final_messages = []
     last_agent = None
-    
+
     for i, msg in enumerate(messages):
         role = msg.get("role")
-        
+
         # Insert system prompt before user message if agent changes
         if system_prompt and role == "user":
             # Look ahead to find responding agent
@@ -506,7 +508,7 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                 if messages[j].get("role") == "assistant" and messages[j].get("agent_name"):
                     next_agent = messages[j]["agent_name"]
                     break
-            
+
             # Insert system prompt if agent changes
             if next_agent and next_agent != last_agent and next_agent in system_prompts_by_agent:
                 system_msg = {
@@ -516,13 +518,13 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                 }
                 final_messages.append(system_msg)
                 last_agent = next_agent
-        
+
         final_messages.append(msg)
-        
+
         # Update last agent
         if msg.get("agent_name"):
             last_agent = msg["agent_name"]
-        
+
         # Add tool outputs
         if role == "assistant" and msg.get("tool_calls"):
             for tool_call in msg["tool_calls"]:
@@ -534,7 +536,7 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                         "content": tool_outputs[tool_id]
                     }
                     final_messages.append(tool_msg)
-    
+
     return final_messages
 
 def get_token_stats(file_path):
@@ -610,7 +612,7 @@ def atexit_handler():
     global _session_recorder
     if _session_recorder is None:
         return
-    
+
     # Check if we have an unlogged assistant message and log it
     if hasattr(_session_recorder, 'last_assistant_message') and not getattr(_session_recorder, '_last_message_logged', False):
         if _session_recorder.last_assistant_message or _session_recorder.last_assistant_tool_calls:
@@ -618,11 +620,11 @@ def atexit_handler():
                 _session_recorder.last_assistant_message,
                 _session_recorder.last_assistant_tool_calls
             )
-    
+
     # Check if we've already logged the session end (via KeyboardInterrupt)
     if getattr(_session_recorder, '_session_end_logged', False):
         return
-    
+
     # Log the session end
     _session_recorder.log_session_end()
 

@@ -1,11 +1,11 @@
-from cai.rag.vector_db_adapter import LocalFallbackAdapter
 from cai.rag.retriever_pipeline import (
     DenseRetriever,
-    SimpleBM25,
-    RetrieverCombiner,
     Reranker,
+    RetrieverCombiner,
     RetrieverPipeline,
+    SimpleBM25,
 )
+from cai.rag.vector_db_adapter import LocalFallbackAdapter
 
 
 def _make_adapter_and_docs():
@@ -50,8 +50,8 @@ def test_reranker_improves_order():
 
 
 def test_wakeup_integration():
-    from cai.rag.wakeup_index import WakeupIndex
     from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
+    from cai.rag.wakeup_index import WakeupIndex
 
     ad, docs = _make_adapter_and_docs()
     dense = DenseRetriever(adapter=ad, collection_name="test")

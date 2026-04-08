@@ -1,14 +1,13 @@
-import os
-import pytest
 import json
-import asyncio
-from unittest.mock import MagicMock
+import os
+
+import pytest
 
 # Set test environment variables to avoid OpenAI client initialization errors
 os.environ["OPENAI_API_KEY"] = "test_key_for_ci_environment"
 
-from cai.tools.reconnaissance.generic_linux_command import generic_linux_command
 from cai.sdk.agents import RunContextWrapper
+from cai.tools.reconnaissance.generic_linux_command import generic_linux_command
 
 
 @pytest.mark.asyncio
@@ -40,7 +39,7 @@ async def test_generic_linux_command_invalid_command():
         RunContextWrapper(None), json.dumps(args)
     )
     # Check for common error indicators
-    assert ("not found" in result.lower() or 
+    assert ("not found" in result.lower() or
             "command not found" in result.lower() or
             "no such file" in result.lower())
 

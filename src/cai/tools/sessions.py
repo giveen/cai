@@ -9,20 +9,21 @@ from __future__ import annotations
 
 import os
 import pty
-import time
-import uuid
+import select
+import signal
 import subprocess  # nosec B404
 import threading
-import signal
-import select
+import time
+import uuid
 from typing import Dict, Optional
+
 from wasabi import color  # pylint: disable=import-error
 
-from cai.tools.workspace import _get_workspace_dir, _get_container_workspace_path
+from cai.tools.workspace import _get_container_workspace_path, _get_workspace_dir
 
 # Session registry and helpers (protected by SESSIONS_LOCK)
 SESSIONS_LOCK = threading.Lock()
-ACTIVE_SESSIONS: Dict[str, "ShellSession"] = {}
+ACTIVE_SESSIONS: Dict[str, ShellSession] = {}
 FRIENDLY_SESSION_MAP: Dict[str, str] = {}
 REVERSE_SESSION_MAP: Dict[str, str] = {}
 SESSION_COUNTER = 0

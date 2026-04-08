@@ -1,13 +1,13 @@
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Tuple
 
-from cai.rag.vector_db_adapter import LocalFallbackAdapter
 from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
 from cai.rag.retriever_pipeline import (
     DenseRetriever,
-    SimpleBM25,
-    RetrieverCombiner,
     Reranker,
+    RetrieverCombiner,
+    SimpleBM25,
 )
+from cai.rag.vector_db_adapter import LocalFallbackAdapter
 
 
 def _build_synthetic_dataset(num_docs: int = 50, num_topics: int = 5, vector_dim: int = 64) -> Tuple[LocalFallbackAdapter, List[Dict[str, Any]], List[str], List[str]]:
@@ -31,7 +31,7 @@ def _build_synthetic_dataset(num_docs: int = 50, num_topics: int = 5, vector_dim
     for i in range(num_docs):
         topic = topics[i % num_topics]
         doc_id = f"doc_{i}"
-        text = f"This document covers {topic}. Unique marker: {doc_id}. More context about {topic} to make semantic signals." 
+        text = f"This document covers {topic}. Unique marker: {doc_id}. More context about {topic} to make semantic signals."
         ids.append(doc_id)
         texts.append(text)
         metas.append({"topic": topic})

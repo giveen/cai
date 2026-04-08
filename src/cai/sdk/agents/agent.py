@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, cast
 
 from typing_extensions import TypeAlias, TypedDict
 
-
 if TYPE_CHECKING:
     from .guardrail import InputGuardrail, OutputGuardrail
     from .handoffs import Handoff

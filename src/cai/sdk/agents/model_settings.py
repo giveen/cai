@@ -43,7 +43,7 @@ class ModelSettings:
     store: bool | None = None
     """Whether to store the generated model response for later retrieval.
     Defaults to True if not provided."""
-    
+
     agent_model: str | None = None
     """The model from the Agent class. If set, this will override the model provided
     to the OpenAIChatCompletionsModel during initialization."""

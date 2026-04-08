@@ -3,10 +3,10 @@ Module for executing Python code and capturing its output.
 """
 
 import io
-import sys
 import json
+import sys
 import traceback
-from typing import Dict, Optional
+
 from cai.sdk.agents import function_tool
 
 

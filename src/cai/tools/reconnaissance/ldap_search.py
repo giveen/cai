@@ -12,7 +12,6 @@ from cai.sdk.agents import function_tool
 from cai.tools.common import run_command
 from cai.tools.validation import contains_shell_metacharacters, is_valid_target
 
-
 # ---------------------------------------------------------------------------
 # Input validation helpers
 # ---------------------------------------------------------------------------

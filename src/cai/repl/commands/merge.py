@@ -40,18 +40,18 @@ class MergeCommand(Command):
         if not args:
             # No arguments - merge all by default
             return self.handle_no_args()
-        
+
         # Delegate to ParallelCommand's handle_merge method
         return self._parallel_cmd.handle_merge(args)
 
     def handle_no_args(self) -> bool:
         """Handle command with no arguments - merge all agents and show help."""
         from rich.panel import Panel
-        
+
         # First, perform the merge all operation
         console.print("[cyan]Merging all agents by default...[/cyan]\n")
         merge_result = self._parallel_cmd.handle_merge(["all"])
-        
+
         # Then show the help menu
         console.print("\n")
         help_text = """[bold cyan]Merge Command Help[/bold cyan]
@@ -87,9 +87,9 @@ class MergeCommand(Command):
 Agent names with spaces are automatically detected[/dim]
 
 [yellow]This is an alias for /parallel merge[/yellow]"""
-        
+
         console.print(Panel(help_text, border_style="blue", padding=(1, 2)))
-        
+
         return merge_result
 
 

@@ -12,8 +12,6 @@ from cai.sdk.agents.lifecycle import AgentHooks
 from cai.sdk.agents.run import Runner
 from cai.sdk.agents.run_context import RunContextWrapper, TContext
 from cai.sdk.agents.tool import Tool
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
@@ -21,6 +19,7 @@ from tests.core.test_responses import (
     get_handoff_tool_call,
     get_text_message,
 )
+from tests.fake_model import FakeModel
 
 
 class AgentHooksForTests(AgentHooks):

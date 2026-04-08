@@ -1,8 +1,6 @@
 import asyncio
 import json
 
-import pytest
-
 from cai.tools.reconnaissance import generic_linux_command as glc
 
 

@@ -6,21 +6,20 @@ It includes:
 - `android_sast_agent`: An agent for static analysis and vulnerability discovery in Android applications.
 """
 
+import os
+
+from openai import AsyncOpenAI
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
-from openai import AsyncOpenAI
-import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
     def load_dotenv(*args, **kwargs):
         return False
 
-from cai.util import load_prompt_template, create_system_prompt_renderer
-from cai.tools.reconnaissance.exec_code import (
-    execute_code
-)
-
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 # Prompts
 android_sast_system_prompt = load_prompt_template("prompts/system_android_sast.md")

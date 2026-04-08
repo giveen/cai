@@ -11,25 +11,23 @@ here to avoid accidental data migration.
 """
 from __future__ import annotations
 
-import os
-import shlex
-import subprocess
-import time
+import atexit
+import concurrent.futures
+import datetime as _dt
+import errno
+import fcntl
 import hashlib
 import json
-import datetime as _dt
+import os
+import re
+import subprocess
+import threading
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Type
+
 from cai.rag.metrics import collector
-import concurrent.futures
-import threading
-import fcntl
-import tempfile
-import shutil
-import errno
-import re
-import atexit
 
 
 @dataclass
@@ -395,7 +393,7 @@ class QdrantAdapter(VectorDBAdapter):
         if client is None:
             return {"ok": False, "error": "Qdrant client not initialized"}
         # Prefer explicit health_check
-        if hasattr(client, "health_check") and callable(getattr(client, "health_check")):
+        if hasattr(client, "health_check") and callable(client.health_check):
             try:
                 res = client.health_check()
                 return {"ok": True, "details": res}
@@ -403,7 +401,7 @@ class QdrantAdapter(VectorDBAdapter):
                 return {"ok": False, "error": str(exc)}
 
         # Try ping
-        if hasattr(client, "ping") and callable(getattr(client, "ping")):
+        if hasattr(client, "ping") and callable(client.ping):
             try:
                 res = client.ping()
                 return {"ok": True, "details": getattr(res, "__dict__", str(res))}
@@ -754,7 +752,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
         claimed = self._claim_collection_lock(collection_name, timeout=0.1)
 
         try:
-            with open(json_path, "r") as fh:
+            with open(json_path) as fh:
                 data = json.load(fh)
             # restore collection structure
             ids = data.get("ids", [])

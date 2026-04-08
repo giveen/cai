@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import argparse
 import json
-from typing import List, Dict, Any
+from typing import Dict, List
 
-from cai.rag.vector_db_adapter import LocalFallbackAdapter
 from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
-from cai.rag.retriever_pipeline import DenseRetriever, SimpleBM25, RetrieverCombiner, Reranker
+from cai.rag.retriever_pipeline import DenseRetriever, Reranker, RetrieverCombiner, SimpleBM25
+from cai.rag.vector_db_adapter import LocalFallbackAdapter
 
 
 def build_dataset(num_docs: int, num_topics: int, vector_dim: int):

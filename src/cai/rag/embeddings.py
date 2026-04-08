@@ -18,7 +18,7 @@ import math
 import os
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -64,7 +64,7 @@ class LocalDeterministicEmbeddingsProvider(EmbeddingsProvider):
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config=config)
-        self._cache: "OrderedDict[str, List[float]]" = OrderedDict()
+        self._cache: OrderedDict[str, List[float]] = OrderedDict()
 
     def _make_vector(self, text: str) -> List[float]:
         dim = int(self.config.vector_dim)

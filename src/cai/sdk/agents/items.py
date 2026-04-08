@@ -19,7 +19,10 @@ if TYPE_CHECKING:
         ResponseOutputText,
         ResponseStreamEvent,
     )
-    from openai.types.responses.response_input_item_param import ComputerCallOutput, FunctionCallOutput
+    from openai.types.responses.response_input_item_param import (
+        ComputerCallOutput,
+        FunctionCallOutput,
+    )
     from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 else:
     # Fallback types when `openai` is not installed. These are only used at runtime
@@ -241,9 +244,9 @@ class ItemHelpers:
 
         # object-style content (e.g., pydantic models)
         if hasattr(last_content, "text"):
-            return getattr(last_content, "text")
+            return last_content.text
         if hasattr(last_content, "refusal"):
-            return getattr(last_content, "refusal")
+            return last_content.refusal
 
         raise ModelBehaviorError(f"Unexpected content type: {type(last_content)}")
 
@@ -269,7 +272,7 @@ class ItemHelpers:
             return last_content.get("text")
 
         if hasattr(last_content, "text"):
-            return getattr(last_content, "text")
+            return last_content.text
 
         return None
 
@@ -316,7 +319,7 @@ class ItemHelpers:
             if isinstance(item, dict) and "text" in item:
                 text += item.get("text", "")
             elif hasattr(item, "text"):
-                text += getattr(item, "text")
+                text += item.text
 
         return text
 

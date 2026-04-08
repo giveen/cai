@@ -3,14 +3,15 @@ This example demonstrates how to use handoffs and tools together
 
 """
 
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
-from cai.sdk.agents import handoff, function_tool, trace
-from cai.sdk.agents import Runner
-from cai.tools.common import run_command
-from cai.sdk.agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
-import os
 import asyncio
+import os
+
+from openai import AsyncOpenAI
+
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, Runner, function_tool, handoff, trace
+from cai.sdk.agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
+from cai.tools.common import run_command
+
 
 @function_tool
 def execute_cli_command(command: str) -> str:

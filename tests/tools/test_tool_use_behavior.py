@@ -17,7 +17,6 @@ from cai.sdk.agents import (
     UserError,
 )
 from cai.sdk.agents._run_impl import RunImpl
-
 from tests.core.test_responses import get_function_tool
 
 

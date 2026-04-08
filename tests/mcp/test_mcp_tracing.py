@@ -2,11 +2,10 @@ import pytest
 from inline_snapshot import snapshot
 
 from cai.sdk.agents import Agent, Runner
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import get_function_tool, get_function_tool_call, get_text_message
-from tests.testing_processor import SPAN_PROCESSOR_TESTING, fetch_normalized_spans
+from tests.fake_model import FakeModel
 from tests.helpers import FakeMCPServer
+from tests.testing_processor import SPAN_PROCESSOR_TESTING, fetch_normalized_spans
 
 
 @pytest.mark.asyncio

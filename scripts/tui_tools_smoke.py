@@ -8,11 +8,12 @@ This script validates the non-UI Tools tab mechanics in `CAIApp`:
 - replay metadata helper (`last_tool_call`)
 """
 
-import cai.tui.app as tui_app
-from cai.tui.app import CAIApp
+import json
 import os
 import tempfile
-import json
+
+import cai.tui.app as tui_app
+from cai.tui.app import CAIApp
 
 
 def ok(msg: str) -> None:
@@ -264,7 +265,7 @@ def main() -> int:
         return 1
 
     try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             cfg = json.load(f)
         persisted = cfg.get("tools", {}).get("inject_mode")
     except Exception as exc:
@@ -384,7 +385,7 @@ def main() -> int:
         for p in (f"{telemetry_path}.2", f"{telemetry_path}.1", telemetry_path):
             if not os.path.exists(p):
                 continue
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 telemetry_records.extend([json.loads(line) for line in f if line.strip()])
     except Exception as exc:
         fail(f"telemetry read failed: {exc}")

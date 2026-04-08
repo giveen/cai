@@ -3,9 +3,10 @@ Here are the CLI tools for executing commands.
 """
 import shlex
 from typing import List
-from cai.tools.common import run_command  # pylint: disable=E0401
+
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=E0401
 
 # Dangerous flags that enable RCE, file writes, or file deletion
 DANGEROUS_FIND_FLAGS = {
@@ -89,7 +90,7 @@ def find_file(file_path: str, args: str = "", ctf=None) -> str:
     for flag in DANGEROUS_FIND_FLAGS:
         if flag in args_tokens:
             return f"Error: DANGEROUS flag '{flag}' is not allowed"
-    
+
     command = f'find {file_path} {args}'
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:

@@ -3,11 +3,10 @@
 Netstat tool
 """
 
-from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
-
-from cai.tools.validation import validate_args_no_injection  # pylint: disable=import-error
 from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=import-error
+from cai.tools.validation import validate_args_no_injection  # pylint: disable=import-error
 
 
 def _validate_netstat_input(args: str):

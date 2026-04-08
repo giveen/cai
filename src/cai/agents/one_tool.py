@@ -2,6 +2,7 @@
 CTF Agent with one tool
 """
 import os
+
 try:
   from dotenv import load_dotenv
 except Exception:
@@ -13,11 +14,12 @@ try:
 except Exception:
   AsyncOpenAI = None
 
+from openai import AsyncOpenAI
+
+from cai.agents.guardrails import get_security_guardrails
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
-from openai import AsyncOpenAI
 from cai.util import create_system_prompt_renderer
-from cai.agents.guardrails import get_security_guardrails
 
 # Get model from environment or use default
 model_name = os.getenv('CAI_MODEL', "alias1")

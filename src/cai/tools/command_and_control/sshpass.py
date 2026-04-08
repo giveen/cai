@@ -12,11 +12,11 @@ It handles privilege escalation very well and is autonomous regarding SSH passwo
 something that hasn't been seen in other cybersecurity frameworks yet (Feb 2025)
 """  # noqa: E501
 
-from cai.tools.common import run_command  # pylint: disable=E0401 # noqa: E501
-from cai.sdk.agents import function_tool
 
-import shlex
+from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=E0401 # noqa: E501
+
 
 @function_tool
 def run_ssh_command_with_credentials(

@@ -33,6 +33,7 @@ from cai.agents.meta.local_python_executor import (
 )
 from cai.sdk.agents import Agent, Result
 
+
 class CodeAgentException(Exception):
     """Base exception class for CodeAgent-related errors."""
     pass  # pylint: disable=unnecessary-pass

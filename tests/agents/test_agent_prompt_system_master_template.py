@@ -6,8 +6,10 @@ handling of environment variables.
 """
 
 import os
+
 import pytest
 from mako.template import Template
+
 
 # Fixture to load the Mako template for the system master template
 @pytest.fixture
@@ -22,8 +24,8 @@ def base_agent():
 def test_master_template_basic(template, base_agent):
     """Test basic master template rendering without optional components."""
     result = template.render(
-        agent=base_agent, 
-        reasoning_content=None, 
+        agent=base_agent,
+        reasoning_content=None,
         ctf_instructions="",
         env_context="false",
         compacted_summary="",
@@ -48,8 +50,8 @@ def test_master_template_with_env_vars(template, base_agent):
     # Set an environment variable for the CTF name
     os.environ['CTF_NAME'] = 'test_ctf'
     result = template.render(
-        agent=base_agent, 
-        reasoning_content=None, 
+        agent=base_agent,
+        reasoning_content=None,
         ctf_instructions="",
         env_context="false",
         compacted_summary="",
@@ -73,8 +75,8 @@ def test_master_template_no_instructions(template):
     # Create an agent with empty instructions
     agent = type('Agent', (), {'instructions': ''})()
     result = template.render(
-        agent=agent, 
-        reasoning_content=None, 
+        agent=agent,
+        reasoning_content=None,
         ctf_instructions="",
         env_context="false",
         compacted_summary="",

@@ -3,12 +3,13 @@ Module for the CAI REPL toolbar functionality.
 """
 import datetime
 import os
-import socket
 import platform
-import threading
-import subprocess
 import shutil
+import socket
+import subprocess
+import threading
 from functools import lru_cache
+
 import requests  # pylint: disable=import-error
 from prompt_toolkit.formatted_text import HTML  # pylint: disable=import-error
 
@@ -39,7 +40,7 @@ def get_system_info():
             # Get local IP addresses
             hostname = socket.gethostname()
             system_info['ip_address'] = socket.gethostbyname(hostname)
-            
+
             # Get OS information
             system_info['os_name'] = platform.system()
             system_info['os_version'] = platform.release()
@@ -47,7 +48,7 @@ def get_system_info():
             system_info['ip_address'] = "unknown"
             system_info['os_name'] = "unknown"
             system_info['os_version'] = "unknown"
-    
+
     return system_info
 
 
@@ -67,12 +68,12 @@ def update_toolbar_in_background():
         _ip_address = sys_info['ip_address']
         _os_name = sys_info['os_name']
         _os_version = sys_info['os_version']
-       
+
         # Get the current workspace and base directory
         workspace_name = os.getenv("CAI_WORKSPACE")
         base_dir = os.getenv("CAI_WORKSPACE_DIR", "workspaces")
 
-        # Construct the workspace path 
+        # Construct the workspace path
         standard_path = os.path.join(base_dir, workspace_name) if workspace_name else ""
         _workspace_path = ""
         if workspace_name:
@@ -82,7 +83,7 @@ def update_toolbar_in_background():
                 _workspace_path = os.path.abspath(workspace_name)
             else:
                 _workspace_path = standard_path
-        
+
         # Get current active container info
         container_id = os.getenv("CAI_ACTIVE_CONTAINER")
         if container_id:
@@ -97,14 +98,14 @@ def update_toolbar_in_background():
             # Get Ollama models with a short timeout to prevent hanging
             from cai.util import get_ollama_api_base
             api_base = get_ollama_api_base()
-            
+
             # Add authentication headers for Ollama Cloud if using OPENAI_BASE_URL
             headers = {}
             if "ollama.com" in api_base:
                 api_key = os.getenv("OPENAI_API_KEY")
                 if api_key:
                     headers["Authorization"] = f"Bearer {api_key}"
-            
+
             response = requests.get(
                 f"{api_base.replace('/v1', '')}/api/tags",
                 headers=headers,
@@ -131,14 +132,14 @@ def update_toolbar_in_background():
 
         # Get auto-compact status and context usage
         auto_compact = os.getenv('CAI_AUTO_COMPACT', 'true').lower() == 'true'
-        
+
         # Try to get context usage from environment (set by openai_chatcompletions.py)
         context_usage = 0.0
         try:
             context_usage = float(os.getenv('CAI_CONTEXT_USAGE', '0.0'))
         except Exception:
             pass
-            
+
         # Determine auto-compact display based on usage
         if auto_compact:
             if context_usage >= 0.8:  # Above 80%
@@ -163,29 +164,29 @@ def update_toolbar_in_background():
             else:
                 auto_compact_str = "✗"
                 auto_compact_color = "ansired"
-        
+
         # Get memory status
         memory_enabled = os.getenv('CAI_MEMORY', 'false').lower() == 'true'
         memory_str = "✓"  if memory_enabled else "✗"
         memory_color = "ansigreen" if memory_enabled else "ansigray"
-        
+
         # Get streaming status
         streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
         stream_str = "✓" if streaming_enabled else "✗"
         stream_color = "ansigreen" if streaming_enabled else "ansigray"
-        
+
         # Get parallel agent count
         parallel_count = os.getenv('CAI_PARALLEL', '1')
         parallel_color = "ansigreen" if int(parallel_count) > 1 else "ansigray"
-        
+
         # Get tracing status
         tracing_enabled = os.getenv('CAI_TRACING', 'false').lower() == 'true'
         trace_str = "✓" if tracing_enabled else "✗"
         trace_color = "ansigreen" if tracing_enabled else "ansigray"
-        
+
         # Get terminal width to decide on toolbar format
         terminal_width = get_terminal_width()
-        
+
         # Build toolbar based on terminal width
         if terminal_width < 120:  # Compact mode
             # Show only the most critical information
@@ -193,7 +194,7 @@ def update_toolbar_in_background():
             model_name = os.getenv('CAI_MODEL', 'default')
             if len(model_name) > 10:
                 model_name = model_name[:9] + "…"
-            
+
             toolbar_cache['html'] = HTML(
                 f"<{active_env_color}>{active_env_icon}</{active_env_color}> "
                 f"<ansigreen>{model_name}</ansigreen> | "
@@ -248,7 +249,7 @@ def get_bottom_toolbar():
             target=update_toolbar_in_background,
             daemon=True
         ).start()
-    
+
     # Return the cached toolbar HTML
     return toolbar_cache['html']
 
@@ -257,7 +258,7 @@ def get_toolbar_with_refresh():
     """Get toolbar with refresh control."""
     now = datetime.datetime.now()
     seconds_elapsed = (now - toolbar_cache['last_update']).total_seconds()
-    
+
     # Check if we need to refresh the toolbar
     if seconds_elapsed >= toolbar_cache['refresh_interval']:
         # Start a background thread to update the toolbar
@@ -265,7 +266,7 @@ def get_toolbar_with_refresh():
             target=update_toolbar_in_background,
             daemon=True
         ).start()
-    
+
     # Always return the cached version immediately
     return get_bottom_toolbar()
 

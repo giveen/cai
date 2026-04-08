@@ -1,19 +1,18 @@
-#BOT 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support import expected_conditions as EC
-import time
-import random
+#BOT
 import json
+import random
+import time
 from pathlib import Path
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 
-class Bot():
+class Bot:
 
 
     def __init__(self,headless=True):
@@ -26,15 +25,15 @@ class Bot():
         self.LABS_URL = 'https://portswigger.net/web-security/all-labs#'
         self.prefixes_filename = 'topics_prefixes.json'
         self.options = Options()
-        
+
         if headless:
             args = ['--headless','--disable-gpu', '--no-sandbox']
         else:
             args = ['--disable-gpu', '--no-sandbox']
-            
+
         for arg in args:
             self.options.add_argument(arg)
-        
+
         self.driver = webdriver.Chrome(options=self.options)
 
 
@@ -49,7 +48,7 @@ class Bot():
         duration = random.uniform(min_seconds, max_seconds)
         time.sleep(duration)
 
-    
+
     def login(self,username,password):
         """
         Logs in to the PortSwigger user portal using the given credentials.
@@ -103,28 +102,28 @@ class Bot():
         except KeyError:
             print(f"Topic '{topic_name}' not found")
             return []
-        
+
         #Go to sections urls
         self.driver.get(f'{self.LABS_URL}{topic_name}')
         self.__wait_random_time(min_seconds=5, max_seconds=7)
-        
+
         links = WebDriverWait(self.driver, 10).until(
             EC.presence_of_all_elements_located((By.CLASS_NAME, 'widgetcontainer-lab-link'))
         )
-        
 
-    
-        
+
+
+
         #Find all <a> elements that have the topic prefix in the href
         links = self.driver.find_elements(By.CLASS_NAME, 'widgetcontainer-lab-link')
-   
-        
+
+
         #Extract the href attributes
         if level:
             extracted_links = [link.find_element(By.TAG_NAME, 'a').get_attribute('href') for link in links if link.find_element(By.TAG_NAME, 'span').text == level]
         else:
             extracted_links = [link.find_element(By.TAG_NAME, 'a').get_attribute('href') for link in links]
-        
+
         #Filter links that contain the topic prefix
         return [link for link in extracted_links if topic_prefix == link.split('/')[4]]
 
@@ -137,10 +136,10 @@ class Bot():
 
         Extract the information associated to the lab such as Title, Description, Solution and Environment url.
         """
-        
+
         #Go to lab url
         self.driver.get(lab_url)
-        
+
         #Extract type of lab from url
         labtype = lab_url.split('/')[4]
 
@@ -161,27 +160,27 @@ class Bot():
             #when there are Hint section
             solution_sections[1].find_element(By.TAG_NAME, 'details').click()
             solution = solution_sections[1].find_element(By.CLASS_NAME, 'content').text
-            
-        
+
+
         #Extract url to access the lab environment
         ##Find the "Start lab" button and click it
         start_button = self.driver.find_element(By.CLASS_NAME, 'button-orange')
         start_button.click()
-        
+
         ##Get the current tab and switch to the new tab
         main_tab = self.driver.current_window_handle
         lab_tab = [handle for handle in self.driver.window_handles if handle != main_tab][0]
         self.driver.switch_to.window(lab_tab)
-        
+
         ##Get the URL of the lab environment
         environment_url  = self.driver.current_url
-        
+
         ##Close the new tab
         self.driver.close()
 
         ##Switch back to the main tab
         self.driver.switch_to.window(main_tab)
-    
+
         lab_info = {
             'type': labtype,
             'url': lab_url,
@@ -190,7 +189,7 @@ class Bot():
             'solution': solution,
             'environment_url': environment_url
             }
-            
+
         return lab_info
 
     def check_solved_lab(self,lab_url):
@@ -209,7 +208,6 @@ class Bot():
         return lab_status
 
 
-        
-        
-        
-        
+
+
+

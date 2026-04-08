@@ -22,9 +22,8 @@ from openai.types.completion_usage import CompletionUsage
 
 from cai.sdk.agents import Agent, ModelResponse, OpenAIChatCompletionsModel
 from cai.sdk.agents.models.openai_chatcompletions import (
-    get_agent_message_history,
-    get_all_agent_histories,
     ACTIVE_MODEL_INSTANCES,
+    get_all_agent_histories,
 )
 
 

@@ -122,7 +122,7 @@ ENV_VARS = {
         "name": "CAI_SUPPORT_INTERVAL",
         "description": "Number of turns between support agent executions",
         "default": "5"
-    },    
+    },
     22: {
         "name": "CAI_STREAM",
         "description": "Boolean to enable real-time, chunked responses instead of full messages.",
@@ -131,12 +131,12 @@ ENV_VARS = {
     23: {
         "name": "CAI_WORKSPACE",
         "description": "Name of the current workspace (affects log file naming)",
-        "default": None 
+        "default": None
     },
     24: {
         "name": "CAI_WORKSPACE_DIR",
         "description": "Path to the current workspace directory",
-        "default": None 
+        "default": None
     },
     25: {
         "name": "CAI_STREAM",

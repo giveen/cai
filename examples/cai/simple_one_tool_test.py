@@ -6,16 +6,15 @@ using Runner.run() with a simple hello message to verify everything
 is working correctly.
 """
 
-import os
 import asyncio
-import json
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
-from cai.sdk.agents import Runner, set_default_openai_client, set_tracing_disabled
-from cai.agents import get_agent_by_name
-from cai.util import fix_litellm_transcription_annotations, color, cli_print_agent_messages
-from cai.sdk.agents.models._openai_shared import set_use_responses_by_default
+import os
 
+from dotenv import load_dotenv
+
+from cai.agents import get_agent_by_name
+from cai.sdk.agents import Runner
+from cai.sdk.agents.models._openai_shared import set_use_responses_by_default
+from cai.util import color, fix_litellm_transcription_annotations
 
 # Load environment variables
 load_dotenv()
@@ -34,18 +33,18 @@ async def main():
     patch_applied = fix_litellm_transcription_annotations()
     if not patch_applied:
         print(color("Something went wrong patching LiteLLM fix_litellm_transcription_annotations", color="red"))
-    
+
     # Force the use of OpenAIChatCompletionsModel instead of OpenAIResponsesModel
     set_use_responses_by_default(False)
-        
+
     # Get the one_tool agent
     agent = get_agent_by_name("one_tool_agent")
-    
+
     print(f"Using model: {os.getenv('CAI_MODEL', 'default')}")
-    
+
     # Run the agent with a simple test message
     result = await Runner.run(agent, "Hello! Can you list the files in the current directory?")
-    
+
     # Print the result
     print("\nAgent response:")
     print("-" * 40)
@@ -54,4 +53,4 @@ async def main():
     print("\nTest completed successfully!")
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

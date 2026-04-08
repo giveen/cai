@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from cai.sdk.agents import function_tool
 from cai.rag.vector_db_adapter import get_rag_status as _get_rag_status
+from cai.sdk.agents import function_tool
 
 
 def _get_rag_status_impl() -> Dict[str, Any]:

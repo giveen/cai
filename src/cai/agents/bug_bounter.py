@@ -1,5 +1,6 @@
 """Red Team Base Agent"""
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -11,11 +12,10 @@ try:
 except Exception:
     AsyncOpenAI = None
 
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from cai.util import load_prompt_template, create_system_prompt_renderer
-from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
-
 from cai.agents.guardrails import get_security_guardrails
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 load_dotenv()
 
@@ -54,5 +54,5 @@ bug_bounter_agent = Agent(
     input_guardrails=input_guardrails,
     output_guardrails=output_guardrails,
     model=_model_inst
-   
+
 )

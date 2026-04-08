@@ -19,14 +19,15 @@ Objectives:
 
 
 import os
+
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from cai.util import load_prompt_template, create_system_prompt_renderer
-from dotenv import load_dotenv
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 # Prompts
 replay_attack_agent_prompt = load_prompt_template("prompts/system_replay_attack_agent.md")

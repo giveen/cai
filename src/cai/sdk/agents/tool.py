@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import ast
 import inspect
 import json
-import ast
 import re
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, Union, overload
 
-from typing import TYPE_CHECKING
 try:
     from pydantic import ValidationError
 except ImportError:  # pragma: no cover
@@ -27,6 +26,7 @@ from typing_extensions import Concatenate, ParamSpec
 from . import _debug
 from .computer import AsyncComputer, Computer
 from .exceptions import ModelBehaviorError
+
 try:
     from .function_schema import DocstringStyle, function_schema
 except Exception:  # pragma: no cover - optional docstring parsing support
@@ -433,7 +433,7 @@ def function_tool(
                         if tp is str:
                             return True
                         # Handle typing.Union and other generic aliases
-                        from typing import get_origin, get_args
+                        from typing import get_args, get_origin
 
                         origin = get_origin(tp)
                         if origin is None:
@@ -468,7 +468,7 @@ def function_tool(
             if input:
                 try:
                     json_data = json.loads(input)
-                except Exception as e:
+                except Exception:
                     try:
                         json_data = _forgiving_json_loads(input)
                         if _debug.DONT_LOG_TOOL_DATA:
@@ -519,12 +519,12 @@ def function_tool(
                 # Run synchronous functions in a thread pool to avoid blocking the event loop
                 import asyncio
                 import functools
-                
+
                 if schema.takes_context:
                     func_with_args = functools.partial(the_func, ctx, *args, **kwargs_dict)
                 else:
                     func_with_args = functools.partial(the_func, *args, **kwargs_dict)
-                
+
                 # Run in thread pool executor to prevent blocking
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(None, func_with_args)

@@ -7,14 +7,14 @@ relevant wake-up facts for a given session.
 """
 from __future__ import annotations
 
-import math
-import hashlib
 import datetime as _dt
+import hashlib
+import math
 from typing import Any, Dict, List, Optional
 
 from cai.rag.embeddings import (
-    get_embeddings_provider,
     LocalDeterministicEmbeddingsProvider,
+    get_embeddings_provider,
 )
 
 

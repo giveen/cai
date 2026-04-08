@@ -2,10 +2,13 @@
 Here are the curl tools.
 """
 
-from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.sdk.agents import function_tool
-from cai.tools.validation import validate_args_no_injection, is_url_safe  # pylint: disable=import-error
 from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=import-error
+from cai.tools.validation import (  # pylint: disable=import-error
+    is_url_safe,
+    validate_args_no_injection,
+)
 
 
 def _validate_curl_input(args: str, target: str):

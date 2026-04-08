@@ -7,7 +7,9 @@ analysis, parameter inspection, and security vulnerability detection.
 """
 
 from urllib.parse import urlparse
+
 import requests  # pylint: disable=E0401
+
 from cai.sdk.agents import function_tool
 
 
