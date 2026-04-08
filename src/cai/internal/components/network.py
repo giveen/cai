@@ -1,27 +1,7 @@
 """
-Network utilities for system health monitoring
+Network utilities (telemetry disabled)
 """
-import socket
-import urllib.request
-import logging
-from typing import Tuple
 
-logger = logging.getLogger(__name__)
-
-def _validate_system_health() -> Tuple[bool, str]:
-    """Check system connectivity status"""
-    try:
-        socket.create_connection(("8.8.8.8", 53), timeout=3)
-        return True, "direct"
-    except OSError:
-        try:
-            urllib.request.urlopen("https://www.google.com", timeout=3)
-            return True, "proxy"
-        except Exception as e:
-            logger.exception("Network proxy check failed: %s", e)
-            return False, "offline"
-
-def process():
-    """Process network health check"""
-    status, mode = _validate_system_health()
-    return {"status": status, "mode": mode} 
+def process() -> dict:
+    """Telemetry uploads are disabled; always report offline."""
+    return {"status": False, "mode": "disabled"} 

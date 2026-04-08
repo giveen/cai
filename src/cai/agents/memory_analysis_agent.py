@@ -12,38 +12,16 @@ except Exception:
     AsyncOpenAI = None
     
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from cai.util import load_prompt_template
-from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
-    run_ssh_command_with_credentials,
-)
-
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command,
-)
-
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_web_search_with_explanation,
-)
-
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code,
-)
+from openai import AsyncOpenAI
+from cai.util import load_prompt_template  # Add this import
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
 load_dotenv()
 # Prompts
 memory_analysis_agent_system_prompt = load_prompt_template("prompts/memory_analysis_agent.md")
 
-# Define functions list
-functions = [
-    generic_linux_command,
-    run_ssh_command_with_credentials,
-    execute_code,
-]
+tools = list(ALL_TOOLS)
 
-# Add make_web_search_with_explanation function if PERPLEXITY_API_KEY environment variable is set
-if os.getenv('PERPLEXITY_API_KEY'):
-    functions.append(make_web_search_with_explanation)
-    
 # Create the agent
 _openai_client = None
 if AsyncOpenAI is not None:
@@ -68,6 +46,9 @@ memory_analysis_agent = Agent(
     description="""Agent for runtime memory analysis and manipulation.
                    Specializes in process memory examination, monitoring, and modification
                    for security assessment, vulnerability discovery, and runtime behavior analysis.""",
-    tools=functions,
-    model=_model_inst,
+    tools=tools,
+    model=OpenAIChatCompletionsModel(
+        model=os.getenv('CAI_MODEL', "alias1"),
+        openai_client=AsyncOpenAI(),
+    )
 )

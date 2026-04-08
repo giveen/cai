@@ -16,16 +16,7 @@ from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 #     run_ssh_command_with_credentials
 # )
 
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_web_search_with_explanation,
-)
-
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code
-)
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.agents.guardrails import get_security_guardrails
 
@@ -37,16 +28,7 @@ model_name = os.getenv("CAI_MODEL", "alias1")
 api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
 # Prompts
 redteam_agent_system_prompt = load_prompt_template("prompts/system_red_team_agent.md")
-# Define tools list based on available API keys
-tools = [
-    generic_linux_command,
-    #run_ssh_command_with_credentials,
-    execute_code,
-]
-
-# Add make_web_search_with_explanation function if PERPLEXITY_API_KEY environment variable is set
-if os.getenv('PERPLEXITY_API_KEY'):
-    tools.append(make_web_search_with_explanation)
+tools = list(ALL_TOOLS)
 
 # Get security guardrails
 input_guardrails, output_guardrails = get_security_guardrails()

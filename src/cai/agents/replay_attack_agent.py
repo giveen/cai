@@ -25,42 +25,13 @@ except Exception:
     AsyncOpenAI = None
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
 from cai.util import load_prompt_template, create_system_prompt_renderer
-from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
-    run_ssh_command_with_credentials
-)
-
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_web_search_with_explanation
-)
-
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code
-)
-
-# Import network tools
-from cai.tools.network.capture_traffic import (  # pylint: disable=import-error # noqa: E501
-    capture_remote_traffic,
-    remote_capture_session_tool,
-)
+from dotenv import load_dotenv
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
 # Prompts
 replay_attack_agent_prompt = load_prompt_template("prompts/system_replay_attack_agent.md")
 
-# Define tools list based on available tools
-tools = [
-    generic_linux_command,
-    run_ssh_command_with_credentials,
-    execute_code,
-    capture_remote_traffic,
-    remote_capture_session_tool,
-]
-
-# Add conditional tools based on available API keys
-if os.getenv('PERPLEXITY_API_KEY'):
-    tools.append(make_web_search_with_explanation)
+tools = list(ALL_TOOLS)
 
 
 # Create the agent instance

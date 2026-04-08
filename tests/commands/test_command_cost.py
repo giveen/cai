@@ -4,6 +4,7 @@ Tests for the cost command.
 import json
 import os
 import tempfile
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -93,12 +94,11 @@ class TestCostCommand:
                 ]
             }
             json.dump(usage_data, f)
-            # Ensure data is flushed to disk so other readers can consume it immediately
+            # Ensure data is written to disk before yielding filename
             f.flush()
             try:
                 os.fsync(f.fileno())
             except Exception:
-                # If fsync isn't available or fails, ignore and rely on flush
                 pass
             yield f.name
         

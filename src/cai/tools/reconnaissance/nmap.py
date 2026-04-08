@@ -5,27 +5,69 @@ import shlex
 from typing import List
 from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
+from cai.tools.validation import contains_shell_metacharacters, is_valid_target  # pylint: disable=import-error
+from cai.tools import validation  # pylint: disable=import-error
+
+
+def _validate_nmap_input(args: str, target: str):
+    """Return an error string if inputs are unsafe, else None."""
+    if contains_shell_metacharacters(args):
+        return (
+            f"Invalid args '{args}': shell metacharacters (;|&`$<>\\) are not allowed."
+        )
+    # Normalize and sanitize target (strip whitespace and trailing punctuation
+    # that LLMs sometimes append like a trailing period).
+    t = (target or "").strip().rstrip('.,;:')
+    if not t:
+        return "Invalid target: target is required."
+    if not is_valid_target(t):
+        return (
+            f"Invalid target '{target}': must be an IPv4/IPv6 address, "
+            "CIDR block, IP range, or hostname."
+        )
+    return None
+
 
 
 @function_tool
-def nmap(args: str, target: str, ctf=None) -> str:
+def nmap(target: str, args: str = "", timeout: int = 300) -> str:
     """
-    A simple nmap tool to scan a specified target.
+    Run nmap against a target to discover open ports, services, and versions.
 
     Args:
-        args: Additional arguments to pass to the nmap command
-        target: The target host or IP address to scan
+        target:  Host, IP address, CIDR block, or IP range to scan.
+                 Examples: "192.168.1.1", "10.0.0.0/24", "192.168.1.1-20", "example.com"
+        args:    Additional nmap flags. Common examples:
+                   "-sn"               — ping sweep (no port scan)
+                   "-sV"               — service/version detection
+                   "-sC"               — run default scripts
+                   "-sV -sC"           — version + default scripts
+                   "-A"                — aggressive: OS, version, scripts, traceroute
+                   "-p 22,80,443"      — scan specific ports
+                   "-p-"               — scan all 65535 ports
+                   "--script vuln"     — run vulnerability scripts
+                   "-T4"               — faster timing template
+                   "-Pn"               — skip host discovery (treat host as up)
+        timeout: Maximum seconds to wait for the scan (default 300).
 
     Returns:
-        str: The output of running the nmap command
+        str: Raw nmap output including discovered hosts, open ports, services, and versions.
+
+    Examples:
+        nmap(target="192.168.1.1")
+        nmap(target="10.0.0.0/24", args="-sn")
+        nmap(target="192.168.1.1", args="-sV -sC -p 22,80,443")
+        nmap(target="192.168.1.1", args="-A -T4 --script vuln", timeout=600)
+        nmap(target="192.168.1.1-50", args="-p- --open")
     """
-    try:
-        args_tokens: List[str] = shlex.split(args) if args else []
-    except Exception:
-        args_tokens = [args]
+    err = _validate_nmap_input(args, target)
+    if err:
+        return err
 
-    cmd: List[str] = ["nmap"] + args_tokens
-    if target:
-        cmd.append(target)
-
-    return run_command(cmd, ctf=ctf)
+    # sanitize target for final command construction
+    target_s = (target or "").strip().rstrip('.,;:')
+    command = f'nmap {args} {target_s}'
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
+    return run_command(command, timeout=timeout)

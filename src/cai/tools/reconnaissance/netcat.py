@@ -1,66 +1,107 @@
 """
  Here are the tools for netcat command
 """
-import shlex
-import subprocess
+import tempfile
+import os
+
 from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
+from cai.tools.validation import (
+    contains_shell_metacharacters,
+    is_valid_host,
+    has_disallowed_nc_flags,
+)  # pylint: disable=import-error
+from cai.tools import validation  # pylint: disable=import-error
+
+
+def _validate_netcat_input(args: str, host: str, port: int, data: str):
+    """Return an error string if inputs are unsafe, else None."""
+    # Port checks
+    try:
+        port_int = int(port)
+    except Exception:
+        return "Error: Port must be an integer"
+    if port_int < 1 or port_int > 65535:
+        return "Error: Port must be between 1 and 65535"
+
+    # Host validation
+    if not host or not is_valid_host(host.strip()):
+        return f"Invalid host '{host}': must be an IP address or hostname"
+
+    # Args should not contain shell metacharacters or disallowed flags
+    if args:
+        if contains_shell_metacharacters(args):
+            return f"Invalid args '{args}': shell metacharacters are not allowed"
+        if has_disallowed_nc_flags(args):
+            return f"Invalid args '{args}': flags -e, -c, -l are not allowed"
+
+    # Data length guard
+    if data and len(data) > 16_384:
+        return "Error: data too large (max 16384 characters)"
+
+    return None
+
 
 @function_tool
-def netcat(host: str, port: int, data: str = '',
-           args: str = '', ctf=None) -> str:
+def netcat(host: str, port: int, data: str = '', args: str = '', timeout: int = 10) -> str:
     """
-    A simple netcat tool to connect to a specified host and port.
+    Connect to a host:port using netcat (nc) with input validation.
+
     Args:
-        args: Additional arguments to pass to the netcat command
-        host: The target host to connect to
-        port: The target port to connect to
-        data: Data to send to the host (optional)
+        host: Target host (IP or hostname).
+        port: Target TCP port (1-65535).
+        data: Optional string data to send to the socket. Limited in size.
+        args: Additional nc flags (restricted). Disallowed: -e -c -l and any shell metacharacters.
+        timeout: Maximum seconds to wait for the command (default 10).
 
     Returns:
-        str: The output of running the netcat command
-         or error message if connection fails
+        str: The raw output from nc or an error string.
+
+    Notes:
+        - This tool writes `data` to a temporary file and feeds it to nc via stdin
+          to avoid shell-escaping issues. The temporary file is removed after use.
+        - The tool disallows flags that enable remote command execution or listening.
     """
+    # Validate inputs
+    err = _validate_netcat_input(args, host, port, data)
+    if err:
+        return err
+
+    host_s = host.strip()
+    port_i = int(port)
+
+    tmp_path = None
     try:
-        if not isinstance(port, int):
-            return "Error: Port must be an integer"
-        if port < 1 or port > 65535:
-            return "Error: Port must be between 1 and 65535"
+        if data:
+            # Write payload to a temporary file in a safe manner
+            with tempfile.NamedTemporaryFile(delete=False, prefix='cai_nc_', mode='wb') as tf:
+                tmp_path = tf.name
+                tf.write(data.encode('utf-8', errors='replace'))
 
-        if ctf:
-            # Remote/CTF context: prefer argument lists when possible.
-            try:
-                args_tokens = shlex.split(args) if args else []
-            except Exception:
-                args_tokens = [args]
+            # Use input redirection from the temporary file (tmp_path is safe)
+            command = f'nc -w 3 {host_s} {port_i} {args} < {tmp_path}'
+        else:
+            # No data: ensure nc gets EOF immediately
+            command = f'nc -w 3 {host_s} {port_i} {args} < /dev/null'
 
-            # If data needs to be piped, fallback to a shell command string.
-            if data:
-                extra = ' '.join(shlex.quote(a) for a in args_tokens) if args_tokens else ''
-                nc_cmd = f'nc -w 3 {shlex.quote(host)} {port} {extra}'.strip()
-                shell_cmd = f'printf "%s\\n" {shlex.quote(data)} | {nc_cmd}'
-                return run_command(shell_cmd, ctf=ctf)
+        # Global guardrails
+        guard_err = validation.validate_command_guardrails(command)
+        if guard_err:
+            # cleanup tmp file if created
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+            return guard_err
 
-            # No piping needed: pass as an argument list
-            cmd = ['nc', '-w', '3', host, str(port)]
-            if args_tokens:
-                cmd.extend(args_tokens)
-            return run_command(cmd, ctf=ctf)
-
-        # Local: subprocess with an argument list — no shell, no injection risk.
-        # data is fed directly as stdin bytes, sidestepping all quoting issues.
-        cmd = ['nc', '-w', '3', host, str(port)]
-        if args:
-            cmd.extend(shlex.split(args))
-        stdin_data = (data + '\n').encode() if data else b''
-        proc = subprocess.run(
-            cmd,
-            input=stdin_data,
-            capture_output=True,
-            timeout=10,
-        )
-        output = proc.stdout.decode(errors='replace')
-        err = proc.stderr.decode(errors='replace')
-        return output or err or ''
+        result = run_command(command, timeout=timeout)
+        return result
     except Exception as e:  # pylint: disable=broad-except
         return f"Error executing netcat command: {str(e)}"
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass

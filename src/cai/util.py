@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 from mako.template import Template  # pylint: disable=import-error
 from rich.box import ROUNDED  # pylint: disable=import-error
@@ -581,16 +581,9 @@ class CostTracker:
                 # Cache the results
                 self.model_pricing_cache[model_name] = (input_cost_per_token, output_cost_per_token)
                 return input_cost_per_token, output_cost_per_token
-        except Exception as e:
-            # Check if it's a network connectivity issue by testing a simple connection
-            try:
-                import requests
-                _test_response = requests.get("https://aliasrobotics.com/", timeout=1)
-                # The pricing URL failed
-                print(f"  WARNING: Error fetching model pricing: {str(e)}")
-            except Exception:
-                # No internet connection, silently skip the warning
-                pass
+        except Exception:
+            # Silently skip if pricing cannot be fetched
+            pass
 
         # Default to zero cost if no pricing found (local/free models)
         default_pricing = (0.0, 0.0)
@@ -1469,39 +1462,54 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     return processed_messages
 
 
-def cli_print_tool_call(tool_name="", args=None, output=None, prefix="  ", tool_args=None, tool_output=None, **kwargs):
+def cli_print_tool_call(tool_name="", args="", output="", prefix="  ", **kwargs):
     """Print a tool call with pretty formatting.
 
-    This helper accepts both the legacy `args`/`output` parameters and the newer
-    `tool_args`/`tool_output` keywords used by templates. Extra kwargs are
-    ignored to remain forward-compatible with template changes.
+    Backwards-compatible: templates may pass `tool_args` and `tool_output`
+    as keywords (and additional token/debug metadata). Accept and map them.
     """
     if not tool_name:
         return
 
-    # Prefer explicit args, fall back to tool_args for compatibility
-    display_args = args if args is not None else tool_args
-    display_output = output if output is not None else tool_output
+    # Allow older templates to pass tool_args/tool_output
+    if not args and "tool_args" in kwargs:
+        args = kwargs.get("tool_args")
+    if not output and "tool_output" in kwargs:
+        output = kwargs.get("tool_output")
 
-    # Normalize args for display
-    if isinstance(display_args, dict):
-        try:
-            import json
-
-            args_str = json.dumps(display_args)
-        except Exception:
-            args_str = str(display_args)
-    else:
-        args_str = str(display_args) if display_args is not None else ""
-
-    output_str = str(display_output) if display_output is not None else ""
+    # Format args nicely if needed
+    try:
+        args_str = _format_tool_args(args, tool_name=tool_name) if args else ""
+    except Exception:
+        # Fallback to string representation
+        args_str = str(args)
 
     print(f"{prefix}{color('Tool Call:', fg='cyan')}")
     print(f"{prefix}{color('Name:', fg='cyan')} {tool_name}")
     if args_str:
         print(f"{prefix}{color('Args:', fg='cyan')} {args_str}")
-    if output_str:
-        print(f"{prefix}{color('Output:', fg='cyan')} {output_str}")
+    if output:
+        print(f"{prefix}{color('Output:', fg='cyan')} {output}")
+
+    # Optionally print token and model debug info if provided
+    token_keys = [
+        'interaction_input_tokens', 'interaction_output_tokens', 'interaction_reasoning_tokens',
+        'total_input_tokens', 'total_output_tokens', 'total_reasoning_tokens'
+    ]
+    token_info = {k: kwargs.get(k) for k in token_keys if k in kwargs}
+    if token_info:
+        token_labels = {
+            'interaction_input_tokens': 'interaction_input',
+            'interaction_output_tokens': 'interaction_output',
+            'interaction_reasoning_tokens': 'interaction_reasoning',
+            'total_input_tokens': 'total_input',
+            'total_output_tokens': 'total_output',
+            'total_reasoning_tokens': 'total_reasoning',
+        }
+        t_parts = [f"{token_labels.get(k, k)}={v}" for k, v in token_info.items()]
+        print(f"{prefix}{color('Tokens:', fg='cyan')} {', '.join(t_parts)}")
+    if 'model' in kwargs:
+        print(f"{prefix}{color('Model:', fg='cyan')} {kwargs.get('model')}")
 
 
 def get_model_input_tokens(model):
@@ -2625,14 +2633,14 @@ def finish_agent_streaming(context, final_stats=None):
 
 
 def cli_print_tool_output(
-    tool_name="",
-    args="",
-    output="",
-    call_id=None,
-    execution_info=None,
-    token_info=None,
-    streaming=False,
-):
+    tool_name: str = "",
+    args: Any = "",
+    output: str = "",
+    call_id: Optional[str] = None,
+    execution_info: Optional[dict] = None,
+    token_info: Optional[dict] = None,
+    streaming: bool = False,
+) -> None:
     """
     Print a tool call output to the command line.
     Similar to cli_print_tool_call but for the output of the tool.

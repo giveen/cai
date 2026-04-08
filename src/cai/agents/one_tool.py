@@ -14,7 +14,8 @@ except Exception:
   AsyncOpenAI = None
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from cai.tools.reconnaissance.generic_linux_command import generic_linux_command  # noqa
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from openai import AsyncOpenAI
 from cai.util import create_system_prompt_renderer
 from cai.agents.guardrails import get_security_guardrails
 
@@ -91,9 +92,7 @@ one_tool_agent = Agent(
     description="""Agent focused on conquering security challenges using generic linux commands
                    Expert in cybersecurity and exploitation.""",
     instructions=create_system_prompt_renderer(instructions),
-    tools=[
-        generic_linux_command,
-    ],
+    tools=list(ALL_TOOLS),
     input_guardrails=input_guardrails,
     output_guardrails=output_guardrails,
     model=_model_inst,

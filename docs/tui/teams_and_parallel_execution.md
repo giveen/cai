@@ -89,10 +89,17 @@ Send the same command to all terminals simultaneously:
 2. Add `all` at the end of your prompt
 3. Command executes on all four terminals in parallel
 
+**Method 2: Queue tab Broadcast button**
+1. Open the **Queue** tab
+2. Enter a prompt in the queue input
+3. Click **Broadcast** to dispatch to terminals T1-T4 immediately
+
 **Example use cases**:
 - Broadcast reconnaissance: `Enumerate subdomains of example.com all`
 - Parallel vulnerability scan: `Scan target.com for SQL injection all`
 - Coordinated testing: `Test authentication mechanisms all`
+
+Tip: Terminal input placeholders and `/help` now include a broadcast hint.
 
 ---
 

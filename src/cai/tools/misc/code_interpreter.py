@@ -11,7 +11,7 @@ from cai.sdk.agents import function_tool
 
 
 @function_tool
-def execute_python_code(code: str, context: Optional[Dict] = None) -> str:
+def execute_python_code(code: str) -> str:
     """
     Execute Python code and return the output.
 
@@ -38,11 +38,6 @@ def execute_python_code(code: str, context: Optional[Dict] = None) -> str:
 
     try:
         local_vars = {}
-        if context and isinstance(context, dict):
-            # Only copy non-callable items to avoid exposing functions
-            for k, v in context.items():
-                if not callable(v):
-                    local_vars[k] = v
 
         # Capture output using StringIO
         sys.stdout = captured

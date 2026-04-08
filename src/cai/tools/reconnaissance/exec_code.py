@@ -2,14 +2,23 @@
 Tool for executing code via LLM tool calls.
 """
 import os
+import uuid
+import shlex
 import base64
-from cai.tools.common import run_command, _get_workspace_dir  # pylint: disable=import-error
+
+from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.sdk.agents import function_tool
+from cai.tools.validation import is_valid_filename  # pylint: disable=import-error
 
 
 @function_tool
-def execute_code(code: str = "", language: str = "python",
-                filename: str = "exploit", timeout: int = 100, ctf=None) -> str:
+def execute_code(
+    code: str = "",
+    language: str = "python",
+    filename: str = "exploit",
+    timeout: int = 100,
+    persist: bool = False,
+) -> str:
     """
     Create a file code store it and execute it
 
@@ -31,138 +40,125 @@ def execute_code(code: str = "", language: str = "python",
         Command output or error message from execution
     """
 
+    # Basic validation
     if not code:
         return "No code provided to execute"
 
-    # Map file extensions
+    if len(code) > 200_000:
+        return "Error: code too large"
+
+    # Normalize language and supported extensions/executors
+    language = (language or "").lower()
     extensions = {
         "python": "py",
         "php": "php",
         "bash": "sh",
-        "shell": "sh",  # Add shell as alias for bash
+        "shell": "sh",
         "ruby": "rb",
         "perl": "pl",
         "golang": "go",
-        "go": "go",     # Add go as alias for golang
+        "go": "go",
         "javascript": "js",
-        "js": "js",     # Add js as alias for javascript
+        "js": "js",
         "typescript": "ts",
-        "ts": "ts",     # Add ts as alias for typescript
+        "ts": "ts",
         "rust": "rs",
         "csharp": "cs",
-        "cs": "cs",     # Add cs as alias for csharp
+        "cs": "cs",
         "java": "java",
         "kotlin": "kt",
-        "c": "c",       # Add C language
-        "cpp": "cpp",   # Add C++ language
-        "c++": "cpp"    # Add C++ language alias
+        "c": "c",
+        "cpp": "cpp",
+        "c++": "cpp",
     }
-    # Normalize language to lowercase
-    language = language.lower()
-    ext = extensions.get(language, "txt")
-    full_filename = f"{filename}.{ext}"
 
-    # Determine whether code needs to land in a remote environment
-    # (container, SSH, or CTF) so we can route the write correctly.
-    _active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
-    _is_ssh = all(os.getenv(v) for v in ["SSH_USER", "SSH_HOST"])
-    try:
-        from cai.cli import ctf_global as _ctf_global  # pylint: disable=import-outside-toplevel
-        _use_remote = bool(
-            _active_container or _is_ssh or
-            (_ctf_global and hasattr(_ctf_global, "get_shell") and
-             os.getenv("CTF_INSIDE", "True").lower() == "true")
-        )
-    except ImportError:
-        _use_remote = bool(_active_container or _is_ssh)
-
-    if _use_remote:
-        # Encode the code as base64 so any special characters are transmitted
-        # safely through the shell without heredoc quoting issues.
-        _encoded = base64.b64encode(code.encode("utf-8")).decode("ascii")
-        create_cmd = f"echo '{_encoded}' | base64 -d > {full_filename}"
-        # Use a shell invocation through an arg list so the central runner
-        # receives a list while preserving shell redirection semantics.
-        result = run_command(["sh", "-c", create_cmd], ctf=ctf, stream=False, tool_name="_internal_file_creation")
-        if result and "error" in result.lower():
-            return f"Failed to create code file: {result}"
-    else:
-        # Local: write the file directly with Python I/O — reliable and
-        # immune to shell-escaping or EOF-collision issues.
-        _target = os.path.join(_get_workspace_dir(), full_filename)
-        try:
-            with open(_target, "w", encoding="utf-8") as _f:
-                _f.write(code)
-        except OSError as _e:
-            return f"Failed to create code file: {_e}"
-    
-    # Prepare execution command based on language
-    if language in ["python", "py"]:
-        exec_cmd = ["python3", full_filename]
-    elif language in ["php"]:
-        exec_cmd = ["php", full_filename]
-    elif language in ["bash", "sh", "shell"]:
-        exec_cmd = ["bash", full_filename]
-    elif language in ["ruby", "rb"]:
-        exec_cmd = ["ruby", full_filename]
-    elif language in ["perl", "pl"]:
-        exec_cmd = ["perl", full_filename]
-    elif language in ["golang", "go"]:
-        temp_dir = f"/tmp/go_exec_{filename}"
-        run_command(["mkdir", "-p", temp_dir], ctf=ctf, stream=False, tool_name="_internal_setup")
-        run_command(["cp", full_filename, f"{temp_dir}/main.go"], ctf=ctf, stream=False, tool_name="_internal_setup")
-        # Keep the cd && go mod/init as a shell compound for remote environments
-        run_command(["sh", "-c", f"cd {temp_dir} && go mod init temp"], ctf=ctf, stream=False, tool_name="_internal_setup")
-        exec_cmd = f"cd {temp_dir} && go run main.go"
-    elif language in ["javascript", "js"]:
-        exec_cmd = ["node", full_filename]
-    elif language in ["typescript", "ts"]:
-        exec_cmd = ["ts-node", full_filename]
-    elif language in ["rust", "rs"]:
-        # For Rust, we need to compile first
-        run_command(["rustc", full_filename, "-o", filename], ctf=ctf, stream=False, tool_name="_internal_setup")
-        exec_cmd = [f"./{filename}"]
-    elif language in ["csharp", "cs"]:
-        # For C#, compile with dotnet
-        run_command(["dotnet", "build", full_filename], ctf=ctf, stream=False, tool_name="_internal_setup")
-        exec_cmd = ["dotnet", "run", full_filename]
-    elif language in ["java"]:
-        # For Java, compile first
-        run_command(["javac", full_filename], ctf=ctf, stream=False, tool_name="_internal_setup")
-        exec_cmd = ["java", filename]
-    elif language in ["kotlin", "kt"]:
-        # For Kotlin, compile first
-        run_command(["kotlinc", full_filename, "-include-runtime", "-d", f"{filename}.jar"], ctf=ctf, stream=False, tool_name="_internal_setup")
-        exec_cmd = ["java", "-jar", f"{filename}.jar"]
-    elif language in ["c"]:
-        # For C, compile with gcc
-        run_command(["gcc", full_filename, "-o", filename], ctf=ctf, stream=False, tool_name="_internal_setup")
-        exec_cmd = [f"./{filename}"]
-    elif language in ["cpp", "c++"]:
-        # For C++, compile with g++
-        run_command(["g++", full_filename, "-o", filename], ctf=ctf, stream=False, tool_name="_internal_setup")
-        exec_cmd = [f"./{filename}"]
-    else:
+    if language not in extensions:
         return f"Unsupported language: {language}"
 
-    # Execute the code with syntax-highlighted output
-    # Create a custom tool args dictionary to send language and code info to the tool output function
+    # Validate filename (no paths, limited charset)
+    if not is_valid_filename(filename):
+        return "Invalid filename: only A-Za-z0-9_- allowed, max 64 chars"
+
+    ext = extensions[language]
+    full_filename = f"{filename}.{ext}"
+
+    # Create a unique temporary directory in the target environment (so that
+    # run_command which may execute inside a container will place files there).
+    run_id = str(uuid.uuid4())[:8]
+    tmp_dir = f"/tmp/cai_exec_{run_id}_{filename}"
+
+    # Encode content as base64 to safely transport into the shell environment
+    encoded = base64.b64encode(code.encode("utf-8", errors="replace")).decode("ascii")
+    quoted_encoded = shlex.quote(encoded)
+    target_path = os.path.join(tmp_dir, full_filename)
+    quoted_target = shlex.quote(target_path)
+
+    # Prepare file creation command that decodes base64 into the target file
+    create_cmd = f"mkdir -p {shlex.quote(tmp_dir)} && echo {quoted_encoded} | base64 -d > {quoted_target}"
+    res = run_command(create_cmd, stream=False, tool_name="_internal_file_creation")
+    if isinstance(res, str) and "error" in res.lower():
+        return f"Failed to create code file: {res}"
+
+    # Build execution commands depending on language
+    # We always execute from inside tmp_dir so compiled artifacts do not escape
+    if language in ["python", "py"]:
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && python3 {shlex.quote(full_filename)}"
+    elif language in ["php"]:
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && php {shlex.quote(full_filename)}"
+    elif language in ["bash", "sh", "shell"]:
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && bash {shlex.quote(full_filename)}"
+    elif language in ["ruby", "rb"]:
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && ruby {shlex.quote(full_filename)}"
+    elif language in ["perl", "pl"]:
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && perl {shlex.quote(full_filename)}"
+    elif language in ["golang", "go"]:
+        # Make sure file is main.go for `go run`
+        run_command(f"mkdir -p {shlex.quote(tmp_dir)}", stream=False, tool_name="_internal_setup")
+        run_command(f"cp {quoted_target} {shlex.quote(os.path.join(tmp_dir, 'main.go'))}", stream=False, tool_name="_internal_setup")
+        run_command(f"cd {shlex.quote(tmp_dir)} && go mod init temp || true", stream=False, tool_name="_internal_setup")
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && go run main.go"
+    elif language in ["javascript", "js"]:
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && node {shlex.quote(full_filename)}"
+    elif language in ["typescript", "ts"]:
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && ts-node {shlex.quote(full_filename)}"
+    elif language in ["rust", "rs"]:
+        run_command(f"cd {shlex.quote(tmp_dir)} && rustc {shlex.quote(full_filename)} -o {shlex.quote(filename)}", stream=False, tool_name="_internal_setup")
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && ./{shlex.quote(filename)}"
+    elif language in ["csharp", "cs"]:
+        run_command(f"cd {shlex.quote(tmp_dir)} && dotnet build {shlex.quote(full_filename)}", stream=False, tool_name="_internal_setup")
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && dotnet run {shlex.quote(full_filename)}"
+    elif language in ["java"]:
+        run_command(f"cd {shlex.quote(tmp_dir)} && javac {shlex.quote(full_filename)}", stream=False, tool_name="_internal_setup")
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && java {shlex.quote(filename)}"
+    elif language in ["kotlin", "kt"]:
+        run_command(f"cd {shlex.quote(tmp_dir)} && kotlinc {shlex.quote(full_filename)} -include-runtime -d {shlex.quote(filename)}.jar", stream=False, tool_name="_internal_setup")
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && java -jar {shlex.quote(filename)}.jar"
+    elif language in ["c"]:
+        run_command(f"cd {shlex.quote(tmp_dir)} && gcc {shlex.quote(full_filename)} -o {shlex.quote(filename)}", stream=False, tool_name="_internal_setup")
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && ./{shlex.quote(filename)}"
+    elif language in ["cpp"]:
+        run_command(f"cd {shlex.quote(tmp_dir)} && g++ {shlex.quote(full_filename)} -o {shlex.quote(filename)}", stream=False, tool_name="_internal_setup")
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && ./{shlex.quote(filename)}"
+    else:
+        # Should not hit due to earlier check
+        return f"Unsupported language: {language}"
+
     tool_args = {
         "command": "execute",
         "language": language,
         "filename": filename,
-        "code": code,  # Include the code for syntax highlighting
-        "timeout": timeout
+        "code": code,
+        "timeout": timeout,
     }
-    
-    # Run the command with streaming to get syntax highlighting
-    output = run_command(
-        exec_cmd, 
-        ctf=ctf, 
-        timeout=timeout, 
-        stream=True,  # ALWAYS use streaming
-        tool_name="execute_code", 
-        args=tool_args
-    )
+
+    try:
+        output = run_command(exec_cmd, timeout=timeout, stream=True, tool_name="execute_code", args=tool_args)
+    finally:
+        # Clean up temporary directory unless persistence requested
+        if not persist:
+            try:
+                run_command(f"rm -rf {shlex.quote(tmp_dir)}", stream=False, tool_name="_internal_cleanup")
+            except Exception:
+                pass
 
     return output

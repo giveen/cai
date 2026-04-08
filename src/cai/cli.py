@@ -285,9 +285,8 @@ from rich.console import Console  # noqa: E402
 
 from cai import is_pentestperf_available  # noqa: E402
 
-# CAI agents and metrics imports
-from cai.agents import get_agent_by_name  # noqa: E402
-from cai.internal.components.metrics import process_metrics  # noqa: E402
+# CAI agents imports
+from cai.agents import get_agent_by_name
 
 # CAI REPL imports
 from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command  # noqa: E402
@@ -481,6 +480,51 @@ def run_cai_cli(
         session_id=session_logger.session_id,
         agent_name=None  # Will be updated when agent is selected
     )
+
+    # Initialize global WakeupIndex and load persisted wake-up summaries
+    try:
+        from cai.rag.wakeup_store import get_global_wakeup_index
+        from cai.rag.summaries import load_summaries_for_session
+
+        wakeup_idx = get_global_wakeup_index()
+        # Load persisted summaries only (do not attempt regeneration here)
+        try:
+            count = load_summaries_for_session(
+                session_id=session_logger.session_id,
+                palace_texts=None,
+                wakeup_index=wakeup_idx,
+                regenerate_if_missing=False,
+            )
+        except Exception:
+            count = 0
+
+        if os.getenv("CAI_DEBUG", "1") == "2":
+            print(f"Loaded {count} wakeup summaries into WakeupIndex for session {session_logger.session_id}")
+    except Exception:
+        # Best-effort: don't fail session startup if wakeup loading fails
+        pass
+
+    # Initialize TripleStore and run a best-effort contradiction check
+    try:
+        from cai.rag.triplestore_store import get_global_triplestore
+
+        ts = get_global_triplestore()
+        try:
+            window_sec = int(os.getenv("CAI_TRIPLESTORE_CONTRADICTION_WINDOW_SECONDS", str(24 * 3600)))
+        except Exception:
+            window_sec = 24 * 3600
+        try:
+            contradictions = ts.detect_contradictions(window_seconds=window_sec)
+            n = len(contradictions)
+            if os.getenv("CAI_DEBUG", "1") == "2":
+                print(f"TripleStore: detected {n} contradictions in last {window_sec} seconds")
+            logging.getLogger(__name__).info("TripleStore startup contradictions=%d", n)
+        except Exception:
+            # Best-effort: do not fail startup for triple-store checks
+            pass
+    except Exception:
+        # Best-effort: do not fail session startup if triplestore init fails
+        pass
 
     # Display banner
     display_banner(console)
@@ -946,20 +990,6 @@ def run_cai_cli(
                     console.print(time_panel, end="")
 
                 print_session_summary(console, metrics, logging_path)
-
-                # Upload logs if telemetry is enabled by checking the
-                # env. variable CAI_TELEMETRY and there's internet connectivity
-                # Default is disabled for privacy; set CAI_TELEMETRY=true to opt in.
-                telemetry_enabled = os.getenv("CAI_TELEMETRY", "false").lower() != "false"
-                if (
-                    telemetry_enabled
-                    and hasattr(session_logger, "session_id")
-                    and hasattr(session_logger, "filename")
-                ):
-                    process_metrics(
-                        session_logger.filename,  # should match logging_path
-                        sid=session_logger.session_id,
-                    )
 
                 # Log session end
                 if session_logger:
@@ -2025,10 +2055,22 @@ def main():
             )
         )
 
-    # Check for command-line arguments to use as initial prompt
+    # Disable tracing for interactive CLI sessions. Do this at runtime
+    # rather than at import time so importing this module (e.g. in tests)
+    # doesn't globally disable tracing for the whole process.
+    try:
+        set_tracing_disabled(True)
+    except Exception:
+        # If tracing API isn't available for some reason, ignore.
+        pass
+
+    # Check for command-line arguments to use as initial prompt.
+    # --tui flag triggers the Textual TUI and is consumed here.
     initial_prompt = None
-    if len(sys.argv) > 1:
-        initial_prompt = sys.argv[1]
+    use_tui = "--tui" in sys.argv or os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false")
+    remaining_args = [a for a in sys.argv[1:] if a != "--tui"]
+    if remaining_args:
+        initial_prompt = remaining_args[0]
 
     # Detect TUI activation via env or CLI flag (--tui)
     tui_flag = os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false") or "--tui" in sys.argv
@@ -2082,16 +2124,17 @@ def main():
     current_model = os.getenv("CAI_MODEL", "alias1")
     update_agent_models_recursively(agent, current_model)
 
-    # Disable tracing for interactive CLI runs to avoid sending traces to
-    # the backend while users run commands locally. Do this only when the
-    # CLI is actually started (not on import) so tests and imports do not
-    # inadvertently disable tracing for the whole process.
-    try:
-        set_tracing_disabled(True)
-    except Exception:
-        # If tracing API isn't available for some reason, ignore to avoid
-        # breaking the CLI startup.
-        pass
+    # Launch Textual TUI when requested, otherwise fall through to the REPL
+    if use_tui:
+        try:
+            from cai.tui import run_tui
+            run_tui(agent=agent, initial_prompt=initial_prompt)
+            return
+        except Exception as tui_err:
+            console = Console()
+            console.print(
+                f"[yellow]TUI failed to start ({tui_err}); falling back to REPL.[/yellow]"
+            )
 
     # Run the CLI with the selected agent and optional initial prompt
     run_cai_cli(agent, initial_prompt=initial_prompt)

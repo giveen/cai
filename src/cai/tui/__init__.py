@@ -1,7 +1,8 @@
-"""Minimal TUI package for CAI.
+"""CAI TUI package.
 
-Expose a `run_tui` helper that attempts to start a Textual app and
-falls back to a simple Rich-based live panel if Textual isn't available.
+Activated via:
+    CAI_TUI=true cai
+    cai --tui
 """
 from .app import run_tui
 

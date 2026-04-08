@@ -31,50 +31,17 @@ except Exception:
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff  # pylint: disable=import-error
 from cai.util import load_prompt_template, create_system_prompt_renderer
-from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
-    run_ssh_command_with_credentials
-)
-
-from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
-    generic_linux_command
-)
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_web_search_with_explanation
-)
-
-from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
-    execute_code
-)
-
-
+from dotenv import load_dotenv
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 from cai.agents.dfir import dfir_agent
 
 load_dotenv()
 
 
-
-###
-# Import remote traffic capture tools
-
-from cai.tools.network.capture_traffic import (  # noqa: E402
-    capture_remote_traffic,
-    remote_capture_session_tool,
-)
-
-
 # Prompts
 network_security_analyzer_prompt = load_prompt_template("prompts/system_network_analyzer.md")
-# Define tools list based on available API keys
-tools = [
-    generic_linux_command,
-    run_ssh_command_with_credentials,
-    execute_code,
-    capture_remote_traffic,
-    remote_capture_session_tool,
-]
+tools = list(ALL_TOOLS)
 
-if os.getenv('PERPLEXITY_API_KEY'):
-    tools.append(make_web_search_with_explanation)
 
 _openai_client = None
 if AsyncOpenAI is not None:

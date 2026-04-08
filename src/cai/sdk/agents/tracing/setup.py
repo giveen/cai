@@ -28,6 +28,7 @@ class SynchronousMultiTracingProcessor(TracingProcessor):
         """
         with self._lock:
             self._processors += (tracing_processor,)
+            logger.debug(f"SynchronousMultiTracingProcessor: added processor {tracing_processor}")
 
     def set_processors(self, processors: list[TracingProcessor]):
         """
@@ -35,6 +36,7 @@ class SynchronousMultiTracingProcessor(TracingProcessor):
         """
         with self._lock:
             self._processors = tuple(processors)
+            logger.debug(f"SynchronousMultiTracingProcessor: set processors to {processors}")
 
     def on_trace_start(self, trace: Trace) -> None:
         """
@@ -93,12 +95,14 @@ class TraceProvider:
         Add a processor to the list of processors. Each processor will receive all traces/spans.
         """
         self._multi_processor.add_tracing_processor(processor)
+        logger.debug(f"TraceProvider: register_processor called with {processor}")
 
     def set_processors(self, processors: list[TracingProcessor]):
         """
         Set the list of processors. This will replace the current list of processors.
         """
         self._multi_processor.set_processors(processors)
+        logger.debug(f"TraceProvider: set_processors called with {processors}")
 
     def get_current_trace(self) -> Trace | None:
         """
@@ -117,6 +121,7 @@ class TraceProvider:
         Set whether tracing is disabled.
         """
         self._disabled = disabled
+        logger.debug(f"TraceProvider: set_disabled({disabled}) called.")
 
     def create_trace(
         self,

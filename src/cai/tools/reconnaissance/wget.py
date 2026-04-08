@@ -3,29 +3,62 @@
 """
 Wget tool
 """
-import shlex
-from typing import List
+
 from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
+from cai.tools.validation import validate_args_no_injection, is_url_safe  # pylint: disable=import-error
+from cai.tools import validation  # pylint: disable=import-error
+
+
+def _validate_wget_input(args: str, url: str):
+    """Return an error string if inputs are unsafe, else None."""
+    err = validate_args_no_injection(args, 'args')
+    if err:
+        return err
+    if url and not is_url_safe(url):
+        return (
+            f"Invalid url '{url}': must be a URL, IP, or hostname without whitespace or shell-special characters."
+        )
+    return None
+
 
 @function_tool
-def wget(url: str, args: str = '', ctf=None) -> str:
+def wget(url: str, args: str = '', timeout: int = 60) -> str:
     """
-    Wget tool to download files from the web.
+    Download files using wget with safe input checks.
+
     Args:
-        url: The URL of the file to download
-        args: Additional arguments to pass to the wget command
+        url:   The URL or host to download from. Examples: "http://example.com/file.zip",
+               "https://api.target.com/resource", "ftp://files.example.com/data.tar.gz",
+               or a bare host/IP like "192.168.1.5".
+        args:  Additional wget flags. Common examples:
+                 "-O /tmp/file"           — write output to a file
+                 "-q"                     — quiet (no progress)
+                 "-c"                     — continue partially downloaded files
+                 "-P /tmp/dir"            — set download directory
+                 "--limit-rate=200k"      — throttle download speed
+                 "-r -np"                 — recursive, no-parent (use with caution)
+                 "--user user --password pw" — basic auth
+        timeout: Maximum seconds to wait for the command (default 60).
 
     Returns:
-        str: The output of running the wget command
+        str: Raw wget output (stdout/stderr).
+
+    Examples:
+        wget("http://example.com/file.zip")
+        wget("http://example.com/file.zip", args="-O /tmp/file.zip")
+        wget("https://api.target.com/data", args="--limit-rate=100k -q", timeout=120)
     """
-    try:
-        args_tokens: List[str] = shlex.split(args) if args else []
-    except Exception:
-        args_tokens = [args]
+    err = _validate_wget_input(args, url)
+    if err:
+        return err
 
-    cmd: List[str] = ["wget"] + args_tokens
-    if url:
-        cmd.append(url)
+    command = f'wget {args} {url.strip()}'
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
 
-    return run_command(cmd, ctf=ctf)
+    result = run_command(command, timeout=timeout)
+    if isinstance(result, str):
+        result = validation.sanitize_tool_output(command, result)
+    return result

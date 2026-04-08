@@ -12,12 +12,13 @@ except Exception:
     AsyncOpenAI = None
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from cai.util import load_prompt_template
-from cai.tools.reconnaissance.generic_linux_command import (
-    generic_linux_command,
-)
-from cai.tools.reconnaissance.exec_code import (
-    execute_code,
+from openai import AsyncOpenAI
+from cai.util import load_prompt_template  # Add this import
+
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+
+from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
+    execute_code
 )
 
 load_dotenv()
@@ -25,10 +26,7 @@ load_dotenv()
 reporting_agent_system_prompt = load_prompt_template("prompts/system_reporting_agent.md")
 
 # Define functions list
-functions = [
-    generic_linux_command,
-    execute_code,
-]
+functions = list(ALL_TOOLS)
 
 # Create an instance of the reporting agent (model optional if openai not installed)
 _openai_client = None
