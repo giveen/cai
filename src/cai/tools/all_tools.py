@@ -17,6 +17,7 @@ from cai.tools.reconnaissance.netcat import netcat
 from cai.tools.reconnaissance.netstat import netstat
 from cai.tools.reconnaissance.curl import curl
 from cai.tools.reconnaissance.wget import wget
+from cai.tools.reconnaissance.smbclient_tool import smb_list_shares, smb_run_smbclient, smb_download_file  # noqa: E501
 from cai.tools.reconnaissance.filesystem import cat_file, find_file, list_dir, pwd_command
 from cai.tools.reconnaissance.crypto_tools import strings_command, decode64, decode_hex_bytes
 from cai.tools.reconnaissance.blue_team_safe_command import blue_team_safe_command
@@ -49,6 +50,9 @@ ALL_TOOLS = [
     netstat,
     curl,
     wget,
+    smb_list_shares,
+    smb_run_smbclient,
+    smb_download_file,
     cat_file,
     find_file,
     list_dir,
