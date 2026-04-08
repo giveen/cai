@@ -115,7 +115,11 @@ from cai.bootstrap import initialize_env
 
 # Initialize environment early (load .env, configure warnings and logging filters)
 initialize_env()
+import asyncio
+import logging
 import os
+import shlex
+import sys
 import time
 
 # OpenAI imports
@@ -200,7 +204,43 @@ START_TIME = time.time()
 # model-syncing is handled by the AgentManager.sync_models method
 
 
-def run_cai_cli(
+def update_agent_models_recursively(agent, model_to_use):
+    """
+    Update an agent and its handoff agents to use `model_to_use`.
+    Prefer AGENT_MANAGER.sync_models when available, otherwise fall back
+    to best-effort local updates.
+    """
+    try:
+        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
+        # Use manager sync if available (handles recursive handoffs)
+        AGENT_MANAGER.sync_models(model_to_use, target_agent=agent)
+        return
+    except Exception:
+        pass
+
+    # Best-effort fallback: set model attribute on agent and any handoff agents
+    try:
+        if hasattr(agent, "model") and agent.model is not None:
+            try:
+                agent.model.model = model_to_use
+            except Exception:
+                pass
+
+        # If agent exposes handoff agents, try to update them too
+        handoffs = getattr(agent, "handoff_agents", None)
+        if handoffs:
+            for h in handoffs:
+                try:
+                    if hasattr(h, "model") and h.model is not None:
+                        h.model.model = model_to_use
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _run_cai_cli_impl(
     starting_agent, context_variables=None, max_turns=float("inf"), force_until_flag=False, initial_prompt=None
 ):
     """
@@ -1604,12 +1644,17 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float("inf"), 
         from cai.util.orchestration import start_cli_loop
     except Exception:
         # Best-effort fallback to the local implementation if import fails
-        # (e.g., during partial refactor). Import from cai.util for backward
-        # compatibility.
+        # (e.g., during partial refactor). First try cai.util, then local impl.
         try:
             from cai.util import start_cli_loop  # type: ignore
         except Exception:
-            raise
+            return _run_cai_cli_impl(
+                starting_agent,
+                context_variables=context_variables,
+                max_turns=max_turns,
+                force_until_flag=force_until_flag,
+                initial_prompt=initial_prompt,
+            )
 
     return start_cli_loop(
         starting_agent,

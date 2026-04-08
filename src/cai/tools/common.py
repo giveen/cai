@@ -32,10 +32,6 @@ from cai.tools.sessions import (
     SESSION_OUTPUT_COUNTER,
     _resolve_session_id,
     create_shell_session,
-    get_session_output,
-    list_shell_sessions,
-    terminate_session,
-    send_to_session,
 )
 from cai.tools.workspace import _get_container_workspace_path, _get_workspace_dir  # migrated
 
