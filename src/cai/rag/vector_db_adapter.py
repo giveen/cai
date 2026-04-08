@@ -16,6 +16,7 @@ import shlex
 import subprocess
 import time
 import hashlib
+import json
 import datetime as _dt
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -61,6 +62,115 @@ def with_retries(retries: int = 3, base_delay: float = 0.2, backoff: float = 2.0
         return wrapper
 
     return decorator
+
+
+def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str, Any]]:
+    """Normalize heterogeneous backend search outputs into a canonical
+    list of dicts with keys: `id`, `text`, `metadata`, `score`.
+
+    This function is intentionally permissive: it accepts strings (CLI
+    output), single dicts, lists/tuples of various shapes, and best-effort
+    converts them into the canonical shape expected by the RAG callers.
+    """
+    out: List[Dict[str, Any]] = []
+    if results is None:
+        return out
+
+    # Strings: try JSON parse first, then line-splitting
+    if isinstance(results, str):
+        s = results.strip()
+        if not s:
+            return out
+        if (s.startswith("[") or s.startswith("{")):
+            try:
+                parsed = json.loads(s)
+                results = parsed
+            except Exception:
+                lines = [l.strip() for l in s.splitlines() if l.strip()]
+                for i, line in enumerate(lines[:limit]):
+                    out.append({"id": hashlib.sha256(line.encode()).hexdigest()[:12], "text": line, "metadata": {}, "score": 1.0})
+                return out
+        else:
+            lines = [l.strip() for l in s.splitlines() if l.strip()]
+            for i, line in enumerate(lines[:limit]):
+                out.append({"id": hashlib.sha256(line.encode()).hexdigest()[:12], "text": line, "metadata": {}, "score": 1.0})
+            return out
+
+    # Single dict -> list
+    if isinstance(results, dict):
+        results = [results]
+
+    if isinstance(results, (list, tuple)):
+        for item in list(results)[:limit]:
+            if isinstance(item, dict):
+                # id extraction heuristics
+                id_keys = ("id", "uuid", "_id", "name", "document_id", "doc_id")
+                id_val = next((item.get(k) for k in id_keys if item.get(k) is not None), None)
+
+                # text extraction heuristics
+                text = None
+                for k in ("text", "payload", "document", "content", "body", "description"):
+                    v = item.get(k)
+                    if isinstance(v, str):
+                        text = v
+                        break
+                    if isinstance(v, dict):
+                        # nested payloads may contain text fields
+                        text = v.get("text") or v.get("content") or v.get("document")
+                        if isinstance(text, str):
+                            break
+
+                # metadata heuristics
+                metadata = item.get("metadata") or item.get("meta") or {}
+                # if payload is dict and metadata empty, use payload as metadata
+                if not metadata and isinstance(item.get("payload"), dict):
+                    metadata = item.get("payload")
+
+                # score heuristics
+                score = item.get("score") if isinstance(item.get("score"), (int, float)) else None
+                if score is None:
+                    for k in ("similarity", "sim", "distance", "_score"):
+                        if k in item:
+                            try:
+                                score = float(item.get(k))
+                                break
+                            except Exception:
+                                score = None
+                if score is None:
+                    score = 1.0
+
+                if text is None:
+                    # fallback: stringify item for text
+                    try:
+                        text = json.dumps(item)
+                    except Exception:
+                        text = str(item)
+
+                if id_val is None:
+                    id_val = hashlib.sha256(str(text).encode()).hexdigest()[:12]
+
+                if not isinstance(metadata, dict):
+                    metadata = {"value": metadata}
+
+                out.append({"id": str(id_val), "text": text, "metadata": metadata, "score": float(score)})
+            else:
+                # tuples/lists or primitive values
+                if isinstance(item, (list, tuple)) and len(item) >= 1:
+                    text = item[0]
+                    id_val = item[1] if len(item) > 1 else hashlib.sha256(str(text).encode()).hexdigest()[:12]
+                    score = float(item[2]) if len(item) > 2 else 1.0
+                    out.append({"id": str(id_val), "text": str(text), "metadata": {}, "score": float(score)})
+                else:
+                    text = str(item)
+                    id_val = hashlib.sha256(text.encode()).hexdigest()[:12]
+                    out.append({"id": id_val, "text": text, "metadata": {}, "score": 1.0})
+        return out
+
+    # Fallback: stringify
+    s = str(results)
+    if not s:
+        return []
+    return [{"id": hashlib.sha256(s.encode()).hexdigest()[:12], "text": s, "metadata": {}, "score": 1.0}]
 
 
 class VectorDBAdapter(ABC):
@@ -205,13 +315,20 @@ class QdrantAdapter(VectorDBAdapter):
         res = self._client.search(collection_name=collection_name, query_text=query_text, limit=limit)
         try:
             collector().incr("search_queries")
-            if isinstance(res, (list, tuple)):
-                collector().incr("search_hits", len(res))
-            else:
-                collector().incr("search_hits", 1)
         except Exception:
             pass
-        return res
+
+        # Normalize heterogeneous backend outputs to canonical form
+        try:
+            canonical = _canonicalize_search_results(res, limit=limit)
+            try:
+                collector().incr("search_hits", len(canonical))
+            except Exception:
+                pass
+            return canonical
+        except Exception:
+            # On failure to canonicalize, fall back to raw result
+            return res
 
     @with_retries(retries=2)
     def create_collection(self, collection_name: str) -> bool:
@@ -312,22 +429,79 @@ class MemPalaceAdapter(VectorDBAdapter):
 
             # Many mempalace APIs accept palace_path/palace args; adapt if needed.
             try:
-                return search_memories(query_text, palace_path=self.palace_path, top_k=limit)  # type: ignore
+                res = search_memories(query_text, palace_path=self.palace_path, top_k=limit)  # type: ignore
             except TypeError:
                 # fallback if different signature
-                return search_memories(query_text, palace_path=self.palace_path)  # type: ignore
+                res = search_memories(query_text, palace_path=self.palace_path)  # type: ignore
+            # Normalize to canonical shape
+            return _canonicalize_search_results(res, limit=limit)
         except Exception:  # pragma: no cover - external dependency
             # Fallback to calling the `mempalace` CLI. Return raw CLI output.
             cmd = ["mempalace", "search", query_text, "--palace", self.palace_path]
             try:
                 proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                return proc.stdout.strip()
+                return _canonicalize_search_results(proc.stdout.strip(), limit=limit)
             except Exception as exc:  # pragma: no cover - runtime dependent
                 raise RuntimeError("Failed to query MemPalace: ensure mempalace is installed") from exc
 
     def create_collection(self, collection_name: str) -> bool:
         # Not applicable for MemPalace (file/closet based) — treat as no-op
         return True
+
+    def _build_faiss_index(self, collection_name: str, dim: Optional[int] = None) -> None:
+        """Build or rebuild a FAISS Index for the given collection.
+
+        If `dim` is provided, only vectors with matching dimensionality
+        will be included. The resulting index is cached in
+        `self._faiss_indexes` and a mapping from faiss-pos -> collection
+        index is stored in `self._faiss_maps`.
+        """
+        if not self._faiss_available:
+            self._faiss_indexes[collection_name] = None
+            self._faiss_maps[collection_name] = []
+            return
+        if collection_name not in self._collections:
+            self._faiss_indexes[collection_name] = None
+            self._faiss_maps[collection_name] = []
+            return
+        col = self._collections[collection_name]
+        vectors = col.get("vectors", [])
+
+        # Select valid vectors matching requested dim (if provided)
+        if dim is not None:
+            valid = [i for i, v in enumerate(vectors) if v is not None and len(v) == dim]
+        else:
+            # pick first valid vector to establish dimension
+            first = next((i for i, v in enumerate(vectors) if v is not None), None)
+            if first is None:
+                self._faiss_indexes[collection_name] = None
+                self._faiss_maps[collection_name] = []
+                return
+            chosen_dim = len(vectors[first])
+            valid = [i for i, v in enumerate(vectors) if v is not None and len(v) == chosen_dim]
+
+        if not valid:
+            self._faiss_indexes[collection_name] = None
+            self._faiss_maps[collection_name] = []
+            return
+
+        try:
+            arr = self._np.array([vectors[i] for i in valid], dtype="float32")
+            index = self._faiss.IndexFlatIP(arr.shape[1])
+            index.add(arr)
+            self._faiss_indexes[collection_name] = index
+            self._faiss_maps[collection_name] = valid.copy()
+        except Exception:
+            # On any failure, ensure cache is cleared so caller falls back
+            self._faiss_indexes[collection_name] = None
+            self._faiss_maps[collection_name] = []
+
+    def _invalidate_faiss_index(self, collection_name: str) -> None:
+        try:
+            self._faiss_indexes[collection_name] = None
+            self._faiss_maps[collection_name] = []
+        except Exception:
+            pass
 
     def add_points(self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]) -> bool:
         # Intentionally not implemented to avoid accidental writes; use mempalace CLI or API
@@ -413,11 +587,19 @@ class LocalFallbackAdapter(VectorDBAdapter):
 
         # collections: name -> {'ids':[], 'texts':[], 'metadata':[], 'vectors':[]}
         self._collections: Dict[str, Dict[str, List[Any]]] = {}
+        # Cached FAISS indexes per collection (when faiss is available).
+        # _faiss_indexes[collection_name] -> faiss.Index or None
+        # _faiss_maps[collection_name] -> list mapping faiss index position -> original collection index
+        self._faiss_indexes: Dict[str, Any] = {}
+        self._faiss_maps: Dict[str, List[int]] = {}
 
     def create_collection(self, collection_name: str) -> bool:
         if collection_name in self._collections:
             return True
         self._collections[collection_name] = {"ids": [], "texts": [], "metadata": [], "vectors": []}
+        # initialize cache placeholders
+        self._faiss_indexes[collection_name] = None
+        self._faiss_maps[collection_name] = []
         return True
 
     def add_points(self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]) -> bool:
@@ -497,12 +679,52 @@ class LocalFallbackAdapter(VectorDBAdapter):
         except Exception:
             vectors = [None for _ in texts]
 
-        # Append to collection
+        # Track starting index so we can update cached FAISS index incrementally
+        start_index = len(col["vectors"])
         for i, t in enumerate(texts):
             col["ids"].append(ids[i])
             col["texts"].append(t)
             col["metadata"].append(metadata_list[i])
             col["vectors"].append(vectors[i] if vectors and i < len(vectors) else None)
+
+        # Update FAISS cache incrementally when possible
+        if self._faiss_available:
+            try:
+                # Collect newly appended valid vectors and their absolute indices
+                new_items = []  # tuples of (abs_index, vector)
+                for rel_i in range(len(texts)):
+                    abs_i = start_index + rel_i
+                    v = col["vectors"][abs_i]
+                    if v is not None:
+                        new_items.append((abs_i, v))
+
+                if new_items:
+                    # If there is an existing index for this collection, try to append
+                    idx = self._faiss_indexes.get(collection_name)
+                    if idx is not None:
+                        # Ensure dimensionality matches existing index
+                        idx_dim = getattr(idx, "d", None)
+                        if idx_dim is None:
+                            # Unknown dimension, rebuild index from scratch
+                            self._build_faiss_index(collection_name)
+                        else:
+                            compatible = all(len(v) == idx_dim for (_i, v) in new_items)
+                            if compatible:
+                                arr = self._np.array([v for (_i, v) in new_items], dtype="float32")
+                                idx.add(arr)
+                                # extend mapping
+                                self._faiss_maps.setdefault(collection_name, [])
+                                self._faiss_maps[collection_name].extend([_i for (_i, _v) in new_items])
+                            else:
+                                # Incompatible dimensions; rebuild index using a consistent dim
+                                self._build_faiss_index(collection_name)
+                    else:
+                        # No index yet; build one using the dim of the first new vector
+                        first_dim = len(new_items[0][1])
+                        self._build_faiss_index(collection_name, dim=first_dim)
+            except Exception:
+                # Don't let indexing failures block writes
+                pass
 
         return True
 
@@ -545,6 +767,12 @@ class LocalFallbackAdapter(VectorDBAdapter):
             col["texts"] = new_texts
             col["metadata"] = new_meta
             col["vectors"] = new_vectors
+            # Invalidate FAISS cache for this collection; mapping changed
+            try:
+                self._faiss_indexes[collection_name] = None
+                self._faiss_maps[collection_name] = []
+            except Exception:
+                pass
         return removed
 
     def list_collections(self) -> List[str]:
@@ -557,6 +785,8 @@ class LocalFallbackAdapter(VectorDBAdapter):
         """
         deleted = 0
         for cname, col in self._collections.items():
+            # record original size so we can detect removals and invalidate FAISS cache
+            orig_count = len(col.get("ids", []))
             keep_ids = []
             keep_texts = []
             keep_meta = []
@@ -592,6 +822,13 @@ class LocalFallbackAdapter(VectorDBAdapter):
             col["texts"] = keep_texts
             col["metadata"] = keep_meta
             col["vectors"] = keep_vectors
+            # If any items were removed for this collection, invalidate FAISS cache
+            if len(keep_ids) != orig_count:
+                try:
+                    self._faiss_indexes[cname] = None
+                    self._faiss_maps[cname] = []
+                except Exception:
+                    pass
         return deleted
 
     def search(self, collection_name: str, query_text: str, limit: int = 3):
@@ -631,28 +868,36 @@ class LocalFallbackAdapter(VectorDBAdapter):
         # FAISS path
         if self._faiss_available:
             try:
-                arr = self._np.array([vectors[i] for i in valid], dtype="float32")
-                index = self._faiss.IndexFlatIP(arr.shape[1])
-                index.add(arr)
-                qarr = self._np.array([qvec], dtype="float32")
-                k = min(limit, arr.shape[0])
-                D, I = index.search(qarr, k)
-                results = []
-                for score, idx in zip(D[0], I[0]):
-                    orig_i = valid[int(idx)]
-                    results.append({
-                        "id": col["ids"][orig_i],
-                        "text": col["texts"][orig_i],
-                        "metadata": col["metadata"][orig_i],
-                        "score": float(score),
-                    })
-                try:
-                    collector().incr("search_hits", len(results))
-                except Exception:
-                    pass
-                return results
+                # Ensure a cached FAISS index exists for this collection and
+                # matches the query dimensionality. This avoids rebuilding a
+                # fresh index on every search.
+                self._build_faiss_index(collection_name, dim=len(qvec))
+                idx = self._faiss_indexes.get(collection_name)
+                if idx is not None and getattr(idx, "ntotal", 0) > 0:
+                    qarr = self._np.array([qvec], dtype="float32")
+                    k = min(limit, int(getattr(idx, "ntotal", 0)))
+                    D, I = idx.search(qarr, k)
+                    results = []
+                    fmap = self._faiss_maps.get(collection_name, [])
+                    for score, pos in zip(D[0], I[0]):
+                        if int(pos) < 0:
+                            continue
+                        orig_i = fmap[int(pos)] if int(pos) < len(fmap) else None
+                        if orig_i is None:
+                            continue
+                        results.append({
+                            "id": col["ids"][orig_i],
+                            "text": col["texts"][orig_i],
+                            "metadata": col["metadata"][orig_i],
+                            "score": float(score),
+                        })
+                    try:
+                        collector().incr("search_hits", len(results))
+                    except Exception:
+                        pass
+                    return results
             except Exception:
-                # Fall back to naive
+                # Fall back to naive linear scan when FAISS fails
                 pass
 
         # Naive linear scan (dot product)

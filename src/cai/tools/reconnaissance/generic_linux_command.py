@@ -28,7 +28,7 @@ from cai.tools import validation
 @function_tool(strict_mode=False)
 async def generic_linux_command(command: str = "",
                                 interactive: bool = False,
-                                session_id: str = "") -> str:
+                                session_id: Optional[str] = None) -> str:
     """
     Execute commands with session management.
 
@@ -168,8 +168,12 @@ async def generic_linux_command(command: str = "",
         # - command="session" and session_id="output <id>"
         # - command="session" and session_id="#1" or "S1" or "last"
         parts = command.split()
-        action: Optional[str] = parts[1] if len(parts) > 1 else None
-        arg: Optional[str] = parts[2] if len(parts) > 2 else None
+        action: Optional[str] = None
+        arg: Optional[str] = None
+        if len(parts) > 1:
+            action = parts[1]
+        if len(parts) > 2:
+            arg = parts[2]
 
         # If the tool abuses session_id field for 'output <id>' or 'kill <id>'
         if session_id and (action is None or action not in {"list", "output", "kill", "status"}):
