@@ -321,6 +321,116 @@ def function_tool(
             strict_json_schema=strict_mode,
         )
 
+        def _sanitize_parsed_json(json_data: Any) -> Any:
+            """Attempt to repair common nesting issues in parsed tool JSON.
+
+            Heuristics:
+            - If top-level expected parameter names are missing, look for them
+              inside nested dict values and promote them to top-level.
+            - If promoted primitive values are numeric/bool but likely expected
+              as strings (e.g., host/domain), coerce to `str` to satisfy Pydantic.
+            This is intentionally conservative and only promotes when the
+            top-level key is absent.
+            """
+            try:
+                if not isinstance(json_data, dict):
+                    return json_data
+
+                # discover expected param names from the pydantic model
+                expected_fields = set()
+                try:
+                    expected_fields = set(getattr(schema.params_pydantic_model, "__fields__", {}).keys())
+                except Exception:
+                    try:
+                        expected_fields = set(getattr(schema.params_pydantic_model, "model_fields", {}).keys())
+                    except Exception:
+                        expected_fields = set()
+
+                if not expected_fields:
+                    return json_data
+
+                # Promote nested keys when missing at top-level
+                missing = expected_fields - set(json_data.keys())
+                if missing:
+                    # First, if some top-level entries are dicts containing expected keys,
+                    # promote those nested keys to top-level.
+                    for k, v in list(json_data.items()):
+                        if isinstance(v, dict):
+                            for nk in list(v.keys()):
+                                if nk in missing and nk not in json_data:
+                                    val = v.get(nk)
+                                    # Coerce primitive numeric/bool to str for safety
+                                    if isinstance(val, (int, float, bool)):
+                                        val = str(val)
+                                    json_data[nk] = val
+                                    missing.discard(nk)
+
+                    # If still missing, search deeper across other nested dicts
+                    if missing:
+                        for want in list(missing):
+                            for k, v in list(json_data.items()):
+                                if isinstance(v, dict) and want in v:
+                                    val = v.get(want)
+                                    if isinstance(val, (int, float, bool)):
+                                        val = str(val)
+                                    json_data[want] = val
+                                    missing.discard(want)
+                                    break
+
+                # Determine expected field types (pydantic v1/v2 compat) so we
+                # only coerce dict->str when the schema actually expects a string
+                expected_types: dict[str, Any] = {}
+                try:
+                    # Pydantic v1
+                    if hasattr(schema.params_pydantic_model, "__fields__") and getattr(schema.params_pydantic_model, "__fields__", None):
+                        for fname, fobj in getattr(schema.params_pydantic_model, "__fields__", {}).items():
+                            expected_types[fname] = getattr(fobj, "outer_type_", None) or getattr(fobj, "type_", None)
+                    # Pydantic v2
+                    elif hasattr(schema.params_pydantic_model, "model_fields") and getattr(schema.params_pydantic_model, "model_fields", None):
+                        for fname, finfo in getattr(schema.params_pydantic_model, "model_fields", {}).items():
+                            # finfo is a dict-like with an 'annotation' key
+                            try:
+                                expected_types[fname] = finfo.get("annotation") if isinstance(finfo, dict) else None
+                            except Exception:
+                                expected_types[fname] = None
+                except Exception:
+                    expected_types = {}
+
+                def _expects_str(tp: Any) -> bool:
+                    """Return True when the expected type is (or includes) `str`."""
+                    try:
+                        if tp is str:
+                            return True
+                        # Handle typing.Union and other generic aliases
+                        from typing import get_origin, get_args
+
+                        origin = get_origin(tp)
+                        if origin is None:
+                            # If it's a typing alias like 'str' wrapped, try equality
+                            return False
+                        if origin is Union:
+                            return any(_expects_str(a) for a in get_args(tp))
+                        return False
+                    except Exception:
+                        return False
+
+                # Finally, if some values are dicts but the schema expects primitives (notably str),
+                # try to coerce simple dict->str by JSON-encoding the dict. Only do this when the
+                # expected type explicitly includes `str` to avoid converting model/dict types.
+                for k in list(json_data.keys()):
+                    if k in expected_fields and isinstance(json_data[k], dict):
+                        exp = expected_types.get(k)
+                        if _expects_str(exp):
+                            try:
+                                json_data[k] = json.dumps(json_data[k])
+                            except Exception:
+                                json_data[k] = str(json_data[k])
+
+                return json_data
+            except Exception:
+                return json_data
+
+
         async def _on_invoke_tool_impl(ctx: RunContextWrapper[Any], input: str) -> Any:
             # Parse JSON input; attempt forgiving repairs for common LLM output formats
             json_data: dict[str, Any] = {}
@@ -342,6 +452,13 @@ def function_tool(
                         raise ModelBehaviorError(
                             f"Invalid JSON input for tool {schema.name}: {input}"
                         ) from e2
+
+            # Sanitize parsed JSON to handle common nesting/mis-formatting cases
+            try:
+                json_data = _sanitize_parsed_json(json_data)
+            except Exception:
+                # If sanitizer fails for any reason, continue with original json_data
+                pass
 
             if _debug.DONT_LOG_TOOL_DATA:
                 logger.debug(f"Invoking tool {schema.name}")
