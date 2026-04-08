@@ -22,7 +22,7 @@ from typing import Any, Callable, Dict, Optional
 
 from rich.console import Console
 from rich.theme import Theme
-from wasabi import color
+from wasabi.util import color
 
 # Simple themed console for lightweight output used by some helpers
 theme = Theme({"dim": "#9E9E9E"})
