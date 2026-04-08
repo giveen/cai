@@ -2956,11 +2956,7 @@ class OpenAIChatCompletionsModel(Model):
                         model=self.model,
                         object="response",
                         output=[],
-                        tool_choice=(
-                            "auto"
-                            if (tool_choice is None or tool_choice == NOT_GIVEN or tool_choice == "")
-                            else cast(Literal["auto", "required", "none"], tool_choice)
-                        ),
+                        tool_choice=_sanitize_tool_choice_value(tool_choice),
                         top_p=model_settings.top_p,
                         temperature=model_settings.temperature,
                         tools=[],
@@ -3102,9 +3098,7 @@ class OpenAIChatCompletionsModel(Model):
                                 model=self.model,
                                 object="response",
                                 output=[],
-                                tool_choice="auto"
-                                if tool_choice is None or tool_choice == NOT_GIVEN
-                                else cast(Literal["auto", "required", "none"], tool_choice),
+                                tool_choice=_sanitize_tool_choice_value(tool_choice),
                                 top_p=model_settings.top_p,
                                 temperature=model_settings.temperature,
                                 tools=[],
@@ -3154,9 +3148,7 @@ class OpenAIChatCompletionsModel(Model):
                                         model=self.model,
                                         object="response",
                                         output=[],
-                                        tool_choice="auto"
-                                        if tool_choice is None or tool_choice == NOT_GIVEN
-                                        else cast(Literal["auto", "required", "none"], tool_choice),
+                                        tool_choice=_sanitize_tool_choice_value(tool_choice),
                                         top_p=model_settings.top_p,
                                         temperature=model_settings.temperature,
                                         tools=[],
@@ -3440,6 +3432,26 @@ class OpenAIChatCompletionsModel(Model):
             # Non-fatal: proceed and let downstream call fail if still invalid.
             pass
 
+        # Helper to sanitize tool_choice for Response validation. LiteLLM/OpenAI
+        # callers may pass empty strings or OpenAI sentinel values which Pydantic
+        # rejects for the Response.tool_choice field. Normalize to an allowed
+        # literal ('auto'|'none'|'required') or pass through dict/obj values.
+        def _sanitize_tool_choice_value(tc):
+            try:
+                if tc is None or tc is NOT_GIVEN:
+                    return "auto"
+                # Accept explicit literal strings only
+                if isinstance(tc, str):
+                    s = tc.strip().lower()
+                    if s in ("none", "auto", "required"):
+                        return s
+                    # Treat empty or unknown strings as 'auto'
+                    return "auto"
+                # Pass through dicts/objects (ToolChoiceTypes/ToolChoiceFunction)
+                return tc
+            except Exception:
+                return "auto"
+
         try:
             if stream:
                 # Standard LiteLLM handling for streaming
@@ -3452,9 +3464,7 @@ class OpenAIChatCompletionsModel(Model):
                     model=self.model,
                     object="response",
                     output=[],
-                    tool_choice="auto"
-                    if tool_choice is None or tool_choice == NOT_GIVEN
-                    else cast(Literal["auto", "required", "none"], tool_choice),
+                    tool_choice=_sanitize_tool_choice_value(tool_choice),
                     top_p=model_settings.top_p,
                     temperature=model_settings.temperature,
                     tools=[],
@@ -3505,9 +3515,7 @@ class OpenAIChatCompletionsModel(Model):
                         model=self.model,
                         object="response",
                         output=[],
-                        tool_choice="auto"
-                        if tool_choice is None or tool_choice == NOT_GIVEN
-                        else cast(Literal["auto", "required", "none"], tool_choice),
+                        tool_choice=_sanitize_tool_choice_value(tool_choice),
                         top_p=model_settings.top_p,
                         temperature=model_settings.temperature,
                         tools=[],
@@ -3583,9 +3591,7 @@ class OpenAIChatCompletionsModel(Model):
                 model=self.model,
                 object="response",
                 output=[],
-                tool_choice="auto"
-                if tool_choice is None or tool_choice == NOT_GIVEN
-                else cast(Literal["auto", "required", "none"], tool_choice),
+                    tool_choice=_sanitize_tool_choice_value(tool_choice),
                 top_p=model_settings.top_p,
                 temperature=model_settings.temperature,
                 tools=[],
