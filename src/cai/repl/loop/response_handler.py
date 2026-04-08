@@ -23,9 +23,12 @@ import inspect
 import logging
 import os
 import sys
+import re
+import ast
 from typing import Any, Optional, Tuple
 
 from cai.repl.loop._event_loop import run_async
+from rich.panel import Panel
 
 
 def build_conversation_input(agent: Any, user_input: str, messages_ctf: str) -> Any:
@@ -149,20 +152,165 @@ def run_single_response(
 
                 async for event in stream_iterator:
                     if isinstance(event, RunItemStreamEvent):
-                        if event.name == "tool_called":
-                            if hasattr(event.item, "raw_item"):
-                                call_id = getattr(event.item.raw_item, "call_id", None)
+                        # MESSAGE / REASONING outputs (render immediately)
+                        if event.name in ("message_output_created", "reasoning_item_created"):
+                            try:
+                                from cai.sdk.agents.items import ItemHelpers
+
+                                content = ItemHelpers.text_message_output(event.item)
+                            except Exception:
+                                try:
+                                    raw = getattr(event.item, "raw_item", {}) or {}
+                                    if isinstance(raw, dict):
+                                        content = raw.get("content", "")
+                                    else:
+                                        content = str(raw)
+                                except Exception:
+                                    content = ""
+
+                            if content:
+                                # Decode bytes-like content and bytes-literal strings
+                                out_str = None
+                                try:
+                                    if isinstance(content, (bytes, bytearray)):
+                                        out_str = content.decode("utf-8", errors="replace")
+                                    else:
+                                        out_str = str(content)
+                                        if out_str.startswith("b'") or out_str.startswith('b"'):
+                                            try:
+                                                _val = ast.literal_eval(out_str)
+                                                if isinstance(_val, (bytes, bytearray)):
+                                                    out_str = _val.decode("utf-8", errors="replace")
+                                            except Exception:
+                                                pass
+                                except Exception:
+                                    out_str = str(content)
+
+                                # Filter noisy class representations
+                                try:
+                                    out_str = re.sub(r"<class '.*?'>", "", out_str)
+                                except Exception:
+                                    pass
+
+                                # Print with colorized labels for scannability
+                                try:
+                                    for line in out_str.splitlines():
+                                        ls = line.strip()
+                                        if ls.lower().startswith("thought"):
+                                            console.print(f"[yellow]{line}[/yellow]")
+                                        elif ls.lower().startswith("reflection"):
+                                            console.print(f"[blue]{line}[/blue]")
+                                        elif ls.lower().startswith("action"):
+                                            console.print(f"[green]{line}[/green]")
+                                        else:
+                                            console.print(line)
+                                except Exception:
+                                    try:
+                                        print(out_str)
+                                    except Exception:
+                                        pass
+
+                        # TOOL CALLED: announce quickly (non-blocking)
+                        elif event.name == "tool_called":
+                            try:
+                                raw = getattr(event.item, "raw_item", event.item)
+                                fn_name = getattr(
+                                    raw,
+                                    "name",
+                                    getattr(getattr(raw, "function", None), "name", "tool"),
+                                )
+                                fn_args = getattr(raw, "arguments", getattr(raw, "args", ""))
+                                fn_args_str = str(fn_args)
+                                fn_args_disp = fn_args_str[:80] + "…" if len(fn_args_str) > 80 else fn_args_str
+
+                                call_id = None
+                                try:
+                                    if isinstance(raw, dict):
+                                        call_id = raw.get("call_id")
+                                    else:
+                                        call_id = getattr(raw, "call_id", None)
+                                except Exception:
+                                    call_id = None
+
+                                try:
+                                    title = str(getattr(agent, "agent_name", getattr(agent, "name", "Agent")))
+                                    msg = f"🛠️  Running {fn_name}({fn_args_disp})..."
+                                    console.print(Panel(msg, title=title, style="yellow"))
+                                except Exception:
+                                    try:
+                                        print(f"[tool] Running {fn_name}({fn_args_disp})...")
+                                    except Exception:
+                                        pass
+
                                 if call_id:
                                     tool_calls_seen[call_id] = event.item
+                            except Exception:
+                                if hasattr(event.item, "raw_item"):
+                                    call_id = getattr(event.item.raw_item, "call_id", None)
+                                    if call_id:
+                                        tool_calls_seen[call_id] = event.item
+
+                        # TOOL OUTPUT: decode/filter and render in a Panel
                         elif event.name == "tool_output":
                             if isinstance(event.item, ToolCallOutputItem):
-                                call_id = event.item.raw_item["call_id"]
-                                tool_results_seen.add(call_id)
-                                agent.model.add_to_message_history({
-                                    "role": "tool",
-                                    "tool_call_id": call_id,
-                                    "content": event.item.output,
-                                })
+                                try:
+                                    raw_item = getattr(event.item, "raw_item", {}) or {}
+                                    if isinstance(raw_item, dict):
+                                        call_id = raw_item.get("call_id")
+                                    else:
+                                        call_id = getattr(raw_item, "call_id", None)
+                                except Exception:
+                                    call_id = None
+
+                                # Render the tool output for the user
+                                try:
+                                    output = event.item.output
+                                    if isinstance(output, (bytes, bytearray)):
+                                        out_str = output.decode("utf-8", errors="replace")
+                                    else:
+                                        out_str = str(output)
+                                        if out_str.startswith("b'") or out_str.startswith('b"'):
+                                            try:
+                                                _val = ast.literal_eval(out_str)
+                                                if isinstance(_val, (bytes, bytearray)):
+                                                    out_str = _val.decode("utf-8", errors="replace")
+                                            except Exception:
+                                                pass
+
+                                    # Filter noisy class representations
+                                    out_str = re.sub(r"<class '.*?'>", "", out_str)
+
+                                    # Try to determine a friendly tool name
+                                    fn_name = None
+                                    if call_id and call_id in tool_calls_seen:
+                                        try:
+                                            raw_call = getattr(tool_calls_seen[call_id], "raw_item", tool_calls_seen[call_id])
+                                            fn_name = getattr(raw_call, "name", getattr(getattr(raw_call, "function", None), "name", None))
+                                        except Exception:
+                                            fn_name = None
+
+                                    title = f"{fn_name or 'tool'} output"
+                                    try:
+                                        console.print(Panel(out_str, title=title, style="cyan"))
+                                    except Exception:
+                                        try:
+                                            print(out_str)
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    pass
+
+                                # Store as historical tool output for later consumption
+                                try:
+                                    if call_id:
+                                        tool_results_seen.add(call_id)
+                                    agent.model.add_to_message_history({
+                                        "role": "tool",
+                                        "tool_call_id": call_id,
+                                        "content": event.item.output,
+                                    })
+                                except Exception:
+                                    pass
                 return result
 
             except OutputGuardrailTripwireTriggered:
