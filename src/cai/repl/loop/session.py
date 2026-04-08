@@ -33,6 +33,7 @@ def initialize_session(
 
     Side-effects
     ------------
+    * Loads ``.env`` and sets up env/warnings via ``initialize_env``
     * Resets ``COST_TRACKER`` and ``AGENT_MANAGER`` *(required)*
     * Constructs the input UI kit (completer, key-bindings) *(required)*
     * Sets up session logging and starts ``GLOBAL_USAGE_TRACKER`` *(required)*
@@ -44,6 +45,15 @@ def initialize_session(
     -------
     ``(command_completer, current_text, kb, history_file, session_logger)``
     """
+    # Guarantee .env is loaded and proxy settings (OPENAI_API_BASE,
+    # OPENAI_API_KEY, etc.) are visible before the first agent turn, even when
+    # this module is imported without going through cli.py.
+    try:
+        from cai.bootstrap import initialize_env
+        initialize_env()
+    except Exception:
+        pass
+
     # ------------------------------------------------------------------ agents
     from cai.util import COST_TRACKER
 

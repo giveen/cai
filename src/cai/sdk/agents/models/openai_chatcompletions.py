@@ -4582,9 +4582,16 @@ class OpenAIChatCompletionsModel(Model):
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
-            # Determine API key
+            # Determine API key and base URL from the environment so that local
+            # proxy settings (OPENAI_API_BASE / OPENAI_BASE_URL) are always
+            # honoured even when the client is lazily recreated mid-session
+            # (e.g. after AGENT_MANAGER.sync_models() resets _client to None).
             api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
-            self._client = AsyncOpenAI(api_key=api_key)
+            base_url = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
+            client_kwargs: dict = {"api_key": api_key}
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            self._client = AsyncOpenAI(**client_kwargs)
         return self._client
 
     # Helper function to detect and format function calls from various models

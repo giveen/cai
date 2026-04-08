@@ -82,6 +82,11 @@ def sync_model(
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
             AGENT_MANAGER.sync_models(current_model)
+            # After syncing the model name, push a fresh AsyncOpenAI client
+            # built from the current environment so that OPENAI_API_BASE and
+            # OPENAI_API_KEY are always reflected (sync_models resets _client
+            # to None but does not rebuild it with fresh env vars).
+            _refresh_agent_client(AGENT_MANAGER.get_active_agent())
         except Exception:
             # Best-effort: if manager sync fails, try a direct attribute update
             try:
@@ -91,6 +96,37 @@ def sync_model(
         last_model = current_model
 
     return current_model, last_model
+
+
+def _refresh_agent_client(agent: Any) -> None:
+    """Rebuild *agent*'s OpenAI client from the current environment variables.
+
+    Called after ``AGENT_MANAGER.sync_models()`` to ensure ``OPENAI_API_BASE``
+    and ``OPENAI_API_KEY`` are applied to the new client rather than silently
+    defaulting to the OpenAI cloud endpoint.
+    """
+    if agent is None:
+        return
+    model = getattr(agent, "model", None)
+    if model is None:
+        return
+    try:
+        from openai import AsyncOpenAI
+    except ImportError:
+        return
+    try:
+        api_key = (
+            os.getenv("ALIAS_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+            or "sk-placeholder"
+        )
+        base_url = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
+        client_kwargs: dict = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        model._client = AsyncOpenAI(**client_kwargs)
+    except Exception:
+        pass
 
 
 def switch_agent_if_needed(
