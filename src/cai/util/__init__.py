@@ -616,14 +616,33 @@ def start_claude_thinking_if_applicable(
     return ctx
 
 
-def update_claude_thinking_content(agent_name: str, content: str) -> None:
-    ctx = _AGENT_STREAMING_CONTEXTS.get(agent_name)
+def update_claude_thinking_content(agent_name_or_ctx, content: str) -> None:
+    """Update thinking content for the given agent.
+
+    Accepts either the *agent_name* string or the context dict returned by
+    ``start_claude_thinking_if_applicable`` (which is what call sites in
+    ``openai_chatcompletions.py`` pass as *thinking_context*).
+    """
+    if isinstance(agent_name_or_ctx, dict):
+        agent_name_or_ctx = agent_name_or_ctx.get("agent_name")
+    if not agent_name_or_ctx:
+        return
+    ctx = _AGENT_STREAMING_CONTEXTS.get(agent_name_or_ctx)
     if ctx is not None:
         ctx["thinking_content"] = content
 
 
-def finish_claude_thinking_display(agent_name: str) -> None:
-    _AGENT_STREAMING_CONTEXTS.pop(agent_name, None)
+def finish_claude_thinking_display(agent_name_or_ctx) -> None:
+    """Finalise and remove the thinking context for the given agent.
+
+    Accepts either the *agent_name* string or the context dict returned by
+    ``start_claude_thinking_if_applicable``.
+    """
+    if isinstance(agent_name_or_ctx, dict):
+        agent_name_or_ctx = agent_name_or_ctx.get("agent_name")
+    if not agent_name_or_ctx:
+        return
+    _AGENT_STREAMING_CONTEXTS.pop(agent_name_or_ctx, None)
 
 
 # -------------------- Prompt/template helpers --------------------
