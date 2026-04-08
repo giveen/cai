@@ -3417,24 +3417,27 @@ class OpenAIChatCompletionsModel(Model):
         too long, truncate all tool_call ids in the messages to 40 characters
         and retry once silently.
         """
-        # Normalize `tool_choice` so LiteLLM receives a value it understands.
-        # Some `openai` releases expose a `NOT_GIVEN`/`NotGiven` sentinel
-        # that litellm does not accept; convert/remove it here before
-        # forwarding kwargs to `litellm.acompletion`.
+        # Normalize any OpenAI `NOT_GIVEN`/`NotGiven` sentinels so LiteLLM
+        # receives plain Python values it understands. LiteLLM raises on
+        # sentinel objects like `openai.NOT_GIVEN`, so remove keys whose
+        # value is that sentinel (we keep None/empty-string handling upstream).
         try:
-            if "tool_choice" in kwargs:
-                try:
-                    from openai import NOT_GIVEN as _OPENAI_NOT_GIVEN  # type: ignore
-                    if kwargs.get("tool_choice") is _OPENAI_NOT_GIVEN:
-                        kwargs.pop("tool_choice", None)
-                except Exception:
-                    tc = kwargs.get("tool_choice")
-                    if tc is not None and type(tc).__name__ == "NotGiven":
-                        kwargs.pop("tool_choice", None)
+            try:
+                from openai import NOT_GIVEN as _OPENAI_NOT_GIVEN  # type: ignore
+            except Exception:
+                _OPENAI_NOT_GIVEN = None
+            # Remove any keys whose value is the OpenAI sentinel or an instance
+            # of a class named 'NotGiven' (older/newer OpenAI variants).
+            for k in list(kwargs.keys()):
+                v = kwargs.get(k)
+                if v is _OPENAI_NOT_GIVEN:
+                    kwargs.pop(k, None)
+                    continue
+                if v is not None and type(v).__name__ == "NotGiven":
+                    kwargs.pop(k, None)
+                    continue
         except Exception:
-            # Be defensive: if anything goes wrong normalizing, continue
-            # without blocking the request; downstream error handling will
-            # catch incompatible values if necessary.
+            # Non-fatal: proceed and let downstream call fail if still invalid.
             pass
 
         try:

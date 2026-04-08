@@ -8,7 +8,7 @@ applyTo: '**'
 - [x] repair-mcp-or-disable: Either install `mcp` package in the runtime venv or configure/patch to avoid litellm importing experimental MCP modules. 🔴
 - [ ] ensure-openai-compatibility: Pin or align `openai` and `litellm` versions in the runtime venv (e.g., `openai==1.75.0` & `litellm<1.83`) and reinstall if needed. 🔴
 - [ ] test-streaming: Run a streaming request or relevant tests to reproduce the error and confirm the fix. 🟡
-- [ ] commit-push: Commit any dependency or code changes and push to branch `tui`. 🟢
+- [x] commit-push: Commit any dependency or code changes and push to branch `tui`. 🟢
 </todos>
 
 <!-- Auto-generated todo section -->
