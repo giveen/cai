@@ -1301,12 +1301,46 @@ After the analysis, provide a structured summary with these sections:
 
 This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:"""
 
+        # Build OpenAI client honoring local overrides (LOCAL_API_BASE/LOCAL_API_KEY),
+        # then OLLAMA_API_KEY and OPENAI_API_KEY fallbacks. Use resolve_api_base()
+        # priority chain used elsewhere in the codebase.
+        client_kwargs: dict = {}
+        try:
+            # LOCAL_API_KEY should take precedence for local deployments
+            api_key = (
+                os.getenv("LOCAL_API_KEY")
+                or os.getenv("OLLAMA_API_KEY")
+                or os.getenv("OPENAI_API_KEY")
+                or os.getenv("ALIAS_API_KEY")
+            )
+            if api_key:
+                client_kwargs["api_key"] = api_key
+        except Exception:
+            pass
+
+        # Resolve a base URL using the shared resolver (honours LOCAL_API_BASE etc.)
+        try:
+            from cai.repl.loop.agent_sync import resolve_api_base
+
+            base = resolve_api_base()
+            if base:
+                client_kwargs["base_url"] = base
+        except Exception:
+            pass
+
+        openai_client = None
+        try:
+            if AsyncOpenAI is not None:
+                openai_client = AsyncOpenAI(**client_kwargs) if client_kwargs else AsyncOpenAI()
+        except Exception:
+            openai_client = None
+
         summary_agent = Agent(
             name="Summary Agent",
             instructions=instructions,
             model=OpenAIChatCompletionsModel(
                 model=model_name,
-                openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")),
+                openai_client=openai_client,
                 agent_name="Summary Agent",
             ),
         )
