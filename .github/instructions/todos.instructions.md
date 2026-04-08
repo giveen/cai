@@ -7,8 +7,8 @@ applyTo: '**'
   _Use timezone-aware ISO8601 strings for created_at/expires_at/provenance timestamps; keep backwards compatibility with float epoch values when purging._
 - [x] update-persist-summaries: Persist summaries `updated_at` in ISO8601 instead of epoch seconds 🟡
 - [x] adjust-purge-and-eviction: Update _purge_expired and eviction logic to compare ISO8601 times robustly 🟡
-- [ ] run-wakeup-tests: Run `tests/test_wakeup_index.py` and `tests/test_summaries_loader.py` to validate changes 🔴
-- [-] run-tests-and-push: Run full test suite, commit changes, and push branch 🔴
+- [x] run-wakeup-tests: Run `tests/test_wakeup_index.py` and `tests/test_summaries_loader.py` to validate changes 🔴
+- [x] run-tests-and-push: Run full test suite, commit changes, and push branch 🔴
   _Run full pytest; if green, commit and push branch `tui` to origin._
 </todos>
 

@@ -38,6 +38,7 @@ from cai.tools.misc.cli_utils import execute_cli_command
 # ── Reasoning & memory ────────────────────────────────────────────────────────
 from cai.tools.misc.reasoning import thought, think, write_key_findings, read_key_findings
 from cai.tools.misc.rag import query_memory, add_to_memory_episodic, add_to_memory_semantic
+from cai.tools.misc.rag_monitor import get_rag_status
 
 # ── Always-on tool list ───────────────────────────────────────────────────────
 ALL_TOOLS = [
@@ -80,6 +81,7 @@ ALL_TOOLS = [
     query_memory,
     add_to_memory_episodic,
     add_to_memory_semantic,
+    get_rag_status,
 ]
 
 # ── Conditional: OSINT / search ───────────────────────────────────────────────
