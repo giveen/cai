@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import inspect
 import json
+import ast
+import re
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Union, overload
@@ -29,6 +31,97 @@ def truncate_for_logging(output: Any, max_length: int = 1000) -> str:
     if len(output_str) <= max_length:
         return output_str
     return f"{output_str[:max_length]}... (truncated)"
+
+
+def _forgiving_json_loads(s: str) -> Any:
+    """Attempt to repair and parse common malformed JSON emitted by LLMs.
+
+    Heuristics (best-effort, non-destructive):
+    - extract a JSON-like substring between the first { and last } or [ and ]
+    - try ast.literal_eval for python-style dicts
+    - replace single quotes with double quotes and normalize True/False/None
+    - fall back to simple key:value pair extraction
+    Raises ValueError if unable to parse.
+    """
+    if not isinstance(s, str):
+        raise ValueError("input must be a string")
+    st = s.strip()
+
+    # Try direct JSON first
+    try:
+        return json.loads(st)
+    except Exception:
+        pass
+
+    # Extract JSON-like substring {...} or [...] if present
+    try:
+        if "{" in st and "}" in st:
+            i = st.find("{")
+            j = st.rfind("}")
+            cand = st[i : j + 1]
+            try:
+                return json.loads(cand)
+            except Exception:
+                # try ast.literal_eval
+                try:
+                    val = ast.literal_eval(cand)
+                    if isinstance(val, (dict, list)):
+                        return val
+                except Exception:
+                    pass
+        if "[" in st and "]" in st:
+            i = st.find("[")
+            j = st.rfind("]")
+            cand = st[i : j + 1]
+            try:
+                return json.loads(cand)
+            except Exception:
+                try:
+                    val = ast.literal_eval(cand)
+                    if isinstance(val, (dict, list)):
+                        return val
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Try ast.literal_eval on the whole string (accepts single quotes, True/False/None)
+    try:
+        val = ast.literal_eval(st)
+        if isinstance(val, (dict, list)):
+            return val
+    except Exception:
+        pass
+
+    # Heuristic: replace single quotes with double quotes and normalize booleans/null
+    try:
+        t = st
+        # remove common trailing text like 'Output:' or surrounding backticks
+        t = re.sub(r"^.*?(```|\()", "", t)
+        t = re.sub(r"(```|\)).*$", "", t)
+        # remove stray newlines
+        t = t.replace("\n", " ")
+        t2 = t.replace("'", '"')
+        t2 = re.sub(r"\bNone\b", "null", t2)
+        t2 = re.sub(r"\bTrue\b", "true", t2)
+        t2 = re.sub(r"\bFalse\b", "false", t2)
+        t2 = re.sub(r",\s*}\b", "}", t2)
+        return json.loads(t2)
+    except Exception:
+        pass
+
+    # Last resort: extract simple key:value pairs like key: value
+    try:
+        pairs = re.findall(r"([A-Za-z0-9_\-]+)\s*[:=]\s*\"?([^,\n\}\]]+)\"?", st)
+        if pairs:
+            out = {}
+            for k, v in pairs:
+                out[k.strip()] = v.strip().strip('"').strip("'")
+            return out
+    except Exception:
+        pass
+
+    raise ValueError("Unable to parse input as JSON")
 
 ToolParams = ParamSpec("ToolParams")
 
@@ -229,16 +322,26 @@ def function_tool(
         )
 
         async def _on_invoke_tool_impl(ctx: RunContextWrapper[Any], input: str) -> Any:
-            try:
-                json_data: dict[str, Any] = json.loads(input) if input else {}
-            except Exception as e:
-                if _debug.DONT_LOG_TOOL_DATA:
-                    logger.debug(f"Invalid JSON input for tool {schema.name}")
-                else:
-                    logger.debug(f"Invalid JSON input for tool {schema.name}: {input}")
-                raise ModelBehaviorError(
-                    f"Invalid JSON input for tool {schema.name}: {input}"
-                ) from e
+            # Parse JSON input; attempt forgiving repairs for common LLM output formats
+            json_data: dict[str, Any] = {}
+            if input:
+                try:
+                    json_data = json.loads(input)
+                except Exception as e:
+                    try:
+                        json_data = _forgiving_json_loads(input)
+                        if _debug.DONT_LOG_TOOL_DATA:
+                            logger.debug(f"Forgiving-parse succeeded for tool {schema.name}")
+                        else:
+                            logger.debug(f"Forgiving-parse succeeded for tool {schema.name}: {input}")
+                    except Exception as e2:
+                        if _debug.DONT_LOG_TOOL_DATA:
+                            logger.debug(f"Invalid JSON input for tool {schema.name}")
+                        else:
+                            logger.debug(f"Invalid JSON input for tool {schema.name}: {input}")
+                        raise ModelBehaviorError(
+                            f"Invalid JSON input for tool {schema.name}: {input}"
+                        ) from e2
 
             if _debug.DONT_LOG_TOOL_DATA:
                 logger.debug(f"Invoking tool {schema.name}")
