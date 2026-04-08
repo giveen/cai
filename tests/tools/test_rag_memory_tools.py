@@ -1,6 +1,10 @@
 import json
 import sys
 import types
+import asyncio
+import inspect
+import os
+import runpy
 
 import pytest
 
@@ -40,10 +44,6 @@ class DummyQdrant:
 
 
 # A lightweight substitute for the real @function_tool decorator used during tests.
-import asyncio
-import inspect
-import os
-import runpy
 
 
 def _simple_function_tool(func=None, **_kwargs):
