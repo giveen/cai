@@ -14,8 +14,8 @@ from rich.table import Table  # pylint: disable=import-error
 from cai.repl.commands.base import Command, register_command
 from cai.repl.commands.parallel import PARALLEL_CONFIGS
 from cai.sdk.agents.models.openai_chatcompletions import (
-    get_agent_message_history,
     get_all_agent_histories,
+    get_agent_message_history,  # noqa: F401  (used in tests via mock)
 )
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl
@@ -144,7 +144,7 @@ class LoadCommand(Command):
                         agent_name = current_agent_name
                         console.print(f"[cyan]Loading to current agent: {agent_name}[/cyan]")
                     else:
-                        console.print(f"[red]Error: No active agent found[/red]")
+                        console.print("[red]Error: No active agent found[/red]")
                         return False
                 else:
                     # Any other ID in single agent mode is invalid
@@ -397,7 +397,7 @@ class LoadCommand(Command):
                             PARALLEL_ISOLATION.replace_isolated_history(agent_id, agent_conversations[best_match])
                             
                             # Verify it was stored
-                            test_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
+                            _test_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
                             
                             # Also sync with AGENT_MANAGER for consistency
                             # Don't use set_message_history or any method that might register the agent
@@ -441,13 +441,13 @@ class LoadCommand(Command):
                     console.print("[dim]Agent names should be in 'name', 'sender', or 'agent_name' fields[/dim]")
                     return False
                 else:
-                    console.print(f"\n[dim]Found agents in JSONL:[/dim]")
+                    console.print("\n[dim]Found agents in JSONL:[/dim]")
                     for agent, messages in sorted(agent_conversations.items(), key=lambda x: len(x[1]), reverse=True)[:5]:
                         console.print(f"  • {agent} ({len(messages)} messages)")
                     if len(agent_conversations) > 5:
                         console.print(f"  ... and {len(agent_conversations) - 5} more")
                     
-                    console.print(f"\n[dim]Configured agents expecting history:[/dim]")
+                    console.print("\n[dim]Configured agents expecting history:[/dim]")
                     for idx, config in enumerate(PARALLEL_CONFIGS, 1):
                         if config.agent_name in agents:
                             agent = agents[config.agent_name]

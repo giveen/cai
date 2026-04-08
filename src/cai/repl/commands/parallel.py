@@ -9,7 +9,7 @@ which will then be executed in parallel through the CLI.
 # Standard library imports
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import yaml
 
@@ -23,7 +23,6 @@ from cai.agents import get_available_agents
 # Local imports
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.models.openai_chatcompletions import (
-    OpenAIChatCompletionsModel,
     get_all_agent_histories,
     clear_agent_history,
 )
@@ -837,7 +836,7 @@ class ParallelCommand(Command):
             console.print("[red]Error: Need at least 2 agents to merge[/red]")
             if len(agents_to_merge) == 1:
                 console.print(f"[yellow]Only found 1 agent: {agents_to_merge[0]}[/yellow]")
-            console.print(f"[yellow]Available agents with histories:[/yellow]")
+            console.print("[yellow]Available agents with histories:[/yellow]")
             for agent_name in sorted(all_histories.keys()):
                 console.print(f"  - {agent_name}")
             console.print("\n[dim]Tip: Make sure you have multiple agents with history to merge.[/dim]")
@@ -939,7 +938,7 @@ class ParallelCommand(Command):
         
         if merge_to_all_sources:
             summary += f"  Updated agents: {', '.join(agents_to_merge)}\n\n"
-            summary += f"[dim]All source agents now have the complete merged history[/dim]"
+            summary += "[dim]All source agents now have the complete merged history[/dim]"
         else:
             summary += f"  Target agent: {target_agent}\n\n"
             summary += f"[dim]Use '/history {target_agent}' to view the merged history[/dim]"
@@ -1215,12 +1214,12 @@ class ParallelCommand(Command):
             ACTIVE_MODEL_INSTANCES, 
             PERSISTENT_MESSAGE_HISTORIES
         )
-        from cai.agents import get_agent_by_name, get_available_agents
+        from cai.agents import get_available_agents
 
         # First, check if the target agent already exists in PARALLEL_CONFIGS
-        target_config = None
+        _target_config = None
         target_exists_in_configs = False
-        target_display_name = target_agent
+        _target_display_name = target_agent
         
         # Check if target matches any existing config by display name or ID
         available_agents = get_available_agents()
@@ -1234,9 +1233,9 @@ class ParallelCommand(Command):
                 if (display_name.lower() == target_agent.lower() or 
                     config.agent_name.lower() == target_agent.lower() or
                     (config.id and config.id.upper() == target_agent.upper())):
-                    target_config = config
+                    _target_config = config
                     target_exists_in_configs = True
-                    target_display_name = display_name
+                    _target_display_name = display_name
                     break
         
         # If not in configs, just store the merged history
@@ -1284,7 +1283,6 @@ class ParallelCommand(Command):
                 for i in range(len(PARALLEL_CONFIGS) - 1, -1, -1):
                     config = PARALLEL_CONFIGS[i]
                     # Check by display name or ID
-                    from cai.agents import get_available_agents
                     available_agents = get_available_agents()
                     if config.agent_name in available_agents:
                         agent = available_agents[config.agent_name]
@@ -1413,7 +1411,6 @@ class ParallelCommand(Command):
                 console.print(f"[green]✓ Updated {agent_name} (persistent storage)[/green]")
             
             # Also update in AGENT_MANAGER if needed
-            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
             base_name = agent_name
             if "[" in agent_name and agent_name.endswith("]"):
                 base_name = agent_name.rsplit("[", 1)[0].strip()
@@ -1532,7 +1529,7 @@ class ParallelCommand(Command):
                 for config in PARALLEL_CONFIGS:
                     if config.id and config.id.upper() == target_id:
                         # Get the actual agent name with instance number
-                        agent_counts = {}
+                        _agent_counts = {}
                         instance_num = 0
                         
                         # Count how many instances of this agent type exist
@@ -1638,14 +1635,14 @@ class ParallelCommand(Command):
         
         # Find the config to update
         config_to_update = None
-        index_to_update = -1
+        _index_to_update = -1
         
         # Try by ID first
         if identifier.upper().startswith("P"):
             for idx, config in enumerate(PARALLEL_CONFIGS):
                 if config.id and config.id.upper() == identifier.upper():
                     config_to_update = config
-                    index_to_update = idx + 1
+                    _index_to_update = idx + 1
                     break
         else:
             # Try by index
@@ -1653,7 +1650,7 @@ class ParallelCommand(Command):
                 idx = int(identifier)
                 if 1 <= idx <= len(PARALLEL_CONFIGS):
                     config_to_update = PARALLEL_CONFIGS[idx - 1]
-                    index_to_update = idx
+                    _index_to_update = idx
             except ValueError:
                 pass
         

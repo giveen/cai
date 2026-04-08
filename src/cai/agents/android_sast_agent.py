@@ -10,7 +10,11 @@ from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 from openai import AsyncOpenAI
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:
+    def load_dotenv(*args, **kwargs):
+        return False
 
 from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.tools.reconnaissance.exec_code import (
@@ -31,15 +35,29 @@ tools = list(ALL_TOOLS)
 load_dotenv()
 model_name = os.getenv("CAI_MODEL", "alias1")
 
+_openai_client = None
+if AsyncOpenAI is not None:
+    try:
+        _openai_client = AsyncOpenAI()
+    except Exception:
+        _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=model_name,
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
+
 app_logic_mapper = Agent(
     name="AppLogicMapper",
     description="Agent specializing in application analysis to understand the logic of operation and return a complete map of it.",
     instructions=create_system_prompt_renderer(app_logic_mapper_system_prompt),
     tools=tools,
-    model=OpenAIChatCompletionsModel(
-        model=model_name,
-        openai_client=AsyncOpenAI(),
-    ),
+    model=_model_inst,
 )
 
 
@@ -55,9 +73,6 @@ android_sast = Agent(
         ),
         *ALL_TOOLS,
         ],
-    model=OpenAIChatCompletionsModel(
-        model=model_name,
-        openai_client=AsyncOpenAI(),
-    ),
+    model=_model_inst,
 )
 

@@ -10,7 +10,6 @@ import pty
 import signal
 import time
 import uuid
-import sys
 import shlex
 import select
 from wasabi.util import color  # pylint: disable=import-error
@@ -58,6 +57,18 @@ def _finish_tool_streaming_helper(tool_name: str, tool_args: dict, content: str,
     if token_info is None:
         token_info = _get_agent_token_info()
     finish_tool_streaming(tool_name, tool_args, content, call_id, execution_info, token_info)
+
+# Idle timeout for command runners (seconds). Can be configured via environment
+# variable `CAI_COMMAND_IDLE_TIMEOUT`. Default is 10 seconds.
+try:
+    IDLE_KILL_TIMEOUT = int(os.getenv("CAI_COMMAND_IDLE_TIMEOUT", "10"))
+    if IDLE_KILL_TIMEOUT < 1:
+        IDLE_KILL_TIMEOUT = 10
+except Exception:
+    IDLE_KILL_TIMEOUT = 10
+
+# Lock protecting SESSION_COUNTER and the session / friendly-ID maps
+_SESSION_LOCK = threading.Lock()
 
 
 def _get_workspace_dir() -> str:
@@ -176,7 +187,7 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         return timeout_msg
     except FileNotFoundError:
          # Handle case where ssh or sshpass isn't installed
-         error_msg = f"'sshpass' or 'ssh' command not found. Ensure they are installed and in PATH." # noqa E501
+         error_msg = "'sshpass' or 'ssh' command not found. Ensure they are installed and in PATH." # noqa E501
          print(color(error_msg, fg="red"))
          return error_msg
     except Exception as e:  # pylint: disable=broad-except
@@ -206,10 +217,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             # Import the streaming utilities from util
             from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
             
-            # Parse command into parts for display
-            parts = command.strip().split(' ', 1)
-            cmd_var = parts[0] if parts else ""
-            args_param_val = parts[1] if len(parts) > 1 else ""
+            # cmd_var/args_param_val/full_command produced by _normalize_command
             
             # For generic Linux commands, standardize the tool_name format
             if not tool_name:
@@ -224,7 +232,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             
             # Add more context for the command
             tool_args["workspace"] = os.path.basename(target_dir)
-            tool_args["full_command"] = command
+            tool_args["full_command"] = full_command
             
             # If custom args were provided, merge them with the default args
             if custom_args is not None:
@@ -285,14 +293,14 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                     else:
                         break
                 except asyncio.TimeoutError:
-                    if time.time() - last_output > 10:
+                    if time.time() - last_output > IDLE_KILL_TIMEOUT:
                         process.terminate()
                         try:
                             await asyncio.wait_for(process.wait(), timeout=1.0)
                         except asyncio.TimeoutError:
                             process.kill()
                             await process.wait()
-                        output_buffer.append("\n[Terminated: idle 10s, likely waiting for input]")
+                        output_buffer.append(f"\n[Terminated: idle {IDLE_KILL_TIMEOUT}s, likely waiting for input]")
                         break
             
             # Wait for process to complete
@@ -334,12 +342,21 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             return final_output
         else:
             # Non-streaming with idle detection
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=target_dir
-            )
+            # Non-streaming execution: prefer exec when possible
+            if isinstance(command, (list, tuple)):
+                process = await asyncio.create_subprocess_exec(
+                    *exec_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=target_dir
+                )
+            else:
+                process = await asyncio.create_subprocess_shell(
+                    full_command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=target_dir
+                )
             
             stdout_chunks, stderr_chunks = [], []
             last_output = time.time()
@@ -370,7 +387,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                             last_output = time.time()
                 except asyncio.TimeoutError:
                     pass
-                if time.time() - last_output > 10:
+                if time.time() - last_output > IDLE_KILL_TIMEOUT:
                     try:
                         await asyncio.wait_for(process.wait(), timeout=0.1)
                         break
@@ -381,7 +398,7 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                         except asyncio.TimeoutError:
                             process.kill()
                             await process.wait()
-                        stderr_chunks.append(b"\n[Terminated: idle 10s]")
+                        stderr_chunks.append(f"\n[Terminated: idle {IDLE_KILL_TIMEOUT}s]".encode())
                         break
             
             stdout_data, stderr_data = b''.join(stdout_chunks), b''.join(stderr_chunks)
@@ -391,8 +408,8 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             if not output and stderr_data:
                 output = stderr_data.decode('utf-8', errors='replace')
             
-            # Parse command for display
-            parts = command.strip().split(' ', 1)
+            # Use normalized command parts for display
+            _parts = [cmd_var, args_param_val]
             
             # In non-streaming mode (typically parallel execution), display completed panel
             # Get token info for agent display
@@ -415,15 +432,14 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             # In streaming mode, the Live panels are handled by the streaming system
             if streaming_enabled and is_parallel:
                 # Display the completed tool output
-                from cai.util import cli_print_tool_output
                 
                 # Calculate execution time
                 execution_time = time.time() - process_start_time
                 
                 # Generate a unique call_id if not provided
                 if not call_id:
-                    cmd_name = parts[0] if parts else "cmd"
-                    call_id = f"{cmd_name}_{str(uuid.uuid4())[:8]}"
+                    cmd_name_for_id = cmd_var if cmd_var else "cmd"
+                    call_id = f"{cmd_name_for_id}_{str(uuid.uuid4())[:8]}"
                 
                 execution_info = {
                     "status": "completed" if process.returncode == 0 else "error",
@@ -437,9 +453,9 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
                 cli_print_tool_output(
                     tool_name=tool_name or "generic_linux_command",
                     args={
-                        "command": parts[0] if parts else command,
-                        "args": parts[1] if len(parts) > 1 else "",
-                        "full_command": command,
+                        "command": cmd_var if cmd_var else full_command,
+                        "args": args_param_val if args_param_val else "",
+                        "full_command": full_command,
                         "workspace": os.path.basename(target_dir)
                     },
                     output=output.strip(),
@@ -458,10 +474,9 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
         # If we're streaming, show the timeout in the tool output panel
         if stream and call_id:
             from cai.util import finish_tool_streaming
-            # Parse the command the same way we did for streaming
-            parts = command.strip().split(' ', 1)
-            cmd_var = parts[0] if parts else ""
-            args_var = parts[1] if len(parts) > 1 else ""
+            # Use normalized parts for timeout handling
+            cmd_var = cmd_var
+            args_var = args_param_val
             
             # Ensure tool_args has complete information
             tool_args: dict[str, Any] = {
@@ -492,11 +507,10 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
         # If we're streaming, show the error in the tool output panel
         if stream and call_id:
             from cai.util import finish_tool_streaming
-            # Parse the command the same way we did for streaming
-            parts = command.strip().split(' ', 1)
-            cmd_var = parts[0] if parts else ""
-            args_var = parts[1] if len(parts) > 1 else ""
-            
+            # Use normalized parts for error reporting
+            cmd_var_local = cmd_var
+            args_var = args_param_val
+
             # Ensure tool_args has complete information
             tool_args: dict[str, Any] = {
                 "command": cmd_var,
@@ -536,20 +550,18 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
     container_workspace = _get_container_workspace_path()
     try:
         
-        # Parse command for display
-        parts = command.strip().split(' ', 1)
-        cmd_name = parts[0] if parts else ""
-        cmd_args = parts[1] if len(parts) > 1 else ""
-        
+        # Normalize command for display and execution
+        exec_cmd, cmd_name, cmd_args, full_command = _normalize_command(command)
+
         if not tool_name:
             tool_name = f"{cmd_name}_command" if cmd_name else "command"
-        
-        # Build docker exec command
+
+        # Build docker exec command; always pass the full command string to sh -c
         docker_cmd_list = [
             "docker", "exec",
             "-w", container_workspace,
             container_id,
-            "sh", "-c", command
+            "sh", "-c", full_command
         ]
         
         if stream:
@@ -563,12 +575,12 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
                 tool_args["container"] = container_id[:12]
                 tool_args["environment"] = "Container"
                 tool_args["workspace"] = container_workspace
-                tool_args["full_command"] = command
+                tool_args["full_command"] = full_command
             else:
                 tool_args: dict[str, Any] = {
                     "command": cmd_name,
                     "args": cmd_args if cmd_args.strip() else "",
-                    "full_command": command,
+                    "full_command": full_command,
                     "container": container_id[:12],
                     "environment": "Container",
                     "workspace": container_workspace
@@ -616,14 +628,14 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
                     else:
                         break
                 except asyncio.TimeoutError:
-                    if time.time() - last_output > 10:
+                    if time.time() - last_output > IDLE_KILL_TIMEOUT:
                         process.terminate()
                         try:
                             await asyncio.wait_for(process.wait(), timeout=1.0)
                         except asyncio.TimeoutError:
                             process.kill()
                             await process.wait()
-                        output_buffer.append("\n[Terminated: idle 10s]")
+                        output_buffer.append(f"\n[Terminated: idle {IDLE_KILL_TIMEOUT}s]")
                         break
             
             # Wait for process completion
@@ -685,7 +697,7 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
             
             if stdout:
                 context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
-                print(f"\033[32m{context_msg} $ {command}\n{output}\033[0m")
+                print(f"\033[32m{context_msg} $ {full_command}\n{output}\033[0m")
             
             # Get token info for display
             token_info = _get_agent_token_info()
@@ -704,18 +716,17 @@ async def _run_docker_async(command, container_id, stdout=False, timeout=100, st
             
             # Only display if we're in streaming mode AND parallel mode
             if streaming_enabled and is_parallel:
-                from cai.util import cli_print_tool_output
                 
                 # Calculate execution time
                 execution_time = time.time() - start_time
                 
-                # Parse command for display
-                parts = command.strip().split(' ', 1)
+                # Use normalized name/args for display
+                parts = [cmd_name, cmd_args]
                 
                 # Generate a unique call_id if not provided
                 if not call_id:
-                    cmd_name = parts[0] if parts else "cmd"
-                    call_id = f"container_{cmd_name}_{str(uuid.uuid4())[:8]}"
+                    cmd_name_for_id = cmd_name if cmd_name else "cmd"
+                    call_id = f"container_{cmd_name_for_id}_{str(uuid.uuid4())[:8]}"
                 
                 execution_info = {
                     "status": "completed" if process.returncode == 0 else "error",
@@ -804,10 +815,8 @@ async def run_command_async(command, ctf=None, stdout=False,  # pylint: disable=
     if ctf and not hasattr(ctf, "get_shell"):
         ctf = None
     
-    # Parse command into standard parts to ensure consistent naming
-    parts = command.strip().split(' ', 1)
-    cmd_name = parts[0] if parts else ""
-    cmd_args = parts[1] if len(parts) > 1 else ""
+    # Normalize command into exec list, name, args and display string
+    exec_cmd, cmd_name, cmd_args, full_command = _normalize_command(command)
     
     # Generate a call_id if we're streaming and one wasn't provided
     if not call_id and stream:
@@ -926,10 +935,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     from cai.cli import ctf_global
     ctf = ctf_global
     
-    # Parse command into standard parts to ensure consistent naming
-    parts = command.strip().split(' ', 1)
-    cmd_name = parts[0] if parts else ""
-    cmd_args = parts[1] if len(parts) > 1 else ""
+    # Normalize command into exec list, name, args and display string
+    exec_cmd, cmd_name, cmd_args, full_command = _normalize_command(command)
     
     # Generate a call_id if we're streaming and one wasn't provided
     # Use a more specific format that includes the command name for easier tracking
@@ -950,7 +957,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 start_idle_timer()
                 return f"Session {session_id} not found"
             session = ACTIVE_SESSIONS[resolved_session_id]
-            result = session.send_input(command) # Send the raw command string
+            # Ensure sessions always receive a string representation
+            result = session.send_input(full_command) # Send the command string
             
             # Wait for the command to execute and capture output
             # This provides automatic output display for async sessions
@@ -992,7 +1000,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             # Create args for display
             label = getattr(session, 'friendly_id', None) or resolved_session_id
             session_args = {
-                "command": command,
+                "command": full_command,
                 "args": "",
                 "session_id": label,
                 "call_counter": SESSION_OUTPUT_COUNTER[counter_key],  # This ensures uniqueness
@@ -1032,7 +1040,6 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             }
             
             # Display the session input and its result using cli_print_tool_output
-            from cai.util import cli_print_tool_output
             cli_print_tool_output(
                 tool_name="generic_linux_command",
                 args=session_args,
@@ -1386,7 +1393,6 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 return new_session_id
             
             # Display the command that creates the async session
-            from cai.util import cli_print_tool_output
             
             # Retrieve the actual workspace dir the session is using
             session = ACTIVE_SESSIONS.get(new_session_id)
@@ -1452,7 +1458,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         stop_active_timer()
         start_idle_timer()
         return result
-    except Exception as e:
+    except Exception:
         stop_active_timer()
         start_idle_timer()
         raise

@@ -20,8 +20,7 @@ from .tracing import Trace
 from .util._pretty_print import pretty_print_result, pretty_print_run_result_streaming
 
 if TYPE_CHECKING:
-    from ._run_impl import QueueCompleteSentinel
-    from .agent import Agent
+    pass  # QueueCompleteSentinel and Agent imported unconditionally above
 
 T = TypeVar("T")
 

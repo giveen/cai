@@ -4,9 +4,17 @@ Utility functions for working with patterns.
 Provides helper functions to convert patterns to parallel configurations
 and integrate with the CAI execution system.
 """
+from __future__ import annotations
 
-from typing import List, Optional, Union
-from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
+from typing import List, Union
+
+from .pattern import Pattern
+try:
+    from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
+except Exception:
+    ParallelConfig = None
+    PARALLEL_CONFIGS = None
+
 from cai.agents import get_available_agents
 
 def pattern_to_parallel_configs(pattern: Union['Pattern', str]) -> List[ParallelConfig]:
@@ -22,7 +30,7 @@ def pattern_to_parallel_configs(pattern: Union['Pattern', str]) -> List[Parallel
         ValueError: If pattern is not a parallel pattern or pattern not found
     """
     # Import here to avoid circular imports
-    from .pattern import Pattern, PatternType
+    from .pattern import PatternType
     from . import get_pattern
     
     # Handle string pattern names
@@ -48,6 +56,10 @@ def apply_pattern_to_parallel_command(pattern: Union['Pattern', str]) -> None:
     """
     configs = pattern_to_parallel_configs(pattern)
     
+    # If the parallel command subsystem is not available, raise a clear error
+    if PARALLEL_CONFIGS is None:
+        raise RuntimeError("Parallel command subsystem is not available in this environment")
+
     # Clear existing configs and apply pattern configs
     PARALLEL_CONFIGS.clear()
     PARALLEL_CONFIGS.extend(configs)
@@ -152,7 +164,7 @@ def is_swarm_pattern(agent) -> bool:
                 continue
                 
             # Get the target agent name from the handoff
-            target_agent_name = handoff.agent_name
+            _target_agent_name = handoff.agent_name
             
             # Now we need to check if the target agent has a handoff back to this agent
             # Since we can't access the target agent directly from the handoff,
@@ -177,7 +189,7 @@ def is_swarm_pattern(agent) -> bool:
                                         hasattr(agent, 'name') and 
                                         target_handoff.agent_name == agent.name):
                                         return True
-                        except:
+                        except Exception:
                             continue
     
     return False

@@ -1,7 +1,8 @@
 """
 Here are the nmap tools.
 """
-
+import shlex
+from typing import List
 from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
 from cai.tools.validation import contains_shell_metacharacters, is_valid_target  # pylint: disable=import-error
@@ -25,6 +26,7 @@ def _validate_nmap_input(args: str, target: str):
             "CIDR block, IP range, or hostname."
         )
     return None
+
 
 
 @function_tool

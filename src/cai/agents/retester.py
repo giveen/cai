@@ -1,8 +1,17 @@
 """Retester Agent for vulnerability verification and triage"""
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
 from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
@@ -17,6 +26,23 @@ retester_system_prompt = load_prompt_template("prompts/system_triage_agent.md")
 
 tools = list(ALL_TOOLS)
 
+_openai_client = None
+if AsyncOpenAI is not None:
+    try:
+        _openai_client = AsyncOpenAI(api_key=api_key)
+    except Exception:
+        _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=os.getenv('CAI_MODEL', "alias1"),
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
+
 retester_agent = Agent(
     name="Retester Agent",
     instructions=create_system_prompt_renderer(retester_system_prompt),
@@ -24,10 +50,7 @@ retester_agent = Agent(
                    triage. Expert in determining exploitability and 
                    eliminating false positives.""",
     tools=tools,
-    model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "alias1"),
-        openai_client=AsyncOpenAI(api_key=api_key),
-    )
+    model=_model_inst,
 )
 
 

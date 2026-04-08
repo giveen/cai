@@ -11,9 +11,9 @@ import logging
 mcp_logger = logging.getLogger("mcp.client")
 if mcp_logger.level == logging.NOTSET:
     mcp_logger.setLevel(logging.WARNING)
-from ..run_context import RunContextWrapper
-from ..tool import FunctionTool, Tool
-from ..tracing import FunctionSpanData, get_current_span, mcp_tools_span
+from ..run_context import RunContextWrapper  # noqa: E402
+from ..tool import FunctionTool, Tool  # noqa: E402
+from ..tracing import FunctionSpanData, get_current_span, mcp_tools_span  # noqa: E402
 
 if TYPE_CHECKING:
     from mcp.types import Tool as MCPTool

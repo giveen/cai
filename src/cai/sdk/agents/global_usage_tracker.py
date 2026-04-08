@@ -76,7 +76,7 @@ class GlobalUsageTracker:
                         if platform.system() != 'Windows':
                             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                         return data
-                except (IOError, OSError) as e:
+                except (IOError, OSError):
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay * (attempt + 1))
                     else:
@@ -89,7 +89,7 @@ class GlobalUsageTracker:
                     try:
                         self.usage_file.rename(backup_path)
                         print(f"Corrupted usage.json backed up to {backup_path}")
-                    except:
+                    except Exception:
                         pass
                     break
         
@@ -130,7 +130,7 @@ class GlobalUsageTracker:
                             with self._lock:
                                 self.usage_data = current_file_data
                                 # Now our in-memory data has the latest from file
-                except:
+                except Exception:
                     pass  # If we can't read, continue with save
             
             # Quickly copy data under lock
@@ -178,7 +178,7 @@ class GlobalUsageTracker:
                                     if os.getenv("CAI_DEBUG", "1") == "2":
                                         print(f"Skipping save: file cost ({final_file_cost}) > our cost ({our_cost})")
                                     return
-                            except:
+                            except Exception:
                                 pass  # If we can't read, continue with save
                         
                         # Atomic rename with retry for concurrent access
@@ -202,7 +202,7 @@ class GlobalUsageTracker:
                         if temp_file.exists():
                             try:
                                 temp_file.unlink()
-                            except:
+                            except Exception:
                                 pass
                 
         except KeyboardInterrupt:

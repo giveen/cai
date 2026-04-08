@@ -8,9 +8,17 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, cast
 
 from typing_extensions import TypeAlias, TypedDict
 
-from .guardrail import InputGuardrail, OutputGuardrail
-from .handoffs import Handoff
-from .items import ItemHelpers
+
+if TYPE_CHECKING:
+    from .guardrail import InputGuardrail, OutputGuardrail
+    from .handoffs import Handoff
+    from .items import ItemHelpers
+else:
+    # Runtime fallbacks to avoid importing heavy optional dependencies (pydantic/openai)
+    InputGuardrail = Any
+    OutputGuardrail = Any
+    Handoff = Any
+    ItemHelpers = Any
 from .logger import logger
 from .mcp import MCPUtil
 from .model_settings import ModelSettings

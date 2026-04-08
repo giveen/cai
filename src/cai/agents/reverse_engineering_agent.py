@@ -1,18 +1,43 @@
 """Reverse Engineering and Binary Analysis Agent"""
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from openai import AsyncOpenAI
 from cai.util import load_prompt_template  # Add this import
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 
-load_dotenv()
 # Prompts
 reverse_engineering_agent_system_prompt = load_prompt_template("prompts/reverse_engineering_agent.md")
 
 tools = list(ALL_TOOLS)
 
 # Create the agent
+_openai_client = None
+if AsyncOpenAI is not None:
+    try:
+        _openai_client = AsyncOpenAI()
+    except Exception:
+        _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=os.getenv('CAI_MODEL', "alias1"),
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
+
 reverse_engineering_agent = Agent(
     name="Reverse Engineering Specialist",
     instructions=reverse_engineering_agent_system_prompt,

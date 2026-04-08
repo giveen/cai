@@ -19,7 +19,10 @@ Objectives:
 
 
 import os
-from openai import AsyncOpenAI
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
 from cai.util import load_prompt_template, create_system_prompt_renderer
 from dotenv import load_dotenv

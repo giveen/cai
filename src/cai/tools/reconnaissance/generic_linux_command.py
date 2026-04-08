@@ -2,10 +2,7 @@
 This is used to create a generic linux command.
 """
 import os
-import time
 import uuid
-import subprocess
-import sys
 import re
 import json
 import ast
@@ -226,7 +223,7 @@ async def generic_linux_command(command: str = "",
                 env_info.append("🎯 CTF Environment: Active")
             else:
                 env_info.append("🎯 CTF Environment: Not available")
-        except:
+        except Exception:
             env_info.append("🎯 CTF Environment: Not available")
         
         # Check Container environment
@@ -249,7 +246,7 @@ async def generic_linux_command(command: str = "",
             from cai.tools.common import _get_workspace_dir
             workspace = _get_workspace_dir()
             env_info.append(f"📁 Workspace: {workspace}")
-        except:
+        except Exception:
             env_info.append("📁 Workspace: Unknown")
         
         return "Current Environment:\n" + "\n".join(env_info)
@@ -401,7 +398,7 @@ async def generic_linux_command(command: str = "",
                     for pattern in dangerous_decoded:
                         if re.search(pattern, decoded):
                             return f"Error: Blocked base64-encoded dangerous command. Decoded content contains: {pattern}"
-                except:
+                except Exception:
                     # If we can't decode, be cautious
                     pass
         
@@ -432,7 +429,7 @@ async def generic_linux_command(command: str = "",
                     for pattern in dangerous_decoded:
                         if re.search(pattern, decoded):
                             return f"Error: Blocked base32-encoded dangerous command. Decoded content contains: {pattern}"
-                except:
+                except Exception:
                     # If we can't decode, be cautious
                     pass
     
@@ -453,6 +450,30 @@ async def generic_linux_command(command: str = "",
     # how to handle missing sessions (it will return a helpful message).
 
     if session_id:
+        # Defensive check: ensure the referenced session actually exists before
+        # attempting to send input to it. This prevents executing against
+        # non-existent sessions (e.g., a streaming partial that referenced
+        # a session id that was never created).
+        try:
+            sessions = list_shell_sessions() or []
+            found = False
+            for s in sessions:
+                sid = s.get("session_id")
+                fid = s.get("friendly_id")
+                if sid == session_id or fid == session_id:
+                    found = True
+                    break
+                # Allow prefix matching for short ids produced by some UIs
+                if sid and sid.startswith(session_id):
+                    found = True
+                    break
+            if not found:
+                return f"Error: Session {session_id} not found"
+        except Exception:
+            # If session listing fails for any reason, be defensive and refuse
+            # to send to a session we cannot verify.
+            return f"Error: Unable to verify session {session_id}"
+
         result = run_command(
             command,
             ctf=None,

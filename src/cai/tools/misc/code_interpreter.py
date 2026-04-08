@@ -4,7 +4,9 @@ Module for executing Python code and capturing its output.
 
 import io
 import sys
-from typing import Dict
+import json
+import traceback
+from typing import Dict, Optional
 from cai.sdk.agents import function_tool
 
 
@@ -20,24 +22,46 @@ def execute_python_code(code: str) -> str:
     Returns:
         str: Output from code execution
     """
+    old_stdout = sys.stdout
+    captured = io.StringIO()
+
+    # Minimal safe builtins: only allow harmless functions
+    safe_builtins = {
+        'abs': abs, 'all': all, 'any': any, 'bool': bool, 'chr': chr,
+        'dict': dict, 'enumerate': enumerate, 'filter': filter,
+        'float': float, 'int': int, 'len': len, 'list': list,
+        'map': map, 'max': max, 'min': min, 'next': next, 'pow': pow,
+        'print': print, 'range': range, 'repr': repr, 'round': round,
+        'set': set, 'slice': slice, 'sorted': sorted, 'str': str,
+        'sum': sum, 'tuple': tuple, 'zip': zip
+    }
+
     try:
         local_vars = {}
 
         # Capture output using StringIO
-        stdout = io.StringIO()
-        sys.stdout = stdout
+        sys.stdout = captured
 
-        # Execute code once with captured output
-        # nosec B102 # pylint: disable=exec-used
-        exec(code, globals(), local_vars)  # nosec 102
+        # Compile first to provide clearer syntax errors
+        compiled = compile(code, '<string>', 'exec')
 
-        # Restore stdout
-        sys.stdout = sys.__stdout__
-        output = stdout.getvalue()
+        # Execute in a restricted environment
+        restricted_globals = {'__builtins__': safe_builtins}
+        # pylint: disable=exec-used
+        exec(compiled, restricted_globals, local_vars)  # nosec B102
 
-        # Return captured output or last expression value
-        return output if output else str(
-            local_vars.get('__builtins__', {}).get('_', None))
+        output = captured.getvalue()
+        return output if output else "Code executed successfully (no output)"
 
-    except Exception as e:  # pylint: disable=broad-except
-        return f"Error executing code: {str(e)}"
+    except Exception as e:
+        # Return structured JSON error so callers can programmatically inspect
+        partial = captured.getvalue()
+        tb = traceback.format_exc()
+        error_obj = {
+            "error": str(e),
+            "traceback": tb,
+            "partial_output": partial,
+        }
+        return json.dumps(error_obj)
+    finally:
+        sys.stdout = old_stdout

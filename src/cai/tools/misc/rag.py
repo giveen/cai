@@ -12,6 +12,8 @@ from cai.rag.metrics import collector
 from cai.rag.chunking import chunk_text, fingerprint_chunks
 from cai.sdk.agents import function_tool
 
+logger = logging.getLogger(__name__)
+
 # CTF BASED MEMORY
 collection_name = os.getenv('CAI_MEMORY_COLLECTION', "default")
 
@@ -278,7 +280,8 @@ def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable
             return f"Failed to add documents to vector database: {str(e)}"
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        return f"Error adding documents to vector database: {str(e)}"
+        logger.exception("Error adding documents to vector database (episodic)")
+        return f"Error adding documents to vector database: {e.__class__.__name__}: {str(e)}"
 
 @function_tool
 def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable=line-too-long # noqa: E501
@@ -415,4 +418,5 @@ def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable
             return f"Failed to add documents to vector database: {str(e)}"
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        return f"Error adding documents to vector database: {str(e)}"
+        logger.exception("Error adding documents to vector database (semantic)")
+        return f"Error adding documents to vector database: {e.__class__.__name__}: {str(e)}"

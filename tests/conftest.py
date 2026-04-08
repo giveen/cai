@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import pytest
 
+import inspect
 from cai.sdk.agents.models import _openai_shared
 from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from cai.sdk.agents.models.openai_responses import OpenAIResponsesModel
+from unittest.mock import AsyncMock as _AsyncMock
 from cai.sdk.agents.tracing import set_trace_processors
 from cai.sdk.agents.tracing.setup import GLOBAL_TRACE_PROVIDER
 
@@ -55,10 +57,7 @@ def ensure_guardrails_enabled(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def disable_real_model_clients(monkeypatch, request):
-    # If the test is marked to allow the method call, don't override it.
-    if request.node.get_closest_marker("allow_call_model_methods"):
-        return
-
+    # If the test is NOT marked to allow model calls, override to fail fast.
     def failing_version(*args, **kwargs):
         pytest.fail("Real models should not be used in tests!")
 

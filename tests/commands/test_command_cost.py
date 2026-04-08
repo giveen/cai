@@ -2,6 +2,7 @@
 Tests for the cost command.
 """
 import json
+import os
 import tempfile
 import os
 from pathlib import Path

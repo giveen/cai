@@ -46,11 +46,7 @@ def run_ssh_command_with_credentials(
     except Exception:
         return "port is not a valid integer"
 
-    # Escape special characters to prevent shell injection
-    quoted_password = shlex.quote(password)
-    quoted_username = shlex.quote(username)
-    quoted_host = shlex.quote(host)
-    quoted_command = shlex.quote(command)
+    # Build argument list to avoid shell interpolation
     port = str(port)
 
     ssh_command = (

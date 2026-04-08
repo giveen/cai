@@ -1,7 +1,8 @@
 """
 Here are the CLI tools for executing commands.
 """
-
+import shlex
+from typing import List
 from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
@@ -80,8 +81,13 @@ def find_file(file_path: str, args: str = "", ctf=None) -> str:
     Find a file in the filesystem.
     """
     # Block dangerous flags that enable RCE, file writes, or deletion
+    try:
+        args_tokens: List[str] = shlex.split(args) if args else []
+    except Exception:
+        args_tokens = [args]
+
     for flag in DANGEROUS_FIND_FLAGS:
-        if flag in args:
+        if flag in args_tokens:
             return f"Error: DANGEROUS flag '{flag}' is not allowed"
     
     command = f'find {file_path} {args}'

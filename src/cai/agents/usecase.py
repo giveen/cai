@@ -1,8 +1,17 @@
 """Use Case Agent"""
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+try:
+    from openai import AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
 from cai.tools.reconnaissance.generic_linux_command import null_tool
 from cai.util import load_prompt_template, create_system_prompt_renderer
 
@@ -28,6 +37,23 @@ use_case_agent_system_prompt = load_prompt_template("prompts/system_use_cases.md
 # ]
 tools = [null_tool]
 # Create the agent
+_openai_client = None
+if AsyncOpenAI is not None:
+    try:
+        _openai_client = AsyncOpenAI()
+    except Exception:
+        _openai_client = None
+
+_model_inst = None
+if _openai_client is not None:
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=model_name,
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
+
 use_case_agent = Agent(
     name="Use Case Agent",
     description="""Agent that creates high-quality cybersecurity case studies 
@@ -35,10 +61,7 @@ use_case_agent = Agent(
                    CTF challenges, and cybersecurity exercises.""",
     instructions=create_system_prompt_renderer(use_case_agent_system_prompt),
     tools=tools,
-    model=OpenAIChatCompletionsModel(
-        model=model_name,
-        openai_client=AsyncOpenAI(),
-    ),
+    model=_model_inst,
 )
 
 # Transfer function

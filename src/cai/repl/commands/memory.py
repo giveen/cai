@@ -4,6 +4,7 @@ Manages memory storage in .cai/memory for persistent context.
 """
 
 from typing import List, Optional, Dict, Any
+import inspect
 import os
 import asyncio
 import json
@@ -12,7 +13,6 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.tree import Tree
 
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.models.openai_chatcompletions import (
@@ -26,7 +26,10 @@ from cai.sdk.agents.models.openai_chatcompletions import (
 from cai.sdk.agents import Agent, Runner
 from cai.repl.commands.parallel import PARALLEL_CONFIGS
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-from openai import AsyncOpenAI
+try:
+    from openai import OpenAI as AsyncOpenAI
+except Exception:
+    AsyncOpenAI = None
 
 # Import get_compact_model function - imported later to avoid circular import
 def get_compact_model():
@@ -42,8 +45,11 @@ console = Console()
 MEMORY_DIR = Path.home() / ".cai" / "memory"
 MEMORY_INDEX_FILE = MEMORY_DIR / "index.json"
 
-# Global storage for compacted summaries (deprecated - use file storage)
-# Now supports multiple memories per agent
+# Legacy in-memory storage for compacted summaries.
+# This in-memory dict is retained for backward compatibility with
+# existing scripts and tests. Prefer persistent file-based storage
+# located under `MEMORY_DIR` for production usage.
+# Supports multiple memories per agent.
 COMPACTED_SUMMARIES: Dict[str, List[str]] = {}
 
 # Global storage for memory ID mappings per agent
@@ -290,7 +296,7 @@ class MemoryCommand(Command):
                         if line.startswith("Agent: "):
                             agent_name = line[7:]
                             break
-                except:
+                except Exception:
                     pass
                 
                 size = memory_file.stat().st_size
@@ -480,7 +486,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 border_style="green"
             ))
         else:
-            console.print(f"[red]✗ Failed to save memory[/red]")
+            console.print("[red]✗ Failed to save memory[/red]")
             
         return True
     
@@ -560,7 +566,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         summary = memory_content.strip()
         
         if not summary:
-            console.print(f"[red]Error: Memory file is empty[/red]")
+            console.print("[red]Error: Memory file is empty[/red]")
             return False
         
         # Get memory ID from the path or identifier
@@ -621,7 +627,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             if len(target_agents) > 1:
                 console.print(f"\n[bold green]Successfully applied memory to {success_count}/{len(target_agents)} agents[/bold green]")
         else:
-            console.print(f"[red]Failed to apply memory to any agents[/red]")
+            console.print("[red]Failed to apply memory to any agents[/red]")
         
         return True
     
@@ -765,7 +771,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                         try:
                             msg_count = int(line.split("Original messages: ")[1].split()[0])
                             total_messages += msg_count
-                        except:
+                        except Exception:
                             pass
                     elif line.strip() == "## Summary":
                         in_summary = True
@@ -1080,7 +1086,8 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             
             # Ask if user wants to clear history
             clear = console.input("\nClear agent history after compaction? (y/N): ")
-            if clear.lower() == 'y':
+            preserve_history = clear.lower() != 'y'
+            if not preserve_history:
                 self._clear_agent_history(agent_name)
                 console.print(f"[green]✓ Cleared history for {agent_name}[/green]")
             
@@ -1221,7 +1228,8 @@ After the analysis, provide a structured summary with these sections:
 6. **All User Messages**: Complete list of user messages in order
 7. **Pending Tasks**: What still needs to be done
 8. **Current Work**: What was being worked on when the conversation ended
-9. **Optional Next Step**: If there's a clear next action, mention it
+9. **Exhausted Approaches — DO NOT RETRY**: Every technique, command, path, or attack vector that was attempted and failed. Format each as a bullet starting with ❌. Be specific (include exact commands, URLs, usernames, ports). This section is CRITICAL — the agent will use it to avoid wasting time on dead ends.
+10. **Recommended Next Steps**: Concrete actions NOT yet tried, ordered by likelihood of success.
 
 ## Important Guidelines
 
@@ -1232,6 +1240,7 @@ After the analysis, provide a structured summary with these sections:
 - Maintain technical accuracy - don't paraphrase technical terms
 - The summary will be used as the primary context for resuming work, so completeness is crucial
 - When the conversation is resumed, it should feel like a natural continuation
+- Section 9 (Exhausted Approaches) is the most important section for offensive/hacking tasks: list every failed attempt so the agent doesn't loop.
 
 This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:"""
         
@@ -1254,50 +1263,87 @@ This session is being continued from a previous conversation that ran out of con
                 input=f"Please summarize the following conversation:\n\n{conversation_text}",
                 max_turns=1
             )
-            
+
             if result.final_output:
                 return str(result.final_output)
             else:
                 return None
-                
+
         except Exception as e:
             console.print(f"[red]Error generating summary: {e}[/red]")
             return None
+        finally:
+            # Best-effort: explicitly cleanup the temporary summary/support model
+            try:
+                model_inst = getattr(summary_agent, "model", None)
+                # Some Agent constructions put the Model object directly on `agent.model`
+                # and some providers expose a cleanup coroutine.
+                if model_inst is not None and hasattr(model_inst, "cleanup"):
+                    try:
+                        coro = model_inst.cleanup()
+                        if inspect.isawaitable(coro):
+                            await coro
+                    except Exception:
+                        # best-effort cleanup — swallow any errors
+                        pass
+            except Exception:
+                pass
     
     def _format_history_for_summary(self, history: List[Dict[str, Any]]) -> str:
-        """Format message history for summarization."""
+        """Format message history for summarization.
+
+        Critical design goals:
+        - Include EVERY tool call with its exact arguments (commands run, URLs visited,
+          ports scanned) so the summary model can produce an "Exhausted Approaches" list.
+        - Include enough of each tool result to convey success/failure and key findings.
+        - Avoid blowing out the summary model's context by capping large outputs.
+        """
+        TOOL_OUTPUT_KEEP = 2000   # chars to preserve from each tool result
+        MAX_PARTS       = 200     # maximum formatted blocks to pass (covers ~100 turns)
+
         formatted_parts = []
-        
+
         for msg in history:
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
-            
-            # Skip empty messages
-            if not content:
-                continue
-                
-            # Format based on role
+
             if role == "user":
-                formatted_parts.append(f"USER: {content}")
+                if content:
+                    formatted_parts.append(f"USER: {content}")
+
             elif role == "assistant":
-                # Check for tool calls
-                if "tool_calls" in msg and msg["tool_calls"]:
+                # -- tool calls: extract args from both dict-style and object-style entries --
+                tool_calls = msg.get("tool_calls") or []
+                if tool_calls:
                     tool_info = []
-                    for tc in msg["tool_calls"]:
-                        if hasattr(tc, "function"):
-                            tool_info.append(f"{tc.function.name}({tc.function.arguments})")
+                    for tc in tool_calls:
+                        if isinstance(tc, dict):
+                            fn = tc.get("function", {})
+                            name = fn.get("name", "?")
+                            args = fn.get("arguments", "")
+                            tool_info.append(f"{name}({args})")
+                        elif hasattr(tc, "function"):
+                            tool_info.append(
+                                f"{tc.function.name}({tc.function.arguments})"
+                            )
                     if tool_info:
-                        formatted_parts.append(f"ASSISTANT (tools): {', '.join(tool_info)}")
+                        formatted_parts.append(
+                            f"ASSISTANT called tools: {', '.join(tool_info)}"
+                        )
                 if content:
                     formatted_parts.append(f"ASSISTANT: {content}")
+
             elif role == "tool":
-                # Include important tool outputs
-                if len(str(content)) < 500:  # Only include short outputs
-                    formatted_parts.append(f"TOOL OUTPUT: {content}")
+                raw = str(content) if content else ""
+                if len(raw) <= TOOL_OUTPUT_KEEP:
+                    formatted_parts.append(f"TOOL OUTPUT:\n{raw}")
                 else:
-                    formatted_parts.append(f"TOOL OUTPUT: [Long output truncated]")
-                    
-        return "\n\n".join(formatted_parts[-50:])  # Limit to last 50 exchanges
+                    head = raw[:TOOL_OUTPUT_KEEP]
+                    formatted_parts.append(
+                        f"TOOL OUTPUT (truncated to {TOOL_OUTPUT_KEEP} chars):\n{head}\n[...truncated]"
+                    )
+
+        return "\n\n".join(formatted_parts[-MAX_PARTS:])
     
     def _get_current_agent_name(self) -> Optional[str]:
         """Get the name of the current active agent."""
@@ -1369,7 +1415,6 @@ This session is being continued from a previous conversation that ran out of con
             # Get the current agent instance and its history
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
             from cai.agents import get_agent_by_name, get_available_agents
-            import os
             
             # ALWAYS skip reload when in parallel mode
             # Parallel agents are already configured and reloading causes duplicate registrations
@@ -1444,7 +1489,7 @@ This session is being continued from a previous conversation that ran out of con
                     import cai.cli
                     if hasattr(cai.cli, 'agent'):
                         cai.cli.agent = new_agent
-                except:
+                except Exception:
                     pass
             
             console.print(f"[green]✓ Reloaded agent '{agent_name}' with memory applied[/green]")

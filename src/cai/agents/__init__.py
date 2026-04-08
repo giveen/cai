@@ -50,17 +50,37 @@ import os
 import pkgutil
 from typing import Dict
 
-from dotenv import load_dotenv  # pylint: disable=import-error # noqa: E501
+try:
+    from dotenv import load_dotenv  # pylint: disable=import-error # noqa: E501
+except Exception:
+    def load_dotenv(*args, **kwargs):  # noop when python-dotenv is not installed
+        return False
 
 # Load .env file from current directory before importing agents
 # This ensures that .env files in the user's working directory are loaded
 # even when CAI is installed from PyPI
-load_dotenv(override=True)  # override=True ensures env vars from .env take precedence
+try:
+    load_dotenv(override=True)  # override=True ensures env vars from .env take precedence
+except Exception:
+    # If loading the .env fails for any reason, continue without failing import
+    pass
 
 # Local application imports
-from cai.agents.flag_discriminator import flag_discriminator, transfer_to_flag_discriminator
-from cai.sdk.agents import Agent
-from cai.sdk.agents.handoffs import handoff
+try:
+    from cai.agents.flag_discriminator import flag_discriminator, transfer_to_flag_discriminator
+except Exception:  # pragma: no cover - optional component
+    flag_discriminator = None
+    transfer_to_flag_discriminator = None
+
+try:
+    from cai.sdk.agents import Agent
+except Exception:  # pragma: no cover - optional dependency (e.g., openai not installed)
+    Agent = None
+
+try:
+    from cai.sdk.agents.handoffs import handoff
+except Exception:
+    handoff = None
 
 # Extend the search path for namespace packages (allows merging)
 __path__ = pkgutil.extend_path(__path__, __name__)
@@ -93,13 +113,28 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
             # Look for Agent instances in the module
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
-                if isinstance(attr, Agent) and not attr_name.startswith("_"):
-                    # agent_name = attr_name.replace("_agent", "")
+                if Agent is not None and isinstance(attr, Agent) and not attr_name.startswith("_"):
                     agent_name = attr_name
                     if agent_name not in agents_to_display:
                         agents_to_display[agent_name] = attr
-        except (ImportError, AttributeError):
-            pass
+        except Exception as e:
+            # Handle missing API key errors gracefully
+            error_str = str(e)
+            module_short_name = name.split('.')[-1]
+            if (
+                "OPENAI_API_KEY" in error_str
+                or "Missing OpenAI API Key" in error_str
+                or "openai.api_key" in error_str
+                or "No API key" in error_str
+            ):
+                print(f"Skipping {module_short_name} - skipped: Missing OpenAI API Key.")
+                print("Set the OPENAI_API_KEY environment variable to enable it.")
+            elif isinstance(e, (ImportError, AttributeError)):
+                # Ignore standard import errors
+                pass
+            else:
+                # Log other unexpected errors
+                print(f"Error importing {module_short_name}: {e}")
 
     # Also check the patterns subdirectory
     patterns_path = os.path.join(os.path.dirname(__file__), "patterns")
@@ -110,7 +145,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                 # Look for Agent instances in the patterns module
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
-                    if isinstance(attr, Agent) and not attr_name.startswith("_"):
+                    if Agent is not None and isinstance(attr, Agent) and not attr_name.startswith("_"):
                         # Only include agents that have a .pattern attribute (swarm patterns)
                         # Skip regular agents without pattern attribute
                         if not hasattr(attr, "pattern"):
@@ -119,13 +154,70 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                         agent_name = attr_name
                         if agent_name not in agents_to_display:
                             agents_to_display[agent_name] = attr
-            except (ImportError, AttributeError) as e:
-                # Extract module name from the full import path
+            except Exception as e:
+                # Handle missing API key errors gracefully
                 module_short_name = name.split('.')[-1]
-                print(f"Error importing {module_short_name}: {e}")
+                error_str = str(e)
+                if (
+                    "OPENAI_API_KEY" in error_str
+                    or "Missing OpenAI API Key" in error_str
+                    or "openai.api_key" in error_str
+                    or "No API key" in error_str
+                ):
+                    print(f"Skipping {module_short_name} - skipped: Missing OpenAI API Key.")
+                    print("Set the OPENAI_API_KEY environment variable to enable it.")
+                elif isinstance(e, (ImportError, AttributeError)):
+                    # Ignore standard import errors
+                    pass
+                else:
+                    print(f"Error importing {module_short_name}: {e}")
+
+    # If we found no agents by importing (likely because optional deps are missing),
+    # try a static analysis pass over the agents/ package to discover agent names
+    if not agents_to_display:
+        agents_dir = os.path.dirname(__file__)
+
+        class _PseudoAgent:
+            def __init__(self, name, description=""):
+                self.name = name
+                self.description = description
+                self.instructions = None
+                self.tools = []
+                self.handoffs = []
+                self.model = None
+                self.output_type = None
+
+        import re
+
+        for fname in os.listdir(agents_dir):
+            if not fname.endswith('.py') or fname == '__init__.py':
+                continue
+            path = os.path.join(agents_dir, fname)
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            except Exception:
+                continue
+
+            # Look for assignments like `foo_agent = Agent(`
+            for match in re.finditer(r"([a-zA-Z0-9_]+_agent)\s*=\s*Agent\s*\(", text):
+                agent_name = match.group(1)
+                if agent_name not in agents_to_display:
+                    agents_to_display[agent_name] = _PseudoAgent(agent_name)
+
+            # Also look for pattern dicts with a "name" key
+            for match in re.finditer(r"['\"]name['\"]\s*:\s*['\"]([a-zA-Z0-9_\- ]+)['\"]", text):
+                pattern_name = match.group(1).replace(' ', '_')
+                if pattern_name not in agents_to_display:
+                    agents_to_display[pattern_name] = _PseudoAgent(pattern_name)
 
     # Add all patterns (parallel, swarm, etc.) as pseudo-agents
-    from cai.agents.patterns import PATTERNS
+    try:
+        from cai.agents.patterns import PATTERNS
+    except Exception as e:  # pragma: no cover - optional patterns import
+        PATTERNS = {}
+        print(f"Warning: failed to import agent patterns: {e}")
+
     for pattern_name, pattern_obj in PATTERNS.items():
         # Create a pseudo-agent object for the pattern
         class PatternAgent:
@@ -170,9 +262,10 @@ def get_agent_module(agent_name: str) -> str:
             # Look for Agent instances in the module
             for attr_name in dir(module):
                 # Try both with and without _agent suffix
-                if (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
+                if Agent is not None and (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
                     return name
-        except (ImportError, AttributeError):
+        except (ImportError, AttributeError, Exception):
+            # If a module fails to load (e.g. API key missing), just skip it
             pass
 
     # Also check the patterns subdirectory
@@ -184,9 +277,10 @@ def get_agent_module(agent_name: str) -> str:
                 # Look for Agent instances in the patterns module
                 for attr_name in dir(module):
                     # Try both with and without _agent suffix
-                    if (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
+                    if Agent is not None and (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
                         return name
-            except (ImportError, AttributeError):
+            except (ImportError, AttributeError, Exception):
+                # If a module fails to load (e.g. API key missing), just skip it
                 pass
 
     return "unknown"
