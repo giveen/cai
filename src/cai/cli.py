@@ -1279,66 +1279,28 @@ def run_cai_cli(
                             console.print(f"[bold red]{error_details}[/bold red]")
                         return (config, None)
 
-                async def run_parallel_agents():
-                    """Run all configured agents in parallel."""
-                    # Create tasks for each agent with their own isolated contexts
-                    # Note: If a config has a custom prompt, it will be used instead of user_input
-                    tasks = []
-                    for config in PARALLEL_CONFIGS:
-                        # Determine what input to use for this config
-                        input_for_config = config.prompt if config.prompt else user_input
-                        tasks.append(run_agent_instance(config, input_for_config))
+                # Delegate parallel orchestration to the parallel_isolation helpers
+                from cai.sdk.agents.parallel_isolation import run_parallel_agents as _run_parallel_agents
+                from cai.sdk.agents.parallel_isolation import save_parallel_histories as _save_parallel_histories
+                from cai.sdk.agents.shutdown_coordinator import SHUTDOWN_COORDINATOR
 
-                    # Wait for all to complete
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                    # Filter out exceptions and failed results
-                    valid_results = []
-                    for item in results:
-                        if isinstance(item, tuple) and len(item) == 2 and item[1] is not None:
-                            valid_results.append(item)
-
-                    return valid_results
-
-                # Run in asyncio event loop
                 try:
-                    results = asyncio.run(run_parallel_agents())
+                    results = asyncio.run(_run_parallel_agents(PARALLEL_CONFIGS, user_input, run_agent_instance))
                 except KeyboardInterrupt:
-                    # When interrupted during parallel execution, ensure all agent histories are saved
-                    # Force save all parallel agent histories to PARALLEL_ISOLATION
-                    for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                        instance_key = (config.agent_name, idx)
-                        if instance_key in PARALLEL_AGENT_INSTANCES:
-                            instance_agent = PARALLEL_AGENT_INSTANCES[instance_key]
-                            if hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
-                                agent_id = config.id or f"P{idx}"
-                                # Force update the isolated history
-                                PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
-                                
-                                # Also sync with AGENT_MANAGER for display
-                                from cai.agents import get_available_agents
-                                available_agents = get_available_agents()
-                                if config.agent_name in available_agents:
-                                    agent = available_agents[config.agent_name]
-                                    agent_display_name = getattr(agent, "name", config.agent_name)
-                                    
-                                    # Add instance number if needed
-                                    total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
-                                    if total_count > 1:
-                                        instance_num = 0
-                                        for c in PARALLEL_CONFIGS:
-                                            if c.agent_name == config.agent_name:
-                                                instance_num += 1
-                                                if c.id == config.id:
-                                                    break
-                                        agent_display_name = f"{agent_display_name} #{instance_num}"
-                                    
-                                    # Clear and replace the history in AGENT_MANAGER
-                                    AGENT_MANAGER.clear_history(agent_display_name)
-                                    for msg in instance_agent.model.message_history:
-                                        AGENT_MANAGER.add_to_history(agent_display_name, msg)
-                    
-                    # Re-raise to trigger the main KeyboardInterrupt handler
+                    # Best-effort: save parallel histories and attempt coordinated shutdown
+                    try:
+                        _save_parallel_histories(PARALLEL_CONFIGS, PARALLEL_AGENT_INSTANCES)
+                    except Exception:
+                        pass
+
+                    try:
+                        targets = os.getenv("CAI_SHUTDOWN_TARGETS", "")
+                        targets_list = [t.strip() for t in targets.split(",") if t.strip()]
+                        SHUTDOWN_COORDINATOR.shutdown(sigterm_targets=targets_list if targets_list else None)
+                    except Exception:
+                        pass
+
+                    # Re-raise to trigger outer handlers
                     raise
                     
                 turn_count += 1

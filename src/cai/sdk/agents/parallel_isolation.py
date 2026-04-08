@@ -248,3 +248,58 @@ class ParallelHistoryIsolation:
 
 # Global instance
 PARALLEL_ISOLATION = ParallelHistoryIsolation()
+
+
+async def run_parallel_agents(configs, user_input, run_agent_callable):
+    """Orchestrate running parallel agents using a provided run callback.
+
+    Args:
+        configs: Iterable of ParallelConfig-like objects. Each must have `prompt` attribute optional.
+        user_input: The user input string to pass to instances without a custom prompt.
+        run_agent_callable: Async callable with signature `await run_agent_callable(config, input_str)`.
+
+    Returns:
+        list of (config, result) tuples for successful runs.
+    """
+    import asyncio
+
+    tasks = []
+    for config in configs:
+        input_for_config = getattr(config, "prompt", None) or user_input
+        # run_agent_callable returns a coroutine
+        coro = run_agent_callable(config, input_for_config)
+        tasks.append(coro)
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Filter out exceptions and failed results
+    valid_results = []
+    for item in results:
+        if isinstance(item, tuple) and len(item) == 2 and item[1] is not None:
+            valid_results.append(item)
+
+    return valid_results
+
+
+def save_parallel_histories(parallel_configs, parallel_agent_instances):
+    """Best-effort save of all parallel agent histories into PARALLEL_ISOLATION.
+
+    This is intended to be called by higher-level code when parallel execution
+    is interrupted (e.g., KeyboardInterrupt) so histories are not lost.
+    """
+    for idx, config in enumerate(parallel_configs, 1):
+        instance_key = (config.agent_name, idx)
+        instance_agent = parallel_agent_instances.get(instance_key)
+        if instance_agent and hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
+            agent_id = getattr(config, 'id', None) or f"P{idx}"
+            try:
+                PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
+            except Exception:
+                # Best-effort: ignore errors during shutdown saving
+                pass
+
+    # Sync isolated histories with AGENT_MANAGER view
+    try:
+        PARALLEL_ISOLATION.sync_with_agent_manager()
+    except Exception:
+        pass
