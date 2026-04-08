@@ -18,6 +18,8 @@ import os
 import pathlib
 import threading
 import time
+import re
+import textwrap
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
 
@@ -443,11 +445,67 @@ def cli_print_tool_output(
             "agent_name": agent_name,
             "is_complete": True,
         }
+    # Sanitize output: strip ANSI escapes, normalize CR->LF, remove progress-meter
+    # noise (e.g., curl progress), wrap long lines, and truncate to a reasonable
+    # maximum length to avoid flooding the CLI.
     try:
+        sanitized = str(output or "")
+        # normalize line endings
+        sanitized = sanitized.replace("\r\n", "\n").replace("\r", "\n")
+
+        # remove ANSI escape sequences
+        try:
+            sanitized = re.sub(r"\x1B[@-_][0-?]*[ -/]*[@-~]", "", sanitized)
+        except Exception:
+            sanitized = re.sub(r"\x1b\[[0-9;]*[mK]", "", sanitized)
+
+        # drop obvious progress meter header/lines (starts with "% ")
+        lines = []
+        for ln in sanitized.splitlines():
+            s = ln.strip()
+            if not s:
+                lines.append("")
+                continue
+            # skip curl-like progress lines that begin with a percent column
+            if s.startswith("% ") or s.startswith("%Total") or s.startswith("%\t"):
+                continue
+            # skip repeated carriage-like artifacts
+            if set(s) <= set("-=.#|<>*%0123456789 ") and len(s) < 120:
+                # likely a progress bar or separator line
+                continue
+            lines.append(ln)
+        sanitized = "\n".join(lines)
+
+        # collapse excessive blank lines
+        sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
+
+        # truncate very long outputs
+        max_chars = 4000
+        if len(sanitized) > max_chars:
+            sanitized = sanitized[:max_chars] + "…"
+
+        # wrap long lines to terminal width if available
+        try:
+            width = console.size.width or 120
+        except Exception:
+            width = 120
+        wrap_width = max(40, int(width) - 20)
+        wrapped = []
+        for ln in sanitized.splitlines():
+            if len(ln) > wrap_width:
+                wrapped.append(textwrap.fill(ln, width=wrap_width))
+            else:
+                wrapped.append(ln)
+        sanitized = "\n".join(wrapped)
+
         from rich.markup import escape as _escape
-        console.print(f"{_escape(tool_name)} {output}")
+        console.print(f"{_escape(tool_name)} {sanitized}")
     except Exception:
-        print(f"{tool_name} {output}")
+        try:
+            # best-effort fallback
+            print(tool_name, str(output))
+        except Exception:
+            pass
 
 
 # Deduplication state attached to the function itself
