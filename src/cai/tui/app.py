@@ -12,6 +12,7 @@ Matrix green-on-black throughout.
 from __future__ import annotations
 
 import asyncio
+import logging
 import inspect
 import json
 import os
@@ -20,6 +21,8 @@ import time
 import textwrap
 from datetime import datetime
 from typing import Any, Optional, cast
+
+logger = logging.getLogger(__name__)
 
 from rich.markdown import Markdown
 from rich.syntax import Syntax
@@ -2500,6 +2503,18 @@ class TerminalPanel(Widget):
         run_status = "completed"
         run_error: str | None = None
         streamed_chars = 0
+
+        # Temporary debug tracing for stream event diagnosis
+        try:
+            logger.debug(
+                "_run_agent start: term=%s agent=%s model=%s text_len=%d",
+                self._term_id,
+                self._agent_name,
+                self._model_name,
+                len(str(text or "")),
+            )
+        except Exception:
+            pass
         try:
             getattr(cast(Any, self.app), "_telemetry_run_started", lambda *a, **k: None)(
                 self._term_id, self._agent_name, text
@@ -2507,12 +2522,35 @@ class TerminalPanel(Widget):
         except Exception:
             pass
         try:
+            try:
+                logger.debug("calling Runner.run_streamed for term=%s", self._term_id)
+            except Exception:
+                pass
+
             result = Runner.run_streamed(self._agent, text)
             stream_iter = result.stream_events()
 
+            try:
+                logger.debug("stream iterator obtained for term=%s", self._term_id)
+            except Exception:
+                pass
+
             async for event in stream_iter:
+                try:
+                    logger.debug("received stream event type=%s", type(event).__name__)
+                except Exception:
+                    pass
+
                 if isinstance(event, RawResponsesStreamEvent):
                     delta = self._extract_stream_text_delta(event.data)
+                    try:
+                        logger.debug(
+                            "raw delta len=%d preview=%r",
+                            len(delta or ""),
+                            (delta or "")[:200],
+                        )
+                    except Exception:
+                        pass
                     if delta:
                         streamed_chars += len(delta)
                         self._set_status(f"T{self._term_id}> ⟳ Streaming… {streamed_chars} chars")
@@ -2522,6 +2560,14 @@ class TerminalPanel(Widget):
                     continue
                 ev_name = event.name
                 item = event.item
+                try:
+                    logger.debug(
+                        "run item event: name=%s item_type=%s",
+                        ev_name,
+                        getattr(item, "type", "<unknown>"),
+                    )
+                except Exception:
+                    pass
 
                 try:
                     getattr(cast(Any, self.app), "_emit_telemetry", lambda *a, **k: None)(
