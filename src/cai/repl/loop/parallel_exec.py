@@ -17,6 +17,8 @@ import logging
 import os
 from typing import Any, Optional
 
+from cai.repl.loop._event_loop import run_async
+
 # ---------------------------------------------------------------------------
 # PARALLEL_CONFIGS path
 # ---------------------------------------------------------------------------
@@ -265,7 +267,7 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
 
     # --------------------------------------------------- dispatch all agents
     try:
-        asyncio.run(_run_parallel_agents(PARALLEL_CONFIGS, user_input, run_agent_instance))
+        run_async(_run_parallel_agents(PARALLEL_CONFIGS, user_input, run_agent_instance))
     except KeyboardInterrupt:
         try:
             _save_parallel_histories(PARALLEL_CONFIGS, PARALLEL_AGENT_INSTANCES)
@@ -353,7 +355,7 @@ def run_simple_parallel(
                     valid.append((idx, r))
         return valid
 
-    results = asyncio.run(_run_all())
+    results = run_async(_run_all())
 
     for _idx, result in results:
         if result and hasattr(result, "final_output") and result.final_output:

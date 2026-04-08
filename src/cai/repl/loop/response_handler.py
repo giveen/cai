@@ -25,6 +25,8 @@ import os
 import sys
 from typing import Any, Optional, Tuple
 
+from cai.repl.loop._event_loop import run_async
+
 
 def build_conversation_input(agent: Any, user_input: str, messages_ctf: str) -> Any:
     """Build the conversation input list (or string) for the agent.
@@ -251,7 +253,7 @@ def run_single_response(
                 return None
 
         try:
-            asyncio.run(process_streamed_response(agent, conversation_input))
+            run_async(process_streamed_response(agent, conversation_input))
         except ContextCompactedError:
             _base = _last_user_input or "Continue the current task."
             _post_compact_input = (
@@ -290,10 +292,12 @@ def run_single_response(
                         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
                 else:
                     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
+                # Re-use the persistent loop; if it truly is running (nested
+                # async context) this will also raise, but that's unavoidable.
+                from cai.repl.loop._event_loop import get_repl_loop
+                _fb_loop = get_repl_loop()
                 try:
-                    new_loop.run_until_complete(
+                    _fb_loop.run_until_complete(
                         process_streamed_response(agent, conversation_input)
                     )
                 except OutputGuardrailTripwireTriggered as inner_e:
@@ -306,18 +310,15 @@ def run_single_response(
                     print(f"\033[91mReason: {reason}\033[0m")
                     print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
                     print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
-                    new_loop.close()
                     return agent, _post_compact_input, _skip_auto_compact_after_interrupt, True
-                finally:
-                    if not new_loop.is_closed():
-                        new_loop.close()
+                # Do NOT close the loop — it is the persistent session loop.
             else:
                 raise
 
     else:
         # Non-streaming path
         try:
-            response = asyncio.run(Runner.run(agent, conversation_input))
+            response = run_async(Runner.run(agent, conversation_input))
         except ContextCompactedError:
             _base = _last_user_input or "Continue the current task."
             _post_compact_input = (
