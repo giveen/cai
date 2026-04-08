@@ -2,7 +2,7 @@ import time
 
 from cai.rag.vector_db_adapter import LocalFallbackAdapter
 from cai.rag.ingestion import get_ingestor, shutdown_all
-from cai.rag.metrics import collector, export_metrics
+from cai.rag.metrics import export_metrics
 
 
 def test_ingestion_batch_and_metrics():

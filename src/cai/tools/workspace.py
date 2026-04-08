@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 from wasabi import color  # pylint: disable=import-error
-from typing import Optional
 
 
 def _get_workspace_dir() -> str:
@@ -67,8 +66,8 @@ def _get_container_workspace_path() -> str:
                     fg="yellow",
                 )
             )
-            return "/"
+            return "/workspace"
         # Standard path inside CAI containers
         return f"/workspace/workspaces/{workspace_name}"
     else:
-        return "/"
+        return "/workspace"

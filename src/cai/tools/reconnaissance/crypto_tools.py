@@ -5,10 +5,8 @@ These tools are implemented with input validation and safe decoding
 to avoid shell-injection risks and unbounded resource consumption.
 """
 import re
-import os
 import shlex
 import base64
-from typing import Optional
 
 from cai.tools.common import run_command
 from cai.sdk.agents import function_tool

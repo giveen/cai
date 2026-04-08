@@ -24,7 +24,7 @@ from cai.tools.reconnaissance.blue_team_safe_command import blue_team_safe_comma
 
 # ── Command & control / lateral movement ────────────────────────────────────
 from cai.tools.command_and_control.sshpass import run_ssh_command_with_credentials
-from cai.tools.network.capture_traffic import capture_remote_traffic, remote_capture_session
+from cai.tools.network.capture_traffic import capture_remote_traffic, remote_capture_session_tool
 
 # ── Web ───────────────────────────────────────────────────────────────────────
 from cai.tools.web.headers import web_request_framework
@@ -65,7 +65,7 @@ ALL_TOOLS = [
     # C2 / movement
     run_ssh_command_with_credentials,
     capture_remote_traffic,
-    remote_capture_session,
+    remote_capture_session_tool,
     # Web
     web_request_framework,
     js_surface_mapper,

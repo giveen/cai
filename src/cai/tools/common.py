@@ -121,6 +121,36 @@ def _get_container_workspace_path() -> str:
     else:
         return "/"
 
+
+def _normalize_command(command: Any):
+    """Normalize a command (string or sequence) into a tuple:
+    (exec_cmd, cmd_name, cmd_args, full_command).
+
+    - `exec_cmd` is a list suitable for subprocess.exec* calls when the
+      original command was a sequence, or `shlex.split` of the string form.
+    - `cmd_name` is the first token (used for display).
+    - `cmd_args` is the remainder of the command as a string.
+    - `full_command` is the original command rendered as a string.
+    """
+    if isinstance(command, (list, tuple)):
+        exec_cmd = [str(x) for x in command]
+        full_command = " ".join(exec_cmd)
+        cmd_name = os.path.basename(exec_cmd[0]) if exec_cmd and exec_cmd[0] else ""
+        cmd_args = " ".join(exec_cmd[1:]) if len(exec_cmd) > 1 else ""
+        return exec_cmd, cmd_name, cmd_args, full_command
+
+    # Treat None as empty string
+    s = str(command) if command is not None else ""
+    full_command = s
+    parts = s.strip().split(' ', 1)
+    cmd_name = parts[0] if parts and parts[0] else ""
+    cmd_args = parts[1] if len(parts) > 1 else ""
+    try:
+        exec_cmd = shlex.split(s) if s else []
+    except Exception:
+        exec_cmd = [s]
+    return exec_cmd, cmd_name, cmd_args, full_command
+
 # Session management has been moved to `cai.tools.sessions`.
 # The authoritative implementations for `ShellSession` and the session
 # registry live in `src/cai/tools/sessions.py` and are imported at the
@@ -197,345 +227,23 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
 
 
 async def _run_local_async(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None, custom_args=None):
-    """Async version of _run_local that uses asyncio subprocess for non-blocking execution."""
-    import asyncio
-    
-    # Make sure we're in active time mode for tool execution
-    stop_idle_timer()
-    start_active_timer()
-    
-    process_start_time = time.time()  # Initialize with current time
+    """Delegate async local execution to the runners/local implementation.
 
-    # Pre-compute target_dir so exception handlers can reference it safely
-    target_dir = workspace_dir or _get_workspace_dir()
-    try:
-        original_cmd_for_msg = command # For logging
-        context_msg = f"(local:{target_dir})"
-        
-        # If streaming is enabled and we have a call_id
-        if stream:
-            # Import the streaming utilities from util
-            from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
-            
-            # cmd_var/args_param_val/full_command produced by _normalize_command
-            
-            # For generic Linux commands, standardize the tool_name format
-            if not tool_name:
-                tool_name = f"{cmd_var}_command" if cmd_var else "command"
-            
-            # Create args dictionary with non-empty values only
-            tool_args: dict[str, Any] = {}
-            if cmd_var:
-                tool_args["command"] = cmd_var
-            if args_param_val and args_param_val.strip():
-                tool_args["args"] = args_param_val
-            
-            # Add more context for the command
-            tool_args["workspace"] = os.path.basename(target_dir)
-            tool_args["full_command"] = full_command
-            
-            # If custom args were provided, merge them with the default args
-            if custom_args is not None:
-                if isinstance(custom_args, dict):
-                    # Merge the dictionaries, with custom args taking precedence
-                    for key, value in custom_args.items():
-                        tool_args[key] = value
-            
-            # For generic commands, ensure we have a unique call_id
-            if not call_id:
-                call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
-            
-            # Get token info for agent display
-            token_info = _get_agent_token_info()
-            
-            # Initialize/use the call_id for this streaming session
-            call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
-            
-            # Start the async process
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=target_dir
-            )
-
-            # Ensure pipes exist for static analyzers
-            assert process.stdout is not None
-            assert process.stderr is not None
-            
-            # Begin collecting output
-            output_buffer = []
-            buffer_size = 0
-            update_interval = 10  # lines - default for most tools
-            
-            # Use a smaller interval for generic_linux_command for better responsiveness
-            if tool_name == "generic_linux_command":
-                update_interval = 3  # Update more frequently for terminal commands
-                
-                # Don't add refresh_rate to tool_args as it affects command deduplication
-                # The refresh behavior is already handled by the streaming update logic
-            
-            # Stream stdout with idle detection
-            last_output = time.time()
-            while True:
-                if process.returncode is not None:
-                    break
-                try:
-                    # process.stdout is asserted non-None above
-                    line = await asyncio.wait_for(process.stdout.readline(), timeout=0.5)
-                    if line:
-                        output_buffer.append(line.decode('utf-8', errors='replace'))
-                        buffer_size += 1
-                        last_output = time.time()
-                        if buffer_size >= update_interval:
-                            update_tool_streaming(tool_name, tool_args, ''.join(output_buffer), call_id, token_info)
-                            buffer_size = 0
-                    else:
-                        break
-                except asyncio.TimeoutError:
-                    if time.time() - last_output > IDLE_KILL_TIMEOUT:
-                        process.terminate()
-                        try:
-                            await asyncio.wait_for(process.wait(), timeout=1.0)
-                        except asyncio.TimeoutError:
-                            process.kill()
-                            await process.wait()
-                        output_buffer.append(f"\n[Terminated: idle {IDLE_KILL_TIMEOUT}s, likely waiting for input]")
-                        break
-            
-            # Wait for process to complete
-            if process.returncode is None:
-                try:
-                    return_code = await asyncio.wait_for(process.wait(), timeout=timeout)
-                except asyncio.TimeoutError:
-                    process.kill()
-                    await process.wait()
-                    raise subprocess.TimeoutExpired(command, timeout)
-            else:
-                return_code = process.returncode
-            
-            process_execution_time = time.time() - process_start_time
-            
-            # Get any stderr output
-            stderr_data = await process.stderr.read()
-            if stderr_data:
-                stderr_str = stderr_data.decode('utf-8', errors='replace')
-                output_buffer.append("\nERROR OUTPUT:\n" + stderr_str)
-            
-            # Final output update
-            final_output = ''.join(output_buffer)
-            if return_code != 0:
-                final_output += f"\nCommand exited with code {return_code}"
-                
-            # Calculate execution info with environment details
-            execution_info = {
-                "status": "completed" if return_code == 0 else "error",
-                "return_code": return_code,
-                "environment": "Local",
-                "host": os.path.basename(target_dir),
-                "tool_time": process_execution_time
-            }
-            
-            # Complete the streaming session with final output
-            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
-            
-            return final_output
-        else:
-            # Non-streaming with idle detection
-            # Non-streaming execution: prefer exec when possible
-            if isinstance(command, (list, tuple)):
-                process = await asyncio.create_subprocess_exec(
-                    *exec_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=target_dir
-                )
-            else:
-                process = await asyncio.create_subprocess_shell(
-                    full_command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=target_dir
-                )
-            
-            stdout_chunks, stderr_chunks = [], []
-            last_output = time.time()
-            start = time.time()
-            
-            while True:
-                if time.time() - start > timeout:
-                    process.kill()
-                    await process.wait()
-                    raise subprocess.TimeoutExpired(command, timeout)
-                if process.returncode is not None:
-                    break
-                try:
-                    # Static analysis: ensure streams are present
-                    out_stream = process.stdout
-                    err_stream = process.stderr
-                    assert out_stream is not None
-                    assert err_stream is not None
-                    out_task = asyncio.create_task(out_stream.read(4096))
-                    err_task = asyncio.create_task(err_stream.read(4096))
-                    done, pending = await asyncio.wait([out_task, err_task], timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
-                    for task in pending:
-                        task.cancel()
-                    for task in done:
-                        data = await task
-                        if data:
-                            (stdout_chunks if task == out_task else stderr_chunks).append(data)
-                            last_output = time.time()
-                except asyncio.TimeoutError:
-                    pass
-                if time.time() - last_output > IDLE_KILL_TIMEOUT:
-                    try:
-                        await asyncio.wait_for(process.wait(), timeout=0.1)
-                        break
-                    except asyncio.TimeoutError:
-                        process.terminate()
-                        try:
-                            await asyncio.wait_for(process.wait(), timeout=1.0)
-                        except asyncio.TimeoutError:
-                            process.kill()
-                            await process.wait()
-                        stderr_chunks.append(f"\n[Terminated: idle {IDLE_KILL_TIMEOUT}s]".encode())
-                        break
-            
-            stdout_data, stderr_data = b''.join(stdout_chunks), b''.join(stderr_chunks)
-            
-            # Decode output
-            output = stdout_data.decode('utf-8', errors='replace') if stdout_data else ""
-            if not output and stderr_data:
-                output = stderr_data.decode('utf-8', errors='replace')
-            
-            # Use normalized command parts for display
-            _parts = [cmd_var, args_param_val]
-            
-            # In non-streaming mode (typically parallel execution), display completed panel
-            # Get token info for agent display
-            token_info = _get_agent_token_info()
-            
-            # Check if we're in parallel mode by checking agent ID
-            is_parallel = False
-            if token_info and token_info.get("agent_id"):
-                agent_id = token_info.get("agent_id")
-                if agent_id and agent_id.startswith('P') and agent_id[1:].isdigit():
-                    # Check CAI_PARALLEL to confirm
-                    if int(os.getenv("CAI_PARALLEL", "1")) > 1:
-                        is_parallel = True
-            
-            # NEVER display panels in non-streaming mode
-            # The SDK will handle ALL display when CAI_STREAM=false
-            streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
-            
-            # Only display panels if we're in streaming mode or parallel mode
-            # In streaming mode, the Live panels are handled by the streaming system
-            if streaming_enabled and is_parallel:
-                # Display the completed tool output
-                
-                # Calculate execution time
-                execution_time = time.time() - process_start_time
-                
-                # Generate a unique call_id if not provided
-                if not call_id:
-                    cmd_name_for_id = cmd_var if cmd_var else "cmd"
-                    call_id = f"{cmd_name_for_id}_{str(uuid.uuid4())[:8]}"
-                
-                execution_info = {
-                    "status": "completed" if process.returncode == 0 else "error",
-                    "return_code": process.returncode,
-                    "environment": "Local",
-                    "host": os.path.basename(target_dir),
-                    "tool_time": execution_time
-                }
-                
-                # Display the tool output panel
-                cli_print_tool_output(
-                    tool_name=tool_name or "generic_linux_command",
-                    args={
-                        "command": cmd_var if cmd_var else full_command,
-                        "args": args_param_val if args_param_val else "",
-                        "full_command": full_command,
-                        "workspace": os.path.basename(target_dir)
-                    },
-                    output=output.strip(),
-                    call_id=call_id,
-                    execution_info=execution_info,
-                    token_info=token_info,
-                    streaming=False  # This is non-streaming display
-                )
-            
-            return output.strip()
-            
-    except subprocess.TimeoutExpired as e:
-        error_output = e.stdout if hasattr(e, 'stdout') and e.stdout else str(e)
-        error_msg = f"Command timed out after {timeout} seconds\n{error_output}"
-        
-        # If we're streaming, show the timeout in the tool output panel
-        if stream and call_id:
-            from cai.util import finish_tool_streaming
-            # Use normalized parts for timeout handling
-            cmd_var = cmd_var
-            args_var = args_param_val
-            
-            # Ensure tool_args has complete information
-            tool_args: dict[str, Any] = {
-                "command": cmd_var,
-                "args": args_var if args_var.strip() else "",
-                "full_command": command,
-                "environment": "Local",
-                "workspace": os.path.basename(target_dir)
-            }
-            execution_info = {
-                "status": "timeout", 
-                "error": str(e),
-                "environment": "Local",
-                "host": os.path.basename(target_dir)
-            }
-            
-            # Get token info for agent display  
-            token_info = _get_agent_token_info()
-            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
-            
-        if stdout:
-            print("\033[32m" + error_msg + "\033[0m")
-            
-        return error_msg
-    except Exception as e:  # pylint: disable=broad-except
-        error_msg = f"Error executing local command: {e}"
-        
-        # If we're streaming, show the error in the tool output panel
-        if stream and call_id:
-            from cai.util import finish_tool_streaming
-            # Use normalized parts for error reporting
-            cmd_var_local = cmd_var
-            args_var = args_param_val
-
-            # Ensure tool_args has complete information
-            tool_args: dict[str, Any] = {
-                "command": cmd_var,
-                "args": args_var if args_var.strip() else "",
-                "full_command": command,
-                "environment": "Local",
-                "workspace": os.path.basename(target_dir)
-            }
-            execution_info = {
-                "status": "error", 
-                "error": str(e),
-                "environment": "Local",
-                "host": os.path.basename(target_dir)
-            }
-            
-            # Get token info for agent display  
-            token_info = _get_agent_token_info()
-            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
-            
-        print(color(error_msg, fg="red"))
-        return error_msg
-    finally:
-        # Always switch back to idle mode when function completes
-        stop_active_timer()
-        start_idle_timer()
+    This avoids duplicating a large implementation here and prevents
+    unbound-variable diagnostics when the original in-file implementation
+    was refactored out into `cai.tools.runners.local`.
+    """
+    from cai.tools.runners.local import run_local_async as _run_local_async_impl
+    return await _run_local_async_impl(
+        command,
+        stdout=stdout,
+        timeout=timeout,
+        stream=stream,
+        call_id=call_id,
+        tool_name=tool_name,
+        workspace_dir=workspace_dir,
+        custom_args=custom_args,
+    )
 
 
 async def _run_docker_async(command, container_id, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, args=None):
@@ -1084,7 +792,6 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     return new_session_id
 
                 # Display the command that creates the async session
-                from cai.util import cli_print_tool_output
 
                 # Create args for display
                 label = getattr(ACTIVE_SESSIONS.get(new_session_id), 'friendly_id', None) or new_session_id

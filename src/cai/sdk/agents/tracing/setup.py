@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import threading
 from typing import Any
-import traceback
 
 from ..logger import logger
 from . import util
@@ -30,10 +29,6 @@ class SynchronousMultiTracingProcessor(TracingProcessor):
         with self._lock:
             self._processors += (tracing_processor,)
             logger.debug(f"SynchronousMultiTracingProcessor: added processor {tracing_processor}")
-            try:
-                print(f"TRACE_DEBUG: SynchronousMultiTracingProcessor added processor {tracing_processor}")
-            except Exception:
-                pass
 
     def set_processors(self, processors: list[TracingProcessor]):
         """
@@ -42,10 +37,6 @@ class SynchronousMultiTracingProcessor(TracingProcessor):
         with self._lock:
             self._processors = tuple(processors)
             logger.debug(f"SynchronousMultiTracingProcessor: set processors to {processors}")
-            try:
-                print(f"TRACE_DEBUG: SynchronousMultiTracingProcessor set processors to {processors}")
-            except Exception:
-                pass
 
     def on_trace_start(self, trace: Trace) -> None:
         """
@@ -105,10 +96,6 @@ class TraceProvider:
         """
         self._multi_processor.add_tracing_processor(processor)
         logger.debug(f"TraceProvider: register_processor called with {processor}")
-        try:
-            print(f"TRACE_DEBUG: TraceProvider.register_processor called with {processor}")
-        except Exception:
-            pass
 
     def set_processors(self, processors: list[TracingProcessor]):
         """
@@ -116,10 +103,6 @@ class TraceProvider:
         """
         self._multi_processor.set_processors(processors)
         logger.debug(f"TraceProvider: set_processors called with {processors}")
-        try:
-            print(f"TRACE_DEBUG: TraceProvider.set_processors called with {processors}")
-        except Exception:
-            pass
 
     def get_current_trace(self) -> Trace | None:
         """
@@ -138,16 +121,7 @@ class TraceProvider:
         Set whether tracing is disabled.
         """
         self._disabled = disabled
-        # Log stack for debugging who toggled tracing
-        try:
-            stack = "".join(traceback.format_stack(limit=10))
-        except Exception:
-            stack = "<failed to capture stack>"
-        logger.debug(f"TraceProvider: set_disabled({disabled}) called. Stack:\n{stack}")
-        try:
-            print(f"TRACE_DEBUG: TraceProvider.set_disabled({disabled}) called. Stack:\n{stack}")
-        except Exception:
-            pass
+        logger.debug(f"TraceProvider: set_disabled({disabled}) called.")
 
     def create_trace(
         self,

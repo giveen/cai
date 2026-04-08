@@ -8,7 +8,6 @@ relevant wake-up facts for a given session.
 from __future__ import annotations
 
 import math
-import os
 import hashlib
 import datetime as _dt
 from typing import Any, Dict, List, Optional

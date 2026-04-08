@@ -118,7 +118,23 @@ async def test_multi_turn_no_handoffs():
                             "output_type": "str",
                         },
                         "children": [
-                            {"type": "generation"}, {'type': 'function', 'data': {'name': 'foo', 'input': '{"a": "b"}', 'output': 'tool_result'}}, {'type': 'generation', 'error': {'message': 'Error', 'data': {'name': 'ValueError', 'message': 'test error'}}}],
+                                {"type": "generation"},
+                                {
+                                    "type": "function",
+                                    "data": {
+                                        "name": "foo",
+                                        "input": '{"a": "b"}',
+                                        "output": "tool_result",
+                                    },
+                                },
+                                {
+                                    "type": "generation",
+                                    "error": {
+                                        "message": "Error",
+                                        "data": {"name": "ValueError", "message": "test error"},
+                                    },
+                                },
+                            ],
                     }
                 ],
             }

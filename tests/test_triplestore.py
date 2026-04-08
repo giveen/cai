@@ -1,5 +1,3 @@
-import time
-
 from cai.rag.triplestore import TripleStore
 
 

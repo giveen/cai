@@ -1,4 +1,6 @@
 from cai.tools import validation
+import pytest
+import socket
 
 
 def test_contains_shell_metacharacters():
@@ -22,7 +24,12 @@ def test_is_valid_target_and_host():
     assert not validation.is_valid_target("not an ip")
 
     assert validation.is_valid_host("127.0.0.1")
-    assert validation.is_valid_host("::1") or True
+    # IPv6 support can be optional in some CI/build environments.
+    # If the interpreter/platform lacks IPv6 support, skip this assertion.
+    if getattr(socket, "has_ipv6", False):
+        assert validation.is_valid_host("::1")
+    else:
+        pytest.skip("IPv6 not available on this platform")
 
 
 def test_has_disallowed_nc_flags_and_filename():
@@ -30,7 +37,8 @@ def test_has_disallowed_nc_flags_and_filename():
     assert not validation.has_disallowed_nc_flags("-z 1234")
 
     assert validation.is_valid_filename("script_py")
-    assert not validation.is_valid_filename("" * 100)
+    # Use a non-empty repeated string to test length limits ("" * 100 == "")
+    assert not validation.is_valid_filename("a" * 100)
 
 
 def test_validate_args_no_injection():

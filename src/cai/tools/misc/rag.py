@@ -3,6 +3,7 @@ RAG (Retrieval Augmented Generation) utilities module for
 querying and adding data to vector databases.
 """
 import os
+import logging
 import uuid
 import hashlib
 import datetime as _dt

@@ -1,5 +1,3 @@
-import json
-
 from cai.rag.summaries import (
     persist_summaries,
     read_persisted_summaries,

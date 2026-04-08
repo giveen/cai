@@ -2,7 +2,6 @@
 """
 Netstat tool
 """
-import re
 
 from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool

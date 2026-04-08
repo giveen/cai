@@ -1,4 +1,3 @@
-import time
 import pytest
 
 import cai.tools.sessions as sessions

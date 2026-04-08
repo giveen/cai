@@ -1,4 +1,3 @@
-import os
 import time
 import random
 import datetime as _dt

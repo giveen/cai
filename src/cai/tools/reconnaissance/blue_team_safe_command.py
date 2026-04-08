@@ -16,6 +16,7 @@ from typing import Optional
 
 from cai.sdk.agents import function_tool
 from cai.tools.common import run_command_async
+from cai.tools import validation  # pylint: disable=import-error
 
 
 async def _blue_team_safe_command_impl(command: str = "", interactive: bool = False, session_id: Optional[str] = None) -> str:
@@ -33,25 +34,41 @@ async def _blue_team_safe_command_impl(command: str = "", interactive: bool = Fa
     # Privileged mapping: fail2ban -> read config + tail auth logs
     if "fail2ban-client" in lowered or "fail2ban " in lowered:
         if run_integration:
-            # In integration mode, run the original command
-            return await run_command_async(command, stdout=True, timeout=30, stream=False, call_id=None, tool_name="blueteam_safe_command")
+            # In integration mode, run the original command (validate first)
+            guard_err = validation.validate_command_guardrails(command)
+            if guard_err:
+                return guard_err
+            out = await run_command_async(command, stdout=True, timeout=30, stream=False, call_id=None, tool_name="blueteam_safe_command")
+            return validation.sanitize_tool_output(command, out)
         safe_cmd = (
             "cat /etc/fail2ban/jail.local 2>/dev/null || cat /etc/fail2ban/jail.conf 2>/dev/null || true; "
             "echo '--- recent auth log (tail 200) ---'; tail -n 200 /var/log/auth.log 2>/dev/null || true"
         )
-        return await run_command_async(safe_cmd, stdout=True, timeout=20, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        guard_err = validation.validate_command_guardrails(safe_cmd)
+        if guard_err:
+            return guard_err
+        out = await run_command_async(safe_cmd, stdout=True, timeout=20, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        return validation.sanitize_tool_output(safe_cmd, out)
 
     # Map systemctl status <service> -> non-privileged process lookup
     m = re.search(r"systemctl\s+status\s+([\w@\-\.]+)", lowered)
     if m:
         svc = m.group(1)
         safe_cmd = f"ps aux | grep {svc} | grep -v grep || echo 'Process info unavailable without root.'"
-        return await run_command_async(safe_cmd, stdout=True, timeout=10, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        guard_err = validation.validate_command_guardrails(safe_cmd)
+        if guard_err:
+            return guard_err
+        out = await run_command_async(safe_cmd, stdout=True, timeout=10, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        return validation.sanitize_tool_output(safe_cmd, out)
 
     # journalctl -> try syslog/messages tails
     if "journalctl" in lowered:
         safe_cmd = "tail -n 200 /var/log/syslog 2>/dev/null || tail -n 200 /var/log/messages 2>/dev/null || echo 'No accessible journal/syslog.'"
-        return await run_command_async(safe_cmd, stdout=True, timeout=15, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        guard_err = validation.validate_command_guardrails(safe_cmd)
+        if guard_err:
+            return guard_err
+        out = await run_command_async(safe_cmd, stdout=True, timeout=15, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        return validation.sanitize_tool_output(safe_cmd, out)
 
     # Package manager operations: require root; explain instead of running
     if any(tok in lowered for tok in ("apt-get", "apt ", "dpkg", "yum", "dnf", "zypper")):
@@ -60,14 +77,22 @@ async def _blue_team_safe_command_impl(command: str = "", interactive: bool = Fa
     # Firewall / iptables: provide socket/listening alternatives
     if any(tok in lowered for tok in ("iptables", "ufw", "nft", "iptables-save")):
         safe_cmd = "ss -tun | head -n 200 || netstat -tuln | head -n 200 || echo 'No socket info available.'"
-        return await run_command_async(safe_cmd, stdout=True, timeout=10, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        guard_err = validation.validate_command_guardrails(safe_cmd)
+        if guard_err:
+            return guard_err
+        out = await run_command_async(safe_cmd, stdout=True, timeout=10, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        return validation.sanitize_tool_output(safe_cmd, out)
 
     # If the caller used sudo explicitly, attempt safe fallback or explain
     if lowered.strip().startswith("sudo ") and not run_integration:
         return "Skipped sudo invocation in non-integration mode. Set RUN_AGENT_INTEGRATION_TESTS=1 to allow executing privileged commands."
 
-    # Default: attempt to run the command non-interactively and return output
-    return await run_command_async(command, stdout=True, timeout=30, stream=False, call_id=None, tool_name="blueteam_safe_command")
+    # Default: attempt to run the command non-interactively and return output (validate + sanitize)
+    guard_err = validation.validate_command_guardrails(command)
+    if guard_err:
+        return guard_err
+    out = await run_command_async(command, stdout=True, timeout=30, stream=False, call_id=None, tool_name="blueteam_safe_command")
+    return validation.sanitize_tool_output(command, out)
 
 
 # Expose as a FunctionTool so agents can use it like other tools
