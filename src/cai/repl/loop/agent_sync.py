@@ -265,7 +265,7 @@ def switch_agent_if_needed(
                 TaskType = getattr(asyncio, "Task", None)
                 if TaskType is not None and getattr(TaskType, "all_tasks", None):
                     try:
-                        all_tasks = getattr(TaskType, "all_tasks")()
+                        all_tasks = TaskType.all_tasks()
                     except Exception:
                         all_tasks = set()
                 else:
@@ -278,7 +278,7 @@ def switch_agent_if_needed(
                 current_task = None
                 if TaskType is not None and getattr(TaskType, "current_task", None):
                     try:
-                        current_task = getattr(TaskType, "current_task")()
+                        current_task = TaskType.current_task()
                     except Exception:
                         current_task = None
 

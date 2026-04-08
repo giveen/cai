@@ -276,7 +276,7 @@ def _run_cai_cli_impl(
             idle_start_time = time.time()
 
             # Sync model and switch agent type if environment variables changed.
-            from cai.repl.loop.agent_sync import sync_model, switch_agent_if_needed
+            from cai.repl.loop.agent_sync import switch_agent_if_needed, sync_model
 
             current_model, last_model = sync_model(agent, last_model, last_agent_type)
             parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
@@ -490,7 +490,7 @@ def _run_cai_cli_impl(
                         TaskType = getattr(asyncio, "Task", None)
                         if TaskType is not None and getattr(TaskType, "all_tasks", None):
                             try:
-                                pending = getattr(TaskType, "all_tasks")(loop)
+                                pending = TaskType.all_tasks(loop)
                             except Exception:
                                 pending = set()
                         else:

@@ -85,7 +85,6 @@ import os
 
 from openai import AsyncOpenAI
 
-from cai.rag.vector_db import get_previous_memory
 from cai.sdk.agents import Agent, ModelSettings, OpenAIChatCompletionsModel
 from cai.tools.misc.rag import add_to_memory_episodic, add_to_memory_semantic
 

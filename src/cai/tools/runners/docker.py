@@ -36,6 +36,7 @@ async def run_docker_async(
         start_active_timer,
         start_idle_timer,
         start_tool_streaming,
+        stop_active_timer,
         stop_idle_timer,
         update_tool_streaming,
     )
@@ -267,6 +268,7 @@ def run_docker(
         start_active_timer,
         start_idle_timer,
         start_tool_streaming,
+        stop_active_timer,
         stop_idle_timer,
         update_tool_streaming,
     )

@@ -32,11 +32,10 @@ from cai.tools.sessions import (
     SESSION_OUTPUT_COUNTER,
     _resolve_session_id,
     create_shell_session,
-    get_session_output,
-    list_shell_sessions,
-    terminate_session,
+    get_session_output,  # noqa: F401 — re-exported for callers that import via cai.tools.common
+    list_shell_sessions,  # noqa: F401
+    terminate_session,  # noqa: F401
 )
-from cai.tools.workspace import _get_container_workspace_path, _get_workspace_dir  # migrated
 
 
 def _start_tool_streaming_helper(

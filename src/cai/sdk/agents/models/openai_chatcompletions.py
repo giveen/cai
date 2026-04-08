@@ -165,10 +165,27 @@ def _parse_tool_args(raw: str | None, tool_name: str = "") -> dict:
     if m:
         return {"command": m.group(1)}
     return {}
-    prompt_tokens: int
-    """The number of prompt tokens."""
-    cached_tokens: int = 0
-    """The number of cached tokens."""
+
+
+def _sanitize_tool_choice_value(tc):
+    """Normalise *tc* to an allowed Response.tool_choice literal or object.
+
+    LiteLLM/OpenAI callers may pass empty strings or other sentinel values which
+    Pydantic rejects for the Response.tool_choice field.  Normalise to an allowed
+    literal (``'auto'`` | ``'none'`` | ``'required'``) or pass through dict/object
+    values unchanged.
+    """
+    try:
+        if tc is None or tc is NOT_GIVEN:
+            return "auto"
+        if isinstance(tc, str):
+            s = tc.strip().lower()
+            if s in ("none", "auto", "required"):
+                return s
+            return "auto"
+        return tc
+    except Exception:
+        return "auto"
 
 
 # Custom ResponseUsage that makes prompt_tokens/input_tokens and completion_tokens/output_tokens compatible
@@ -4044,25 +4061,6 @@ class OpenAIChatCompletionsModel(Model):
             # Non-fatal: proceed and let downstream call fail if still invalid.
             pass
 
-        # Helper to sanitize tool_choice for Response validation. LiteLLM/OpenAI
-        # callers may pass empty strings or OpenAI sentinel values which Pydantic
-        # rejects for the Response.tool_choice field. Normalize to an allowed
-        # literal ('auto'|'none'|'required') or pass through dict/obj values.
-        def _sanitize_tool_choice_value(tc):
-            try:
-                if tc is None or tc is NOT_GIVEN:
-                    return "auto"
-                # Accept explicit literal strings only
-                if isinstance(tc, str):
-                    s = tc.strip().lower()
-                    if s in ("none", "auto", "required"):
-                        return s
-                    # Treat empty or unknown strings as 'auto'
-                    return "auto"
-                # Pass through dicts/objects (ToolChoiceTypes/ToolChoiceFunction)
-                return tc
-            except Exception:
-                return "auto"
         # Determine whether to call a direct OpenAI-compatible client (self._client)
         use_direct_client = False
         client_kwargs = kwargs

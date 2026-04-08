@@ -423,8 +423,8 @@ def start_cli_loop(
             from cai.util import (
                 start_active_timer,
                 start_idle_timer,
-                stop_idle_timer,
                 stop_active_timer,
+                stop_idle_timer,
             )
 
             start_idle_timer()

@@ -15,6 +15,7 @@ something that hasn't been seen in other cybersecurity frameworks yet (Feb 2025)
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
 from cai.tools.common import run_command  # pylint: disable=E0401 # noqa: E501
+import shlex
 
 
 @function_tool
@@ -44,6 +45,10 @@ def run_ssh_command_with_credentials(
 
     # Build argument list to avoid shell interpolation
     port = str(port)
+    quoted_password = shlex.quote(password)
+    quoted_username = shlex.quote(username)
+    quoted_host = shlex.quote(host)
+    quoted_command = shlex.quote(command)
 
     ssh_command = (
         f"sshpass -p {quoted_password} "

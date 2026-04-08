@@ -100,13 +100,13 @@ def run_single_response(
     -------
     (agent, _post_compact_input, _skip_auto_compact_after_interrupt, should_continue)
     """
-    from cai.sdk.agents import Runner
-    from cai.sdk.agents.exceptions import ContextCompactedError
     # Guardrail exceptions are exported from the package root.
     from cai.sdk.agents import (
         InputGuardrailTripwireTriggered,
         OutputGuardrailTripwireTriggered,
+        Runner,
     )
+    from cai.sdk.agents.exceptions import ContextCompactedError
     from cai.sdk.agents.items import ToolCallOutputItem
     from cai.sdk.agents.stream_events import RunItemStreamEvent
 
