@@ -29,7 +29,10 @@ from cai.sdk.agents.models.openai_chatcompletions import (
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
 try:
-    from openai import OpenAI as AsyncOpenAI
+    # Prefer the async OpenAI client when available. Do NOT alias the
+    # synchronous `OpenAI` class to `AsyncOpenAI` as that causes awaited
+    # calls to attempt awaiting a non-awaitable ChatCompletion object.
+    from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 
