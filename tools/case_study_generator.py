@@ -2,7 +2,9 @@
 """
 Example:
 
-CAI_MODEL="claude-sonnet-4-20250514" CAI_STREAM=True python3 case_study_generator.py --jsonl_file logs/cai_b97af8fc-3d51-45d3-8393-6c3341d33807_20250602_201144_luijait_darwin_24.5.0_81_38_189_27.jsonl --output_php_file alias_web/case_study_test.php      
+CAI_MODEL="claude-sonnet-4-20250514" CAI_STREAM=True python3 case_study_generator.py \
+    --jsonl_file logs/cai_b97af8fc-3d51-45d3-8393-6c3341d33807_20250602_201144_luijait_darwin_24.5.0_81_38_189_27.jsonl \
+    --output_php_file alias_web/case_study_test.php
 
 CAI Case Study Generator - Generate PHP case studies from JSONL files.
 
