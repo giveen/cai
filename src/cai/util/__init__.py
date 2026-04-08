@@ -562,7 +562,18 @@ def finish_tool_streaming(*args, **_kwargs) -> None:
         s["is_complete"] = True
 
 
-def create_agent_streaming_context(agent_name: str) -> Dict[str, Any]:
+def create_agent_streaming_context(
+    agent_name: str,
+    counter: int = 0,
+    model: str = "",
+    **_kwargs,
+) -> Dict[str, Any]:
+    """Create and register a streaming context for *agent_name*.
+
+    Accepts the extra ``counter`` and ``model`` kwargs that
+    ``OpenAIChatCompletionsModel.stream_response`` passes so callers do not
+    need to be kept in sync with the stub signature.
+    """
     ctx = {"agent_name": agent_name, "live": None, "is_started": False}
     _AGENT_STREAMING_CONTEXTS[agent_name] = ctx
     # Track active contexts on the function for legacy cleanup
@@ -572,16 +583,71 @@ def create_agent_streaming_context(agent_name: str) -> Dict[str, Any]:
     return ctx
 
 
-def update_agent_streaming_content(agent_name: str, content: str) -> None:
-    ctx = _AGENT_STREAMING_CONTEXTS.get(agent_name)
+def update_agent_streaming_content(
+    agent_name_or_ctx,
+    content: str = "",
+    token_stats: Optional[Dict[str, Any]] = None,
+    **_kwargs,
+) -> None:
+    """Append *content* to the streaming context and print it to the terminal.
+
+    Accepts either the *agent_name* string or the context dict returned by
+    ``create_agent_streaming_context`` as the first argument, matching the
+    calling convention used in ``openai_chatcompletions.py``.
+    """
+    import sys
+
+    # Resolve agent name
+    if isinstance(agent_name_or_ctx, dict):
+        agent_name_or_ctx = agent_name_or_ctx.get("agent_name")
+    if not agent_name_or_ctx:
+        return
+
+    ctx = _AGENT_STREAMING_CONTEXTS.get(agent_name_or_ctx)
     if ctx is not None:
         ctx["last_content"] = content
 
+    # Write the text token directly to stdout so it appears on screen
+    # immediately — this is the primary rendering path when the full Rich
+    # Live panel is not in use.
+    if content:
+        try:
+            sys.stdout.write(content)
+            sys.stdout.flush()
+        except Exception:
+            pass
 
-def finish_agent_streaming(agent_name: str) -> None:
-    ctx = _AGENT_STREAMING_CONTEXTS.pop(agent_name, None)
+
+def finish_agent_streaming(
+    agent_name_or_ctx,
+    token_stats: Optional[Dict[str, Any]] = None,
+    **_kwargs,
+) -> None:
+    """Finalise the streaming session for *agent_name_or_ctx*.
+
+    Accepts either the *agent_name* string or the context dict (as passed by
+    ``openai_chatcompletions.py``) and prints a trailing newline when the
+    streaming context indicates that content was actually printed.
+    """
+    import sys
+
+    if isinstance(agent_name_or_ctx, dict):
+        agent_name_or_ctx = agent_name_or_ctx.get("agent_name")
+    if not agent_name_or_ctx:
+        return
+
+    ctx = _AGENT_STREAMING_CONTEXTS.pop(agent_name_or_ctx, None)
     if hasattr(create_agent_streaming_context, "_active_streaming"):
-        create_agent_streaming_context._active_streaming.pop(agent_name, None)
+        create_agent_streaming_context._active_streaming.pop(agent_name_or_ctx, None)
+
+    # Print a newline after the streamed content so the next prompt starts
+    # on a fresh line.
+    if ctx and ctx.get("last_content"):
+        try:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        except Exception:
+            pass
 
 
 def cleanup_all_streaming_resources() -> None:
