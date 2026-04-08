@@ -22,6 +22,26 @@ import os
 from typing import Any, Tuple
 
 
+def resolve_api_base() -> str | None:
+    """Return the resolved base URL for the active API server.
+
+    Priority chain (highest → lowest):
+
+    1. ``LOCAL_API_BASE``  — universal local server override (Ollama, vLLM,
+       llama.cpp, …). Set this single variable to point every agent at a
+       local endpoint without touching any provider-specific flag.
+    2. ``OPENAI_API_BASE`` — OpenAI-compatible proxy base URL.
+    3. ``OPENAI_BASE_URL`` — standard OpenAI SDK env var.
+    4. ``None``            — fall through to library / provider default.
+    """
+    return (
+        os.getenv("LOCAL_API_BASE")
+        or os.getenv("OPENAI_API_BASE")
+        or os.getenv("OPENAI_BASE_URL")
+        or None
+    )
+
+
 def update_agent_models_recursively(agent: Any, model_to_use: str) -> None:
     """Propagate *model_to_use* to *agent* and all its handoff agents.
 
@@ -59,14 +79,17 @@ def sync_model(
     agent: Any,
     last_model: str,
     last_agent_type: str,
+    _last_api_base: str | None = None,
 ) -> Tuple[str, str]:
-    """Resolve the active model from env-vars and sync it onto *agent*.
+    """Resolve the active model and API base URL from env-vars, sync onto *agent*.
 
     Parameters
     ----------
-    agent:          current agent instance
-    last_model:     last model name that was applied
+    agent:           current agent instance
+    last_model:      last model name that was applied
     last_agent_type: current agent-type key (used for per-agent model override)
+    _last_api_base:  last resolved API base URL; when it changes the agent's
+                     client is refreshed even if the model name is unchanged.
 
     Returns
     -------
@@ -77,15 +100,20 @@ def sync_model(
     if agent_specific_model:
         current_model = agent_specific_model
 
-    if current_model != last_model and hasattr(agent, "model"):
+    # Resolve the current API base using the universal priority chain.
+    current_api_base = resolve_api_base()
+    api_base_changed = current_api_base != _last_api_base
+
+    if (current_model != last_model or api_base_changed) and hasattr(agent, "model"):
         try:
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
             AGENT_MANAGER.sync_models(current_model)
-            # After syncing the model name, push a fresh AsyncOpenAI client
-            # built from the current environment so that OPENAI_API_BASE and
-            # OPENAI_API_KEY are always reflected (sync_models resets _client
-            # to None but does not rebuild it with fresh env vars).
+            # After syncing the model name (or when LOCAL_API_BASE changed),
+            # push a fresh AsyncOpenAI client built from the current
+            # environment so that the base URL and API key are always
+            # reflected (sync_models resets _client to None but does not
+            # rebuild it with fresh env vars).
             _refresh_agent_client(AGENT_MANAGER.get_active_agent())
         except Exception:
             # Best-effort: if manager sync fails, try a direct attribute update
@@ -101,9 +129,10 @@ def sync_model(
 def _refresh_agent_client(agent: Any) -> None:
     """Rebuild *agent*'s OpenAI client from the current environment variables.
 
-    Called after ``AGENT_MANAGER.sync_models()`` to ensure ``OPENAI_API_BASE``
-    and ``OPENAI_API_KEY`` are applied to the new client rather than silently
-    defaulting to the OpenAI cloud endpoint.
+    Called after ``AGENT_MANAGER.sync_models()`` to ensure the active base URL
+    and API key are applied to the new client.  The base URL is resolved via
+    :func:`resolve_api_base` which honours the ``LOCAL_API_BASE`` →
+    ``OPENAI_API_BASE`` → ``OPENAI_BASE_URL`` priority chain.
     """
     if agent is None:
         return
@@ -120,7 +149,7 @@ def _refresh_agent_client(agent: Any) -> None:
             or os.getenv("OPENAI_API_KEY")
             or "sk-placeholder"
         )
-        base_url = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
+        base_url = resolve_api_base()
         client_kwargs: dict = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url

@@ -4582,12 +4582,16 @@ class OpenAIChatCompletionsModel(Model):
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
-            # Determine API key and base URL from the environment so that local
-            # proxy settings (OPENAI_API_BASE / OPENAI_BASE_URL) are always
-            # honoured even when the client is lazily recreated mid-session
-            # (e.g. after AGENT_MANAGER.sync_models() resets _client to None).
+            # Resolve base URL using the same priority chain as the loop
+            # package: LOCAL_API_BASE > OPENAI_API_BASE > OPENAI_BASE_URL.
+            # This ensures every lazy client rebuild honours local proxy
+            # config regardless of which code path triggers it.
             api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
-            base_url = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
+            base_url = (
+                os.getenv("LOCAL_API_BASE")
+                or os.getenv("OPENAI_API_BASE")
+                or os.getenv("OPENAI_BASE_URL")
+            )
             client_kwargs: dict = {"api_key": api_key}
             if base_url:
                 client_kwargs["base_url"] = base_url

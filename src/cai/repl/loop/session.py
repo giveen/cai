@@ -46,11 +46,22 @@ def initialize_session(
     ``(command_completer, current_text, kb, history_file, session_logger)``
     """
     # Guarantee .env is loaded and proxy settings (OPENAI_API_BASE,
-    # OPENAI_API_KEY, etc.) are visible before the first agent turn, even when
-    # this module is imported without going through cli.py.
+    # OPENAI_API_KEY, LOCAL_API_BASE, etc.) are visible before the first agent
+    # turn, even when this module is imported without going through cli.py.
     try:
         from cai.bootstrap import initialize_env
         initialize_env()
+    except Exception:
+        pass
+
+    # Resolve the Universal Local API base URL once at session start and prime
+    # the starting agent's client so the very first call goes to the right
+    # endpoint.  Subsequent refreshes happen in sync_model() each iteration.
+    try:
+        from cai.repl.loop.agent_sync import _refresh_agent_client, resolve_api_base
+        _local_api_base = resolve_api_base()
+        if _local_api_base:
+            _refresh_agent_client(starting_agent)
     except Exception:
         pass
 

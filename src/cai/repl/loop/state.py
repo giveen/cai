@@ -65,3 +65,18 @@ class CliSessionState:
     # --------------------------------------------------------- CTF integration
     force_until_flag: bool = False
     initial_prompt: Optional[str] = None
+
+    # ------------------------------------------- Universal Local API settings
+    local_api_base: Optional[str] = field(default=None)
+    """Resolved base URL for the active local API server.
+
+    Priority chain (highest to lowest):
+    1. ``LOCAL_API_BASE``  — universal local override
+    2. ``OPENAI_API_BASE`` — OpenAI-compatible proxy
+    3. ``OPENAI_BASE_URL`` — standard OpenAI env var
+    4. ``None``            — use the library / provider default
+
+    Set once at session initialisation by :func:`initialize_session` and
+    re-evaluated on every iteration by :func:`sync_model` so that changing
+    the variable during a session takes effect immediately.
+    """
