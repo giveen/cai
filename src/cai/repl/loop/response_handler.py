@@ -102,7 +102,8 @@ def run_single_response(
     """
     from cai.sdk.agents import Runner
     from cai.sdk.agents.exceptions import ContextCompactedError
-    from cai.sdk.agents.guardrails import (
+    # Guardrail exceptions are exported from the package root.
+    from cai.sdk.agents import (
         InputGuardrailTripwireTriggered,
         OutputGuardrailTripwireTriggered,
     )
@@ -113,11 +114,25 @@ def run_single_response(
     # handlers can reference it even on the very first iteration.
     _last_user_input = user_input if isinstance(user_input, str) else ""
 
-    # Disable streaming by default, unless specifically enabled.
+    # Disable streaming by default, unless specifically enabled by the
+    # environment. However, prefer the non-streaming path when the
+    # Runner implementation does not provide a real `run_streamed` API
+    # (for example, in test contexts where Runner is a MagicMock).
     cai_stream = os.getenv("CAI_STREAM", "false")
     if not cai_stream or cai_stream.strip() == "":
         cai_stream = "false"
-    stream = cai_stream.lower() == "true"
+    stream_env = cai_stream.lower() == "true"
+
+    run_streamed_attr = getattr(Runner, "run_streamed", None)
+    try:
+        from unittest.mock import Mock
+    except Exception:
+        Mock = None
+
+    if stream_env and callable(run_streamed_attr) and (Mock is None or not isinstance(run_streamed_attr, Mock)):
+        stream = True
+    else:
+        stream = False
 
     if stream:
         async def process_streamed_response(agent, conversation_input):

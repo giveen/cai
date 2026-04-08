@@ -17,10 +17,12 @@ from .agent_output import AgentOutputSchema
 from .computer import AsyncComputer, Button, Computer, Environment
 from .exceptions import (
     AgentsException,
+    ContextCompactedError,
     InputGuardrailTripwireTriggered,
     MaxTurnsExceeded,
     ModelBehaviorError,
     OutputGuardrailTripwireTriggered,
+    PriceLimitExceeded,
     UserError,
 )
 from .guardrail import (
@@ -205,10 +207,12 @@ __all__ = [
     "Environment",
     "Button",
     "AgentsException",
+    "ContextCompactedError",
     "InputGuardrailTripwireTriggered",
     "OutputGuardrailTripwireTriggered",
     "MaxTurnsExceeded",
     "ModelBehaviorError",
+    "PriceLimitExceeded",
     "UserError",
     "InputGuardrail",
     "InputGuardrailResult",

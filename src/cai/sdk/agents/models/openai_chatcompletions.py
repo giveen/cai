@@ -466,12 +466,9 @@ def count_tokens_with_tiktoken(text_or_messages):
         return 0, 0
 
 
-class ContextCompactedError(Exception):
-    """Raised inside get_response/stream_response when a CAI_SUPPORT_INTERVAL-based
-    auto-compact fires mid-runner.  The outer CLI loop catches this, sets
-    _post_compact_input, and restarts the runner with a clean context window."""
-
-    pass
+# ContextCompactedError is defined in cai.sdk.agents.exceptions and imported
+# here so existing code in this module can use it without any change.
+from ..exceptions import ContextCompactedError  # noqa: E402  # re-exported
 
 
 class OpenAIChatCompletionsModel(Model):
