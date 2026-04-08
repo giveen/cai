@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import os
 import stat
-import subprocess
 import tempfile
+import asyncio
 from typing import List, Optional, Union
 
 from cai.tools import validation  # pylint: disable=import-error
@@ -65,7 +65,7 @@ def _validate_host_and_share(host: str, share: str) -> Optional[str]:
     return None
 
 
-def run_smbclient(
+async def run_smbclient(
     host: str,
     share: str,
     username: Optional[str] = None,
@@ -135,13 +135,26 @@ def run_smbclient(
             return g_err
 
         try:
-            proc = subprocess.run(argv, capture_output=True, text=True, check=False, timeout=timeout)
+            # Use asyncio subprocess to avoid blocking the event loop
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
         except FileNotFoundError:
             return "Error: smbclient not found on PATH"
-        except subprocess.TimeoutExpired:
+        try:
+            stdout_data, stderr_data = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            try:
+                process.kill()
+            except Exception:
+                pass
             return "Error: smbclient timed out"
 
-        out = (proc.stdout or "") + (proc.stderr or "")
+        out = (stdout_data.decode('utf-8', errors='replace') if stdout_data else "") + (
+            stderr_data.decode('utf-8', errors='replace') if stderr_data else ""
+        )
         return validation.sanitize_tool_output(cmd_for_validate, out)
     finally:
         if authfile_path:
@@ -151,7 +164,7 @@ def run_smbclient(
                 pass
 
 
-def list_shares(
+async def list_shares(
     host: str,
     username: Optional[str] = None,
     password: Optional[str] = None,
@@ -184,13 +197,26 @@ def list_shares(
             return g_err
 
         try:
-            proc = subprocess.run(argv, capture_output=True, text=True, check=False, timeout=timeout)
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
         except FileNotFoundError:
             return "Error: smbclient not found on PATH"
-        except subprocess.TimeoutExpired:
+
+        try:
+            stdout_data, stderr_data = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            try:
+                process.kill()
+            except Exception:
+                pass
             return "Error: smbclient timed out"
 
-        out = (proc.stdout or "") + (proc.stderr or "")
+        out = (stdout_data.decode('utf-8', errors='replace') if stdout_data else "") + (
+            stderr_data.decode('utf-8', errors='replace') if stderr_data else ""
+        )
         return validation.sanitize_tool_output(cmd_for_validate, out)
     finally:
         if authfile_path:
@@ -200,7 +226,7 @@ def list_shares(
                 pass
 
 
-def download_file(
+async def download_file(
     host: str,
     share: str,
     remote_path: str,
@@ -228,7 +254,7 @@ def download_file(
 
     # Quote the paths inside the smbclient `-c` string to preserve spaces
     cmd = f'get "{remote_path}" "{local_path}"'
-    return run_smbclient(
+    return await run_smbclient(
         host,
         share,
         username=username,

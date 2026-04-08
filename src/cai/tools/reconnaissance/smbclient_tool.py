@@ -13,7 +13,7 @@ from cai.sdk.agents import function_tool
 from cai.tools.reconnaissance.data_exfiltration import smbclient as _smb_impl
 
 
-def _list_shares_impl(
+async def _list_shares_impl(
     host: str,
     username: Optional[str] = None,
     password: Optional[str] = None,
@@ -26,7 +26,7 @@ def _list_shares_impl(
 
     This is a thin wrapper around `cai.tools.reconnaissance.data_exfiltration.smbclient.list_shares`.
     """
-    return _smb_impl.list_shares(
+    return await _smb_impl.list_shares(
         host=host,
         username=username,
         password=password,
@@ -37,7 +37,7 @@ def _list_shares_impl(
     )
 
 
-def _run_smbclient_impl(
+async def _run_smbclient_impl(
     host: str,
     share: str,
     username: Optional[str] = None,
@@ -54,7 +54,7 @@ def _run_smbclient_impl(
     - `commands` should be a single string (or None to open an interactive session).
     - `extra_args` can be used to pass additional safe flags.
     """
-    return _smb_impl.run_smbclient(
+    return await _smb_impl.run_smbclient(
         host=host,
         share=share,
         username=username,
@@ -68,7 +68,7 @@ def _run_smbclient_impl(
     )
 
 
-def _download_file_impl(
+async def _download_file_impl(
     host: str,
     share: str,
     remote_path: str,
@@ -84,7 +84,7 @@ def _download_file_impl(
 
     This uses the existing safe `download_file` helper.
     """
-    return _smb_impl.download_file(
+    return await _smb_impl.download_file(
         host=host,
         share=share,
         remote_path=remote_path,
