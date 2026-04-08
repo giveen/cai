@@ -17,6 +17,7 @@ import json
 import os
 import re
 import time
+import textwrap
 from datetime import datetime
 from typing import Any, Optional, cast
 
@@ -2121,7 +2122,22 @@ class TerminalPanel(Widget):
             return
 
         # Fallback to markdown render for rich formatting and tables.
-        log.write(Markdown(text))
+        # Wrap long lines to avoid overflowing the terminal panel width and then
+        # prefer Markdown rendering; fall back to plain RichText if Markdown fails.
+        try:
+            size = getattr(self, "size", None) or getattr(self.app, "size", None)
+            w = int(getattr(size, "width", 0) or 0)
+            wrap_width = max(40, w - 8) if w > 0 else 80
+        except Exception:
+            wrap_width = 80
+        wrapped = self._wrap_text_for_width(text, wrap_width)
+        try:
+            log.write(Markdown(wrapped))
+        except Exception:
+            try:
+                log.write(RichText(wrapped))
+            except Exception:
+                log.write(wrapped)
 
     def _format_tool_output_preview(self, output: str) -> tuple[str, bool]:
         text = str(output or "")
@@ -2136,7 +2152,47 @@ class TerminalPanel(Widget):
         if len(text) > max_chars:
             text = text[:max_chars]
             collapsed = True
+        # Wrap long lines to avoid overflowing the terminal panel width.
+        try:
+            size = getattr(self, "size", None) or getattr(self.app, "size", None)
+            w = int(getattr(size, "width", 0) or 0)
+            wrap_width = max(40, w - 8) if w > 0 else 80
+        except Exception:
+            wrap_width = 80
+        text = self._wrap_text_for_width(text, wrap_width)
         return text, collapsed
+
+    def _wrap_text_for_width(self, text: str, width: int) -> str:
+        """Return text with long lines wrapped to `width` while preserving indentation.
+
+        Uses textwrap.fill with break_long_words so extremely long tokens still break
+        and won't overflow the panel box.
+        """
+        if not text:
+            return text
+        out_lines: list[str] = []
+        for line in str(text).splitlines():
+            if not line.strip():
+                out_lines.append(line)
+                continue
+            # preserve leading indentation
+            leading = len(line) - len(line.lstrip(" "))
+            indent = " " * leading
+            body = line.lstrip(" ")
+            try:
+                wrapped = textwrap.fill(
+                    body,
+                    width=max(20, width - leading),
+                    replace_whitespace=False,
+                    break_long_words=True,
+                    break_on_hyphens=True,
+                )
+            except Exception:
+                wrapped = body
+            # reapply indentation to each wrapped sub-line
+            wrapped = "\n".join(indent + l for l in wrapped.splitlines())
+            out_lines.append(wrapped)
+        return "\n".join(out_lines)
 
     def _extract_stream_text_delta(self, raw_data) -> str:
         data = raw_data
