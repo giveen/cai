@@ -31,7 +31,7 @@ class TestParallelInterruptHistory:
         PARALLEL_AGENT_INSTANCES.clear()
         PARALLEL_ISOLATION.clear_all_histories()
 
-    @patch("cai.cli.Runner")
+    @patch("cai.sdk.agents.Runner")
     @patch("cai.cli.get_agent_by_name")
     def test_parallel_history_saved_on_interrupt(self, mock_get_agent, mock_runner):
         """Test that parallel agents' histories are saved when interrupted with Ctrl+C."""
