@@ -29,11 +29,17 @@ load_dotenv()
 # )
 # set_default_openai_client(external_client)
 
+
 async def main():
     # Apply litellm patch to fix the __annotations__ error
     patch_applied = fix_litellm_transcription_annotations()
     if not patch_applied:
-        print(color("Something went wrong patching LiteLLM fix_litellm_transcription_annotations", color="red"))
+        print(
+            color(
+                "Something went wrong patching LiteLLM fix_litellm_transcription_annotations",
+                color="red",
+            )
+        )
 
     # Force the use of OpenAIChatCompletionsModel instead of OpenAIResponsesModel
     set_use_responses_by_default(False)
@@ -71,9 +77,9 @@ async def main():
     sys.stdout.write("\r" + " " * 60 + "\r")
     sys.stdout.flush()
 
-
     print("\n" + "-" * 40)
     print("\nTest completed successfully!")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

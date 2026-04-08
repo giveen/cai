@@ -78,7 +78,11 @@ class TestHistoryCommand:
             "red_teamer": [
                 {"role": "user", "content": "Scan the target"},
                 {"role": "assistant", "content": "I'll scan the target system."},
-                {"role": "tool", "tool_call_id": "call_1", "content": "Scan results: open ports 22, 80, 443"},
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "content": "Scan results: open ports 22, 80, 443",
+                },
             ],
             "Bug Bounty Hunter": [
                 {"role": "user", "content": "Find vulnerabilities"},
@@ -204,7 +208,9 @@ class TestHistoryCommand:
     ):
         """Test handling with agent name containing spaces."""
         # Mock AGENT_MANAGER methods
-        mock_agent_manager.get_all_histories.return_value = {"Bug Bounty Hunter": sample_message_history}
+        mock_agent_manager.get_all_histories.return_value = {
+            "Bug Bounty Hunter": sample_message_history
+        }
         mock_agent_manager.get_message_history.return_value = sample_message_history
         mock_agent_manager.get_agent_by_id.return_value = None
         mock_agent_manager.get_id_by_name.return_value = "A1"
@@ -216,9 +222,7 @@ class TestHistoryCommand:
         mock_agent_manager.get_all_histories.assert_called()
 
     @patch("cai.sdk.agents.simple_agent_manager.AGENT_MANAGER")
-    def test_handle_with_nonexistent_agent(
-        self, mock_agent_manager, history_command
-    ):
+    def test_handle_with_nonexistent_agent(self, mock_agent_manager, history_command):
         """Test handling when agent doesn't have history."""
         # Mock AGENT_MANAGER methods
         mock_agent_manager.get_all_histories.return_value = {}
@@ -230,19 +234,22 @@ class TestHistoryCommand:
 
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_all_agent_histories")
     def test_handle_multiple_agents_history(
-        self, mock_get_all_histories, history_command, sample_message_history, complex_message_history
+        self,
+        mock_get_all_histories,
+        history_command,
+        sample_message_history,
+        complex_message_history,
     ):
         """Test handling history from multiple agents."""
         mock_get_all_histories.return_value = {
             "agent_1": sample_message_history,
             "agent_2": complex_message_history,
             "Bug Bounty Hunter #1": sample_message_history,
-            "Red Team Agent": complex_message_history
+            "Red Team Agent": complex_message_history,
         }
 
         result = history_command.handle([])
         assert result is True
-
 
     def test_get_subcommands(self, history_command):
         """Test that the history command returns the correct subcommands."""
@@ -483,7 +490,9 @@ class TestHistoryCommand:
         """Test showing history for agent with spaces in name."""
         # Mock AGENT_MANAGER methods
         mock_agent_manager.get_all_histories.return_value = multi_agent_histories
-        mock_agent_manager.get_message_history.return_value = multi_agent_histories["Bug Bounty Hunter"]
+        mock_agent_manager.get_message_history.return_value = multi_agent_histories[
+            "Bug Bounty Hunter"
+        ]
         mock_agent_manager.get_agent_by_id.return_value = None
         mock_agent_manager.get_id_by_name.return_value = "A1"
 
@@ -539,7 +548,9 @@ class TestHistoryCommand:
         """Test handling numbered agent instances (parallel execution)."""
         # Mock AGENT_MANAGER methods
         mock_agent_manager.get_all_histories.return_value = multi_agent_histories
-        mock_agent_manager.get_message_history.return_value = multi_agent_histories["Bug Bounty Hunter #1"]
+        mock_agent_manager.get_message_history.return_value = multi_agent_histories[
+            "Bug Bounty Hunter #1"
+        ]
         mock_agent_manager.get_agent_by_id.return_value = None
         mock_agent_manager.get_id_by_name.return_value = "A1"
 
@@ -577,9 +588,7 @@ class TestHistoryCommand:
             },
         ]
 
-        mock_get_all_histories.return_value = {
-            "Multi-Agent Session": history_with_agent_names
-        }
+        mock_get_all_histories.return_value = {"Multi-Agent Session": history_with_agent_names}
 
         result = history_command.handle([])
         assert result is True
@@ -590,16 +599,12 @@ class TestHistoryCommand:
     ):
         """Test handling agents with very long names."""
         long_agent_name = "This is a very long agent name that might cause display issues"
-        mock_get_all_histories.return_value = {
-            long_agent_name: sample_message_history
-        }
+        mock_get_all_histories.return_value = {long_agent_name: sample_message_history}
 
         result = history_command.handle([])
         assert result is True
 
-    def test_format_message_content_with_agent_prefix(
-        self, history_command
-    ):
+    def test_format_message_content_with_agent_prefix(self, history_command):
         """Test formatting content that includes agent name prefixes."""
         content = "[Bug Bounty Hunter] I found a vulnerability in the login form."
         tool_calls = None
@@ -762,7 +767,7 @@ class TestHistoryCommandIntegration:
             "Blue Team Agent": [
                 {"role": "user", "content": "Monitor for attacks"},
                 {"role": "assistant", "content": "I'll set up monitoring for potential attacks."},
-            ]
+            ],
         }
 
         mock_get_all_histories.return_value = multi_agent_history
@@ -795,7 +800,7 @@ class TestHistoryCommandIntegration:
             # Mock history
             test_history = [
                 {"role": "user", "content": "Test message"},
-                {"role": "assistant", "content": "Test response"}
+                {"role": "assistant", "content": "Test response"},
             ]
             # Mock AGENT_MANAGER methods
             mock_agent_manager.get_agent_by_id.return_value = "Red Team Agent"
@@ -828,7 +833,7 @@ class TestHistoryCommandIntegration:
 
         mock_get_available_agents.return_value = {
             "red_teamer": mock_agent1,
-            "bug_bounter": mock_agent2
+            "bug_bounter": mock_agent2,
         }
 
         # Create parallel configs
@@ -845,7 +850,7 @@ class TestHistoryCommandIntegration:
         mock_get_all_histories.return_value = {
             "Red Team Agent": [
                 {"role": "user", "content": "Test"},
-                {"role": "assistant", "content": "Response"}
+                {"role": "assistant", "content": "Response"},
             ]
         }
 
@@ -856,9 +861,7 @@ class TestHistoryCommandIntegration:
 
     @patch("cai.sdk.agents.simple_agent_manager.AGENT_MANAGER")
     @patch("cai.agents.get_available_agents")
-    def test_handle_numbered_agent_with_id(
-        self, mock_get_available_agents, mock_agent_manager
-    ):
+    def test_handle_numbered_agent_with_id(self, mock_get_available_agents, mock_agent_manager):
         """Test handling numbered agents (duplicates) with IDs."""
         from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
 
@@ -884,7 +887,7 @@ class TestHistoryCommandIntegration:
             # Mock history for second instance
             test_history = [
                 {"role": "user", "content": "Instance 2 test"},
-                {"role": "assistant", "content": "Instance 2 response"}
+                {"role": "assistant", "content": "Instance 2 response"},
             ]
 
             # Mock AGENT_MANAGER methods
@@ -893,7 +896,7 @@ class TestHistoryCommandIntegration:
             mock_agent_manager.get_id_by_name.return_value = "P2"
             mock_agent_manager.get_all_histories.return_value = {
                 "Bug Bounty Hunter #1 [P1]": [],
-                "Bug Bounty Hunter #2 [P2]": test_history
+                "Bug Bounty Hunter #2 [P2]": test_history,
             }
             mock_agent_manager.get_registered_agents.return_value = ["Bug Bounty Hunter"]
 

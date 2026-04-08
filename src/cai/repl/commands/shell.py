@@ -2,6 +2,7 @@
 Shell command for CAI REPL.
 This module provides commands for executing shell commands.
 """
+
 import os
 import signal
 import subprocess  # nosec B404
@@ -23,7 +24,7 @@ class ShellCommand(Command):
         super().__init__(
             name="/shell",
             description="Execute shell commands in the current environment",
-            aliases=["/s", "$"]
+            aliases=["/s", "$"],
         )
 
     def handle(self, args: Optional[List[str]] = None) -> bool:
@@ -50,7 +51,10 @@ class ShellCommand(Command):
         active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
 
         # List of known async-style commands
-        is_async = any(cmd in original_command for cmd in ['nc', 'netcat', 'ncat', 'telnet', 'ssh', 'python -m http.server'])
+        is_async = any(
+            cmd in original_command
+            for cmd in ["nc", "netcat", "ncat", "telnet", "ssh", "python -m http.server"]
+        )
 
         def run_command(command, cwd=None):
             """Execute the given command, optionally in a different working directory (cwd).
@@ -58,22 +62,30 @@ class ShellCommand(Command):
             """
             try:
                 # Temporary SIGINT handler to allow Ctrl+C to interrupt only this process
-                signal.signal(signal.SIGINT, lambda s, f: (_ for _ in ()).throw(KeyboardInterrupt()))
+                signal.signal(
+                    signal.SIGINT, lambda s, f: (_ for _ in ()).throw(KeyboardInterrupt())
+                )
 
                 if is_async:
-                    console.print("[yellow]Running in async mode (Ctrl+C to return to REPL)[/yellow]")
+                    console.print(
+                        "[yellow]Running in async mode (Ctrl+C to return to REPL)[/yellow]"
+                    )
                     os.system(command)
                     console.print("[green]Async command completed or detached[/green]")
                     return True
 
                 # Run synchronously and stream output
                 process = subprocess.Popen(
-                    command, shell=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT, universal_newlines=True,
-                    bufsize=1, cwd=cwd
+                    command,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True,
+                    bufsize=1,
+                    cwd=cwd,
                 )
-                for line in iter(process.stdout.readline, ''):
-                    print(line, end='')
+                for line in iter(process.stdout.readline, ""):
+                    print(line, end="")
 
                 process.wait()
 
@@ -102,7 +114,9 @@ class ShellCommand(Command):
             container_workspace = _get_container_workspace_path()
             console.print(f"[dim]Running in container: {active_container[:12]}...[/dim]")
             docker_cmd = f"docker exec -w '{container_workspace}' {active_container} sh -c {original_command!r}"
-            console.print(f"[blue]Executing in container workspace '{container_workspace}':[/blue] {original_command}")
+            console.print(
+                f"[blue]Executing in container workspace '{container_workspace}':[/blue] {original_command}"
+            )
 
             success = run_command(docker_cmd)
 

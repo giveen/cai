@@ -60,6 +60,7 @@ def query_perplexity(query: str = "", context: str = "") -> str:
     content = response.choices[0].message.content
     return sanitize_external_content(content)
 
+
 @function_tool
 def make_web_search_with_explanation(context: str = "", query: str = "") -> str:
     """
@@ -72,23 +73,24 @@ def make_web_search_with_explanation(context: str = "", query: str = "") -> str:
     Args:
       context (str): The full context of the current CTF challenge.
         query (str): The question or keywords to search for.
-      
+
 
     Returns:
         str: Search result.
     """
     return query_perplexity(query, context)
 
+
 @function_tool
-def make_google_search(query: str, dorks = False) -> str:
+def make_google_search(query: str, dorks=False) -> str:
     """
     Search Google for information.
-    
+
     Args:
         query: The search query to look up on Google.
         dorks: Whether to use Google dorks for advanced searching.
             Default is False.
-            
+
     Returns:
         A list of search results. Each result contains URL, title, and snippet.
     """

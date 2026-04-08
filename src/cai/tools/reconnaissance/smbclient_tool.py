@@ -5,6 +5,7 @@ This module wraps the implementations in
 three function tools backed by the same safe helpers (guardrails,
 temporary auth file support, etc.).
 """
+
 from __future__ import annotations
 
 from typing import List, Optional

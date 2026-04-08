@@ -165,7 +165,7 @@ class AgentCommand(Command):
             if hasattr(agent, "_pattern"):
                 pattern = agent._pattern
                 if hasattr(pattern, "type"):
-                    pattern_type_value = getattr(pattern.type, 'value', str(pattern.type))
+                    pattern_type_value = getattr(pattern.type, "value", str(pattern.type))
                     if pattern_type_value == "parallel":
                         continue
 
@@ -193,7 +193,9 @@ class AgentCommand(Command):
         console.print(agents_table)
 
         # Create patterns table with IDs - filter for parallel patterns only
-        patterns_in_agents = [(k, v) for k, v in agents_to_display.items() if hasattr(v, "_pattern")]
+        patterns_in_agents = [
+            (k, v) for k, v in agents_to_display.items() if hasattr(v, "_pattern")
+        ]
 
         # Filter for parallel patterns only
         parallel_patterns = []
@@ -201,7 +203,7 @@ class AgentCommand(Command):
             pattern = v._pattern
             # Check if it's a parallel pattern
             if hasattr(pattern, "type"):
-                pattern_type_value = getattr(pattern.type, 'value', str(pattern.type))
+                pattern_type_value = getattr(pattern.type, "value", str(pattern.type))
                 if pattern_type_value == "parallel":
                     parallel_patterns.append((k, v))
 
@@ -217,7 +219,9 @@ class AgentCommand(Command):
             # Start numbering after regular agents - use actual_idx which tracks displayed agents
             pattern_start_idx = actual_idx
 
-            for idx, (pattern_key, pattern_agent) in enumerate(parallel_patterns, pattern_start_idx):
+            for idx, (pattern_key, pattern_agent) in enumerate(
+                parallel_patterns, pattern_start_idx
+            ):
                 pattern = pattern_agent._pattern
 
                 # Pattern display name (from pattern object)
@@ -249,12 +253,14 @@ class AgentCommand(Command):
                     pattern_type,
                     pattern_key,  # The actual key used to reference the pattern
                     module_name,
-                    description
+                    description,
                 )
 
             console.print("\n")
             console.print(patterns_table)
-            console.print("\n[dim]Use '/agent <#>' or '/agent <pattern_name>' to load a pattern[/dim]")
+            console.print(
+                "\n[dim]Use '/agent <#>' or '/agent <pattern_name>' to load a pattern[/dim]"
+            )
 
         return True
 
@@ -288,7 +294,7 @@ class AgentCommand(Command):
                 if hasattr(agent_obj, "_pattern"):
                     pattern = agent_obj._pattern
                     if hasattr(pattern, "type"):
-                        pattern_type_value = getattr(pattern.type, 'value', str(pattern.type))
+                        pattern_type_value = getattr(pattern.type, "value", str(pattern.type))
                         if pattern_type_value == "parallel":
                             parallel_patterns.append((key, agent_obj))
                         else:
@@ -314,7 +320,9 @@ class AgentCommand(Command):
                 agent = selected_agent
             else:
                 console.print(f"[red]Error: Invalid agent number: {agent_id}[/red]")
-                console.print(f"[dim]Valid range: 1-{total_regular} for agents, {total_regular + 1}-{total_regular + len(parallel_patterns)} for patterns[/dim]")
+                console.print(
+                    f"[dim]Valid range: 1-{total_regular} for agents, {total_regular + 1}-{total_regular + len(parallel_patterns)} for patterns[/dim]"
+                )
                 return False
         else:
             # Treat as agent key
@@ -337,7 +345,7 @@ class AgentCommand(Command):
             if hasattr(pattern, "type"):
                 pattern_type = pattern.type
                 # Get the string value if it's an enum
-                if hasattr(pattern_type, 'value'):
+                if hasattr(pattern_type, "value"):
                     pattern_type_str = pattern_type.value
                 else:
                     pattern_type_str = str(pattern_type)
@@ -355,7 +363,10 @@ class AgentCommand(Command):
                     current_history = []
 
                     # First check for pending history transfer
-                    if hasattr(AGENT_MANAGER, '_pending_history_transfer') and AGENT_MANAGER._pending_history_transfer:
+                    if (
+                        hasattr(AGENT_MANAGER, "_pending_history_transfer")
+                        and AGENT_MANAGER._pending_history_transfer
+                    ):
                         current_history = AGENT_MANAGER._pending_history_transfer
                         AGENT_MANAGER._pending_history_transfer = None
                     else:
@@ -371,7 +382,7 @@ class AgentCommand(Command):
                             current_agent = AGENT_MANAGER.get_active_agent()
                             if current_agent:
                                 # Get the agent's name
-                                agent_name = getattr(current_agent, 'name', None)
+                                agent_name = getattr(current_agent, "name", None)
                                 if agent_name:
                                     hist = AGENT_MANAGER.get_message_history(agent_name)
                                     if hist:
@@ -381,7 +392,9 @@ class AgentCommand(Command):
                         # This can happen when the default agent is loaded at startup
                         if not current_history and current_agent:
                             # Try to get history from the model directly
-                            if hasattr(current_agent, 'model') and hasattr(current_agent.model, 'message_history'):
+                            if hasattr(current_agent, "model") and hasattr(
+                                current_agent.model, "message_history"
+                            ):
                                 current_history = current_agent.model.message_history
 
                     if hasattr(pattern, "configs") and pattern.configs is not None:
@@ -414,13 +427,17 @@ class AgentCommand(Command):
                                 PARALLEL_CONFIGS.append(config)
 
                             # Check for pending history transfer after clearing
-                            if hasattr(AGENT_MANAGER, '_pending_history_transfer') and AGENT_MANAGER._pending_history_transfer:
+                            if (
+                                hasattr(AGENT_MANAGER, "_pending_history_transfer")
+                                and AGENT_MANAGER._pending_history_transfer
+                            ):
                                 current_history = AGENT_MANAGER._pending_history_transfer
                                 AGENT_MANAGER._pending_history_transfer = None
 
                             # Transfer history to parallel isolation system
                             if current_history and len(PARALLEL_CONFIGS) > 0:
                                 from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
+
                                 agent_ids = [config.id for config in PARALLEL_CONFIGS]
 
                                 # Check if pattern requires different contexts
@@ -430,14 +447,18 @@ class AgentCommand(Command):
                                     # Clear any existing histories first
                                     PARALLEL_ISOLATION.clear_all_histories()
                                     # Set history only for the first agent
-                                    PARALLEL_ISOLATION.replace_isolated_history(agent_ids[0], current_history.copy())
+                                    PARALLEL_ISOLATION.replace_isolated_history(
+                                        agent_ids[0], current_history.copy()
+                                    )
                                     # Initialize empty histories for other agents
                                     for agent_id in agent_ids[1:]:
                                         PARALLEL_ISOLATION.replace_isolated_history(agent_id, [])
                                 else:
                                     # This creates isolated copies for each parallel agent
                                     agent_ids = [config.id for config in PARALLEL_CONFIGS]
-                                    PARALLEL_ISOLATION.transfer_to_parallel(current_history, len(PARALLEL_CONFIGS), agent_ids)
+                                    PARALLEL_ISOLATION.transfer_to_parallel(
+                                        current_history, len(PARALLEL_CONFIGS), agent_ids
+                                    )
 
                             # Sync to environment to enable parallel mode
                             if len(PARALLEL_CONFIGS) >= 2:
@@ -448,8 +469,12 @@ class AgentCommand(Command):
                             # Set pattern description in environment for cli.py to check
                             os.environ["CAI_PATTERN_DESCRIPTION"] = pattern.description or ""
 
-                            console.print(f"[green]Loaded parallel pattern: {pattern.description}[/green]")
-                            console.print(f"[cyan]{len(PARALLEL_CONFIGS)} agents configured in parallel mode[/cyan]")
+                            console.print(
+                                f"[green]Loaded parallel pattern: {pattern.description}[/green]"
+                            )
+                            console.print(
+                                f"[cyan]{len(PARALLEL_CONFIGS)} agents configured in parallel mode[/cyan]"
+                            )
 
                             # Show configured agents
                             for idx, config in enumerate(PARALLEL_CONFIGS, 1):
@@ -461,6 +486,7 @@ class AgentCommand(Command):
                             # Pattern configs is not iterable or has issues
                             console.print(f"[red]Error loading parallel pattern: {str(e)}[/red]")
                             import traceback
+
                             console.print(f"[dim]{traceback.format_exc()}[/dim]")
                             return False
 
@@ -489,7 +515,9 @@ class AgentCommand(Command):
                         if agent_key:
                             os.environ["CAI_AGENT_TYPE"] = agent_key
                             console.print(f"[green]Loaded swarm pattern: {pattern.name}[/green]")
-                            console.print(f"[cyan]Entry agent: {getattr(entry_agent, 'name', agent_key)}[/cyan]")
+                            console.print(
+                                f"[cyan]Entry agent: {getattr(entry_agent, 'name', agent_key)}[/cyan]"
+                            )
 
                             # Show agents in the swarm
                             if hasattr(pattern, "agents") and pattern.agents:
@@ -503,7 +531,9 @@ class AgentCommand(Command):
                             agent_name = getattr(entry_agent, "name", agent_key)
                             agent = entry_agent
                         else:
-                            console.print("[red]Error: Could not find entry agent for swarm pattern[/red]")
+                            console.print(
+                                "[red]Error: Could not find entry agent for swarm pattern[/red]"
+                            )
                             return False
                     else:
                         console.print("[red]Error: Swarm pattern has no entry agent defined[/red]")
@@ -511,7 +541,9 @@ class AgentCommand(Command):
 
                 else:
                     # Other pattern types not yet supported for direct loading
-                    console.print(f"[yellow]Pattern type '{pattern_type_str}' is not yet supported for direct loading[/yellow]")
+                    console.print(
+                        f"[yellow]Pattern type '{pattern_type_str}' is not yet supported for direct loading[/yellow]"
+                    )
                     console.print(f"[dim]Pattern: {pattern.name} - {pattern.description}[/dim]")
                     return False
         else:
@@ -522,21 +554,25 @@ class AgentCommand(Command):
         # IMPORTANT: Don't set CAI_AGENT_TYPE yet - we need to set up history transfer first
         # Store the selected agent key for later use
         agent_type_to_set = None
-        if 'selected_agent_key' in locals() and not (hasattr(agent, "_pattern") and
-                                                      hasattr(agent._pattern, "type") and
-                                                      str(getattr(agent._pattern.type, 'value', agent._pattern.type)) == "parallel"):
+        if "selected_agent_key" in locals() and not (
+            hasattr(agent, "_pattern")
+            and hasattr(agent._pattern, "type")
+            and str(getattr(agent._pattern.type, "value", agent._pattern.type)) == "parallel"
+        ):
             agent_type_to_set = selected_agent_key
 
             # IMPORTANT: Ensure agent_name is correctly set for the selected agent
             # This fixes the issue where swarm pattern's agent name lingers
-            if 'agent' not in locals() or 'agent_name' not in locals():
+            if "agent" not in locals() or "agent_name" not in locals():
                 # Re-fetch the agent and its name to ensure consistency
                 selected_agent = agents_to_display.get(selected_agent_key)
                 if selected_agent:
                     agent = selected_agent
                     agent_name = getattr(selected_agent, "name", selected_agent_key)
                 else:
-                    console.print(f"[red]Error: Could not find agent for key: {selected_agent_key}[/red]")
+                    console.print(
+                        f"[red]Error: Could not find agent for key: {selected_agent_key}[/red]"
+                    )
                     return False
         else:
             # This shouldn't happen, but let's be safe
@@ -545,7 +581,7 @@ class AgentCommand(Command):
 
         # Check if this was a parallel pattern - if so, we're done
         if hasattr(agent, "_pattern") and hasattr(agent._pattern, "type"):
-            pattern_type = str(getattr(agent._pattern.type, 'value', agent._pattern.type))
+            pattern_type = str(getattr(agent._pattern.type, "value", agent._pattern.type))
             if pattern_type == "parallel":
                 # Parallel pattern was already handled above with its own return
                 # This should not be reached, but just in case
@@ -586,7 +622,10 @@ class AgentCommand(Command):
             # We're switching from single agent to another single agent (or from swarm pattern)
 
             # First check if there's a pending history transfer
-            if hasattr(AGENT_MANAGER, '_pending_history_transfer') and AGENT_MANAGER._pending_history_transfer:
+            if (
+                hasattr(AGENT_MANAGER, "_pending_history_transfer")
+                and AGENT_MANAGER._pending_history_transfer
+            ):
                 current_history = AGENT_MANAGER._pending_history_transfer
                 AGENT_MANAGER._pending_history_transfer = None
             else:
@@ -617,7 +656,10 @@ class AgentCommand(Command):
                     prev_agent = agents_to_display.get(prev_agent_type)
                     if prev_agent and hasattr(prev_agent, "_pattern"):
                         pattern = prev_agent._pattern
-                        if hasattr(pattern, "type") and str(getattr(pattern.type, 'value', pattern.type)) == "swarm":
+                        if (
+                            hasattr(pattern, "type")
+                            and str(getattr(pattern.type, "value", pattern.type)) == "swarm"
+                        ):
                             if hasattr(pattern, "entry_agent") and pattern.entry_agent:
                                 entry_agent_name = getattr(pattern.entry_agent, "name", "")
                                 if entry_agent_name:
@@ -643,8 +685,9 @@ class AgentCommand(Command):
 
         # Register the new agent immediately so /history works
         # This mimics what the CLI does when it detects the agent change
-        if 'selected_agent_key' in locals() and selected_agent_key:
+        if "selected_agent_key" in locals() and selected_agent_key:
             from cai.agents import get_agent_by_name
+
             new_agent = get_agent_by_name(selected_agent_key, agent_id="P1")
             new_agent_name = getattr(new_agent, "name", selected_agent_key)
             AGENT_MANAGER.switch_to_single_agent(new_agent, new_agent_name)
@@ -665,13 +708,17 @@ class AgentCommand(Command):
         # Double-check agent_name is correct before displaying
         # This ensures we show the correct agent name even after switching from patterns
         final_agent_name = agent_name
-        if hasattr(agent, 'name'):
+        if hasattr(agent, "name"):
             final_agent_name = agent.name
-        elif 'selected_agent_key' in locals() and selected_agent_key in agents_to_display:
-            final_agent_name = getattr(agents_to_display[selected_agent_key], 'name', selected_agent_key)
+        elif "selected_agent_key" in locals() and selected_agent_key in agents_to_display:
+            final_agent_name = getattr(
+                agents_to_display[selected_agent_key], "name", selected_agent_key
+            )
 
         console.print(f"[green]Switched to agent: {final_agent_name}[/green]", end="")
-        console.print(" [yellow](Parallel mode disabled)[/yellow]" if len(PARALLEL_CONFIGS) == 0 else "")
+        console.print(
+            " [yellow](Parallel mode disabled)[/yellow]" if len(PARALLEL_CONFIGS) == 0 else ""
+        )
 
         visualize_agent_graph(agent)
 
@@ -793,6 +840,7 @@ class AgentCommand(Command):
         # Check PARALLEL_CONFIGS if available
         try:
             from cai.repl.commands.parallel import PARALLEL_CONFIGS
+
             has_parallel_configs = len(PARALLEL_CONFIGS) > 0
         except ImportError:
             has_parallel_configs = False
@@ -871,8 +919,8 @@ class AgentCommand(Command):
                     config_info = f" [{config.model}]"
 
                 # Add ID (P1, P2, etc)
-                agent_id = config.id if hasattr(config, 'id') else f"P{idx + 1}"
-                parallel_content.append(f"  {idx+1}. {name} ({key}) [{agent_id}]{config_info}")
+                agent_id = config.id if hasattr(config, "id") else f"P{idx + 1}"
+                parallel_content.append(f"  {idx + 1}. {name} ({key}) [{agent_id}]{config_info}")
 
             parallel_panel = Panel(
                 "\n".join(parallel_content),

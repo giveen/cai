@@ -11,8 +11,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__),
-                                '..', '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cai.repl.commands.base import Command
 from cai.repl.commands.model import ModelCommand, ModelShowCommand
@@ -25,19 +24,19 @@ class TestModelCommand:
     def setup_and_cleanup(self):
         """Setup and cleanup for each test."""
         # Set up test environment
-        os.environ['CAI_TELEMETRY'] = 'false'
-        os.environ['CAI_TRACING'] = 'false'
+        os.environ["CAI_TELEMETRY"] = "false"
+        os.environ["CAI_TRACING"] = "false"
 
         # Store original CAI_MODEL if it exists
-        self.original_model = os.environ.get('CAI_MODEL')
+        self.original_model = os.environ.get("CAI_MODEL")
 
         yield
 
         # Restore original CAI_MODEL or remove if it didn't exist
         if self.original_model is not None:
-            os.environ['CAI_MODEL'] = self.original_model
-        elif 'CAI_MODEL' in os.environ:
-            del os.environ['CAI_MODEL']
+            os.environ["CAI_MODEL"] = self.original_model
+        elif "CAI_MODEL" in os.environ:
+            del os.environ["CAI_MODEL"]
 
     @pytest.fixture
     def model_command(self):
@@ -59,7 +58,7 @@ class TestModelCommand:
                 "max_tokens": 8192,
                 "supports_function_calling": True,
                 "supports_vision": False,
-                "litellm_provider": "openai"
+                "litellm_provider": "openai",
             },
             "claude-3-sonnet-20240229": {
                 "input_cost_per_token": 0.000015,
@@ -67,7 +66,7 @@ class TestModelCommand:
                 "max_tokens": 200000,
                 "supports_function_calling": True,
                 "supports_vision": True,
-                "litellm_provider": "anthropic"
+                "litellm_provider": "anthropic",
             },
             "deepseek/deepseek-v3": {
                 "input_cost_per_token": 0.000001,
@@ -75,8 +74,8 @@ class TestModelCommand:
                 "max_tokens": 128000,
                 "supports_function_calling": True,
                 "supports_vision": False,
-                "litellm_provider": "deepseek"
-            }
+                "litellm_provider": "deepseek",
+            },
         }
 
     @pytest.fixture
@@ -86,12 +85,12 @@ class TestModelCommand:
             "models": [
                 {
                     "name": "llama3",
-                    "size": 4661211648  # ~4.3 GB
+                    "size": 4661211648,  # ~4.3 GB
                 },
                 {
                     "name": "mistral:7b",
-                    "size": 7365960192  # ~6.9 GB
-                }
+                    "size": 7365960192,  # ~6.9 GB
+                },
             ]
         }
 
@@ -102,9 +101,9 @@ class TestModelCommand:
         assert model_command.aliases == ["/mod"]
 
         # Check that cached models and numbers are initialized
-        assert hasattr(model_command, 'cached_models')
-        assert hasattr(model_command, 'cached_model_numbers')
-        assert hasattr(model_command, 'last_model_fetch')
+        assert hasattr(model_command, "cached_models")
+        assert hasattr(model_command, "cached_model_numbers")
+        assert hasattr(model_command, "last_model_fetch")
 
     def test_model_show_command_initialization(self, model_show_command):
         """Test that ModelShowCommand initializes correctly."""
@@ -112,9 +111,10 @@ class TestModelCommand:
         assert model_show_command.description == "Show all available models from LiteLLM repository"
         assert model_show_command.aliases == ["/mod-show"]
 
-    @patch('requests.get')
-    def test_handle_no_args_with_mock_data(self, mock_get, model_command,
-                                          mock_litellm_response, mock_ollama_response):
+    @patch("requests.get")
+    def test_handle_no_args_with_mock_data(
+        self, mock_get, model_command, mock_litellm_response, mock_ollama_response
+    ):
         """Test showing current model and available models with no arguments."""
         # Mock LiteLLM response
         mock_litellm = Mock()
@@ -138,14 +138,13 @@ class TestModelCommand:
         mock_get.side_effect = side_effect
 
         # Set a model first
-        os.environ['CAI_MODEL'] = 'gpt-4'
+        os.environ["CAI_MODEL"] = "gpt-4"
 
         result = model_command.handle([])
         assert result is True
 
-    @patch('requests.get')
-    def test_handle_select_model_by_name(self, mock_get, model_command,
-                                        mock_litellm_response):
+    @patch("requests.get")
+    def test_handle_select_model_by_name(self, mock_get, model_command, mock_litellm_response):
         """Test selecting a model by name."""
         # Mock LiteLLM response
         mock_response = Mock()
@@ -155,11 +154,10 @@ class TestModelCommand:
 
         result = model_command.handle(["gpt-4"])
         assert result is True
-        assert os.environ.get('CAI_MODEL') == 'gpt-4'
+        assert os.environ.get("CAI_MODEL") == "gpt-4"
 
-    @patch('requests.get')
-    def test_handle_select_model_by_number(self, mock_get, model_command,
-                                          mock_litellm_response):
+    @patch("requests.get")
+    def test_handle_select_model_by_number(self, mock_get, model_command, mock_litellm_response):
         """Test selecting a model by number."""
         # Mock LiteLLM response
         mock_response = Mock()
@@ -173,15 +171,15 @@ class TestModelCommand:
         # Then select by number
         result = model_command.handle(["1"])
         assert result is True
-        assert 'CAI_MODEL' in os.environ
+        assert "CAI_MODEL" in os.environ
 
     def test_handle_select_custom_model(self, model_command):
         """Test selecting a custom model name not in the predefined list."""
         result = model_command.handle(["custom-model-name"])
         assert result is True
-        assert os.environ.get('CAI_MODEL') == 'custom-model-name'
+        assert os.environ.get("CAI_MODEL") == "custom-model-name"
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_handle_with_network_error(self, mock_get, model_command):
         """Test handling when network requests fail."""
         # Mock network failure
@@ -190,7 +188,7 @@ class TestModelCommand:
         result = model_command.handle([])
         assert result is True  # Should still work, just without external data
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_handle_model_pricing_data_error(self, mock_get, model_command):
         """Test handling when LiteLLM API returns error."""
         # Mock HTTP error
@@ -215,8 +213,8 @@ class TestModelShowCommand:
     def setup_and_cleanup(self):
         """Setup and cleanup for each test."""
         # Set up test environment
-        os.environ['CAI_TELEMETRY'] = 'false'
-        os.environ['CAI_TRACING'] = 'false'
+        os.environ["CAI_TELEMETRY"] = "false"
+        os.environ["CAI_TRACING"] = "false"
 
         yield
 
@@ -235,7 +233,7 @@ class TestModelShowCommand:
                 "max_tokens": 8192,
                 "supports_function_calling": True,
                 "supports_vision": False,
-                "litellm_provider": "openai"
+                "litellm_provider": "openai",
             },
             "claude-3-sonnet-20240229": {
                 "input_cost_per_token": 0.000015,
@@ -243,7 +241,7 @@ class TestModelShowCommand:
                 "max_tokens": 200000,
                 "supports_function_calling": True,
                 "supports_vision": True,
-                "litellm_provider": "anthropic"
+                "litellm_provider": "anthropic",
             },
             "gpt-3.5-turbo": {
                 "input_cost_per_token": 0.000001,
@@ -251,8 +249,8 @@ class TestModelShowCommand:
                 "max_tokens": 4096,
                 "supports_function_calling": False,
                 "supports_vision": False,
-                "litellm_provider": "openai"
-            }
+                "litellm_provider": "openai",
+            },
         }
 
     @pytest.fixture
@@ -260,20 +258,15 @@ class TestModelShowCommand:
         """Create a mock response for Ollama models."""
         return {
             "models": [
-                {
-                    "name": "llama3",
-                    "size": 4661211648
-                },
-                {
-                    "name": "mistral:7b",
-                    "size": 7365960192
-                }
+                {"name": "llama3", "size": 4661211648},
+                {"name": "mistral:7b", "size": 7365960192},
             ]
         }
 
-    @patch('requests.get')
-    def test_handle_no_args(self, mock_get, model_show_command,
-                           mock_litellm_response, mock_ollama_response):
+    @patch("requests.get")
+    def test_handle_no_args(
+        self, mock_get, model_show_command, mock_litellm_response, mock_ollama_response
+    ):
         """Test showing all models with no arguments."""
         # Mock LiteLLM response
         mock_litellm = Mock()
@@ -299,9 +292,8 @@ class TestModelShowCommand:
         result = model_show_command.handle([])
         assert result is True
 
-    @patch('requests.get')
-    def test_handle_supported_filter(self, mock_get, model_show_command,
-                                    mock_litellm_response):
+    @patch("requests.get")
+    def test_handle_supported_filter(self, mock_get, model_show_command, mock_litellm_response):
         """Test showing only supported models (with function calling)."""
         # Mock LiteLLM response
         mock_response = Mock()
@@ -312,9 +304,8 @@ class TestModelShowCommand:
         result = model_show_command.handle(["supported"])
         assert result is True
 
-    @patch('requests.get')
-    def test_handle_search_filter(self, mock_get, model_show_command,
-                                 mock_litellm_response):
+    @patch("requests.get")
+    def test_handle_search_filter(self, mock_get, model_show_command, mock_litellm_response):
         """Test filtering models by search term."""
         # Mock LiteLLM response
         mock_response = Mock()
@@ -325,9 +316,8 @@ class TestModelShowCommand:
         result = model_show_command.handle(["gpt"])
         assert result is True
 
-    @patch('requests.get')
-    def test_handle_supported_and_search(self, mock_get, model_show_command,
-                                        mock_litellm_response):
+    @patch("requests.get")
+    def test_handle_supported_and_search(self, mock_get, model_show_command, mock_litellm_response):
         """Test combining supported filter with search term."""
         # Mock LiteLLM response
         mock_response = Mock()
@@ -338,7 +328,7 @@ class TestModelShowCommand:
         result = model_show_command.handle(["supported", "claude"])
         assert result is True
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_handle_network_error(self, mock_get, model_show_command):
         """Test handling when network request fails."""
         # Mock network failure
@@ -347,7 +337,7 @@ class TestModelShowCommand:
         result = model_show_command.handle([])
         assert result is True  # Should handle gracefully
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_handle_http_error(self, mock_get, model_show_command):
         """Test handling when API returns HTTP error."""
         # Mock HTTP error
@@ -358,10 +348,10 @@ class TestModelShowCommand:
         result = model_show_command.handle([])
         assert result is True  # Should handle gracefully
 
-    @patch('requests.get')
-    def test_handle_with_ollama_error(self, mock_get, model_show_command,
-                                     mock_litellm_response):
+    @patch("requests.get")
+    def test_handle_with_ollama_error(self, mock_get, model_show_command, mock_litellm_response):
         """Test handling when Ollama is not available but LiteLLM works."""
+
         # Mock LiteLLM success but Ollama failure
         def side_effect(url, timeout=None):
             if "litellm" in url:
@@ -388,17 +378,17 @@ class TestModelCommandIntegration:
     def setup_integration(self):
         """Setup for integration tests."""
         # Store original CAI_MODEL if it exists
-        self.original_model = os.environ.get('CAI_MODEL')
+        self.original_model = os.environ.get("CAI_MODEL")
 
         yield
 
         # Restore original CAI_MODEL or remove if it didn't exist
         if self.original_model is not None:
-            os.environ['CAI_MODEL'] = self.original_model
-        elif 'CAI_MODEL' in os.environ:
-            del os.environ['CAI_MODEL']
+            os.environ["CAI_MODEL"] = self.original_model
+        elif "CAI_MODEL" in os.environ:
+            del os.environ["CAI_MODEL"]
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_full_model_workflow(self, mock_get):
         """Test a complete workflow of listing and selecting models."""
         # Mock responses
@@ -407,21 +397,17 @@ class TestModelCommandIntegration:
                 "input_cost_per_token": 0.00003,
                 "output_cost_per_token": 0.00006,
                 "max_tokens": 8192,
-                "supports_function_calling": True
+                "supports_function_calling": True,
             },
             "claude-3-sonnet-20240229": {
                 "input_cost_per_token": 0.000015,
                 "output_cost_per_token": 0.000075,
                 "max_tokens": 200000,
-                "supports_function_calling": True
-            }
+                "supports_function_calling": True,
+            },
         }
 
-        mock_ollama_response = {
-            "models": [
-                {"name": "llama3", "size": 4661211648}
-            ]
-        }
+        mock_ollama_response = {"models": [{"name": "llama3", "size": 4661211648}]}
 
         # Configure mock responses
         def side_effect(url, timeout=None):
@@ -454,7 +440,7 @@ class TestModelCommandIntegration:
         # Select a model by name
         result3 = model_cmd.handle(["gpt-4"])
         assert result3 is True
-        assert os.environ.get('CAI_MODEL') == 'gpt-4'
+        assert os.environ.get("CAI_MODEL") == "gpt-4"
 
         # Show current model again
         result4 = model_cmd.handle([])
@@ -464,7 +450,7 @@ class TestModelCommandIntegration:
         result5 = model_cmd.handle(["1"])
         assert result5 is True
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_model_selection_edge_cases(self, mock_get):
         """Test edge cases in model selection."""
         # Mock minimal response to avoid network dependency
@@ -478,37 +464,37 @@ class TestModelCommandIntegration:
         # Test selecting non-existent number (large number)
         result1 = cmd.handle(["999"])
         assert result1 is True
-        assert os.environ.get('CAI_MODEL') == '999'  # Should use as literal
+        assert os.environ.get("CAI_MODEL") == "999"  # Should use as literal
 
         # Test selecting model with special characters
         result2 = cmd.handle(["custom/model:latest"])
         assert result2 is True
-        assert os.environ.get('CAI_MODEL') == 'custom/model:latest'
+        assert os.environ.get("CAI_MODEL") == "custom/model:latest"
 
         # Test empty model name (edge case)
         result3 = cmd.handle([""])
         assert result3 is True
-        assert os.environ.get('CAI_MODEL') == ''
+        assert os.environ.get("CAI_MODEL") == ""
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_model_show_filters_combination(self, mock_get):
         """Test various combinations of filters in model-show command."""
         mock_response = {
             "gpt-4": {
                 "supports_function_calling": True,
                 "input_cost_per_token": 0.00003,
-                "output_cost_per_token": 0.00006
+                "output_cost_per_token": 0.00006,
             },
             "gpt-3.5-turbo": {
                 "supports_function_calling": False,
                 "input_cost_per_token": 0.000001,
-                "output_cost_per_token": 0.000002
+                "output_cost_per_token": 0.000002,
             },
             "claude-3-sonnet": {
                 "supports_function_calling": True,
                 "input_cost_per_token": 0.000015,
-                "output_cost_per_token": 0.000075
-            }
+                "output_cost_per_token": 0.000075,
+            },
         }
 
         mock_http_response = Mock()
@@ -535,5 +521,5 @@ class TestModelCommandIntegration:
         assert result4 is True
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -5,6 +5,7 @@ This module provides functions to perform Google searches in two modes:
 1. Regular search - Returns URLs from standard Google search results
 2. Google dorking - Returns URLs from searches using advanced Google search operators
 """
+
 import os
 from typing import Dict, List
 
@@ -21,7 +22,7 @@ def google_search(query: str, num_results: int = 10) -> str:
         num_results (int): Maximum number of results to return. Default is 10.
 
     Returns:
-        str: A formatted string containing URLs, titles, and snippets from 
+        str: A formatted string containing URLs, titles, and snippets from
         the search results.
     """
     try:
@@ -40,7 +41,7 @@ def google_search(query: str, num_results: int = 10) -> str:
 def google_dork_search(dork_query: str, num_results: int = 100) -> str:
     """
     Perform a Google dork search and return a formatted string with URLs.
-    
+
     Google dorking uses advanced search operators to find specific information.
     Examples of operators: site:, filetype:, inurl:, intitle:, etc.
 
@@ -61,8 +62,10 @@ def google_dork_search(dork_query: str, num_results: int = 100) -> str:
         formatted_results += f"{result['url']}\n"
     return formatted_results
 
-def _perform_search(query: str, num_results: int = 10,
-                   is_dork: bool = False) -> List[Dict[str, str]]:
+
+def _perform_search(
+    query: str, num_results: int = 10, is_dork: bool = False
+) -> List[Dict[str, str]]:
     """
     Helper function to perform Google searches.
 
@@ -72,8 +75,8 @@ def _perform_search(query: str, num_results: int = 10,
         is_dork (bool): Whether this is a dork search.
 
     Returns:
-        List[Dict[str, str]]: For regular searches, returns a list of dictionaries 
-        with URLs, titles, and snippets. For dork searches, returns a list of 
+        List[Dict[str, str]]: For regular searches, returns a list of dictionaries
+        with URLs, titles, and snippets. For dork searches, returns a list of
         dictionaries with only URLs.
     """
     load_dotenv()
@@ -92,14 +95,16 @@ def _perform_search(query: str, num_results: int = 10,
         "key": api_key,
         "cx": cx,
         "q": query,
-        "num": min(num_results, 10)  # API limits to 10 results per request
+        "num": min(num_results, 10),  # API limits to 10 results per request
     }
 
     results = []
 
     # Google API returns max 10 results per request, so we need to make multiple
     # requests with different start indices to get more results
-    for start_index in range(1, min(num_results + 1, 101), 10):  # Google API limits to 100 results total
+    for start_index in range(
+        1, min(num_results + 1, 101), 10
+    ):  # Google API limits to 100 results total
         if start_index > 1:
             params["start"] = start_index
 
@@ -110,9 +115,7 @@ def _perform_search(query: str, num_results: int = 10,
                 detail = response.json().get("error", {}).get("message", response.text[:200])
             except Exception:  # pylint: disable=broad-except
                 detail = response.text[:200]
-            raise RuntimeError(
-                f"Google API request failed (HTTP {response.status_code}): {detail}"
-            )
+            raise RuntimeError(f"Google API request failed (HTTP {response.status_code}): {detail}")
 
         data = response.json()
 
@@ -124,14 +127,14 @@ def _perform_search(query: str, num_results: int = 10,
                 break
 
             if is_dork:
-                results.append({
-                    "url": item["link"]
-                })
+                results.append({"url": item["link"]})
             else:
-                results.append({
-                    "url": item["link"],
-                    "title": item.get("title", ""),
-                    "snippet": item.get("snippet", "")
-                })
+                results.append(
+                    {
+                        "url": item["link"],
+                        "title": item.get("title", ""),
+                        "snippet": item.get("snippet", ""),
+                    }
+                )
 
     return results

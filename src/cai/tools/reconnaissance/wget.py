@@ -15,18 +15,16 @@ from cai.tools.validation import (  # pylint: disable=import-error
 
 def _validate_wget_input(args: str, url: str):
     """Return an error string if inputs are unsafe, else None."""
-    err = validate_args_no_injection(args, 'args')
+    err = validate_args_no_injection(args, "args")
     if err:
         return err
     if url and not is_url_safe(url):
-        return (
-            f"Invalid url '{url}': must be a URL, IP, or hostname without whitespace or shell-special characters."
-        )
+        return f"Invalid url '{url}': must be a URL, IP, or hostname without whitespace or shell-special characters."
     return None
 
 
 @function_tool
-def wget(url: str, args: str = '', timeout: int = 60) -> str:
+def wget(url: str, args: str = "", timeout: int = 60) -> str:
     """
     Download files using wget with safe input checks.
 
@@ -56,7 +54,7 @@ def wget(url: str, args: str = '', timeout: int = 60) -> str:
     if err:
         return err
 
-    command = f'wget {args} {url.strip()}'
+    command = f"wget {args} {url.strip()}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err

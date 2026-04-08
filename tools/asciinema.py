@@ -7,6 +7,7 @@ Usage:
 
 This tool wraps asciinema recording to capture replay sessions.
 """
+
 import argparse
 import os
 import subprocess
@@ -22,25 +23,15 @@ def parse_arguments():
 Examples:
   cai-asciinema path/to/file.jsonl 0.5
   cai-asciinema conversation.jsonl 1.0
-"""
+""",
     )
 
-    parser.add_argument(
-        "jsonl_file",
-        help="Path to the JSONL file containing conversation history"
-    )
+    parser.add_argument("jsonl_file", help="Path to the JSONL file containing conversation history")
+
+    parser.add_argument("replay_delay", type=float, help="Time in seconds to wait between actions")
 
     parser.add_argument(
-        "replay_delay",
-        type=float,
-        help="Time in seconds to wait between actions"
-    )
-
-    parser.add_argument(
-        "--output",
-        "-o",
-        type=str,
-        help="Output file path for the recording (optional)"
+        "--output", "-o", type=str, help="Output file path for the recording (optional)"
     )
 
     return parser.parse_args()

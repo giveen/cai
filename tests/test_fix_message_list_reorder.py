@@ -35,7 +35,9 @@ def _make_tool_response(call_id, content="ok"):
 def _assert_tool_follows_assistant(result, tool_call_id):
     """Assert that a tool response appears after its matching assistant message."""
     tool_idx = next(
-        i for i, m in enumerate(result) if m.get("role") == "tool" and m.get("tool_call_id") == tool_call_id
+        i
+        for i, m in enumerate(result)
+        if m.get("role") == "tool" and m.get("tool_call_id") == tool_call_id
     )
     asst_idx = next(
         i
@@ -44,7 +46,9 @@ def _assert_tool_follows_assistant(result, tool_call_id):
         and m.get("tool_calls")
         and any(tc["id"] == tool_call_id for tc in m["tool_calls"])
     )
-    assert tool_idx > asst_idx, f"Tool {tool_call_id} at index {tool_idx} should follow assistant at index {asst_idx}"
+    assert tool_idx > asst_idx, (
+        f"Tool {tool_call_id} at index {tool_idx} should follow assistant at index {asst_idx}"
+    )
 
 
 def test_two_tool_responses_reversed_order():
@@ -166,7 +170,11 @@ def test_tool_response_separated_by_user_message():
         and m.get("tool_calls")
         and any(tc["id"] == "call_x" for tc in m["tool_calls"])
     )
-    tool_idx = next(i for i, m in enumerate(result) if m.get("role") == "tool" and m.get("tool_call_id") == "call_x")
+    tool_idx = next(
+        i
+        for i, m in enumerate(result)
+        if m.get("role") == "tool" and m.get("tool_call_id") == "call_x"
+    )
     assert tool_idx == asst_idx + 1
 
 

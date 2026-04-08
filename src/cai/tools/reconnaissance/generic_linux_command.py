@@ -1,6 +1,7 @@
 """
 This is used to create a generic linux command.
 """
+
 import ast
 import json
 import os
@@ -22,9 +23,9 @@ from cai.tools.common import (
 
 
 @function_tool(strict_mode=False)
-async def generic_linux_command(command: str = "",
-                                interactive: bool = False,
-                                session_id: Optional[str] = None) -> str:
+async def generic_linux_command(
+    command: str = "", interactive: bool = False, session_id: Optional[str] = None
+) -> str:
     """
     Execute commands with session management.
 
@@ -63,6 +64,7 @@ async def generic_linux_command(command: str = "",
     """
     # Handle special session management commands (tolerant parser)
     cmd_lower = command.strip().lower()
+
     # Normalize session_id robustly: handle dict/list/bool, JSON-like strings,
     # and extract common id fields when present. Empty objects/arrays and
     # sentinel strings ('null','none','{}') become None.
@@ -106,7 +108,7 @@ async def generic_linux_command(command: str = "",
                 s = s[1:-1].strip()
 
             # If looks like JSON/Python literal, try to parse and extract
-            if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
+            if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
                 try:
                     parsed = json.loads(s)
                     return _sanitize_session_id(parsed)
@@ -129,7 +131,7 @@ async def generic_linux_command(command: str = "",
             if s == "" or low in {"none", "null", "nil", "undefined"}:
                 return None
             # braces/brackets-only
-            if re.fullmatch(r'[\{\}\[\]\s]*', s):
+            if re.fullmatch(r"[\{\}\[\]\s]*", s):
                 return None
 
             return s
@@ -148,7 +150,7 @@ async def generic_linux_command(command: str = "",
             return "No active sessions"
         lines = ["Active sessions:"]
         for s in sessions:
-            fid = s.get('friendly_id') or ""
+            fid = s.get("friendly_id") or ""
             fid_show = (fid + " ") if fid else ""
             lines.append(
                 f"{fid_show}({s['session_id'][:8]}) cmd='{s['command']}' last={s['last_activity']} running={s['running']}"
@@ -190,7 +192,7 @@ async def generic_linux_command(command: str = "",
                 return "No active sessions"
             lines = ["Active sessions:"]
             for s in sessions:
-                fid = s.get('friendly_id') or ""
+                fid = s.get("friendly_id") or ""
                 fid_show = (fid + " ") if fid else ""
                 lines.append(
                     f"{fid_show}({s['session_id'][:8]}) cmd='{s['command']}' last={s['last_activity']} running={s['running']}"
@@ -218,7 +220,8 @@ async def generic_linux_command(command: str = "",
         # Check CTF environment
         try:
             from cai.cli import ctf_global
-            if ctf_global and hasattr(ctf_global, 'get_shell'):
+
+            if ctf_global and hasattr(ctf_global, "get_shell"):
                 env_info.append("🎯 CTF Environment: Active")
             else:
                 env_info.append("🎯 CTF Environment: Not available")
@@ -233,8 +236,8 @@ async def generic_linux_command(command: str = "",
             env_info.append("🐳 Container: Not active")
 
         # Check SSH environment
-        ssh_user = os.getenv('SSH_USER')
-        ssh_host = os.getenv('SSH_HOST')
+        ssh_user = os.getenv("SSH_USER")
+        ssh_host = os.getenv("SSH_HOST")
         if ssh_user and ssh_host:
             env_info.append(f"🔗 SSH: {ssh_user}@{ssh_host}")
         else:
@@ -243,6 +246,7 @@ async def generic_linux_command(command: str = "",
         # Check workspace
         try:
             from cai.tools.common import _get_workspace_dir
+
             workspace = _get_workspace_dir()
             env_info.append(f"📁 Workspace: {workspace}")
         except Exception:
@@ -261,7 +265,11 @@ async def generic_linux_command(command: str = "",
     # In CI/tests we want to avoid running privileged or interactive system
     # commands that require root or prompt for passwords. Make this opt-in
     # via `RUN_AGENT_INTEGRATION_TESTS=1` so developers can still run them.
-    run_integration = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower() in ("1", "true", "yes")
+    run_integration = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if not run_integration:
         lowered = command.lower()
         privileged_indicators = [
@@ -310,9 +318,10 @@ async def generic_linux_command(command: str = "",
         if parallel_count > 1:
             # Check if this is a P agent
             from cai.sdk.agents.models.openai_chatcompletions import get_current_active_model
+
             model = get_current_active_model()
-            if model and hasattr(model, 'agent_id') and model.agent_id:
-                if model.agent_id.startswith('P') and model.agent_id[1:].isdigit():
+            if model and hasattr(model, "agent_id") and model.agent_id:
+                if model.agent_id.startswith("P") and model.agent_id[1:].isdigit():
                     stream = False
 
     except Exception:
@@ -330,29 +339,37 @@ async def generic_linux_command(command: str = "",
     if guardrails_enabled:
         # Check for file write operations that create Python/shell scripts with dangerous content
         # Pattern: echo/cat with base64 decode and execute
-        if re.search(r'(echo|cat|printf).*>.*\.(py|sh|bash|pl|rb|php)', command):
+        if re.search(r"(echo|cat|printf).*>.*\.(py|sh|bash|pl|rb|php)", command):
             # Check if the command contains base64 strings and execution patterns
-            if "base64" in command and any(danger in command for danger in ['os.system', 'subprocess', 'exec', 'eval']):
-                return "Error: Blocked attempt to create script with base64 decode and execute pattern"
+            if "base64" in command and any(
+                danger in command for danger in ["os.system", "subprocess", "exec", "eval"]
+            ):
+                return (
+                    "Error: Blocked attempt to create script with base64 decode and execute pattern"
+                )
             # Check for the specific base64 string from POC
             if "bmMgMTkyLjE2OC4zLjE0IDQ0NDQgLWUgL2Jpbi9zaAo=" in command:
                 return "Error: Blocked attempt to create script with known malicious base64 payload"
 
         # Also check heredoc patterns for creating files
-        if re.search(r'cat.*<<.*>.*\.(py|sh|bash|pl|rb|php)', command):
-            if "base64" in command and any(danger in command for danger in ['os.system', 'subprocess', 'exec', 'eval']):
+        if re.search(r"cat.*<<.*>.*\.(py|sh|bash|pl|rb|php)", command):
+            if "base64" in command and any(
+                danger in command for danger in ["os.system", "subprocess", "exec", "eval"]
+            ):
                 return "Error: Blocked attempt to create script with base64 decode and execute pattern via heredoc"
 
         # CRITICAL MITIGATION: Block creation of scripts containing command substitution in /tmp
         # This prevents PoC 10 where external input tricks agent into creating executable with $(env)
-        if re.search(r'(cat|echo|printf).*>.*/(tmp|var/tmp|dev/shm)/.*\.(sh|bash|py)', command, re.IGNORECASE):
+        if re.search(
+            r"(cat|echo|printf).*>.*/(tmp|var/tmp|dev/shm)/.*\.(sh|bash|py)", command, re.IGNORECASE
+        ):
             # Check if the content being written contains command substitution
-            if '$(' in command or '`' in command:
+            if "$(" in command or "`" in command:
                 return "Error: Blocked creation of script in temporary directory with command substitution. This is likely a prompt injection attempt."
 
         # Block heredoc creation of scripts with command substitution in temp directories
-        if re.search(r'cat.*<<.*EOF.*>.*/(tmp|var/tmp|dev/shm)/', command, re.IGNORECASE):
-            if '$(' in command or '`' in command:
+        if re.search(r"cat.*<<.*EOF.*>.*/(tmp|var/tmp|dev/shm)/", command, re.IGNORECASE):
+            if "$(" in command or "`" in command:
                 return "Error: Blocked heredoc creation of script with command substitution in temporary directory."
         dangerous_patterns = [
             r"(?i)rm\s+-rf\s+/",
@@ -381,8 +398,9 @@ async def generic_linux_command(command: str = "",
             if match:
                 try:
                     import base64
+
                     encoded = match.group(1)
-                    decoded = base64.b64decode(encoded).decode('utf-8', errors='ignore')
+                    decoded = base64.b64decode(encoded).decode("utf-8", errors="ignore")
 
                     # Check if decoded content contains dangerous commands
                     dangerous_decoded = [
@@ -409,8 +427,9 @@ async def generic_linux_command(command: str = "",
             if match:
                 try:
                     import base64
+
                     encoded = match.group(1)
-                    decoded = base64.b32decode(encoded).decode('utf-8', errors='ignore')
+                    decoded = base64.b32decode(encoded).decode("utf-8", errors="ignore")
 
                     # Check if decoded content contains dangerous commands
                     dangerous_decoded = [
@@ -485,20 +504,50 @@ async def generic_linux_command(command: str = "",
             tool_name="generic_linux_command",
         )
     else:
+
         def _looks_interactive(cmd: str) -> bool:
-            first = cmd.strip().split(' ', 1)[0].lower()
+            first = cmd.strip().split(" ", 1)[0].lower()
             interactive_bins = {
-                'bash','sh','zsh','fish','python','ipython','ptpython','node','ruby','irb',
-                'psql','mysql','sqlite3','mongo','redis-cli','ftp','sftp','telnet','ssh',
-                'nc','ncat','socat','gdb','lldb','r2','radare2','tshark','tcpdump','tail',
-                'journalctl','watch','less','more'
+                "bash",
+                "sh",
+                "zsh",
+                "fish",
+                "python",
+                "ipython",
+                "ptpython",
+                "node",
+                "ruby",
+                "irb",
+                "psql",
+                "mysql",
+                "sqlite3",
+                "mongo",
+                "redis-cli",
+                "ftp",
+                "sftp",
+                "telnet",
+                "ssh",
+                "nc",
+                "ncat",
+                "socat",
+                "gdb",
+                "lldb",
+                "r2",
+                "radare2",
+                "tshark",
+                "tcpdump",
+                "tail",
+                "journalctl",
+                "watch",
+                "less",
+                "more",
             }
             if first in interactive_bins:
                 return True
             lowered = cmd.lower()
-            if ' -i' in lowered or ' -it' in lowered:
+            if " -i" in lowered or " -it" in lowered:
                 return True
-            if 'tail -f' in lowered or 'journalctl -f' in lowered or 'watch ' in lowered:
+            if "tail -f" in lowered or "journalctl -f" in lowered or "watch " in lowered:
                 return True
             return False
 
@@ -532,6 +581,7 @@ async def generic_linux_command(command: str = "",
         result = validation.sanitize_tool_output(command, result)
 
     return result
+
 
 @function_tool
 def null_tool() -> str:

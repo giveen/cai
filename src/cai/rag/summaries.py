@@ -5,6 +5,7 @@ for local/dev environments (no external model required) and helpers to
 persist summaries to disk and load them into a `WakeupIndex` for a
 session at startup.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -47,7 +48,7 @@ def _split_sentences(text: str) -> List[str]:
     if not text:
         return []
     # keep it simple and deterministic: split on sentence enders
-    parts = re.split(r'(?<=[\.\?!])\s+', text.strip())
+    parts = re.split(r"(?<=[\.\?!])\s+", text.strip())
     return [p.strip() for p in parts if p.strip()]
 
 
@@ -149,11 +150,17 @@ def read_persisted_summaries(store_path: Optional[str] = None) -> Dict[str, Dict
         return {}
 
 
-def persist_summaries(palace_id: str, l0: str, l1: Optional[str] = None, store_path: Optional[str] = None) -> bool:
+def persist_summaries(
+    palace_id: str, l0: str, l1: Optional[str] = None, store_path: Optional[str] = None
+) -> bool:
     path = store_path or _default_store_path()
     data = read_persisted_summaries(path)
     # Use timezone-aware ISO8601 for updated_at
-    data[palace_id] = {"L0": l0, "L1": l1, "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
+    data[palace_id] = {
+        "L0": l0,
+        "L1": l1,
+        "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+    }
     try:
         d = os.path.dirname(path)
         if d and not os.path.exists(d):

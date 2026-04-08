@@ -56,7 +56,10 @@ class TestLoadCommand:
     def test_command_initialization(self, load_command):
         """Test that LoadCommand initializes correctly."""
         assert load_command.name == "/load"
-        assert load_command.description == "Merge a jsonl file into agent histories with duplicate control (uses logs/last if no file specified)"
+        assert (
+            load_command.description
+            == "Merge a jsonl file into agent histories with duplicate control (uses logs/last if no file specified)"
+        )
         assert load_command.aliases == ["/l"]
 
     @patch("cai.repl.commands.load.console.input")
@@ -66,7 +69,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_no_args_default_file(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test handling with no arguments (uses default file and agent)."""
         mock_input.return_value = "n"  # Don't create memory
@@ -93,7 +102,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_with_file_path_only(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test handling with file path only (loads to default agent)."""
         mock_input.return_value = "n"  # Don't create memory
@@ -119,7 +134,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_with_agent_name_only(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test handling with agent name only (uses default file)."""
         mock_input.return_value = "n"  # Don't create memory
@@ -143,7 +164,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_with_agent_and_file(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test handling with both agent name and file path."""
         mock_input.return_value = "n"  # Don't create memory
@@ -167,7 +194,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_agent_with_spaces(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test handling agent names with spaces."""
         mock_input.return_value = "n"  # Don't create memory
@@ -191,7 +224,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_agent_with_spaces_and_file(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test handling agent names with spaces plus file path."""
         mock_input.return_value = "n"  # Don't create memory
@@ -224,7 +263,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_agent_subcommand(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test 'agent' subcommand with explicit agent specification."""
         mock_input.return_value = "n"  # Don't create memory
@@ -248,7 +293,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_agent_subcommand_with_file(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test 'agent' subcommand with agent and file."""
         mock_input.return_value = "n"  # Don't create memory
@@ -280,7 +331,9 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.ACTIVE_MODEL_INSTANCES", {})
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
-    def test_load_empty_file(self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command):
+    def test_load_empty_file(
+        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command
+    ):
         """Test loading an empty JSONL file."""
         mock_input.return_value = "n"  # Don't create memory
         mock_load_jsonl.return_value = []
@@ -303,7 +356,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_append_to_existing_history(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test that messages are appended to existing history."""
         mock_input.return_value = "n"  # Don't create memory
@@ -332,7 +391,9 @@ class TestLoadCommand:
 
     @patch("cai.agents.get_available_agents")
     @patch("cai.repl.commands.load.get_all_agent_histories")
-    def test_handle_all_with_configured_agents_no_history(self, mock_get_all, mock_get_available, load_command):
+    def test_handle_all_with_configured_agents_no_history(
+        self, mock_get_all, mock_get_available, load_command
+    ):
         """Test 'all' subcommand shows configured agents even without history."""
         from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
 
@@ -375,7 +436,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_handle_special_characters_in_agent_name(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test handling agent names with special characters."""
         mock_input.return_value = "n"  # Don't create memory
@@ -398,7 +465,13 @@ class TestLoadCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.PERSISTENT_MESSAGE_HISTORIES", {})
     @patch("cai.repl.commands.load.load_history_from_jsonl")
     def test_file_path_detection(
-        self, mock_load_jsonl, mock_agent_manager, mock_get_agent, mock_input, load_command, sample_jsonl_messages
+        self,
+        mock_load_jsonl,
+        mock_agent_manager,
+        mock_get_agent,
+        mock_input,
+        load_command,
+        sample_jsonl_messages,
     ):
         """Test proper file path detection in arguments."""
         mock_input.return_value = "n"  # Don't create memory
@@ -439,10 +512,7 @@ class TestLoadCommand:
         mock_agent1.name = "Red Team Agent"
         mock_agent2 = MagicMock()
         mock_agent2.name = "Blue Team Agent"
-        mock_get_available.return_value = {
-            "red_teamer": mock_agent1,
-            "blueteam_agent": mock_agent2
-        }
+        mock_get_available.return_value = {"red_teamer": mock_agent1, "blueteam_agent": mock_agent2}
 
         # Mock messages with agent names
         messages_with_agents = [
@@ -523,9 +593,7 @@ class TestLoadCommand:
             PARALLEL_CONFIGS.extend(original_configs)
 
     @patch("cai.repl.commands.load.load_history_from_jsonl")
-    def test_handle_parallel_with_file(
-        self, mock_load_jsonl, load_command
-    ):
+    def test_handle_parallel_with_file(self, mock_load_jsonl, load_command):
         """Test 'parallel' subcommand with specific file."""
         from cai.repl.commands.parallel import PARALLEL_CONFIGS
 
@@ -612,7 +680,9 @@ class TestLoadCommandIntegration:
     @patch("cai.sdk.agents.simple_agent_manager.AGENT_MANAGER")
     @patch("cai.agents.get_available_agents")
     @patch("cai.repl.commands.load.load_history_from_jsonl")
-    def test_load_by_agent_id(self, mock_load_jsonl, mock_get_available, mock_agent_manager, mock_input):
+    def test_load_by_agent_id(
+        self, mock_load_jsonl, mock_get_available, mock_agent_manager, mock_input
+    ):
         """Test loading into agent by ID."""
         from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
 

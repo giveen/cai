@@ -11,6 +11,7 @@ provider is included as `OpenAIEmbeddingsProvider` and will be used
 when `CAI_EMBEDDINGS_PROVIDER` is set to `openai` and the runtime has
 an OpenAI key and package available.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -167,7 +168,9 @@ _PROVIDERS: Dict[str, Any] = {
 }
 
 
-def get_embeddings_provider(name: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> EmbeddingsProvider:
+def get_embeddings_provider(
+    name: Optional[str] = None, config: Optional[Dict[str, Any]] = None
+) -> EmbeddingsProvider:
     """Factory that returns an `EmbeddingsProvider` instance.
 
     If `name` is not provided, the environment variable

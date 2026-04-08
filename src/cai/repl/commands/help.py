@@ -83,16 +83,24 @@ class HelpCommand(Command):
         # Memory & History
         self.add_subcommand("memory", "Display help for memory persistence", self.handle_memory)
         self.add_subcommand("history", "Display help for conversation history", self.handle_history)
-        self.add_subcommand("compact", "Display help for conversation compaction", self.handle_compact)
+        self.add_subcommand(
+            "compact", "Display help for conversation compaction", self.handle_compact
+        )
         self.add_subcommand("flush", "Display help for clearing histories", self.handle_flush)
         self.add_subcommand("load", "Display help for loading JSONL files", self.handle_load)
-        self.add_subcommand("merge", "Display help for merging agent histories", self.handle_merge_help)
+        self.add_subcommand(
+            "merge", "Display help for merging agent histories", self.handle_merge_help
+        )
 
         # Environment & Config
         self.add_subcommand("config", "Display help for configuration", self.handle_config)
         self.add_subcommand("env", "Display help for environment variables", self.handle_env)
-        self.add_subcommand("workspace", "Display help for workspace management", self.handle_workspace)
-        self.add_subcommand("virtualization", "Display help for Docker containers", self.handle_virtualization)
+        self.add_subcommand(
+            "workspace", "Display help for workspace management", self.handle_workspace
+        )
+        self.add_subcommand(
+            "virtualization", "Display help for Docker containers", self.handle_virtualization
+        )
 
         # Tools & Integration
         self.add_subcommand("mcp", "Display help for Model Context Protocol", self.handle_mcp)
@@ -108,7 +116,9 @@ class HelpCommand(Command):
         # General
         self.add_subcommand("commands", "List all available commands", self.handle_commands)
         self.add_subcommand("quick", "Quick reference guide", self.handle_quick)
-        self.add_subcommand("quickstart", "Show quickstart guide for new users", self.handle_quickstart)
+        self.add_subcommand(
+            "quickstart", "Show quickstart guide for new users", self.handle_quickstart
+        )
 
     def handle_memory(self, _: Optional[List[str]] = None) -> bool:
         """Show help for memory commands."""
@@ -346,36 +356,51 @@ class HelpCommand(Command):
 
         # Command Categories
         categories = [
-            ("[bold yellow]Agent Management[/bold yellow]", [
-                ("[cyan]/agent[/cyan]", "Manage and switch between agents"),
-                ("[cyan]/parallel[/cyan]", "Configure parallel agent execution"),
-                ("[cyan]/run[/cyan]", "Queue prompts for execution"),
-            ]),
-            ("[bold green]Memory & History[/bold green]", [
-                ("[cyan]/memory[/cyan]", "Persistent memory management"),
-                ("[cyan]/history[/cyan]", "View conversation history"),
-                ("[cyan]/compact[/cyan]", "Compact conversations with AI"),
-                ("[cyan]/flush[/cyan]", "Clear agent histories"),
-                ("[cyan]/load[/cyan]", "Load JSONL conversation files"),
-                ("[cyan]/merge[/cyan]", "Merge agent histories"),
-            ]),
-            ("[bold blue]Environment & Config[/bold blue]", [
-                ("[cyan]/config[/cyan]", "Manage environment variables"),
-                ("[cyan]/env[/cyan]", "Display current environment"),
-                ("[cyan]/workspace[/cyan]", "Manage working directories"),
-                ("[cyan]/virtualization[/cyan]", "Docker container management"),
-            ]),
-            ("[bold magenta]Tools & Integration[/bold magenta]", [
-                ("[cyan]/mcp[/cyan]", "Model Context Protocol servers"),
-                ("[cyan]/platform[/cyan]", "Platform-specific features"),
-                ("[cyan]/shell[/cyan]", "Execute shell commands"),
-            ]),
-            ("[bold red]Utilities[/bold red]", [
-                ("[cyan]/model[/cyan]", "Change AI models"),
-                ("[cyan]/graph[/cyan]", "Visualize agent interactions"),
-                ("[cyan]/kill[/cyan]", "Terminate active processes"),
-                ("[cyan]/exit[/cyan]", "Exit CAI"),
-            ]),
+            (
+                "[bold yellow]Agent Management[/bold yellow]",
+                [
+                    ("[cyan]/agent[/cyan]", "Manage and switch between agents"),
+                    ("[cyan]/parallel[/cyan]", "Configure parallel agent execution"),
+                    ("[cyan]/run[/cyan]", "Queue prompts for execution"),
+                ],
+            ),
+            (
+                "[bold green]Memory & History[/bold green]",
+                [
+                    ("[cyan]/memory[/cyan]", "Persistent memory management"),
+                    ("[cyan]/history[/cyan]", "View conversation history"),
+                    ("[cyan]/compact[/cyan]", "Compact conversations with AI"),
+                    ("[cyan]/flush[/cyan]", "Clear agent histories"),
+                    ("[cyan]/load[/cyan]", "Load JSONL conversation files"),
+                    ("[cyan]/merge[/cyan]", "Merge agent histories"),
+                ],
+            ),
+            (
+                "[bold blue]Environment & Config[/bold blue]",
+                [
+                    ("[cyan]/config[/cyan]", "Manage environment variables"),
+                    ("[cyan]/env[/cyan]", "Display current environment"),
+                    ("[cyan]/workspace[/cyan]", "Manage working directories"),
+                    ("[cyan]/virtualization[/cyan]", "Docker container management"),
+                ],
+            ),
+            (
+                "[bold magenta]Tools & Integration[/bold magenta]",
+                [
+                    ("[cyan]/mcp[/cyan]", "Model Context Protocol servers"),
+                    ("[cyan]/platform[/cyan]", "Platform-specific features"),
+                    ("[cyan]/shell[/cyan]", "Execute shell commands"),
+                ],
+            ),
+            (
+                "[bold red]Utilities[/bold red]",
+                [
+                    ("[cyan]/model[/cyan]", "Change AI models"),
+                    ("[cyan]/graph[/cyan]", "Visualize agent interactions"),
+                    ("[cyan]/kill[/cyan]", "Terminate active processes"),
+                    ("[cyan]/exit[/cyan]", "Exit CAI"),
+                ],
+            ),
         ]
 
         for category_name, commands in categories:
@@ -545,7 +570,9 @@ class HelpCommand(Command):
         # Model information
         console.print("\n[bold green]Model Information:[/bold green]\n")
         console.print("CAI supports hundreds of models through various providers.")
-        console.print("Use [yellow]/model[/yellow] to see available models for your configured API keys.")
+        console.print(
+            "Use [yellow]/model[/yellow] to see available models for your configured API keys."
+        )
         console.print("\nModel categories include:")
         console.print("• Fast inference models for quick responses")
         console.print("• Reasoning models for complex analysis")
@@ -733,7 +760,7 @@ class HelpCommand(Command):
                 "• [yellow]/parallel prompt <index> <text>[/yellow] - Set custom prompt\n\n"
                 "[bold cyan]Examples:[/bold cyan]\n"
                 "• [green]/parallel add red_teamer[/green] - Add red team agent\n"
-                "• [green]/parallel add bug_bounter custom_prompt=\"Find SQLi\"[/green]\n"
+                '• [green]/parallel add bug_bounter custom_prompt="Find SQLi"[/green]\n'
                 "• [green]/parallel merge 1,2[/green] - Merge histories of P1 and P2\n"
                 "• [green]/p list[/green] - Show all configured agents\n\n"
                 "[bold]Notes:[/bold]\n"
@@ -760,8 +787,8 @@ class HelpCommand(Command):
                 "• [yellow]/run clear[/yellow] - Clear all queued prompts\n"
                 "• [yellow]/run remove <index>[/yellow] - Remove specific prompt\n\n"
                 "[bold cyan]Examples:[/bold cyan]\n"
-                "• [green]/run queue P1 \"Scan port 80\"[/green] - Queue for agent P1\n"
-                "• [green]/run queue P2 \"Check for SQL injection\"[/green]\n"
+                '• [green]/run queue P1 "Scan port 80"[/green] - Queue for agent P1\n'
+                '• [green]/run queue P2 "Check for SQL injection"[/green]\n'
                 "• [green]/run list[/green] - See all queued prompts\n"
                 "• [green]/r clear[/green] - Clear the queue\n\n"
                 "[bold]Notes:[/bold]\n"
@@ -791,7 +818,7 @@ class HelpCommand(Command):
                 "[bold cyan]Examples:[/bold cyan]\n"
                 "• [green]/history[/green] - View control panel\n"
                 "• [green]/history P1[/green] - Show P1's conversation\n"
-                "• [green]/history search \"password\"[/green] - Search for term\n"
+                '• [green]/history search "password"[/green] - Search for term\n'
                 "• [green]/his red_teamer 5[/green] - Show message #5\n\n"
                 "[bold]Features:[/bold]\n"
                 "• Token count and cost tracking\n"
@@ -819,7 +846,7 @@ class HelpCommand(Command):
                 "[bold cyan]Examples:[/bold cyan]\n"
                 "• [green]/compact[/green] - Compact with default settings\n"
                 "• [green]/compact model o3-mini[/green] - Use O3 Mini model\n"
-                "• [green]/compact prompt \"Focus on vulnerabilities\"[/green]\n"
+                '• [green]/compact prompt "Focus on vulnerabilities"[/green]\n'
                 "• [green]/cmp status[/green] - Check configuration\n\n"
                 "[bold]Features:[/bold]\n"
                 "• Preserves important context\n"
@@ -967,7 +994,7 @@ class HelpCommand(Command):
                 "• [green]stdio[/green] - Standard I/O (Process)\n\n"
                 "[bold cyan]Examples:[/bold cyan]\n"
                 "• [green]/mcp load sse http://localhost:3000[/green]\n"
-                "• [green]/mcp load stdio \"npx @modelcontextprotocol/server-sqlite\"[/green]\n"
+                '• [green]/mcp load stdio "npx @modelcontextprotocol/server-sqlite"[/green]\n'
                 "• [green]/mcp add filesystem red_teamer[/green]\n"
                 "• [green]/mcp tools filesystem[/green]\n\n"
                 "[bold]Notes:[/bold]\n"
@@ -1021,41 +1048,61 @@ class HelpCommand(Command):
         # Create comprehensive command table
         all_commands = [
             # Agent Management
-            ("Agent Management", "yellow", [
-                ("/agent", "/a", "Manage and switch agents"),
-                ("/parallel", "/par, /p", "Configure parallel execution"),
-                ("/run", "/r", "Queue prompts for agents"),
-            ]),
+            (
+                "Agent Management",
+                "yellow",
+                [
+                    ("/agent", "/a", "Manage and switch agents"),
+                    ("/parallel", "/par, /p", "Configure parallel execution"),
+                    ("/run", "/r", "Queue prompts for agents"),
+                ],
+            ),
             # Memory & History
-            ("Memory & History", "green", [
-                ("/memory", "/mem", "Persistent memory management"),
-                ("/history", "/his", "View conversation history"),
-                ("/compact", "/cmp", "Compact conversations"),
-                ("/flush", "/clear", "Clear histories"),
-                ("/load", "/l", "Load JSONL files"),
-                ("/merge", "/mrg", "Merge agent histories"),
-            ]),
+            (
+                "Memory & History",
+                "green",
+                [
+                    ("/memory", "/mem", "Persistent memory management"),
+                    ("/history", "/his", "View conversation history"),
+                    ("/compact", "/cmp", "Compact conversations"),
+                    ("/flush", "/clear", "Clear histories"),
+                    ("/load", "/l", "Load JSONL files"),
+                    ("/merge", "/mrg", "Merge agent histories"),
+                ],
+            ),
             # Environment & Config
-            ("Environment & Config", "blue", [
-                ("/config", "/cfg", "Manage environment variables"),
-                ("/env", "/e", "Display environment"),
-                ("/workspace", "/ws", "Manage workspaces"),
-                ("/virtualization", "/virt", "Docker containers"),
-            ]),
+            (
+                "Environment & Config",
+                "blue",
+                [
+                    ("/config", "/cfg", "Manage environment variables"),
+                    ("/env", "/e", "Display environment"),
+                    ("/workspace", "/ws", "Manage workspaces"),
+                    ("/virtualization", "/virt", "Docker containers"),
+                ],
+            ),
             # Tools & Integration
-            ("Tools & Integration", "magenta", [
-                ("/mcp", "/m", "Model Context Protocol"),
-                ("/platform", "/p", "Platform features (conflicts with /parallel)"),
-                ("/shell", "/s, /$", "Execute shell commands"),
-            ]),
+            (
+                "Tools & Integration",
+                "magenta",
+                [
+                    ("/mcp", "/m", "Model Context Protocol"),
+                    ("/platform", "/p", "Platform features (conflicts with /parallel)"),
+                    ("/shell", "/s, /$", "Execute shell commands"),
+                ],
+            ),
             # Utilities
-            ("Utilities", "cyan", [
-                ("/model", "/mod", "Change AI models"),
-                ("/graph", "/g", "Visualize interactions"),
-                ("/help", "/h, /?", "Show help"),
-                ("/kill", "/k", "Terminate processes"),
-                ("/exit", "/quit, /q", "Exit CAI"),
-            ]),
+            (
+                "Utilities",
+                "cyan",
+                [
+                    ("/model", "/mod", "Change AI models"),
+                    ("/graph", "/g", "Visualize interactions"),
+                    ("/help", "/h, /?", "Show help"),
+                    ("/kill", "/k", "Terminate processes"),
+                    ("/exit", "/quit, /q", "Exit CAI"),
+                ],
+            ),
         ]
 
         for category, color, commands in all_commands:
@@ -1070,7 +1117,9 @@ class HelpCommand(Command):
 
             console.print(table)
 
-        console.print("\n[dim]Use /help <command> for detailed information about any command.[/dim]")
+        console.print(
+            "\n[dim]Use /help <command> for detailed information about any command.[/dim]"
+        )
         return True
 
     def handle_quick(self, _: Optional[List[str]] = None) -> bool:
@@ -1104,21 +1153,30 @@ class HelpCommand(Command):
         # Common workflows
         console.print("\n[bold green]Common Workflows:[/bold green]")
         workflows = [
-            ("[bold]Start a CTF:[/bold]", [
-                "/agent select one_tool_agent",
-                "/workspace set ctf_name",
-                "Describe the challenge...",
-            ]),
-            ("[bold]Bug Bounty:[/bold]", [
-                "/agent select bug_bounter",
-                "/model claude-3-7-sonnet-20250219",
-                "Test https://example.com for vulnerabilities",
-            ]),
-            ("[bold]Parallel Recon:[/bold]", [
-                "/parallel add red_teamer",
-                "/parallel add network_traffic_analyzer",
-                "Scan 192.168.1.0/24",
-            ]),
+            (
+                "[bold]Start a CTF:[/bold]",
+                [
+                    "/agent select one_tool_agent",
+                    "/workspace set ctf_name",
+                    "Describe the challenge...",
+                ],
+            ),
+            (
+                "[bold]Bug Bounty:[/bold]",
+                [
+                    "/agent select bug_bounter",
+                    "/model claude-3-7-sonnet-20250219",
+                    "Test https://example.com for vulnerabilities",
+                ],
+            ),
+            (
+                "[bold]Parallel Recon:[/bold]",
+                [
+                    "/parallel add red_teamer",
+                    "/parallel add network_traffic_analyzer",
+                    "Scan 192.168.1.0/24",
+                ],
+            ),
         ]
 
         for title, steps in workflows:
@@ -1199,6 +1257,7 @@ class HelpCommand(Command):
     def handle_quickstart(self, _: Optional[List[str]] = None) -> bool:
         """Show quickstart guide by calling the quickstart command."""
         from cai.repl.commands.base import handle_command
+
         return handle_command("/quickstart")
 
 

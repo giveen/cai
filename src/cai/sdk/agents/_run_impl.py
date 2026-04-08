@@ -87,7 +87,7 @@ _SCREENSHOT_ORDER = deque(maxlen=200)
 
 def truncate_output(output: Any, max_length: int = 10000) -> str:
     """Truncate tool output if it exceeds max_length characters.
-    
+
     Shows first 5000 and last 5000 characters with TRUNCATED in the middle.
     """
     output_str = str(output)
@@ -255,9 +255,7 @@ class RunImpl:
         interrupt_exception = None
 
         try:
-            function_results, computer_results = await asyncio.gather(
-                function_task, computer_task
-            )
+            function_results, computer_results = await asyncio.gather(function_task, computer_task)
         except (KeyboardInterrupt, asyncio.CancelledError) as e:
             interrupt_exception = e
 
@@ -584,7 +582,9 @@ class RunImpl:
                 output=result,
                 run_item=ToolCallOutputItem(
                     output=result,
-                    raw_item=ItemHelpers.tool_call_output_item(tool_run.tool_call, truncate_output(result)),
+                    raw_item=ItemHelpers.tool_call_output_item(
+                        tool_run.tool_call, truncate_output(result)
+                    ),
                     agent=agent,
                 ),
             )

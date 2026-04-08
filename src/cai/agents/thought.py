@@ -5,6 +5,7 @@ using reasoner as a tool call
 
 support meta agent may better @cai.sdk.agents.meta.reasoner_support
 """
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
 from cai.tools.misc.reasoning import think
 
@@ -33,7 +34,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:

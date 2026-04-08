@@ -2,6 +2,7 @@
 Exit command for CAI REPL.
 This module provides the command to exit the REPL.
 """
+
 import sys
 from typing import List, Optional
 
@@ -15,11 +16,7 @@ class ExitCommand(Command):
 
     def __init__(self):
         """Initialize the exit command."""
-        super().__init__(
-            name="/exit",
-            description="Exit the CAI REPL",
-            aliases=["/q", "/quit"]
-        )
+        super().__init__(name="/exit", description="Exit the CAI REPL", aliases=["/q", "/quit"])
 
     def handle(self, args: Optional[List[str]] = None) -> bool:
         """Handle the exit command.

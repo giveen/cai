@@ -1,11 +1,14 @@
 """Reverse Engineering and Binary Analysis Agent"""
+
 import os
 
 try:
     from dotenv import load_dotenv
 except Exception:
+
     def load_dotenv(*args, **kwargs):
         return False
+
 
 try:
     from openai import AsyncOpenAI
@@ -17,7 +20,9 @@ from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 from cai.util import load_prompt_template  # Add this import
 
 # Prompts
-reverse_engineering_agent_system_prompt = load_prompt_template("prompts/reverse_engineering_agent.md")
+reverse_engineering_agent_system_prompt = load_prompt_template(
+    "prompts/reverse_engineering_agent.md"
+)
 
 tools = list(ALL_TOOLS)
 
@@ -33,7 +38,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:
@@ -48,7 +53,7 @@ reverse_engineering_agent = Agent(
                    like Ghidra, Binwalk, and various binary analysis utilities.""",
     tools=tools,
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "alias1"),
+        model=os.getenv("CAI_MODEL", "alias1"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )

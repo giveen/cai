@@ -26,6 +26,7 @@ Environment Variables:
     JSONL_FILE_PATH: Path to the JSONL file containing conversation history (required)
     REPLAY_DELAY: Time in seconds to wait between actions (default: 0.5)
 """
+
 import argparse
 import json
 import os
@@ -68,7 +69,7 @@ def display_execution_time(metrics=None):
     content.append(f"Active Time: {metrics['active_time']}")
     content.append(f"Idle Time: {metrics['idle_time']}")
 
-    if metrics.get('llm_time') and metrics['llm_time'] != "0.0s":
+    if metrics.get("llm_time") and metrics["llm_time"] != "0.0s":
         content.append(
             f"LLM Processing Time: [bold yellow]{metrics['llm_time']}[/bold yellow] "
             f"[dim]({metrics['llm_percentage']:.1f}% of session)[/dim]"
@@ -80,7 +81,7 @@ def display_execution_time(metrics=None):
         box=ROUNDED,
         padding=(0, 1),
         title="[bold]Session Statistics[/bold]",
-        title_align="left"
+        title_align="left",
     )
     console.print(time_panel)
 
@@ -96,6 +97,7 @@ def load_jsonl(file_path: str) -> List[Dict]:
                 except json.JSONDecodeError:
                     print(f"Warning: Skipping invalid JSON line: {line[:50]}...")
     return data
+
 
 def detect_parallel_agents(messages: List[Dict]) -> Dict[str, str]:
     """
@@ -117,7 +119,13 @@ def detect_parallel_agents(messages: List[Dict]) -> Dict[str, str]:
     return agents
 
 
-def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: Tuple = None, jsonl_file_path: str = None, full_data: List[Dict] = None) -> None:
+def replay_conversation(
+    messages: List[Dict],
+    replay_delay: float = 0.5,
+    usage: Tuple = None,
+    jsonl_file_path: str = None,
+    full_data: List[Dict] = None,
+) -> None:
     """
     Replay a conversation from a list of messages, printing in real-time.
 
@@ -151,8 +159,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
         print(color("No valid messages found in the JSONL file", fg="yellow"))
         return
 
-    print(color(f"Replaying conversation with {len(messages)} messages...",
-                fg="green"))
+    print(color(f"Replaying conversation with {len(messages)} messages...", fg="green"))
 
     if is_parallel:
         print(color(f"Detected {len(parallel_agents)} parallel agents:", fg="cyan"))
@@ -243,7 +250,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                     # Tool messages go to the agent that called them
                     # Look back for the assistant message that made this tool call
                     tool_call_id = message.get("tool_call_id")
-                    for j in range(i-1, -1, -1):
+                    for j in range(i - 1, -1, -1):
                         prev_msg = messages[j]
                         if prev_msg.get("role") == "assistant":
                             prev_sender = prev_msg.get("sender", "")
@@ -276,7 +283,9 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                     # If still not found, try to extract from content patterns
                     if display_sender in ["assistant", role] and content:
                         # Look for patterns like "Agent: Bug Bounter >>" or "[0] Agent: Bug Bounter"
-                        agent_match = re.search(r'(?:\[\d+\]\s*)?Agent:\s*([^>]+?)(?:\s*>>|\s*\[|$)', content)
+                        agent_match = re.search(
+                            r"(?:\[\d+\]\s*)?Agent:\s*([^>]+?)(?:\s*>>|\s*\[|$)", content
+                        )
                         if agent_match:
                             display_sender = agent_match.group(1).strip()
 
@@ -299,7 +308,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                         total_output_tokens=total_output_tokens,
                         total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
                         interaction_cost=message.get("interaction_cost", 0.0),
-                        total_cost=total_cost
+                        total_cost=total_cost,
                     )
 
                     # Print each tool call with its output
@@ -320,7 +329,11 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
 
                         try:
                             # Try to parse arguments as JSON
-                            if arguments and isinstance(arguments, str) and arguments.strip().startswith("{"):
+                            if (
+                                arguments
+                                and isinstance(arguments, str)
+                                and arguments.strip().startswith("{")
+                            ):
                                 args_obj = json.loads(arguments)
                             else:
                                 args_obj = arguments
@@ -331,7 +344,11 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                             args_obj = arguments
 
                         # Special handling for execute_code to show the code
-                        if name == "execute_code" and isinstance(args_obj, dict) and args_obj.get("code"):
+                        if (
+                            name == "execute_code"
+                            and isinstance(args_obj, dict)
+                            and args_obj.get("code")
+                        ):
                             # Show execute_code with full code content
                             from rich.panel import Panel
                             from rich.syntax import Syntax
@@ -348,7 +365,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                                 syntax,
                                 title=f"[bold yellow]execute_code({filename}.{language})[/bold yellow]",
                                 border_style="yellow",
-                                padding=(0, 1)
+                                padding=(0, 1),
                             )
                             console.print(code_panel)
 
@@ -358,7 +375,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                                     tool_output,
                                     title="[bold green]Output[/bold green]",
                                     border_style="green",
-                                    padding=(0, 1)
+                                    padding=(0, 1),
                                 )
                                 console.print(output_panel)
 
@@ -373,14 +390,18 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                                 token_info={
                                     "interaction_input_tokens": message.get("input_tokens", 0),
                                     "interaction_output_tokens": message.get("output_tokens", 0),
-                                    "interaction_reasoning_tokens": message.get("reasoning_tokens", 0),
+                                    "interaction_reasoning_tokens": message.get(
+                                        "reasoning_tokens", 0
+                                    ),
                                     "total_input_tokens": total_input_tokens,
                                     "total_output_tokens": total_output_tokens,
-                                    "total_reasoning_tokens": message.get("total_reasoning_tokens", 0),
+                                    "total_reasoning_tokens": message.get(
+                                        "total_reasoning_tokens", 0
+                                    ),
                                     "model": model,
                                     "interaction_cost": message.get("interaction_cost", 0.0),
-                                    "total_cost": total_cost
-                                }
+                                    "total_cost": total_cost,
+                                },
                             )
                 else:
                     # Print regular assistant message
@@ -397,7 +418,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                         total_output_tokens=total_output_tokens,
                         total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
                         interaction_cost=message.get("interaction_cost", 0.0),
-                        total_cost=total_cost
+                        total_cost=total_cost,
                     )
                 interaction_counter += 1  # iterate the interaction counter
 
@@ -409,7 +430,9 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                 # Skip tool messages that have been displayed with an assistant message
                 is_already_displayed = False
                 for prev_msg in messages[:i]:
-                    if prev_msg.get("role") == "assistant" and tool_call_id in prev_msg.get("tool_outputs", {}):
+                    if prev_msg.get("role") == "assistant" and tool_call_id in prev_msg.get(
+                        "tool_outputs", {}
+                    ):
                         is_already_displayed = True
                         break
 
@@ -428,8 +451,8 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                             "total_reasoning_tokens": message.get("total_reasoning_tokens", 0),
                             "model": model,
                             "interaction_cost": message.get("interaction_cost", 0.0),
-                            "total_cost": total_cost
-                        }
+                            "total_cost": total_cost,
+                        },
                     )
 
             # Handle any other message types (including final messages)
@@ -449,7 +472,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                         total_output_tokens=total_output_tokens,
                         total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
                         interaction_cost=message.get("interaction_cost", 0.0),
-                        total_cost=total_cost
+                        total_cost=total_cost,
                     )
 
             # Force flush stdout to ensure immediate printing
@@ -457,7 +480,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
 
         except Exception as e:
             # Handle any errors during message processing
-            print(color(f"Warning: Error processing message {i+1}: {str(e)}", fg="yellow"))
+            print(color(f"Warning: Error processing message {i + 1}: {str(e)}", fg="yellow"))
             print(color("Continuing with next message...", fg="yellow"))
             continue
 
@@ -466,7 +489,9 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
         display_parallel_graph(agent_messages, parallel_agents)
 
 
-def display_parallel_graph(agent_messages: Dict[str, List[Dict]], parallel_agents: Dict[str, str]) -> None:
+def display_parallel_graph(
+    agent_messages: Dict[str, List[Dict]], parallel_agents: Dict[str, str]
+) -> None:
     """Display a graph showing the parallel agent interactions."""
     print("\n" + "=" * 80)
     print(color("\n🎯 Parallel Agent Interaction Graph", fg="cyan", style="bold"))
@@ -499,19 +524,27 @@ def display_parallel_graph(agent_messages: Dict[str, List[Dict]], parallel_agent
                 turn_counter += 1
                 tool_calls = msg.get("tool_calls", [])
                 if tool_calls:
-                    tools_str = ", ".join([tc.get("function", {}).get("name", "?") for tc in tool_calls[:3]])
+                    tools_str = ", ".join(
+                        [tc.get("function", {}).get("name", "?") for tc in tool_calls[:3]]
+                    )
                     if len(tool_calls) > 3:
-                        tools_str += f" (+{len(tool_calls)-3})"
-                    graph_lines.append(f"[bold red][{turn_counter}][/bold red] [yellow]▶ Agent[/yellow]")
+                        tools_str += f" (+{len(tool_calls) - 3})"
+                    graph_lines.append(
+                        f"[bold red][{turn_counter}][/bold red] [yellow]▶ Agent[/yellow]"
+                    )
                     graph_lines.append(f"  [dim]Tools: {tools_str}[/dim]")
                 else:
-                    graph_lines.append(f"[bold red][{turn_counter}][/bold red] [yellow]▶ Agent[/yellow]")
+                    graph_lines.append(
+                        f"[bold red][{turn_counter}][/bold red] [yellow]▶ Agent[/yellow]"
+                    )
                     if content and len(content.strip()) > 0:
                         preview = content[:50] + "..." if len(content) > 50 else content
                         graph_lines.append(f"  [dim]{preview}[/dim]")
             elif role == "tool":
                 # Tool responses get the same turn number as their assistant
-                graph_lines.append(f"[bold red][{turn_counter}][/bold red] [magenta]◆ Tool[/magenta]")
+                graph_lines.append(
+                    f"[bold red][{turn_counter}][/bold red] [magenta]◆ Tool[/magenta]"
+                )
                 if content:
                     preview = content[:50] + "..." if len(content) > 50 else content
                     graph_lines.append(f"  [dim]{preview}[/dim]")
@@ -525,7 +558,7 @@ def display_parallel_graph(agent_messages: Dict[str, List[Dict]], parallel_agent
             title=f"[bold cyan]{agent_name} [{agent_id}][/bold cyan]",
             border_style="blue",
             padding=(0, 1),
-            expand=False
+            expand=False,
         )
         graphs.append(agent_panel)
 
@@ -538,17 +571,21 @@ def display_parallel_graph(agent_messages: Dict[str, List[Dict]], parallel_agent
     # Print summary
     console.print("\n[bold]Summary:[/bold]")
     total_messages = sum(len(msgs) for msgs in agent_messages.values())
-    unique_user_messages = len(set(
-        msg.get("content", "")
-        for msgs in agent_messages.values()
-        for msg in msgs
-        if msg.get("role") == "user"
-    ))
+    unique_user_messages = len(
+        set(
+            msg.get("content", "")
+            for msgs in agent_messages.values()
+            for msg in msgs
+            if msg.get("role") == "user"
+        )
+    )
 
     console.print(f"• Total agents: {len(parallel_agents)}")
     console.print(f"• Total messages: {total_messages}")
     console.print(f"• User messages: {unique_user_messages}")
-    console.print(f"• Average messages per agent: {total_messages / len(parallel_agents) if parallel_agents else 0:.1f}")
+    console.print(
+        f"• Average messages per agent: {total_messages / len(parallel_agents) if parallel_agents else 0:.1f}"
+    )
     print("\n" + "=" * 80)
 
 
@@ -574,14 +611,14 @@ Examples:
 
   # With asciinema:
   asciinema rec --command="python3 tools/replay.py path/to/file.jsonl 0.5" --overwrite
-"""
+""",
     )
 
     parser.add_argument(
         "jsonl_file",
         nargs="?",
         default=None,
-        help="Path to the JSONL file containing conversation history"
+        help="Path to the JSONL file containing conversation history",
     )
 
     parser.add_argument(
@@ -589,20 +626,18 @@ Examples:
         nargs="?",
         type=float,
         default=None,
-        help="Time in seconds to wait between actions (positional argument)"
+        help="Time in seconds to wait between actions (positional argument)",
     )
 
     parser.add_argument(
-        "--jsonl-file-path",
-        type=str,
-        help="Path to the JSONL file containing conversation history"
+        "--jsonl-file-path", type=str, help="Path to the JSONL file containing conversation history"
     )
 
     parser.add_argument(
         "--replay-delay",
         type=float,
         default=0.5,
-        help="Time in seconds to wait between actions (default: 0.5)"
+        help="Time in seconds to wait between actions (default: 0.5)",
     )
 
     return parser.parse_args()
@@ -631,8 +666,12 @@ def main():
 
     # Validate required parameters
     if not jsonl_file_path:
-        print(color("Error: JSONL file path is required. Use a positional argument, --jsonl-file-path option, or set JSONL_FILE_PATH environment variable.",
-                    fg="red"))
+        print(
+            color(
+                "Error: JSONL file path is required. Use a positional argument, --jsonl-file-path option, or set JSONL_FILE_PATH environment variable.",
+                fg="red",
+            )
+        )
         sys.exit(1)
 
     print(color(f"Loading JSONL file: {jsonl_file_path}", fg="blue"))
@@ -673,7 +712,11 @@ def main():
             if msg_timestamp and msg_timestamp in agent_names:
                 message["agent_name"] = agent_names[msg_timestamp]
                 last_known_agent = agent_names[msg_timestamp]
-            elif message.get("role") == "assistant" and not message.get("agent_name") and last_known_agent:
+            elif (
+                message.get("role") == "assistant"
+                and not message.get("agent_name")
+                and last_known_agent
+            ):
                 # If no timestamp match but we have a last known agent, use it
                 message["agent_name"] = last_known_agent
 
@@ -721,11 +764,11 @@ def main():
                     return f"{int(minutes)}m {int(seconds)}s"
 
         metrics = {
-            'session_time': format_time(total_time),
-            'llm_time': "0.0s",
-            'llm_percentage': 0,
-            'active_time': format_time(active_time),
-            'idle_time': format_time(idle_time)
+            "session_time": format_time(total_time),
+            "llm_time": "0.0s",
+            "llm_percentage": 0,
+            "active_time": format_time(active_time),
+            "idle_time": format_time(idle_time),
         }
         display_execution_time(metrics)
 

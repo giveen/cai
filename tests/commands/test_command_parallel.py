@@ -11,8 +11,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__),
-                                '..', '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 import cai.repl.commands.parallel as parallel_module
 from cai.repl.commands.base import Command
@@ -29,8 +28,8 @@ class TestParallelCommand:
         parallel_module.PARALLEL_CONFIGS.clear()
 
         # Set up test environment
-        os.environ['CAI_TELEMETRY'] = 'false'
-        os.environ['CAI_TRACING'] = 'false'
+        os.environ["CAI_TELEMETRY"] = "false"
+        os.environ["CAI_TRACING"] = "false"
 
         yield
 
@@ -45,11 +44,22 @@ class TestParallelCommand:
     def test_command_initialization(self, parallel_command):
         """Test that ParallelCommand initializes correctly."""
         assert parallel_command.name == "/parallel"
-        assert parallel_command.description == "Configure multiple agents to run in parallel with different settings"
+        assert (
+            parallel_command.description
+            == "Configure multiple agents to run in parallel with different settings"
+        )
         assert parallel_command.aliases == ["/par", "/p"]
 
         # Check subcommands are registered
-        expected_subcommands = ["add", "list", "clear", "remove", "override-models", "merge", "prompt"]
+        expected_subcommands = [
+            "add",
+            "list",
+            "clear",
+            "remove",
+            "override-models",
+            "merge",
+            "prompt",
+        ]
         assert set(parallel_command.get_subcommands()) == set(expected_subcommands)
 
     def test_parallel_config_initialization(self):
@@ -89,14 +99,11 @@ class TestParallelCommand:
         assert "model:" not in str_repr_minimal
         assert "prompt:" not in str_repr_minimal
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_handle_add_valid_agent(self, mock_get_agents, parallel_command):
         """Test adding a valid agent to parallel config."""
         # Mock available agents
-        mock_get_agents.return_value = {
-            "test_agent": Mock(),
-            "another_agent": Mock()
-        }
+        mock_get_agents.return_value = {"test_agent": Mock(), "another_agent": Mock()}
 
         # Test basic add
         result = parallel_command.handle_add(["test_agent"])
@@ -107,7 +114,7 @@ class TestParallelCommand:
         assert parallel_module.PARALLEL_CONFIGS[0].prompt is None
         assert parallel_module.PARALLEL_CONFIGS[0].id == "P1"  # Should be assigned P1
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_handle_add_with_model_and_prompt(self, mock_get_agents, parallel_command):
         """Test adding agent with model and prompt parameters."""
         mock_get_agents.return_value = {"test_agent": Mock()}
@@ -122,7 +129,7 @@ class TestParallelCommand:
         assert config.model == "gpt-4"
         assert config.prompt == "Custom prompt"
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_handle_add_invalid_agent(self, mock_get_agents, parallel_command):
         """Test adding an invalid agent name."""
         mock_get_agents.return_value = {"valid_agent": Mock()}
@@ -137,14 +144,10 @@ class TestParallelCommand:
         assert result is False
         assert len(parallel_module.PARALLEL_CONFIGS) == 0
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_handle_add_multiple_agents(self, mock_get_agents, parallel_command):
         """Test adding multiple agents."""
-        mock_get_agents.return_value = {
-            "agent1": Mock(),
-            "agent2": Mock(),
-            "agent3": Mock()
-        }
+        mock_get_agents.return_value = {"agent1": Mock(), "agent2": Mock(), "agent3": Mock()}
 
         # Add first agent
         result1 = parallel_command.handle_add(["agent1", "--model", "gpt-4"])
@@ -251,7 +254,7 @@ class TestParallelCommand:
         assert "/par" in parallel_command.aliases
         assert "/p" in parallel_command.aliases
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_handle_main_command_routing(self, mock_get_agents, parallel_command):
         """Test that main handle method routes to correct subcommands."""
         mock_get_agents.return_value = {"test_agent": Mock()}
@@ -295,14 +298,10 @@ class TestParallelCommandIntegration:
         yield
         parallel_module.PARALLEL_CONFIGS.clear()
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_full_workflow(self, mock_get_agents):
         """Test a complete workflow of adding, listing, and removing configs."""
-        mock_get_agents.return_value = {
-            "agent1": Mock(),
-            "agent2": Mock(),
-            "agent3": Mock()
-        }
+        mock_get_agents.return_value = {"agent1": Mock(), "agent2": Mock(), "agent3": Mock()}
 
         cmd = ParallelCommand()
 
@@ -328,7 +327,7 @@ class TestParallelCommandIntegration:
         cmd.handle(["clear"])
         assert len(parallel_module.PARALLEL_CONFIGS) == 0
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_edge_case_combinations(self, mock_get_agents):
         """Test edge cases and unusual parameter combinations."""
         mock_get_agents.return_value = {"test_agent": Mock()}
@@ -349,14 +348,10 @@ class TestParallelCommandIntegration:
 
         assert len(parallel_module.PARALLEL_CONFIGS) == 3
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_handle_remove_by_id(self, mock_get_agents):
         """Test removing agents by ID."""
-        mock_get_agents.return_value = {
-            "agent1": Mock(),
-            "agent2": Mock(),
-            "agent3": Mock()
-        }
+        mock_get_agents.return_value = {"agent1": Mock(), "agent2": Mock(), "agent3": Mock()}
 
         cmd = ParallelCommand()
 
@@ -386,15 +381,13 @@ class TestParallelCommandIntegration:
         assert result2 is False
         assert len(parallel_module.PARALLEL_CONFIGS) == 2
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_parse_agent_names_with_ids(self, mock_get_agents):
         """Test parsing agent names that includes IDs."""
         mock_agent = Mock()
         mock_agent.name = "Test Agent"
 
-        mock_get_agents.return_value = {
-            "test_agent": mock_agent
-        }
+        mock_get_agents.return_value = {"test_agent": mock_agent}
 
         cmd = ParallelCommand()
 
@@ -403,10 +396,7 @@ class TestParallelCommandIntegration:
         cmd.handle_add(["test_agent"])
 
         # Mock all_histories to simulate agents with message history
-        all_histories = {
-            "Test Agent #1": [],
-            "Test Agent #2": []
-        }
+        all_histories = {"Test Agent #1": [], "Test Agent #2": []}
 
         # Test parsing IDs
         result = cmd._parse_agent_names(["P1", "P2"], all_histories)
@@ -418,7 +408,7 @@ class TestParallelCommandIntegration:
         result2 = cmd._parse_agent_names(["P1", "Test Agent #2"], all_histories)
         assert len(result2) == 2
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_merge_with_remove_sources(self, mock_get_agents):
         """Test merging agents with --remove-sources flag."""
         # This is a simplified test that just checks the remove functionality
@@ -447,43 +437,41 @@ class TestParallelCommandIntegration:
         cmd.handle_clear([])
         assert len(parallel_module.PARALLEL_CONFIGS) == 0
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
-    @patch('cai.repl.commands.parallel.get_all_agent_histories')
+    @patch("cai.repl.commands.parallel.get_available_agents")
+    @patch("cai.repl.commands.parallel.get_all_agent_histories")
     def test_merge_case_insensitive(self, mock_get_histories, mock_get_agents):
         """Test that agent name matching is case-insensitive in merge."""
         mock_agent = Mock()
         mock_agent.name = "Test Agent"
 
-        mock_get_agents.return_value = {
-            "test_agent": mock_agent
-        }
+        mock_get_agents.return_value = {"test_agent": mock_agent}
 
         # Mock message histories with mixed case
         mock_get_histories.return_value = {
             "Test Agent": [
                 {"role": "user", "content": "Hello"},
-                {"role": "assistant", "content": "Hi there"}
+                {"role": "assistant", "content": "Hi there"},
             ],
             "Another Agent": [
                 {"role": "user", "content": "Greetings"},
-                {"role": "assistant", "content": "Hello!"}
-            ]
+                {"role": "assistant", "content": "Hello!"},
+            ],
         }
 
         cmd = ParallelCommand()
 
         # Test case-insensitive parsing
-        result = cmd._parse_agent_names(["test agent", "ANOTHER AGENT"], mock_get_histories.return_value)
+        result = cmd._parse_agent_names(
+            ["test agent", "ANOTHER AGENT"], mock_get_histories.return_value
+        )
         assert len(result) == 2
         assert "Test Agent" in result
         assert "Another Agent" in result
 
-    @patch('cai.repl.commands.parallel.get_available_agents')
+    @patch("cai.repl.commands.parallel.get_available_agents")
     def test_handle_prompt_command(self, mock_get_agents):
         """Test the prompt subcommand."""
-        mock_get_agents.return_value = {
-            "test_agent": Mock(name="Test Agent")
-        }
+        mock_get_agents.return_value = {"test_agent": Mock(name="Test Agent")}
 
         cmd = ParallelCommand()
 
@@ -510,5 +498,5 @@ class TestParallelCommandIntegration:
         assert result4 is False
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__, "-v"])

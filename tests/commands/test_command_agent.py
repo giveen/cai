@@ -314,7 +314,7 @@ class TestAgentCommand:
             mock_agents = {
                 "agent1": agent1_mock,
                 "agent2": agent2_mock,
-                "test_pattern": mock_pattern_agent
+                "test_pattern": mock_pattern_agent,
             }
             mock_get_agents.return_value = mock_agents
 
@@ -469,7 +469,9 @@ class TestAgentCommandIntegration:
     @patch("cai.repl.commands.agent.get_agent_module")
     @patch("cai.repl.commands.agent.visualize_agent_graph")
     @patch("cai.agents.get_agent_by_name")
-    def test_full_workflow(self, mock_get_agent_by_name, mock_visualize, mock_get_module, mock_get_agents):
+    def test_full_workflow(
+        self, mock_get_agent_by_name, mock_visualize, mock_get_module, mock_get_agents
+    ):
         """Test a complete workflow of listing, selecting, and getting info."""
         # Setup mock agents
         agents = {}

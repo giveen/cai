@@ -1,6 +1,7 @@
 """
 Module for CAI REPL session logging.
 """
+
 from pathlib import Path
 
 

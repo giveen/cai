@@ -34,6 +34,7 @@ api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-12345
 
 class PromptInjectionCheck(BaseModel):
     """Result of prompt injection detection"""
+
     contains_injection: bool
     confidence: float
     reasoning: str
@@ -46,13 +47,11 @@ INJECTION_PATTERNS = [
     r"(?i)(ignore|disregard|forget|bypass|skip|override)\s+(all\s+)?(previous|prior|above|system)\s+(instructions?|rules?|commands?|prompts?)",
     r"(?i)(new|updated?|revised?|changed?)\s+(instructions?|rules?|system\s+prompt)",
     r"(?i)you\s+(must|should|have\s+to|need\s+to)\s+(now|immediately)",
-
     # Hidden instructions
     r"(?i)(note|important|attention|warning)\s+to\s+(system|ai|assistant|model|agent|llm)",
     r"(?i)(system|admin|root)\s+(note|message|command|instruction)",
     r"(?i)<(system|admin|instruction|command|hidden)[^>]*>",
     r"(?i)N[0O]TE\s+TO\s+SYST[E3]M",  # Leetspeak obfuscation - PoC15
-
     # Indirect injection patterns (from external content)
     r"(?i)\[END\s+TOOL\s+OUTPUT\]",
     r"(?i)THERE\s+IS\s+A\s+SECURITY\s+VULNERABILITY",
@@ -61,21 +60,17 @@ INJECTION_PATTERNS = [
     r"(?i)FOLLOWING\s+DIRECTIVE.*\$\(",
     r"(?i)FOLLOWING\s+DIRECTIVE.*base32",  # PoC5 specific pattern
     r"(?i)base32.*-d.*\|",  # Base32 decode to pipe
-
     # Command injection attempts
     r"(?i)(execute|run|eval|exec|os\.system|subprocess|shell)",
     r"(?i)(nc|netcat|bash|sh|cmd|powershell)\s+[\-\w]+",
     r"(?i)(curl|wget|ssh|telnet|ftp)\s+[\w\.\-]+",
-
     # Data exfiltration attempts
     r"(?i)(send|transmit|export|leak|exfiltrate)\s+(data|information|secrets|credentials)",
     r"(?i)(api[-_]?key|password|token|secret|credential)",
-
     # Role manipulation
     r"(?i)you\s+are\s+(now|actually|really)\s+a?\s*\w+",
     r"(?i)(act|behave|pretend)\s+(as|like)\s+a?\s*\w+",
     r"(?i)from\s+now\s+on",
-
     # Encoding tricks
     r"(?i)(base64|hex|rot13|encoded|obfuscated)",
     r"(?i)decode\s+and\s+execute",
@@ -86,41 +81,41 @@ def normalize_unicode_homographs(text: str) -> str:
     """
     Normalize Unicode homograph characters to their ASCII equivalents.
     This prevents bypass attempts using visually similar characters from different scripts.
-    
+
     For example:
-    - Cyrillic 'с' (U+0441) -> Latin 'c' 
+    - Cyrillic 'с' (U+0441) -> Latin 'c'
     - Cyrillic 'а' (U+0430) -> Latin 'a'
     """
     # Common homograph replacements
     homograph_map = {
         # Cyrillic to Latin mappings
-        '\u0430': 'a',  # Cyrillic а
-        '\u0435': 'e',  # Cyrillic е
-        '\u043e': 'o',  # Cyrillic о
-        '\u0440': 'p',  # Cyrillic р
-        '\u0441': 'c',  # Cyrillic с
-        '\u0443': 'y',  # Cyrillic у
-        '\u0445': 'x',  # Cyrillic х
-        '\u0410': 'A',  # Cyrillic А
-        '\u0415': 'E',  # Cyrillic Е
-        '\u041e': 'O',  # Cyrillic О
-        '\u0420': 'P',  # Cyrillic Р
-        '\u0421': 'C',  # Cyrillic С
-        '\u0425': 'X',  # Cyrillic Х
+        "\u0430": "a",  # Cyrillic а
+        "\u0435": "e",  # Cyrillic е
+        "\u043e": "o",  # Cyrillic о
+        "\u0440": "p",  # Cyrillic р
+        "\u0441": "c",  # Cyrillic с
+        "\u0443": "y",  # Cyrillic у
+        "\u0445": "x",  # Cyrillic х
+        "\u0410": "A",  # Cyrillic А
+        "\u0415": "E",  # Cyrillic Е
+        "\u041e": "O",  # Cyrillic О
+        "\u0420": "P",  # Cyrillic Р
+        "\u0421": "C",  # Cyrillic С
+        "\u0425": "X",  # Cyrillic Х
         # Greek to Latin mappings
-        '\u03b1': 'a',  # Greek α
-        '\u03bf': 'o',  # Greek ο
-        '\u03c1': 'p',  # Greek ρ
-        '\u03c5': 'u',  # Greek υ
-        '\u03c7': 'x',  # Greek χ
-        '\u0391': 'A',  # Greek Α
-        '\u039f': 'O',  # Greek Ο
-        '\u03a1': 'P',  # Greek Ρ
+        "\u03b1": "a",  # Greek α
+        "\u03bf": "o",  # Greek ο
+        "\u03c1": "p",  # Greek ρ
+        "\u03c5": "u",  # Greek υ
+        "\u03c7": "x",  # Greek χ
+        "\u0391": "A",  # Greek Α
+        "\u039f": "O",  # Greek Ο
+        "\u03a1": "P",  # Greek Ρ
         # Other confusables
-        '\u2010': '-',  # Hyphen
-        '\u2011': '-',  # Non-breaking hyphen
-        '\u2212': '-',  # Minus sign
-        '\uff0d': '-',  # Fullwidth hyphen-minus
+        "\u2010": "-",  # Hyphen
+        "\u2011": "-",  # Non-breaking hyphen
+        "\u2212": "-",  # Minus sign
+        "\uff0d": "-",  # Fullwidth hyphen-minus
     }
 
     # Apply direct homograph replacements
@@ -130,7 +125,7 @@ def normalize_unicode_homographs(text: str) -> str:
 
     # Also normalize using Unicode NFKD (compatibility decomposition)
     # This handles many other Unicode tricks
-    normalized = unicodedata.normalize('NFKD', normalized)
+    normalized = unicodedata.normalize("NFKD", normalized)
 
     return normalized
 
@@ -138,7 +133,7 @@ def normalize_unicode_homographs(text: str) -> str:
 def detect_injection_patterns(text: str) -> tuple[bool, list[str]]:
     """
     Detect suspicious patterns that may indicate prompt injection.
-    
+
     Returns:
         Tuple of (has_suspicious_patterns, list_of_matched_patterns)
     """
@@ -157,7 +152,9 @@ def detect_injection_patterns(text: str) -> tuple[bool, list[str]]:
             suspicious_patterns.append(pattern)
 
     # Check for unusual command-like structures (but not in JSON)
-    if "'role'" not in text and (re.search(r'[\$\{\}`;|&><]', text) or re.search(r'[\$\{\}`;|&><]', normalized_text)):
+    if "'role'" not in text and (
+        re.search(r"[\$\{\}`;|&><]", text) or re.search(r"[\$\{\}`;|&><]", normalized_text)
+    ):
         suspicious_patterns.append("shell_metacharacters")
 
     # Check for excessive uppercase (shouting commands)
@@ -166,14 +163,21 @@ def detect_injection_patterns(text: str) -> tuple[bool, list[str]]:
         suspicious_patterns.append("excessive_uppercase")
 
     # Check for environment variable expansion patterns
-    if re.search(r'\$\(.*\)', text) or re.search(r'`.*`', text) or \
-       re.search(r'\$\(.*\)', normalized_text) or re.search(r'`.*`', normalized_text):
+    if (
+        re.search(r"\$\(.*\)", text)
+        or re.search(r"`.*`", text)
+        or re.search(r"\$\(.*\)", normalized_text)
+        or re.search(r"`.*`", normalized_text)
+    ):
         suspicious_patterns.append("command_substitution")
 
     # Check if normalized text reveals hidden commands (Unicode bypass attempt)
     if normalized_text != text:
         # Check if normalization reveals dangerous commands
-        if any(cmd in normalized_text.lower() for cmd in ['curl', 'wget', 'nc ', 'netcat', 'bash', 'sh ', 'exec', 'eval']):
+        if any(
+            cmd in normalized_text.lower()
+            for cmd in ["curl", "wget", "nc ", "netcat", "bash", "sh ", "exec", "eval"]
+        ):
             suspicious_patterns.append("unicode_homograph_detected")
 
     return len(suspicious_patterns) > 0, suspicious_patterns
@@ -182,12 +186,12 @@ def detect_injection_patterns(text: str) -> tuple[bool, list[str]]:
 def sanitize_external_content(content: str) -> str:
     """
     Sanitize external content to neutralize potential injection attempts.
-    
+
     This wraps untrusted content with clear delimiters and instructions.
     """
     # Remove any existing delimiter-like patterns to prevent delimiter collision
-    content = re.sub(r'={10,}', '===', content)
-    content = re.sub(r'-{10,}', '---', content)
+    content = re.sub(r"={10,}", "===", content)
+    content = re.sub(r"-{10,}", "---", content)
 
     # Wrap content with strong delimiters and context
     sanitized = f"""
@@ -216,7 +220,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', 'alias1'),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:
@@ -249,13 +253,11 @@ injection_detector_agent = Agent(
 
 @input_guardrail(name="prompt_injection_guard")
 async def prompt_injection_guardrail(
-    ctx: RunContextWrapper[None],
-    agent: Agent,
-    input: str | list[TResponseInputItem]
+    ctx: RunContextWrapper[None], agent: Agent, input: str | list[TResponseInputItem]
 ) -> GuardrailFunctionOutput:
     """
     Input guardrail that detects and blocks prompt injection attempts.
-    
+
     This guardrail:
     1. Performs pattern matching for known injection techniques
     2. Uses an AI model to detect sophisticated injection attempts
@@ -267,7 +269,7 @@ async def prompt_injection_guardrail(
     if os.getenv("CAI_GUARDRAILS", "true").lower() == "false":
         return GuardrailFunctionOutput(
             output_info={"action": "allowed", "reason": "Guardrails disabled"},
-            tripwire_triggered=False
+            tripwire_triggered=False,
         )
 
     # Convert input to string if needed
@@ -280,32 +282,43 @@ async def prompt_injection_guardrail(
     has_patterns, patterns = detect_injection_patterns(input_text)
 
     # CRITICAL: Block immediately if Unicode homograph bypass detected
-    if 'unicode_homograph_detected' in patterns:
+    if "unicode_homograph_detected" in patterns:
         return GuardrailFunctionOutput(
             output_info={
                 "action": "blocked",
-                "reason": "Detected Unicode homograph characters attempting to bypass security checks"
+                "reason": "Detected Unicode homograph characters attempting to bypass security checks",
             },
-            tripwire_triggered=True
+            tripwire_triggered=True,
         )
 
     # Check for base64 encoded instructions (often used to bypass filters)
-    if re.search(r'base64|b64|BASE64', input_text):
+    if re.search(r"base64|b64|BASE64", input_text):
         # Look for base64 patterns
-        base64_pattern = r'[A-Za-z0-9+/]{20,}={0,2}'
+        base64_pattern = r"[A-Za-z0-9+/]{20,}={0,2}"
         matches = re.findall(base64_pattern, input_text)
 
         for match in matches:
             try:
-                decoded = base64.b64decode(match).decode('utf-8', errors='ignore').lower()
+                decoded = base64.b64decode(match).decode("utf-8", errors="ignore").lower()
                 # Check for dangerous commands in decoded content
-                if any(danger in decoded for danger in ['nc ', 'netcat', '/bin/sh', 'bash -i', '192.168', '10.0.', '4444']):
+                if any(
+                    danger in decoded
+                    for danger in [
+                        "nc ",
+                        "netcat",
+                        "/bin/sh",
+                        "bash -i",
+                        "192.168",
+                        "10.0.",
+                        "4444",
+                    ]
+                ):
                     return GuardrailFunctionOutput(
                         output_info={
                             "action": "blocked",
-                            "reason": "Detected base64-encoded malicious command in input"
+                            "reason": "Detected base64-encoded malicious command in input",
                         },
-                        tripwire_triggered=True
+                        tripwire_triggered=True,
                     )
             except Exception:
                 pass
@@ -317,9 +330,9 @@ async def prompt_injection_guardrail(
             output_info={
                 "detected_patterns": patterns,
                 "action": "blocked",
-                "reason": "Multiple suspicious injection patterns detected"
+                "reason": "Multiple suspicious injection patterns detected",
             },
-            tripwire_triggered=True
+            tripwire_triggered=True,
         )
 
     # For borderline cases, use AI detection (slower but more accurate)
@@ -331,11 +344,7 @@ async def prompt_injection_guardrail(
                 # This is likely internal system communication, not an injection
                 pass
             else:
-                result = await Runner.run(
-                    injection_detector_agent,
-                    input_text,
-                    context=ctx.context
-                )
+                result = await Runner.run(injection_detector_agent, input_text, context=ctx.context)
 
                 # High threshold to reduce false positives
                 if result.final_output.contains_injection and result.final_output.confidence > 0.9:
@@ -343,9 +352,9 @@ async def prompt_injection_guardrail(
                         output_info={
                             "ai_detection": result.final_output.dict(),
                             "action": "blocked",
-                            "reason": "AI detected probable prompt injection with high confidence"
+                            "reason": "AI detected probable prompt injection with high confidence",
                         },
-                        tripwire_triggered=True
+                        tripwire_triggered=True,
                     )
         except Exception as e:
             # If AI detection fails, only block if we have very strong pattern evidence
@@ -355,30 +364,25 @@ async def prompt_injection_guardrail(
                         "error": str(e),
                         "patterns": patterns,
                         "action": "blocked",
-                        "reason": "Many suspicious patterns detected"
+                        "reason": "Many suspicious patterns detected",
                     },
-                    tripwire_triggered=True
+                    tripwire_triggered=True,
                 )
 
     # Input seems safe
     return GuardrailFunctionOutput(
-        output_info={
-            "action": "allowed",
-            "patterns_found": patterns if has_patterns else []
-        },
-        tripwire_triggered=False
+        output_info={"action": "allowed", "patterns_found": patterns if has_patterns else []},
+        tripwire_triggered=False,
     )
 
 
 @output_guardrail(name="command_execution_guard")
 async def command_execution_guardrail(
-    ctx: RunContextWrapper,
-    agent: Agent,
-    output: Any
+    ctx: RunContextWrapper, agent: Agent, output: Any
 ) -> GuardrailFunctionOutput:
     """
     Output guardrail that validates commands before execution.
-    
+
     This prevents execution of potentially malicious commands that
     might have been influenced by prompt injection.
     """
@@ -388,7 +392,7 @@ async def command_execution_guardrail(
     if os.getenv("CAI_GUARDRAILS", "true").lower() == "false":
         return GuardrailFunctionOutput(
             output_info={"action": "allowed", "reason": "Guardrails disabled"},
-            tripwire_triggered=False
+            tripwire_triggered=False,
         )
 
     output_text = str(output)
@@ -400,16 +404,23 @@ async def command_execution_guardrail(
     # Pattern: curl followed by potentially injected command
     if "curl" in output_text.lower() or "curl" in normalized_output.lower():
         # Check for environment variable expansion in curl commands
-        if re.search(r'curl.*\$\(.*\)', output_text) or re.search(r'curl.*`.*`', output_text) or \
-           re.search(r'curl.*\$\(.*\)', normalized_output) or re.search(r'curl.*`.*`', normalized_output):
+        if (
+            re.search(r"curl.*\$\(.*\)", output_text)
+            or re.search(r"curl.*`.*`", output_text)
+            or re.search(r"curl.*\$\(.*\)", normalized_output)
+            or re.search(r"curl.*`.*`", normalized_output)
+        ):
             # Check if it's trying to execute env or other commands
-            if any(cmd in output_text.lower() or cmd in normalized_output.lower() for cmd in ['$(env)', '`env`', '$(id)', '`id`', '$(whoami)', '`whoami`']):
+            if any(
+                cmd in output_text.lower() or cmd in normalized_output.lower()
+                for cmd in ["$(env)", "`env`", "$(id)", "`id`", "$(whoami)", "`whoami`"]
+            ):
                 return GuardrailFunctionOutput(
                     output_info={
                         "action": "blocked",
-                        "reason": "Detected attempt to execute shell commands via curl parameters (likely from prompt injection)"
+                        "reason": "Detected attempt to execute shell commands via curl parameters (likely from prompt injection)",
                     },
-                    tripwire_triggered=True
+                    tripwire_triggered=True,
                 )
 
     # Check for dangerous command patterns in output
@@ -430,20 +441,33 @@ async def command_execution_guardrail(
     if "base64" in output_text.lower() and "-d" in output_text:
         # Look for the specific pattern of base64 decoding commands
         # Pattern for echo piped to base64 decode
-        decode_pattern = r'echo\s+([A-Za-z0-9+/]{20,}={0,2})\s*\|\s*base64\s+-d'
+        decode_pattern = r"echo\s+([A-Za-z0-9+/]{20,}={0,2})\s*\|\s*base64\s+-d"
         matches = re.findall(decode_pattern, output_text)
 
         for match in matches:
             try:
-                decoded = base64.b64decode(match).decode('utf-8', errors='ignore')
+                decoded = base64.b64decode(match).decode("utf-8", errors="ignore")
                 # Check if decoded content looks like a dangerous command
-                if any(cmd in decoded.lower() for cmd in ['nc ', 'netcat', 'bash', '/bin/sh', 'exec', 'eval', '192.168', '10.0', '4444']):
+                if any(
+                    cmd in decoded.lower()
+                    for cmd in [
+                        "nc ",
+                        "netcat",
+                        "bash",
+                        "/bin/sh",
+                        "exec",
+                        "eval",
+                        "192.168",
+                        "10.0",
+                        "4444",
+                    ]
+                ):
                     return GuardrailFunctionOutput(
                         output_info={
                             "action": "blocked",
-                            "reason": "Blocked attempt to decode base64 that contains dangerous command"
+                            "reason": "Blocked attempt to decode base64 that contains dangerous command",
                         },
-                        tripwire_triggered=True
+                        tripwire_triggered=True,
                     )
             except Exception:
                 pass
@@ -453,48 +477,67 @@ async def command_execution_guardrail(
     if "base32" in output_text.lower() and "-d" in output_text:
         # Look for the specific pattern of base32 decoding commands
         # Pattern for echo piped to base32 decode
-        decode_pattern = r'echo[^|]*\|[^|]*base32\s+-d'
+        decode_pattern = r"echo[^|]*\|[^|]*base32\s+-d"
         if re.search(decode_pattern, output_text, re.IGNORECASE):
             # Extract potential base32 strings
-            base32_pattern = r'([A-Z2-7]{20,}={0,6})'
+            base32_pattern = r"([A-Z2-7]{20,}={0,6})"
             matches = re.findall(base32_pattern, output_text)
 
             for match in matches:
                 try:
-                    decoded = base64.b32decode(match).decode('utf-8', errors='ignore')
+                    decoded = base64.b32decode(match).decode("utf-8", errors="ignore")
                     # Check if decoded content looks like a dangerous command
-                    if any(cmd in decoded.lower() for cmd in ['curl', 'nc ', 'netcat', 'bash', '/bin/sh', 'exec', 'eval', '$(env)', '`env`', '192.168', '10.0', '4444']):
+                    if any(
+                        cmd in decoded.lower()
+                        for cmd in [
+                            "curl",
+                            "nc ",
+                            "netcat",
+                            "bash",
+                            "/bin/sh",
+                            "exec",
+                            "eval",
+                            "$(env)",
+                            "`env`",
+                            "192.168",
+                            "10.0",
+                            "4444",
+                        ]
+                    ):
                         return GuardrailFunctionOutput(
                             output_info={
                                 "action": "blocked",
-                                "reason": "Blocked attempt to decode base32 that contains dangerous command or environment variable exfiltration"
+                                "reason": "Blocked attempt to decode base32 that contains dangerous command or environment variable exfiltration",
                             },
-                            tripwire_triggered=True
+                            tripwire_triggered=True,
                         )
                 except Exception:
                     pass
 
     # Check if output contains IP addresses with common exploit patterns
-    if re.search(r'\d+\.\d+\.\d+\.\d+.*4444', output_text):
+    if re.search(r"\d+\.\d+\.\d+\.\d+.*4444", output_text):
         return GuardrailFunctionOutput(
             output_info={
                 "action": "blocked",
-                "reason": "Suspicious IP and port combination detected (possible reverse shell)"
+                "reason": "Suspicious IP and port combination detected (possible reverse shell)",
             },
-            tripwire_triggered=True
+            tripwire_triggered=True,
         )
 
     # Check for Unicode bypass attempt first
     if normalized_output != output_text:
         # Text contains Unicode characters that were normalized
         # Check if the normalized version contains dangerous commands
-        if any(cmd in normalized_output.lower() for cmd in ['curl', 'wget', 'nc ', 'netcat', 'bash', '/bin/sh', 'exec', 'eval']):
+        if any(
+            cmd in normalized_output.lower()
+            for cmd in ["curl", "wget", "nc ", "netcat", "bash", "/bin/sh", "exec", "eval"]
+        ):
             return GuardrailFunctionOutput(
                 output_info={
                     "action": "blocked",
-                    "reason": "Detected Unicode homograph bypass attempt containing dangerous commands"
+                    "reason": "Detected Unicode homograph bypass attempt containing dangerous commands",
                 },
-                tripwire_triggered=True
+                tripwire_triggered=True,
             )
 
     for pattern in dangerous_commands:
@@ -502,22 +545,19 @@ async def command_execution_guardrail(
             return GuardrailFunctionOutput(
                 output_info={
                     "action": "blocked",
-                    "reason": f"Dangerous command pattern detected: {pattern}"
+                    "reason": f"Dangerous command pattern detected: {pattern}",
                 },
-                tripwire_triggered=True
+                tripwire_triggered=True,
             )
 
-    return GuardrailFunctionOutput(
-        output_info={"action": "allowed"},
-        tripwire_triggered=False
-    )
+    return GuardrailFunctionOutput(output_info={"action": "allowed"}, tripwire_triggered=False)
 
 
 # Composite guardrail for high-risk agents
 def get_security_guardrails():
     """
     Returns a tuple of (input_guardrails, output_guardrails) for security-critical agents.
-    
+
     Respects the CAI_GUARDRAILS environment variable:
     - "true" (default): Returns configured guardrails
     - "false": Returns empty lists, disabling all guardrails

@@ -1,4 +1,3 @@
-
 """
 Benchmark Evaluation Script
 
@@ -30,11 +29,11 @@ Example:
      python benchmarks/eval.py --model deepseek-chat  --dataset_file benchmarks/utils/cti_bench_dataset/cti-mcq1.tsv --eval cti_bench --backend deepseek
 
      python benchmarks/eval.py --model alias1 --dataset_file benchmarks/cyberPII-bench/memory01_gold.csv --eval cyberpii-bench --backend alias
-       
+
 Some environment variables are required:
     {BACKEND}_API_KEY:  API key for OpenRouter (if using OpenRouter models)
     {BACKEND}_API_BASE:
-    
+
     Most common api base used are:
         OpenRouter: https://openrouter.ai/api/v1
         Ollama: http://localhost:8000/v1
@@ -47,6 +46,7 @@ If you want to see the current cost of the benchmark in real-time, add the prici
             "output_per_million": $/M tokens
         }
 """
+
 import argparse
 import csv
 import datetime
@@ -61,7 +61,7 @@ import pandas as pd
 import requests
 
 # Import functions from annotation_metrics.py
-sys.path.append(os.path.join(os.path.dirname(__file__), 'cyberPII-bench'))
+sys.path.append(os.path.join(os.path.dirname(__file__), "cyberPII-bench"))
 from annotation_metrics import (
     calculate_metrics,
     generate_entity_report,
@@ -74,7 +74,9 @@ from annotation_metrics import (
 
 dotenv.load_dotenv()
 
-LITELLM_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+LITELLM_URL = (
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+)
 model_pricing_cache = {}
 
 # Global variables for token costs
@@ -102,9 +104,13 @@ def fetch_model_pricing(model_name):
             output_cost_per_token = pricing_info.get("output_cost_per_token", 0.0)
             model_pricing_cache[model_name] = (input_cost_per_token, output_cost_per_token)
     except Exception as e:
-        print(f"Warning: Could not fetch model pricing. Cost will be $0.0. Error: {e}", file=sys.stderr)
+        print(
+            f"Warning: Could not fetch model pricing. Cost will be $0.0. Error: {e}",
+            file=sys.stderr,
+        )
         input_cost_per_token = 0.0
         output_cost_per_token = 0.0
+
 
 def estimate_cost(token_info):
     """
@@ -129,7 +135,10 @@ def estimate_cost(token_info):
 
     return cost, pt, rt
 
-def ask_model(question_obj, instruction, model, api_base, api_key=None, custom_llm_provider=None, is_pii=False):
+
+def ask_model(
+    question_obj, instruction, model, api_base, api_key=None, custom_llm_provider=None, is_pii=False
+):
     """
     Calls the model with the question and choices, returns the extracted answer.
     For PII tasks, uses specialized instructions and system prompt.
@@ -280,7 +289,15 @@ def load_dataset(dataset_file, eval_type):
 
     return questions
 
-def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=None, dataset_file=None, skip_entities=None):
+
+def run_evaluation_pii(
+    model,
+    api_base=None,
+    api_key=None,
+    custom_llm_provider=None,
+    dataset_file=None,
+    skip_entities=None,
+):
     """Run PII anonymization evaluation and append results to original CSV with new column, then calculate metrics."""
     total_cost = 0.0
     total_prompt_tokens = 0
@@ -288,7 +305,7 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
     processed_count = 0
 
     # Create a safe model name for column naming
-    safe_model = "".join([c if c.isalnum() or c in ('-', '_') else '_' for c in str(model)])
+    safe_model = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in str(model)])
 
     # Default skip entities if not provided
     if skip_entities is None:
@@ -316,20 +333,30 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
     print(f"Total texts to process: {len(original_rows)}")
     if skip_entities:
         print(f"Skipping entities: {', '.join(sorted(skip_entities))}")
-    print("="*50)
+    print("=" * 50)
 
     for idx, row in enumerate(original_rows):
         text_to_anonymize = row.get("source_text", "")
 
         if not text_to_anonymize:
-            print(f"Skipping row {idx+1}: No text found")
+            print(f"Skipping row {idx + 1}: No text found")
             continue
 
-        model_answer, token_info = ask_model(text_to_anonymize, "", model, api_base, api_key, custom_llm_provider, is_pii=True)
+        model_answer, token_info = ask_model(
+            text_to_anonymize, "", model, api_base, api_key, custom_llm_provider, is_pii=True
+        )
 
-        print(f"\n[{idx+1}/{len(original_rows)}] Processing ID: {row.get('id', 'unknown')}")
-        print(f"Original: {text_to_anonymize[:100]}..." if len(text_to_anonymize) > 100 else f"Original: {text_to_anonymize}")
-        print(f"Anonymized: {model_answer[:100]}..." if model_answer and len(model_answer) > 100 else f"Anonymized: {model_answer}")
+        print(f"\n[{idx + 1}/{len(original_rows)}] Processing ID: {row.get('id', 'unknown')}")
+        print(
+            f"Original: {text_to_anonymize[:100]}..."
+            if len(text_to_anonymize) > 100
+            else f"Original: {text_to_anonymize}"
+        )
+        print(
+            f"Anonymized: {model_answer[:100]}..."
+            if model_answer and len(model_answer) > 100
+            else f"Anonymized: {model_answer}"
+        )
 
         # Add the anonymized text to the row
         row[new_column] = model_answer if model_answer else ""
@@ -346,9 +373,9 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
             break
 
     # Save the updated CSV to a new file: memory01_{model}.csv
-    base_name = os.path.basename(dataset_file).replace('.csv', '')
+    base_name = os.path.basename(dataset_file).replace(".csv", "")
     output_file = os.path.join(os.path.dirname(dataset_file), f"{base_name}_{safe_model}.csv")
-    with open(output_file, "w", encoding="utf-8", newline='') as f:
+    with open(output_file, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=";")
         writer.writeheader()
         writer.writerows(original_rows)
@@ -356,9 +383,9 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
     end_time = datetime.datetime.now()
     duration = end_time - start_time
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("PII Anonymization Benchmark Completed")
-    print("="*50)
+    print("=" * 50)
     print(f"Model: {model}")
     print(f"Texts processed: {processed_count}/{len(original_rows)}")
     print(f"Total cost: ${total_cost:.7f}")
@@ -367,9 +394,9 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
     print(f"Results saved to: {output_file} (column: {new_column})")
 
     # Now calculate metrics using the annotation_metrics functions
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("Calculating Evaluation Metrics")
-    print("="*50)
+    print("=" * 50)
 
     # Load the updated CSV as a DataFrame for metrics calculation
     df = pd.read_csv(output_file, sep=";")
@@ -413,9 +440,22 @@ def run_evaluation_pii(model, api_base=None, api_key=None, custom_llm_provider=N
 
     print(f"\nDetailed reports saved in: {output_dir}/")
     if skip_entities:
-        print(f"Note: The following entities were excluded from evaluation: {', '.join(sorted(skip_entities))}")
+        print(
+            f"Note: The following entities were excluded from evaluation: {', '.join(sorted(skip_entities))}"
+        )
 
-def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, custom_llm_provider=None, save_interval=None, eval_type=None, dataset_file=None):
+
+def run_evaluation(
+    dataset,
+    instruction,
+    model,
+    api_base=None,
+    api_key=None,
+    custom_llm_provider=None,
+    save_interval=None,
+    eval_type=None,
+    dataset_file=None,
+):
     results = []
     total_cost = 0.0
     total_prompt_tokens = 0
@@ -423,23 +463,27 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
 
     # Create a timestamp for this evaluation run
     run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_model = "".join([c if c.isalnum() or c in ('-', '_') else '_' for c in str(model)])
+    safe_model = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in str(model)])
 
     start_time = datetime.datetime.now()
 
     for idx, q in enumerate(dataset):
-        model_answer, token_info = ask_model(q, instruction, model, api_base, api_key, custom_llm_provider)
-        print(f"---------------{idx+1}/{len(dataset)}----------------")
+        model_answer, token_info = ask_model(
+            q, instruction, model, api_base, api_key, custom_llm_provider
+        )
+        print(f"---------------{idx + 1}/{len(dataset)}----------------")
         print(f"Evaluating question: {q['Question']}")
         print(f"Choices: {q['Choices']}")
         print(f"Solution: {q['Solution']}")
         print(f"Model Answer: {model_answer}")
-        results.append({
-            "Question": q["Question"],
-            "Choices": q["Choices"],
-            "ModelAnswer": model_answer,
-            "Solution": q["Solution"]
-        })
+        results.append(
+            {
+                "Question": q["Question"],
+                "Choices": q["Choices"],
+                "ModelAnswer": model_answer,
+                "Solution": q["Solution"],
+            }
+        )
         cost, pt, rt = estimate_cost(token_info)
         total_cost += cost
         total_prompt_tokens += pt
@@ -454,31 +498,40 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
 
             # Calculate current accuracy
             if eval_type and dataset_file:
-                accuracy, correct_count, total_count = compute_accuracy(results, eval_type, dataset_file)
+                accuracy, correct_count, total_count = compute_accuracy(
+                    results, eval_type, dataset_file
+                )
 
                 # Save intermediate results
-                intermediate_dir = os.path.join(os.getcwd(), "benchmarks", "outputs", eval_type, f"{safe_model}_{run_timestamp}", "intermediate")
+                intermediate_dir = os.path.join(
+                    os.getcwd(),
+                    "benchmarks",
+                    "outputs",
+                    eval_type,
+                    f"{safe_model}_{run_timestamp}",
+                    "intermediate",
+                )
                 if not os.path.exists(intermediate_dir):
                     os.makedirs(intermediate_dir)
 
-                checkpoint_file = os.path.join(intermediate_dir, f"checkpoint_{idx+1}.json")
+                checkpoint_file = os.path.join(intermediate_dir, f"checkpoint_{idx + 1}.json")
                 with open(checkpoint_file, "w", encoding="utf-8") as f:
                     json.dump(results, f, ensure_ascii=False, indent=2)
 
                 # Save intermediate information
-                info_file = os.path.join(intermediate_dir, f"info_{idx+1}.txt")
+                info_file = os.path.join(intermediate_dir, f"info_{idx + 1}.txt")
                 with open(info_file, "w") as f:
                     f.write(f"{eval_type} Intermediate Evaluation\n")
                     f.write("=====================\n\n")
                     f.write(f"Model: {model}\n")
                     f.write(f"Dataset: {os.path.basename(dataset_file)}\n")
                     f.write(f"Start Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write(f"Questions Processed: {idx+1}/{len(dataset)}\n")
+                    f.write(f"Questions Processed: {idx + 1}/{len(dataset)}\n")
 
                     # Display appropriate metrics based on evaluation type
-                    if eval_type.lower() == "cti_bench" and 'cti-vsp' in dataset_file:
+                    if eval_type.lower() == "cti_bench" and "cti-vsp" in dataset_file:
                         f.write(f"Mean Absolute Deviation: {accuracy:.2f}\n")
-                    elif eval_type.lower() == "cti_bench" and 'cti-ate' in dataset_file:
+                    elif eval_type.lower() == "cti_bench" and "cti-ate" in dataset_file:
                         f.write(f"F1-macro Score: {accuracy:.2f}\n")
                         f.write(f"Accuracy: {correct_count:.2f}%\n")
                     else:
@@ -488,14 +541,13 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
                     f.write(f"Current Time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write(f"Duration so far: {current_time - start_time}\n")
 
-                print(f"Saved intermediate results at question {idx+1}/{len(dataset)}")
+                print(f"Saved intermediate results at question {idx + 1}/{len(dataset)}")
 
         if total_cost > 20:
             print("Cost limit exceeded. Stopping evaluation.")
             break
 
     return results, start_time, total_cost
-
 
 
 def parse_result_seceval(result):
@@ -764,7 +816,7 @@ def save_benchmark_results(
     accuracy,
     total_count,
     result,
-    cost
+    cost,
 ):
     """
     Save benchmark results in CyberMetric-style format to output_dir/information.txt.
@@ -818,11 +870,27 @@ def save_benchmark_results(
 
 def main():
     parser = argparse.ArgumentParser(description="SecEval Evaluation CLI")
-    parser.add_argument("-d", "--dataset_file", type=str, required=True, help="Specify the dataset file to evaluate on.")
-    parser.add_argument("-B", "--backend", type=str, required=True, help="Specify the llm type. openai: openai model, ollama: ollama model, openrouter: openrouter model, deepseek: deepseek model")
+    parser.add_argument(
+        "-d",
+        "--dataset_file",
+        type=str,
+        required=True,
+        help="Specify the dataset file to evaluate on.",
+    )
+    parser.add_argument(
+        "-B",
+        "--backend",
+        type=str,
+        required=True,
+        help="Specify the llm type. openai: openai model, ollama: ollama model, openrouter: openrouter model, deepseek: deepseek model",
+    )
     parser.add_argument("-m", "--model", type=str, required=True, help="Specify the models.")
-    parser.add_argument("-e", "--eval", type=str, required=True, help="Specify the evaluation benchmark.")
-    parser.add_argument("-s", "--save_interval", type=int, help="Save intermediate results every X questions.")
+    parser.add_argument(
+        "-e", "--eval", type=str, required=True, help="Specify the evaluation benchmark."
+    )
+    parser.add_argument(
+        "-s", "--save_interval", type=int, help="Save intermediate results every X questions."
+    )
     args = parser.parse_args()
 
     model = args.model
@@ -835,14 +903,14 @@ def main():
         backend_upper = args.backend.upper()
         api_base = os.environ.get(f"{backend_upper}_API_BASE")
         custom_llm_provider = args.backend
-        api_key=""
-        if args.backend!='ollama':
+        api_key = ""
+        if args.backend != "ollama":
             api_key = os.environ.get(f"{backend_upper}_API_KEY").strip()
             if api_key is None:
                 raise RuntimeError(f"API_BASE or API_KEY not found for backend {args.backend}")
-        if args.backend=='alias':
+        if args.backend == "alias":
             api_base = "https://api.aliasrobotics.com:666/"
-            custom_llm_provider="openai"
+            custom_llm_provider = "openai"
     else:
         raise RuntimeError("Unknown backend")
 
@@ -878,7 +946,7 @@ def main():
             api_key,
             custom_llm_provider,
             args.dataset_file,
-            skip_entities=skip_entities
+            skip_entities=skip_entities,
         )
         return  # Exit after PII evaluation, no accuracy metrics or benchmark results needed
 
@@ -915,7 +983,7 @@ def main():
         custom_llm_provider,
         args.save_interval,
         args.eval,
-        args.dataset_file
+        args.dataset_file,
     )
     end_time = datetime.datetime.now()
 
@@ -931,7 +999,20 @@ def main():
     else:
         print(f"Accuracy: {accuracy:.2f}% ({correct_count}/{total_count})")
 
-    save_benchmark_results(args.eval, model, args.dataset_file, eval_start_time, end_time, len(dataset), correct_count, accuracy, total_count, result, cost)
+    save_benchmark_results(
+        args.eval,
+        model,
+        args.dataset_file,
+        eval_start_time,
+        end_time,
+        len(dataset),
+        correct_count,
+        accuracy,
+        total_count,
+        result,
+        cost,
+    )
+
 
 if __name__ == "__main__":
     main()

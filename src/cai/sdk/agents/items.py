@@ -56,6 +56,8 @@ except Exception:
         @classmethod
         def model_json_schema(cls):
             return {}
+
+
 from typing_extensions import TypeAlias
 
 from .exceptions import AgentsException, ModelBehaviorError

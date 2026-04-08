@@ -8,6 +8,7 @@ to safe, read-only alternatives that do not require `sudo` or root.
 Make the behavior explicit via `RUN_AGENT_INTEGRATION_TESTS=1` when full
 privileged execution is desired.
 """
+
 from __future__ import annotations
 
 import os
@@ -19,7 +20,9 @@ from cai.tools import validation  # pylint: disable=import-error
 from cai.tools.common import run_command_async
 
 
-async def _blue_team_safe_command_impl(command: str = "", interactive: bool = False, session_id: Optional[str] = None) -> str:
+async def _blue_team_safe_command_impl(
+    command: str = "", interactive: bool = False, session_id: Optional[str] = None
+) -> str:
     """Execute a blue-team-friendly version of a requested command.
 
     If the command appears to require elevated privileges, return a
@@ -29,7 +32,11 @@ async def _blue_team_safe_command_impl(command: str = "", interactive: bool = Fa
         return "Error: No command provided"
 
     lowered = command.lower()
-    run_integration = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower() in ("1", "true", "yes")
+    run_integration = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     # Privileged mapping: fail2ban -> read config + tail auth logs
     if "fail2ban-client" in lowered or "fail2ban " in lowered:
@@ -38,7 +45,14 @@ async def _blue_team_safe_command_impl(command: str = "", interactive: bool = Fa
             guard_err = validation.validate_command_guardrails(command)
             if guard_err:
                 return guard_err
-            out = await run_command_async(command, stdout=True, timeout=30, stream=False, call_id=None, tool_name="blueteam_safe_command")
+            out = await run_command_async(
+                command,
+                stdout=True,
+                timeout=30,
+                stream=False,
+                call_id=None,
+                tool_name="blueteam_safe_command",
+            )
             return validation.sanitize_tool_output(command, out)
         safe_cmd = (
             "cat /etc/fail2ban/jail.local 2>/dev/null || cat /etc/fail2ban/jail.conf 2>/dev/null || true; "
@@ -47,18 +61,34 @@ async def _blue_team_safe_command_impl(command: str = "", interactive: bool = Fa
         guard_err = validation.validate_command_guardrails(safe_cmd)
         if guard_err:
             return guard_err
-        out = await run_command_async(safe_cmd, stdout=True, timeout=20, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        out = await run_command_async(
+            safe_cmd,
+            stdout=True,
+            timeout=20,
+            stream=False,
+            call_id=None,
+            tool_name="blueteam_safe_command",
+        )
         return validation.sanitize_tool_output(safe_cmd, out)
 
     # Map systemctl status <service> -> non-privileged process lookup
     m = re.search(r"systemctl\s+status\s+([\w@\-\.]+)", lowered)
     if m:
         svc = m.group(1)
-        safe_cmd = f"ps aux | grep {svc} | grep -v grep || echo 'Process info unavailable without root.'"
+        safe_cmd = (
+            f"ps aux | grep {svc} | grep -v grep || echo 'Process info unavailable without root.'"
+        )
         guard_err = validation.validate_command_guardrails(safe_cmd)
         if guard_err:
             return guard_err
-        out = await run_command_async(safe_cmd, stdout=True, timeout=10, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        out = await run_command_async(
+            safe_cmd,
+            stdout=True,
+            timeout=10,
+            stream=False,
+            call_id=None,
+            tool_name="blueteam_safe_command",
+        )
         return validation.sanitize_tool_output(safe_cmd, out)
 
     # journalctl -> try syslog/messages tails
@@ -67,7 +97,14 @@ async def _blue_team_safe_command_impl(command: str = "", interactive: bool = Fa
         guard_err = validation.validate_command_guardrails(safe_cmd)
         if guard_err:
             return guard_err
-        out = await run_command_async(safe_cmd, stdout=True, timeout=15, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        out = await run_command_async(
+            safe_cmd,
+            stdout=True,
+            timeout=15,
+            stream=False,
+            call_id=None,
+            tool_name="blueteam_safe_command",
+        )
         return validation.sanitize_tool_output(safe_cmd, out)
 
     # Package manager operations: require root; explain instead of running
@@ -80,7 +117,14 @@ async def _blue_team_safe_command_impl(command: str = "", interactive: bool = Fa
         guard_err = validation.validate_command_guardrails(safe_cmd)
         if guard_err:
             return guard_err
-        out = await run_command_async(safe_cmd, stdout=True, timeout=10, stream=False, call_id=None, tool_name="blueteam_safe_command")
+        out = await run_command_async(
+            safe_cmd,
+            stdout=True,
+            timeout=10,
+            stream=False,
+            call_id=None,
+            tool_name="blueteam_safe_command",
+        )
         return validation.sanitize_tool_output(safe_cmd, out)
 
     # If the caller used sudo explicitly, attempt safe fallback or explain
@@ -91,7 +135,14 @@ async def _blue_team_safe_command_impl(command: str = "", interactive: bool = Fa
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
-    out = await run_command_async(command, stdout=True, timeout=30, stream=False, call_id=None, tool_name="blueteam_safe_command")
+    out = await run_command_async(
+        command,
+        stdout=True,
+        timeout=30,
+        stream=False,
+        call_id=None,
+        tool_name="blueteam_safe_command",
+    )
     return validation.sanitize_tool_output(command, out)
 
 

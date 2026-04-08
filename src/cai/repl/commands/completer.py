@@ -3,6 +3,7 @@ Command completer for CAI REPL.
 This module provides a fuzzy command completer with autocompletion menu and
 command shadowing.
 """
+
 # Standard library imports
 import datetime
 import os
@@ -66,25 +67,21 @@ class FuzzyCommandCompleter(Completer):
         self.command_history = {}  # Store command usage frequency
 
         # Fetch models in background thread to avoid blocking
-        threading.Thread(
-            target=self._background_fetch_models,
-            daemon=True
-        ).start()
+        threading.Thread(target=self._background_fetch_models, daemon=True).start()
 
         # Fetch agents in background thread to avoid blocking
-        threading.Thread(
-            target=self._background_fetch_agents,
-            daemon=True
-        ).start()
+        threading.Thread(target=self._background_fetch_agents, daemon=True).start()
 
         # Styling for the completion menu
-        self.completion_style = Style.from_dict({
-            'completion-menu': 'bg:#2b2b2b #ffffff',
-            'completion-menu.completion': 'bg:#2b2b2b #ffffff',
-            'completion-menu.completion.current': 'bg:#004b6b #ffffff',
-            'scrollbar.background': 'bg:#2b2b2b',
-            'scrollbar.button': 'bg:#004b6b',
-        })
+        self.completion_style = Style.from_dict(
+            {
+                "completion-menu": "bg:#2b2b2b #ffffff",
+                "completion-menu.completion": "bg:#2b2b2b #ffffff",
+                "completion-menu.completion.current": "bg:#004b6b #ffffff",
+                "scrollbar.background": "bg:#2b2b2b",
+                "scrollbar.button": "bg:#004b6b",
+            }
+        )
 
     def _background_fetch_agents(self):
         """Fetch agents in background to avoid blocking the UI."""
@@ -118,7 +115,7 @@ class FuzzyCommandCompleter(Completer):
                     if hasattr(agent, "_pattern"):
                         pattern = agent._pattern
                         if hasattr(pattern, "type"):
-                            pattern_type_value = getattr(pattern.type, 'value', str(pattern.type))
+                            pattern_type_value = getattr(pattern.type, "value", str(pattern.type))
                             if pattern_type_value == "parallel":
                                 continue
                     regular_agents.append(agent_key)
@@ -186,19 +183,18 @@ class FuzzyCommandCompleter(Completer):
                         headers["Authorization"] = f"Bearer {api_key}"
 
                 response = requests.get(
-                    f"{api_base.replace('/v1', '')}/api/tags",
-                    headers=headers,
-                    timeout=0.5)
+                    f"{api_base.replace('/v1', '')}/api/tags", headers=headers, timeout=0.5
+                )
 
                 if response.status_code == 200:
                     data = response.json()
-                    if 'models' in data:
-                        models = data['models']
+                    if "models" in data:
+                        models = data["models"]
                     else:
                         # Fallback for older Ollama versions
-                        models = data.get('items', [])
+                        models = data.get("items", [])
 
-                    ollama_models = [model.get('name', '') for model in models]
+                    ollama_models = [model.get("name", "") for model in models]
                     all_models.extend(ollama_models)
             except Exception:  # pylint: disable=broad-except
                 # Silently fail if Ollama is not available
@@ -219,7 +215,7 @@ class FuzzyCommandCompleter(Completer):
         Args:
             command: The command that was used
         """
-        if command.startswith('/'):
+        if command.startswith("/"):
             # Extract the main command
             parts = command.split()
             main_command = parts[0]
@@ -289,9 +285,11 @@ class FuzzyCommandCompleter(Completer):
         current_time = time.time()
         cache_key = current_word
 
-        if (cache_key in self._command_suggestions_cache and
-                current_time - self._command_suggestions_last_update <
-                self._command_suggestions_update_interval):
+        if (
+            cache_key in self._command_suggestions_cache
+            and current_time - self._command_suggestions_last_update
+            < self._command_suggestions_update_interval
+        ):
             return self._command_suggestions_cache[cache_key]
 
         suggestions = []
@@ -303,52 +301,57 @@ class FuzzyCommandCompleter(Completer):
         sorted_commands = sorted(
             command_descriptions.items(),
             key=lambda x: self.command_history.get(x[0], 0),
-            reverse=True
+            reverse=True,
         )
 
         # Add command completions
         for cmd, description in sorted_commands:
             # Exact prefix match
             if cmd.startswith(current_word):
-                suggestions.append(Completion(
-                    cmd,
-                    start_position=-len(current_word),
-                    display=HTML(
-                        f"<ansicyan><b>{cmd:<15}</b></ansicyan> "
-                        f"{description}"),
-                    style="fg:ansicyan bold"
-                ))
+                suggestions.append(
+                    Completion(
+                        cmd,
+                        start_position=-len(current_word),
+                        display=HTML(f"<ansicyan><b>{cmd:<15}</b></ansicyan> {description}"),
+                        style="fg:ansicyan bold",
+                    )
+                )
             # Fuzzy match (contains the substring)
             elif current_word in cmd and not cmd.startswith(current_word):
-                suggestions.append(Completion(
-                    cmd,
-                    start_position=-len(current_word),
-                    display=HTML(
-                        f"<ansicyan>{cmd:<15}</ansicyan> {description}"),
-                    style="fg:ansicyan"
-                ))
+                suggestions.append(
+                    Completion(
+                        cmd,
+                        start_position=-len(current_word),
+                        display=HTML(f"<ansicyan>{cmd:<15}</ansicyan> {description}"),
+                        style="fg:ansicyan",
+                    )
+                )
 
         # Add alias completions
         for alias, cmd in sorted(COMMAND_ALIASES.items()):
             cmd_description = command_descriptions.get(cmd, "")
             if alias.startswith(current_word):
-                suggestions.append(Completion(
-                    alias,
-                    start_position=-len(current_word),
-                    display=HTML(
-                        f"<ansigreen><b>{alias:<15}</b></ansigreen> "
-                        f"{cmd} - {cmd_description}"),
-                    style="fg:ansigreen bold"
-                ))
+                suggestions.append(
+                    Completion(
+                        alias,
+                        start_position=-len(current_word),
+                        display=HTML(
+                            f"<ansigreen><b>{alias:<15}</b></ansigreen> {cmd} - {cmd_description}"
+                        ),
+                        style="fg:ansigreen bold",
+                    )
+                )
             elif current_word in alias and not alias.startswith(current_word):
-                suggestions.append(Completion(
-                    alias,
-                    start_position=-len(current_word),
-                    display=HTML(
-                        f"<ansigreen>{alias:<15}</ansigreen> "
-                        f"{cmd} - {cmd_description}"),
-                    style="fg:ansigreen"
-                ))
+                suggestions.append(
+                    Completion(
+                        alias,
+                        start_position=-len(current_word),
+                        display=HTML(
+                            f"<ansigreen>{alias:<15}</ansigreen> {cmd} - {cmd_description}"
+                        ),
+                        style="fg:ansigreen",
+                    )
+                )
 
         # Update cache
         self._command_suggestions_cache[cache_key] = suggestions
@@ -364,7 +367,7 @@ class FuzzyCommandCompleter(Completer):
     @lru_cache(maxsize=100)
     def _get_command_shadow_cached(self, text: str) -> Optional[str]:
         """Cached version of command shadow lookup."""
-        if not text or not text.startswith('/'):
+        if not text or not text.startswith("/"):
             return None
 
         # Find commands that start with the current input
@@ -397,9 +400,11 @@ class FuzzyCommandCompleter(Completer):
         # Check cache first
         current_time = time.time()
 
-        if (text in self._command_shadow_cache and
-                current_time - self._command_shadow_last_update <
-                self._command_shadow_update_interval):
+        if (
+            text in self._command_shadow_cache
+            and current_time - self._command_shadow_last_update
+            < self._command_shadow_update_interval
+        ):
             return self._command_shadow_cache[text]
 
         # Get shadow from cached function
@@ -416,8 +421,7 @@ class FuzzyCommandCompleter(Completer):
     _subcommand_suggestions_last_update = 0
     _subcommand_suggestions_update_interval = 1.0  # Update every second
 
-    def get_subcommand_suggestions(
-            self, cmd: str, current_word: str) -> List[Completion]:
+    def get_subcommand_suggestions(self, cmd: str, current_word: str) -> List[Completion]:
         """Get subcommand suggestions with fuzzy matching.
 
         Args:
@@ -431,9 +435,11 @@ class FuzzyCommandCompleter(Completer):
         current_time = time.time()
         cache_key = f"{cmd}:{current_word}"
 
-        if (cache_key in self._subcommand_suggestions_cache and
-                current_time - self._subcommand_suggestions_last_update <
-                self._subcommand_suggestions_update_interval):
+        if (
+            cache_key in self._subcommand_suggestions_cache
+            and current_time - self._subcommand_suggestions_last_update
+            < self._subcommand_suggestions_update_interval
+        ):
             return self._subcommand_suggestions_cache[cache_key]
 
         suggestions = []
@@ -447,30 +453,32 @@ class FuzzyCommandCompleter(Completer):
         if cmd in all_commands:
             for subcmd in sorted(all_commands[cmd]):
                 # Get description for this subcommand if available
-                subcmd_description = subcommand_descriptions.get(
-                    f"{cmd} {subcmd}", "")
+                subcmd_description = subcommand_descriptions.get(f"{cmd} {subcmd}", "")
 
                 # Exact prefix match
                 if subcmd.startswith(current_word):
-                    suggestions.append(Completion(
-                        subcmd,
-                        start_position=-len(current_word),
-                        display=HTML(
-                            f"<ansiyellow><b>{subcmd:<15}</b></ansiyellow> "
-                            f"{subcmd_description}"),
-                        style="fg:ansiyellow bold"
-                    ))
+                    suggestions.append(
+                        Completion(
+                            subcmd,
+                            start_position=-len(current_word),
+                            display=HTML(
+                                f"<ansiyellow><b>{subcmd:<15}</b></ansiyellow> {subcmd_description}"
+                            ),
+                            style="fg:ansiyellow bold",
+                        )
+                    )
                 # Fuzzy match
-                elif (current_word in subcmd and
-                      not subcmd.startswith(current_word)):
-                    suggestions.append(Completion(
-                        subcmd,
-                        start_position=-len(current_word),
-                        display=HTML(
-                            f"<ansiyellow>{subcmd:<15}</ansiyellow> "
-                            f"{subcmd_description}"),
-                        style="fg:ansiyellow"
-                    ))
+                elif current_word in subcmd and not subcmd.startswith(current_word):
+                    suggestions.append(
+                        Completion(
+                            subcmd,
+                            start_position=-len(current_word),
+                            display=HTML(
+                                f"<ansiyellow>{subcmd:<15}</ansiyellow> {subcmd_description}"
+                            ),
+                            style="fg:ansiyellow",
+                        )
+                    )
 
         # Update cache
         self._subcommand_suggestions_cache[cache_key] = suggestions
@@ -492,34 +500,38 @@ class FuzzyCommandCompleter(Completer):
         # First try to complete model numbers
         for num, model_name in self._cached_model_numbers.items():
             if num.startswith(current_word):
-                suggestions.append(Completion(
-                    num,
-                    start_position=-len(current_word),
-                    display=HTML(
-                        f"<ansiwhite><b>{num:<3}</b></ansiwhite> "
-                        f"{model_name}"),
-                    style="fg:ansiwhite bold"
-                ))
+                suggestions.append(
+                    Completion(
+                        num,
+                        start_position=-len(current_word),
+                        display=HTML(f"<ansiwhite><b>{num:<3}</b></ansiwhite> {model_name}"),
+                        style="fg:ansiwhite bold",
+                    )
+                )
 
         # Then try to complete model names
         for model in self._cached_models:
             model_name = model[0] if isinstance(model, tuple) else model
             if model_name.startswith(current_word):
-                suggestions.append(Completion(
-                    model_name,
-                    start_position=-len(current_word),
-                    display=HTML(
-                        f"<ansimagenta><b>{model_name}</b></ansimagenta>"),
-                    style="fg:ansimagenta bold"
-                ))
-            elif (current_word.lower() in model_name.lower() and
-                  not model_name.startswith(current_word)):
-                suggestions.append(Completion(
-                    model_name,
-                    start_position=-len(current_word),
-                    display=HTML(f"<ansimagenta>{model_name}</ansimagenta>"),
-                    style="fg:ansimagenta"
-                ))
+                suggestions.append(
+                    Completion(
+                        model_name,
+                        start_position=-len(current_word),
+                        display=HTML(f"<ansimagenta><b>{model_name}</b></ansimagenta>"),
+                        style="fg:ansimagenta bold",
+                    )
+                )
+            elif current_word.lower() in model_name.lower() and not model_name.startswith(
+                current_word
+            ):
+                suggestions.append(
+                    Completion(
+                        model_name,
+                        start_position=-len(current_word),
+                        display=HTML(f"<ansimagenta>{model_name}</ansimagenta>"),
+                        style="fg:ansimagenta",
+                    )
+                )
 
         return suggestions
 
@@ -536,48 +548,55 @@ class FuzzyCommandCompleter(Completer):
                 # Get agent display name for better UX
                 try:
                     from cai.agents import get_available_agents
+
                     agents = get_available_agents()
                     agent_obj = agents.get(agent_name)
-                    display_name = getattr(agent_obj, "name", agent_name) if agent_obj else agent_name
+                    display_name = (
+                        getattr(agent_obj, "name", agent_name) if agent_obj else agent_name
+                    )
                 except (ImportError, AttributeError, KeyError):  # pylint: disable=broad-except
                     display_name = agent_name
 
-                suggestions.append(Completion(
-                    num,
-                    start_position=-len(current_word),
-                    display=HTML(
-                        f"<ansiwhite><b>{num:<3}</b></ansiwhite> "
-                        f"{display_name}"),
-                    style="fg:ansiwhite bold"
-                ))
+                suggestions.append(
+                    Completion(
+                        num,
+                        start_position=-len(current_word),
+                        display=HTML(f"<ansiwhite><b>{num:<3}</b></ansiwhite> {display_name}"),
+                        style="fg:ansiwhite bold",
+                    )
+                )
 
         # Then try to complete agent names
         for agent_key in self._cached_agents:
             if agent_key.startswith(current_word):
-                suggestions.append(Completion(
-                    agent_key,
-                    start_position=-len(current_word),
-                    display=HTML(
-                        f"<ansimagenta><b>{agent_key}</b></ansimagenta>"),
-                    style="fg:ansimagenta bold"
-                ))
-            elif (current_word.lower() in agent_key.lower() and
-                  not agent_key.startswith(current_word)):
-                suggestions.append(Completion(
-                    agent_key,
-                    start_position=-len(current_word),
-                    display=HTML(f"<ansimagenta>{agent_key}</ansimagenta>"),
-                    style="fg:ansimagenta"
-                ))
+                suggestions.append(
+                    Completion(
+                        agent_key,
+                        start_position=-len(current_word),
+                        display=HTML(f"<ansimagenta><b>{agent_key}</b></ansimagenta>"),
+                        style="fg:ansimagenta bold",
+                    )
+                )
+            elif current_word.lower() in agent_key.lower() and not agent_key.startswith(
+                current_word
+            ):
+                suggestions.append(
+                    Completion(
+                        agent_key,
+                        start_position=-len(current_word),
+                        display=HTML(f"<ansimagenta>{agent_key}</ansimagenta>"),
+                        style="fg:ansimagenta",
+                    )
+                )
 
         return suggestions
 
     def get_mcp_server_suggestions(self, current_word: str) -> List[Completion]:
         """Get MCP server name suggestions.
-        
+
         Args:
             current_word: The current word being typed
-            
+
         Returns:
             A list of completions for MCP servers
         """
@@ -595,25 +614,32 @@ class FuzzyCommandCompleter(Completer):
 
                 # Exact prefix match
                 if server_name.startswith(current_word):
-                    suggestions.append(Completion(
-                        server_name,
-                        start_position=-len(current_word),
-                        display=HTML(
-                            f"<ansicyan><b>{server_name}</b></ansicyan> "
-                            f"<ansiwhite>({server_type})</ansiwhite>"),
-                        style="fg:ansicyan bold"
-                    ))
+                    suggestions.append(
+                        Completion(
+                            server_name,
+                            start_position=-len(current_word),
+                            display=HTML(
+                                f"<ansicyan><b>{server_name}</b></ansicyan> "
+                                f"<ansiwhite>({server_type})</ansiwhite>"
+                            ),
+                            style="fg:ansicyan bold",
+                        )
+                    )
                 # Fuzzy match
-                elif (current_word.lower() in server_name.lower() and
-                      not server_name.startswith(current_word)):
-                    suggestions.append(Completion(
-                        server_name,
-                        start_position=-len(current_word),
-                        display=HTML(
-                            f"<ansicyan>{server_name}</ansicyan> "
-                            f"<ansiwhite>({server_type})</ansiwhite>"),
-                        style="fg:ansicyan"
-                    ))
+                elif current_word.lower() in server_name.lower() and not server_name.startswith(
+                    current_word
+                ):
+                    suggestions.append(
+                        Completion(
+                            server_name,
+                            start_position=-len(current_word),
+                            display=HTML(
+                                f"<ansicyan>{server_name}</ansicyan> "
+                                f"<ansiwhite>({server_type})</ansiwhite>"
+                            ),
+                            style="fg:ansicyan",
+                        )
+                    )
         except (ImportError, AttributeError):
             pass  # No MCP servers available
 
@@ -621,11 +647,11 @@ class FuzzyCommandCompleter(Completer):
 
     def get_mcp_suggestions(self, words: List[str], current_word: str) -> List[Completion]:
         """Get context-aware MCP command completions.
-        
+
         Args:
             words: List of words including empty string if trailing space
             current_word: The current word being typed (empty if trailing space)
-        
+
         Returns:
             List of completion suggestions
         """
@@ -652,14 +678,17 @@ class FuzzyCommandCompleter(Completer):
                     ]
                     for transport, desc in transports:
                         if transport.startswith(current_word):
-                            suggestions.append(Completion(
-                                transport,
-                                start_position=-len(current_word),
-                                display=HTML(
-                                    f"<ansiyellow><b>{transport}</b></ansiyellow> "
-                                    f"<ansiwhite>- {desc}</ansiwhite>"),
-                                style="fg:ansiyellow bold"
-                            ))
+                            suggestions.append(
+                                Completion(
+                                    transport,
+                                    start_position=-len(current_word),
+                                    display=HTML(
+                                        f"<ansiyellow><b>{transport}</b></ansiyellow> "
+                                        f"<ansiwhite>- {desc}</ansiwhite>"
+                                    ),
+                                    style="fg:ansiyellow bold",
+                                )
+                            )
 
             elif subcommand in ["add", "remove", "tools"]:
                 # These commands need an MCP server name
@@ -693,7 +722,7 @@ class FuzzyCommandCompleter(Completer):
         words = text.split()
 
         # Check if there's a trailing space (user finished typing a word)
-        has_trailing_space = text_original and text_original[-1] == ' '
+        has_trailing_space = text_original and text_original[-1] == " "
 
         # Refresh Ollama models and agents periodically
         self.fetch_all_models()
@@ -707,21 +736,19 @@ class FuzzyCommandCompleter(Completer):
             sorted_commands = sorted(
                 command_descriptions.items(),
                 key=lambda x: self.command_history.get(x[0], 0),
-                reverse=True
+                reverse=True,
             )
 
             for cmd, description in sorted_commands:
                 yield Completion(
                     cmd,
                     start_position=0,
-                    display=HTML(
-                        f"<ansicyan><b>{cmd:<15}</b></ansicyan> "
-                        f"{description}"),
-                    style="fg:ansicyan bold"
+                    display=HTML(f"<ansicyan><b>{cmd:<15}</b></ansicyan> {description}"),
+                    style="fg:ansicyan bold",
                 )
             return
 
-        if text.startswith('/'):
+        if text.startswith("/"):
             # Determine current word and effective word count based on trailing space
             # Example: "/mcp " has trailing space, so current_word="" and we add empty string to words
             # Example: "/mcp" has no trailing space, so current_word="/mcp"

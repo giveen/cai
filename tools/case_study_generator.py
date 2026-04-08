@@ -15,15 +15,16 @@ Usage:
     python case_study_generator.py --jsonl_file logs/session.jsonl --output_php_file output.php
     python case_study_generator.py --jsonl_file logs/last --output_php_file case_studies/latest.php
 """
-import os
 
-from dotenv import load_dotenv
 import argparse
 import asyncio
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Optional
+
+from dotenv import load_dotenv
 
 # Rich console for better output
 from rich.console import Console
@@ -51,12 +52,12 @@ def extract_php_code(text: str) -> Optional[str]:
         return None
 
     # Try to extract PHP code between ```php and ```
-    php_matches = re.findall(r'```php\n(.*?)```', text, re.DOTALL)
+    php_matches = re.findall(r"```php\n(.*?)```", text, re.DOTALL)
     if php_matches:
         return php_matches[0].strip()
 
     # If no code blocks, check if the entire text looks like PHP
-    if text.strip().startswith('<?php') or text.strip().startswith('<!doctype'):
+    if text.strip().startswith("<?php") or text.strip().startswith("<!doctype"):
         return text.strip()
 
     return None
@@ -69,7 +70,7 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
     Args:
         jsonl_file: Path to the JSONL file to load context from
         output_php_file: Path to save the PHP output to
-    
+
     Returns:
         Path to the saved PHP file or None if failed
     """
@@ -96,14 +97,16 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
         assistant_messages = sum(1 for msg in messages if msg.get("role") == "assistant")
         tool_messages = sum(1 for msg in messages if msg.get("role") == "tool")
 
-        console.print(Panel(
-            f"Context loaded:\n"
-            f"• User messages: {user_messages}\n"
-            f"• Assistant messages: {assistant_messages}\n"
-            f"• Tool messages: {tool_messages}",
-            title="[bold]JSONL Context Summary[/bold]",
-            border_style="blue"
-        ))
+        console.print(
+            Panel(
+                f"Context loaded:\n"
+                f"• User messages: {user_messages}\n"
+                f"• Assistant messages: {assistant_messages}\n"
+                f"• Tool messages: {tool_messages}",
+                title="[bold]JSONL Context Summary[/bold]",
+                border_style="blue",
+            )
+        )
 
     except Exception as e:
         console.print(f"[red]Error loading JSONL file: {str(e)}[/red]")
@@ -162,7 +165,18 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
             for msg in tool_msgs:
                 content = msg.get("content", "")
                 # Look for important patterns in tool output
-                if any(keyword in content.lower() for keyword in ["map", "credential", "password", "auth", "endpoint", "192.168", "http"]):
+                if any(
+                    keyword in content.lower()
+                    for keyword in [
+                        "map",
+                        "credential",
+                        "password",
+                        "auth",
+                        "endpoint",
+                        "192.168",
+                        "http",
+                    ]
+                ):
                     important_tools.append(content[:500])
 
             for i, content in enumerate(important_tools[:5], 1):
@@ -171,7 +185,7 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
     console.print("\n[cyan]Generating case study with UseCase agent...[/cyan]")
 
     # Configure streaming mode based on environment variable
-    stream_mode = os.getenv('CAI_STREAM', 'true').lower() != 'false'
+    stream_mode = os.getenv("CAI_STREAM", "true").lower() != "false"
 
     try:
         if stream_mode:
@@ -190,16 +204,23 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
                         SpinnerColumn(),
                         TextColumn("[progress.description]{task.description}"),
                         console=console,
-                        transient=True
+                        transient=True,
                     ) as progress:
-                        task = progress.add_task("[cyan]Processing with UseCase agent...", total=None)
+                        task = progress.add_task(
+                            "[cyan]Processing with UseCase agent...", total=None
+                        )
 
                         # Consume events so the async generator is executed
                         async for event in result_stream.stream_events():
                             if isinstance(event, RunItemStreamEvent):
                                 # Handle tool outputs
-                                if event.name == "tool_output" and isinstance(event.item, ToolCallOutputItem):
-                                    progress.update(task, description=f"[cyan]Tool: {event.item.raw_item.get('name', 'unknown')}...")
+                                if event.name == "tool_output" and isinstance(
+                                    event.item, ToolCallOutputItem
+                                ):
+                                    progress.update(
+                                        task,
+                                        description=f"[cyan]Tool: {event.item.raw_item.get('name', 'unknown')}...",
+                                    )
 
                                     # Add tool message to history (like CLI does)
                                     tool_msg = {
@@ -225,6 +246,7 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
                 except Exception as e:
                     console.print(f"[red]Error in streaming: {str(e)}[/red]")
                     import traceback
+
                     console.print(f"[red]{traceback.format_exc()}[/red]")
                     return None
 
@@ -256,7 +278,7 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
                 result = await Runner.run(use_case_agent, prompt)
 
             # Extract PHP code from result
-            if hasattr(result, 'final_output') and result.final_output:
+            if hasattr(result, "final_output") and result.final_output:
                 output_text = result.final_output
 
                 # Process the output to handle tool outputs
@@ -283,6 +305,7 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
     except Exception as e:
         console.print(f"[red]Error generating case study: {str(e)}[/red]")
         import traceback
+
         console.print(f"[red]{traceback.format_exc()}[/red]")
         return None
 
@@ -296,7 +319,7 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
         output_path = Path(output_php_file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(php_code)
 
         console.print(f"\n[green]✓ PHP case study saved to: {output_php_file}[/green]")
@@ -306,16 +329,12 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
         console.print(f"[dim]File size: {file_size:,} bytes[/dim]")
 
         # Show first few lines as preview
-        lines = php_code.split('\n')[:15]
-        preview = '\n'.join(lines)
-        if len(php_code.split('\n')) > 15:
-            preview += '\n...'
+        lines = php_code.split("\n")[:15]
+        preview = "\n".join(lines)
+        if len(php_code.split("\n")) > 15:
+            preview += "\n..."
 
-        console.print(Panel(
-            preview,
-            title="[bold]PHP File Preview[/bold]",
-            border_style="blue"
-        ))
+        console.print(Panel(preview, title="[bold]PHP File Preview[/bold]", border_style="blue"))
 
         return str(output_path)
 
@@ -327,7 +346,7 @@ async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='Generate PHP case studies from JSONL files using CAI UseCase agent.',
+        description="Generate PHP case studies from JSONL files using CAI UseCase agent.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -345,25 +364,25 @@ Examples:
   
   # Disable streaming
   CAI_STREAM=false python case_study_generator.py --jsonl_file logs/last --output_php_file output.php
-        """
+        """,
     )
     parser.add_argument(
-        '--jsonl_file',
+        "--jsonl_file",
         type=str,
-        default='logs/last',
-        help='Path to the JSONL file containing conversation context (default: logs/last)'
+        default="logs/last",
+        help="Path to the JSONL file containing conversation context (default: logs/last)",
     )
     parser.add_argument(
-        '--output_php_file',
+        "--output_php_file",
         type=str,
         required=True,
-        help='Path where the generated PHP file will be saved'
+        help="Path where the generated PHP file will be saved",
     )
     parser.add_argument(
-        '--model',
+        "--model",
         type=str,
         default=None,
-        help='Override the model to use (e.g., claude-sonnet-4-20250514, gpt-4o)'
+        help="Override the model to use (e.g., claude-sonnet-4-20250514, gpt-4o)",
     )
     return parser.parse_args()
 
@@ -373,13 +392,15 @@ async def main():
     args = parse_args()
 
     # Display banner
-    console.print(Panel(
-        "[bold cyan]CAI Case Study Generator[/bold cyan]\n"
-        "Generate professional cybersecurity case studies from JSONL session logs\n\n"
-        "[dim]This tool uses the CAI UseCase agent to analyze session context and generate\n"
-        "comprehensive PHP case studies based on the conversation history.[/dim]",
-        border_style="cyan"
-    ))
+    console.print(
+        Panel(
+            "[bold cyan]CAI Case Study Generator[/bold cyan]\n"
+            "Generate professional cybersecurity case studies from JSONL session logs\n\n"
+            "[dim]This tool uses the CAI UseCase agent to analyze session context and generate\n"
+            "comprehensive PHP case studies based on the conversation history.[/dim]",
+            border_style="cyan",
+        )
+    )
 
     # Override model if specified
     if args.model:

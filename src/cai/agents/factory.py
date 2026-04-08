@@ -16,7 +16,7 @@ from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 
 def create_generic_agent_factory(
     agent_module_path: str, agent_var_name: str
-) -> Callable[[str|None, str|None], Agent]:
+) -> Callable[[str | None, str | None], Agent]:
     """
     Create a generic factory function for any agent.
 
@@ -28,7 +28,11 @@ def create_generic_agent_factory(
         A factory function that creates new instances of the agent
     """
 
-    def factory(model_override: str | None = None, custom_name: str | None = None, agent_id: str | None = None):
+    def factory(
+        model_override: str | None = None,
+        custom_name: str | None = None,
+        agent_id: str | None = None,
+    ):
         # Import the module
         module = importlib.import_module(agent_module_path)
 
@@ -46,7 +50,6 @@ def create_generic_agent_factory(
         if not model_name:
             # Third priority: global CAI_MODEL
             model_name = os.environ.get("CAI_MODEL", "alias1")
-
 
         api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
 
@@ -85,12 +88,14 @@ def create_generic_agent_factory(
             mcp_tools = get_mcp_tools_for_agent(agent_var_name)
             if mcp_tools:
                 # Ensure the agent has tools list
-                if not hasattr(cloned_agent, 'tools'):
+                if not hasattr(cloned_agent, "tools"):
                     cloned_agent.tools = []
 
                 # Remove any existing tools with the same names to avoid duplicates
                 existing_tool_names = {t.name for t in mcp_tools}
-                cloned_agent.tools = [t for t in cloned_agent.tools if t.name not in existing_tool_names]
+                cloned_agent.tools = [
+                    t for t in cloned_agent.tools if t.name not in existing_tool_names
+                ]
 
                 # Add the MCP tools
                 cloned_agent.tools.extend(mcp_tools)

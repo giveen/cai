@@ -2,6 +2,7 @@
 Base module for CAI REPL commands.
 This module provides the base structure for all commands in the CAI REPL.
 """
+
 from typing import Any, Callable, Dict, List, Optional
 
 from rich.console import Console  # pylint: disable=import-error
@@ -33,10 +34,7 @@ class Command:
             description: A short description of the subcommand
             handler: The function to call when the subcommand is invoked
         """
-        self.subcommands[name] = {
-            "description": description,
-            "handler": handler
-        }
+        self.subcommands[name] = {"description": description, "handler": handler}
 
     def get_subcommands(self) -> List[str]:
         """Get a list of all subcommand names.
@@ -82,9 +80,8 @@ class Command:
         Returns:
             True if the command was handled successfully, False otherwise
         """
-        subcommands = ', '.join(self.get_subcommands())
-        console.print(
-            f"[yellow]{self.name} command requires a subcommand: {subcommands}[/yellow]")
+        subcommands = ", ".join(self.get_subcommands())
+        console.print(f"[yellow]{self.name} command requires a subcommand: {subcommands}[/yellow]")
         return False
 
     def handle_unknown_subcommand(self, subcommand: str) -> bool:
@@ -96,8 +93,7 @@ class Command:
         Returns:
             True if the command was handled successfully, False otherwise
         """
-        console.print(
-            f"[red]Unknown {self.name} subcommand: {subcommand}[/red]")
+        console.print(f"[red]Unknown {self.name} subcommand: {subcommand}[/red]")
         return False
 
 

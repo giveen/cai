@@ -1,6 +1,7 @@
 """
 Module for CAI REPL key bindings.
 """
+
 import os
 import subprocess  # nosec B404 - Required for screen clearing
 
@@ -24,24 +25,18 @@ def create_key_bindings(current_text):
     """
     kb = KeyBindings()
 
-    @kb.add('c-l')
+    @kb.add("c-l")
     def _(event):  # pylint: disable=unused-argument
         """Clear the screen."""
         # Replace os.system with subprocess.run to avoid shell injection
-        if os.name == 'nt':
+        if os.name == "nt":
             # Using fixed commands with shell=False is safe
-            subprocess.run(
-                ['cls'],
-                shell=False,
-                check=False)  # nosec B603 B607
+            subprocess.run(["cls"], shell=False, check=False)  # nosec B603 B607
         else:
             # Using fixed commands with shell=False is safe
-            subprocess.run(
-                ['clear'],
-                shell=False,
-                check=False)  # nosec B603 B607
+            subprocess.run(["clear"], shell=False, check=False)  # nosec B603 B607
 
-    @kb.add('tab')
+    @kb.add("tab")
     def handle_tab(event):
         """Handle tab key to show completions menu or complete command."""
         buffer = event.current_buffer
@@ -79,11 +74,11 @@ def create_key_bindings(current_text):
                 # Otherwise, start completion
                 buffer.start_completion(select_first=True)
 
-    @kb.add('escape', 'enter')
+    @kb.add("escape", "enter")
     def handle_escape_enter(event):
         """
         Alternative way to insert a newline using Escape followed by Enter.
         """
-        event.current_buffer.insert_text('\n')
+        event.current_buffer.insert_text("\n")
 
     return kb

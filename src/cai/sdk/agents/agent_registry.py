@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 @dataclass
 class AgentInstanceInfo:
     """Information about a registered agent instance."""
+
     agent_type: str  # e.g., "red_teamer"
     display_name: str  # e.g., "Red Team Agent"
     agent_id: str  # e.g., "P1", "P2", etc.
@@ -22,6 +23,7 @@ class AgentInstanceInfo:
     is_parallel: bool = False  # Whether this is a parallel instance
     is_pattern: bool = False  # Whether this is part of a pattern
     pattern_name: Optional[str] = None  # Name of the pattern if applicable
+
 
 class AgentRegistry:
     """Centralized registry for managing agent instances."""
@@ -35,17 +37,19 @@ class AgentRegistry:
         # Track instance counts per agent type for numbering
         self._type_counters: Dict[str, int] = {}
 
-    def register_agent(self,
-                      model_instance,
-                      agent_type: str,
-                      display_name: str,
-                      agent_id: Optional[str] = None,
-                      is_parallel: bool = False,
-                      is_pattern: bool = False,
-                      pattern_name: Optional[str] = None) -> str:
+    def register_agent(
+        self,
+        model_instance,
+        agent_type: str,
+        display_name: str,
+        agent_id: Optional[str] = None,
+        is_parallel: bool = False,
+        is_pattern: bool = False,
+        pattern_name: Optional[str] = None,
+    ) -> str:
         """
         Register a new agent instance.
-        
+
         Args:
             model_instance: The OpenAIChatCompletionsModel instance
             agent_type: The type of agent (e.g., "red_teamer")
@@ -54,7 +58,7 @@ class AgentRegistry:
             is_parallel: Whether this is a parallel instance
             is_pattern: Whether this is part of a pattern
             pattern_name: Name of the pattern if applicable
-            
+
         Returns:
             The agent ID assigned to this instance
         """
@@ -79,10 +83,10 @@ class AgentRegistry:
                 display_name=display_name,
                 agent_id=agent_id,
                 instance_number=instance_number,
-                model_name=getattr(model_instance, 'model', 'unknown'),
+                model_name=getattr(model_instance, "model", "unknown"),
                 is_parallel=is_parallel,
                 is_pattern=is_pattern,
-                pattern_name=pattern_name
+                pattern_name=pattern_name,
             )
 
             return agent_id
@@ -90,7 +94,7 @@ class AgentRegistry:
     def get_agent_by_id(self, agent_id: str) -> Optional[Tuple[object, AgentInstanceInfo]]:
         """
         Get agent model and info by ID.
-        
+
         Returns:
             Tuple of (model_instance, info) or None if not found
         """
@@ -112,10 +116,10 @@ class AgentRegistry:
     def get_agent_by_name(self, name: str) -> Optional[Tuple[object, AgentInstanceInfo]]:
         """
         Get agent by display name or type name.
-        
+
         Args:
             name: Either display name ("Red Team Agent") or type ("red_teamer")
-            
+
         Returns:
             Tuple of (model_instance, info) or None if not found
         """
@@ -135,7 +139,7 @@ class AgentRegistry:
     def get_all_agents(self) -> List[Tuple[str, AgentInstanceInfo]]:
         """
         Get all registered agents.
-        
+
         Returns:
             List of (agent_id, info) tuples
         """
@@ -155,11 +159,11 @@ class AgentRegistry:
     def get_display_name(self, agent_id: str, include_instance: bool = True) -> str:
         """
         Get the display name for an agent.
-        
+
         Args:
             agent_id: The agent ID
             include_instance: Whether to include instance number if > 1
-            
+
         Returns:
             Display name like "Red Team Agent" or "Red Team Agent #2"
         """
@@ -178,7 +182,7 @@ class AgentRegistry:
     def get_full_display_name(self, agent_id: str) -> str:
         """
         Get the full display name including ID.
-        
+
         Returns:
             Display name like "Red Team Agent [P1]" or "Red Team Agent #2 [P3]"
         """
@@ -203,6 +207,7 @@ class AgentRegistry:
                 del self._instances[agent_id]
             if agent_id in self._instance_info:
                 del self._instance_info[agent_id]
+
 
 # Global registry instance
 AGENT_REGISTRY = AgentRegistry()

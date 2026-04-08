@@ -14,14 +14,22 @@ if TYPE_CHECKING:
 else:
     # Lightweight fallback for environments where the parallel command is not available
     class ParallelConfig:
-        def __init__(self, agent_name: str, model: str | None = None, prompt: str | None = None, unified_context: bool = True):
+        def __init__(
+            self,
+            agent_name: str,
+            model: str | None = None,
+            prompt: str | None = None,
+            unified_context: bool = True,
+        ):
             self.agent_name = agent_name
             self.model = model
             self.prompt = prompt
             self.unified_context = unified_context
 
+
 class PatternType(Enum):
     """Enumeration of available pattern types."""
+
     PARALLEL = "parallel"
     SWARM = "swarm"
     HIERARCHICAL = "hierarchical"
@@ -29,22 +37,25 @@ class PatternType(Enum):
     CONDITIONAL = "conditional"
 
     @classmethod
-    def from_string(cls, value: str) -> 'PatternType':
+    def from_string(cls, value: str) -> "PatternType":
         """Convert string to PatternType."""
         try:
             return cls(value.lower())
         except ValueError:
-            raise ValueError(f"Invalid pattern type: {value}. Valid types: {[t.value for t in cls]}")
+            raise ValueError(
+                f"Invalid pattern type: {value}. Valid types: {[t.value for t in cls]}"
+            )
 
 
 @dataclass
 class Pattern:
     """
     Unified pattern class that adapts behavior based on type.
-    
+
     This class uses the type attribute to determine how to handle
     configurations and execution flow.
     """
+
     name: str
     type: Union[PatternType, str]
     description: str = ""
@@ -78,34 +89,36 @@ class Pattern:
         """Initialize attributes based on pattern type."""
         if self.type == PatternType.PARALLEL:
             # Parallel patterns use configs
-            if not hasattr(self, '_parallel_initialized'):
+            if not hasattr(self, "_parallel_initialized"):
                 self._parallel_initialized = True
 
         elif self.type == PatternType.SWARM:
             # Swarm patterns need entry agent
-            if not hasattr(self, '_swarm_initialized'):
+            if not hasattr(self, "_swarm_initialized"):
                 self._swarm_initialized = True
 
         elif self.type == PatternType.HIERARCHICAL:
             # Hierarchical patterns need root agent
-            if not hasattr(self, '_hierarchical_initialized'):
+            if not hasattr(self, "_hierarchical_initialized"):
                 self._hierarchical_initialized = True
 
         elif self.type == PatternType.SEQUENTIAL:
             # Sequential patterns use sequence list
-            if not hasattr(self, '_sequential_initialized'):
+            if not hasattr(self, "_sequential_initialized"):
                 self._sequential_initialized = True
 
         elif self.type == PatternType.CONDITIONAL:
             # Conditional patterns use conditions dict
-            if not hasattr(self, '_conditional_initialized'):
+            if not hasattr(self, "_conditional_initialized"):
                 self._conditional_initialized = True
 
     # Type-specific methods
-    def add_parallel_agent(self, agent: Union[str, ParallelConfig]) -> 'Pattern':
+    def add_parallel_agent(self, agent: Union[str, ParallelConfig]) -> "Pattern":
         """Add an agent for parallel execution."""
         if self.type != PatternType.PARALLEL:
-            raise ValueError(f"add_parallel_agent only works for PARALLEL patterns, not {self.type.value}")
+            raise ValueError(
+                f"add_parallel_agent only works for PARALLEL patterns, not {self.type.value}"
+            )
 
         if isinstance(agent, str):
             agent = ParallelConfig(agent, unified_context=self.unified_context)
@@ -113,50 +126,54 @@ class Pattern:
         self.configs.append(agent)
         return self
 
-    def set_entry_agent(self, agent: Any) -> 'Pattern':
+    def set_entry_agent(self, agent: Any) -> "Pattern":
         """Set the entry agent for swarm patterns."""
         if self.type != PatternType.SWARM:
-            raise ValueError(f"set_entry_agent only works for SWARM patterns, not {self.type.value}")
+            raise ValueError(
+                f"set_entry_agent only works for SWARM patterns, not {self.type.value}"
+            )
 
         self.entry_agent = agent
         if agent not in self.agents:
             self.agents.append(agent)
         return self
 
-    def set_root_agent(self, agent: Any) -> 'Pattern':
+    def set_root_agent(self, agent: Any) -> "Pattern":
         """Set the root agent for hierarchical patterns."""
         if self.type != PatternType.HIERARCHICAL:
-            raise ValueError(f"set_root_agent only works for HIERARCHICAL patterns, not {self.type.value}")
+            raise ValueError(
+                f"set_root_agent only works for HIERARCHICAL patterns, not {self.type.value}"
+            )
 
         self.root_agent = agent
         if agent not in self.agents:
             self.agents.append(agent)
         return self
 
-    def add_sequence_step(self, agent: Any, wait_for_previous: bool = True) -> 'Pattern':
+    def add_sequence_step(self, agent: Any, wait_for_previous: bool = True) -> "Pattern":
         """Add a step to sequential execution."""
         if self.type != PatternType.SEQUENTIAL:
-            raise ValueError(f"add_sequence_step only works for SEQUENTIAL patterns, not {self.type.value}")
+            raise ValueError(
+                f"add_sequence_step only works for SEQUENTIAL patterns, not {self.type.value}"
+            )
 
-        self.sequence.append({
-            "agent": agent,
-            "wait_for_previous": wait_for_previous
-        })
+        self.sequence.append({"agent": agent, "wait_for_previous": wait_for_previous})
         return self
 
-    def add_condition(self, condition_name: str, agent: Any, predicate: Optional[Callable] = None) -> 'Pattern':
+    def add_condition(
+        self, condition_name: str, agent: Any, predicate: Optional[Callable] = None
+    ) -> "Pattern":
         """Add a conditional branch."""
         if self.type != PatternType.CONDITIONAL:
-            raise ValueError(f"add_condition only works for CONDITIONAL patterns, not {self.type.value}")
+            raise ValueError(
+                f"add_condition only works for CONDITIONAL patterns, not {self.type.value}"
+            )
 
-        self.conditions[condition_name] = {
-            "agent": agent,
-            "predicate": predicate
-        }
+        self.conditions[condition_name] = {"agent": agent, "predicate": predicate}
         return self
 
     # Generic methods that work based on type
-    def add(self, item: Any) -> 'Pattern':
+    def add(self, item: Any) -> "Pattern":
         """Generic add method that works based on pattern type."""
         if self.type == PatternType.PARALLEL:
             return self.add_parallel_agent(item)
@@ -204,7 +221,7 @@ class Pattern:
             "name": self.name,
             "type": self.type.value,
             "description": self.description,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
         # Add type-specific data
@@ -225,7 +242,7 @@ class Pattern:
             base["sequence"] = [
                 {
                     "agent": getattr(s["agent"], "name", str(s["agent"])),
-                    "wait_for_previous": s.get("wait_for_previous", True)
+                    "wait_for_previous": s.get("wait_for_previous", True),
                 }
                 for s in self.sequence
             ]
@@ -234,7 +251,7 @@ class Pattern:
             base["conditions"] = {
                 name: {
                     "agent": getattr(cond["agent"], "name", str(cond["agent"])),
-                    "has_predicate": cond.get("predicate") is not None
+                    "has_predicate": cond.get("predicate") is not None,
                 }
                 for name, cond in self.conditions.items()
             }
@@ -267,7 +284,9 @@ class Pattern:
 
 
 # Factory functions for creating patterns
-def parallel_pattern(name: str, description: str = "", agents: Optional[List[str]] = None, **kwargs) -> Pattern:
+def parallel_pattern(
+    name: str, description: str = "", agents: Optional[List[str]] = None, **kwargs
+) -> Pattern:
     """Create a parallel execution pattern."""
     pattern = Pattern(name=name, type=PatternType.PARALLEL, description=description, **kwargs)
 
@@ -278,7 +297,9 @@ def parallel_pattern(name: str, description: str = "", agents: Optional[List[str
     return pattern
 
 
-def swarm_pattern(name: str, entry_agent: Any, description: str = "", agents: Optional[List[Any]] = None, **kwargs) -> Pattern:
+def swarm_pattern(
+    name: str, entry_agent: Any, description: str = "", agents: Optional[List[Any]] = None, **kwargs
+) -> Pattern:
     """Create a swarm collaboration pattern."""
     pattern = Pattern(name=name, type=PatternType.SWARM, description=description, **kwargs)
     pattern.set_entry_agent(entry_agent)
@@ -289,7 +310,13 @@ def swarm_pattern(name: str, entry_agent: Any, description: str = "", agents: Op
     return pattern
 
 
-def hierarchical_pattern(name: str, root_agent: Any, description: str = "", children: Optional[List[Any]] = None, **kwargs) -> Pattern:
+def hierarchical_pattern(
+    name: str,
+    root_agent: Any,
+    description: str = "",
+    children: Optional[List[Any]] = None,
+    **kwargs,
+) -> Pattern:
     """Create a hierarchical pattern."""
     pattern = Pattern(name=name, type=PatternType.HIERARCHICAL, description=description, **kwargs)
     pattern.set_root_agent(root_agent)
@@ -310,7 +337,9 @@ def sequential_pattern(name: str, steps: List[Any], description: str = "", **kwa
     return pattern
 
 
-def conditional_pattern(name: str, conditions: Dict[str, Any], description: str = "", **kwargs) -> Pattern:
+def conditional_pattern(
+    name: str, conditions: Dict[str, Any], description: str = "", **kwargs
+) -> Pattern:
     """Create a conditional execution pattern."""
     pattern = Pattern(name=name, type=PatternType.CONDITIONAL, description=description, **kwargs)
 

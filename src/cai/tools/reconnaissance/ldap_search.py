@@ -16,6 +16,7 @@ from cai.tools.validation import contains_shell_metacharacters, is_valid_target
 # Input validation helpers
 # ---------------------------------------------------------------------------
 
+
 def _validate_ldap_inputs(
     host: str,
     base_dn: str,
@@ -93,6 +94,7 @@ def _build_ldapsearch_cmd(
 # ---------------------------------------------------------------------------
 # Public tool
 # ---------------------------------------------------------------------------
+
 
 @function_tool
 def ldap_search(  # noqa: PLR0913

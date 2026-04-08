@@ -8,6 +8,7 @@ This uses PEP 562 (module-level ``__getattr__`` and ``__dir__``) to lazily
 import subpackages on attribute access without forcing heavy imports at
 package-import time.
 """
+
 from importlib import import_module
 from typing import Any
 

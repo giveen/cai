@@ -1,6 +1,7 @@
 """
 Tests for the cost command.
 """
+
 import json
 import os
 import tempfile
@@ -31,42 +32,42 @@ class TestCostCommand:
     @pytest.fixture
     def temp_usage_file(self):
         """Create a temporary usage file for testing."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             usage_data = {
                 "global_totals": {
                     "total_cost": 1.234567,
                     "total_input_tokens": 50000,
                     "total_output_tokens": 25000,
                     "total_requests": 100,
-                    "total_sessions": 10
+                    "total_sessions": 10,
                 },
                 "model_usage": {
                     "gpt-4": {
                         "total_cost": 0.8,
                         "total_input_tokens": 30000,
                         "total_output_tokens": 15000,
-                        "total_requests": 60
+                        "total_requests": 60,
                     },
                     "claude-3-opus": {
                         "total_cost": 0.434567,
                         "total_input_tokens": 20000,
                         "total_output_tokens": 10000,
-                        "total_requests": 40
-                    }
+                        "total_requests": 40,
+                    },
                 },
                 "daily_usage": {
                     "2025-01-15": {
                         "total_cost": 0.5,
                         "total_input_tokens": 20000,
                         "total_output_tokens": 10000,
-                        "total_requests": 40
+                        "total_requests": 40,
                     },
                     "2025-01-14": {
                         "total_cost": 0.734567,
                         "total_input_tokens": 30000,
                         "total_output_tokens": 15000,
-                        "total_requests": 60
-                    }
+                        "total_requests": 60,
+                    },
                 },
                 "sessions": [
                     {
@@ -77,7 +78,7 @@ class TestCostCommand:
                         "total_input_tokens": 10000,
                         "total_output_tokens": 5000,
                         "total_requests": 20,
-                        "models_used": ["gpt-4", "claude-3-opus"]
+                        "models_used": ["gpt-4", "claude-3-opus"],
                     },
                     {
                         "session_id": "test-session-002",
@@ -87,9 +88,9 @@ class TestCostCommand:
                         "total_input_tokens": 5000,
                         "total_output_tokens": 2500,
                         "total_requests": 10,
-                        "models_used": ["gpt-4"]
-                    }
-                ]
+                        "models_used": ["gpt-4"],
+                    },
+                ],
             }
             json.dump(usage_data, f)
             # Ensure data is written to disk before yielding filename
@@ -119,7 +120,7 @@ class TestCostCommand:
 
     def test_handle_no_args_calls_summary(self, cost_command, mock_console):
         """Test that handle with no args calls handle_summary."""
-        with patch.object(cost_command, 'handle_summary', return_value=True) as mock_summary:
+        with patch.object(cost_command, "handle_summary", return_value=True) as mock_summary:
             result = cost_command.handle([])
             assert result is True
             mock_summary.assert_called_once_with()
@@ -154,11 +155,18 @@ class TestCostCommand:
             # Restore original handler
             cost_command.subcommands["models"]["handler"] = original_handler
 
-    @patch('cai.repl.commands.cost.console')
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
-    @patch('cai.repl.commands.cost.COST_TRACKER')
-    def test_handle_summary_with_data(self, mock_cost_tracker, mock_global_tracker,
-                                     mock_console_direct, cost_command, mock_console, temp_usage_file):
+    @patch("cai.repl.commands.cost.console")
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
+    @patch("cai.repl.commands.cost.COST_TRACKER")
+    def test_handle_summary_with_data(
+        self,
+        mock_cost_tracker,
+        mock_global_tracker,
+        mock_console_direct,
+        cost_command,
+        mock_console,
+        temp_usage_file,
+    ):
         """Test handle_summary with actual usage data."""
         # Mock console width
         mock_console_direct.width = 120
@@ -178,12 +186,9 @@ class TestCostCommand:
                 "total_input_tokens": 50000,
                 "total_output_tokens": 25000,
                 "total_requests": 100,
-                "total_sessions": 10
+                "total_sessions": 10,
             },
-            "top_models": [
-                ("gpt-4", 0.8),
-                ("claude-3-opus", 0.434567)
-            ]
+            "top_models": [("gpt-4", 0.8), ("claude-3-opus", 0.434567)],
         }
 
         # Call handle_summary
@@ -195,9 +200,10 @@ class TestCostCommand:
         assert mock_console_direct.print.called
         assert mock_console_direct.print.call_count >= 2  # At least header prints
 
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
-    def test_handle_models_with_data(self, mock_global_tracker, cost_command,
-                                    mock_console, temp_usage_file):
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
+    def test_handle_models_with_data(
+        self, mock_global_tracker, cost_command, mock_console, temp_usage_file
+    ):
         """Test handle_models with usage data."""
         mock_global_tracker.enabled = True
         with open(temp_usage_file) as f:
@@ -213,9 +219,10 @@ class TestCostCommand:
         print_calls = [str(call) for call in mock_console.print.call_args_list]
         assert any("Model Usage Statistics" in str(call) for call in print_calls)
 
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
-    def test_handle_daily_with_data(self, mock_global_tracker, cost_command,
-                                   mock_console, temp_usage_file):
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
+    def test_handle_daily_with_data(
+        self, mock_global_tracker, cost_command, mock_console, temp_usage_file
+    ):
         """Test handle_daily with usage data."""
         mock_global_tracker.enabled = True
         with open(temp_usage_file) as f:
@@ -231,9 +238,10 @@ class TestCostCommand:
         print_calls = [str(call) for call in mock_console.print.call_args_list]
         assert any("Daily Usage Statistics" in str(call) for call in print_calls)
 
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
-    def test_handle_sessions_with_data(self, mock_global_tracker, cost_command,
-                                      mock_console, temp_usage_file):
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
+    def test_handle_sessions_with_data(
+        self, mock_global_tracker, cost_command, mock_console, temp_usage_file
+    ):
         """Test handle_sessions with usage data."""
         mock_global_tracker.enabled = True
         with open(temp_usage_file) as f:
@@ -249,9 +257,10 @@ class TestCostCommand:
         print_calls = [str(call) for call in mock_console.print.call_args_list]
         assert any("Recent" in str(call) and "Sessions" in str(call) for call in print_calls)
 
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
-    def test_handle_sessions_with_limit(self, mock_global_tracker, cost_command,
-                                       mock_console, temp_usage_file):
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
+    def test_handle_sessions_with_limit(
+        self, mock_global_tracker, cost_command, mock_console, temp_usage_file
+    ):
         """Test handle_sessions with a custom limit."""
         mock_global_tracker.enabled = True
         with open(temp_usage_file) as f:
@@ -259,14 +268,16 @@ class TestCostCommand:
 
         # Add more sessions for testing
         for i in range(3, 15):
-            usage_data["sessions"].append({
-                "session_id": f"test-session-{i:03d}",
-                "start_time": f"2025-01-{15+i}T10:00:00",
-                "end_time": f"2025-01-{15+i}T11:00:00",
-                "total_cost": 0.1 * i,
-                "total_requests": 5 * i,
-                "models_used": ["gpt-4"]
-            })
+            usage_data["sessions"].append(
+                {
+                    "session_id": f"test-session-{i:03d}",
+                    "start_time": f"2025-01-{15 + i}T10:00:00",
+                    "end_time": f"2025-01-{15 + i}T11:00:00",
+                    "total_cost": 0.1 * i,
+                    "total_requests": 5 * i,
+                    "models_used": ["gpt-4"],
+                }
+            )
 
         mock_global_tracker.usage_data = usage_data
 
@@ -279,16 +290,18 @@ class TestCostCommand:
         print_calls = [str(call) for call in mock_console.print.call_args_list]
         assert any("Recent 5 Sessions" in str(call) for call in print_calls)
 
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
     def test_handle_reset_no_data(self, mock_global_tracker, cost_command, mock_console):
         """Test handle_reset when no usage data exists."""
         mock_global_tracker.enabled = True
 
-        with patch('cai.repl.commands.cost.Path') as mock_path:
+        with patch("cai.repl.commands.cost.Path") as mock_path:
             mock_path.home.return_value = Path("/home/test")
             mock_usage_file = MagicMock()
             mock_usage_file.exists.return_value = False
-            mock_path.return_value.__truediv__.return_value.__truediv__.return_value = mock_usage_file
+            mock_path.return_value.__truediv__.return_value.__truediv__.return_value = (
+                mock_usage_file
+            )
 
             result = cost_command.handle_reset()
             assert result is True
@@ -296,29 +309,29 @@ class TestCostCommand:
             # Verify appropriate message
             mock_console.print.assert_any_call("[yellow]No usage data to reset[/yellow]")
 
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
-    def test_handle_reset_with_confirmation(self, mock_global_tracker, cost_command,
-                                          mock_console, temp_usage_file):
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
+    def test_handle_reset_with_confirmation(
+        self, mock_global_tracker, cost_command, mock_console, temp_usage_file
+    ):
         """Test handle_reset with user confirmation."""
         mock_global_tracker.enabled = True
         mock_global_tracker.get_summary.return_value = {
-            "global_totals": {
-                "total_cost": 1.234567,
-                "total_sessions": 10
-            }
+            "global_totals": {"total_cost": 1.234567, "total_sessions": 10}
         }
 
         # Mock user input for confirmation
         mock_console.input.return_value = "RESET"
 
-        with patch('cai.repl.commands.cost.Path') as mock_path:
+        with patch("cai.repl.commands.cost.Path") as mock_path:
             mock_path.home.return_value = Path(tempfile.gettempdir())
             mock_usage_file = MagicMock()
             mock_usage_file.exists.return_value = True
             mock_usage_file.with_name.return_value = Path("/tmp/backup.json")
-            mock_path.return_value.__truediv__.return_value.__truediv__.return_value = mock_usage_file
+            mock_path.return_value.__truediv__.return_value.__truediv__.return_value = (
+                mock_usage_file
+            )
 
-            with patch('cai.repl.commands.cost.shutil.copy2') as mock_copy:
+            with patch("cai.repl.commands.cost.shutil.copy2") as mock_copy:
                 result = cost_command.handle_reset()
                 assert result is True
 
@@ -329,28 +342,30 @@ class TestCostCommand:
                 mock_usage_file.unlink.assert_called_once()
 
                 # Verify success message
-                assert any("reset" in str(call).lower() for call in mock_console.print.call_args_list)
+                assert any(
+                    "reset" in str(call).lower() for call in mock_console.print.call_args_list
+                )
 
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
-    def test_handle_reset_cancelled(self, mock_global_tracker, cost_command,
-                                   mock_console, temp_usage_file):
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
+    def test_handle_reset_cancelled(
+        self, mock_global_tracker, cost_command, mock_console, temp_usage_file
+    ):
         """Test handle_reset when user cancels."""
         mock_global_tracker.enabled = True
         mock_global_tracker.get_summary.return_value = {
-            "global_totals": {
-                "total_cost": 1.234567,
-                "total_sessions": 10
-            }
+            "global_totals": {"total_cost": 1.234567, "total_sessions": 10}
         }
 
         # Mock user input for cancellation
         mock_console.input.return_value = "no"
 
-        with patch('cai.repl.commands.cost.Path') as mock_path:
+        with patch("cai.repl.commands.cost.Path") as mock_path:
             mock_path.home.return_value = Path(tempfile.gettempdir())
             mock_usage_file = MagicMock()
             mock_usage_file.exists.return_value = True
-            mock_path.return_value.__truediv__.return_value.__truediv__.return_value = mock_usage_file
+            mock_path.return_value.__truediv__.return_value.__truediv__.return_value = (
+                mock_usage_file
+            )
 
             result = cost_command.handle_reset()
             assert result is True
@@ -361,7 +376,7 @@ class TestCostCommand:
             # Verify cancellation message
             mock_console.print.assert_any_call("[yellow]Reset cancelled[/yellow]")
 
-    @patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER')
+    @patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER")
     def test_tracking_disabled(self, mock_global_tracker, cost_command, mock_console):
         """Test behavior when tracking is disabled."""
         mock_global_tracker.enabled = False
@@ -375,7 +390,7 @@ class TestCostCommand:
 
     def test_get_session_summary(self, cost_command):
         """Test _get_session_summary method."""
-        with patch('cai.repl.commands.cost.COST_TRACKER') as mock_tracker:
+        with patch("cai.repl.commands.cost.COST_TRACKER") as mock_tracker:
             mock_tracker.session_total_cost = 0.5
             mock_tracker.current_agent_total_cost = 0.2
             mock_tracker.current_agent_input_tokens = 1000
@@ -391,7 +406,7 @@ class TestCostCommand:
 
     def test_get_global_summary_disabled(self, cost_command):
         """Test _get_global_summary when tracking is disabled."""
-        with patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER') as mock_tracker:
+        with patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER") as mock_tracker:
             mock_tracker.enabled = False
 
             summary = cost_command._get_global_summary()
@@ -401,14 +416,10 @@ class TestCostCommand:
 
     def test_show_top_models_mini(self, cost_command, mock_console):
         """Test _show_top_models_mini method."""
-        with patch('cai.repl.commands.cost.GLOBAL_USAGE_TRACKER') as mock_tracker:
+        with patch("cai.repl.commands.cost.GLOBAL_USAGE_TRACKER") as mock_tracker:
             mock_tracker.enabled = True
             mock_tracker.get_summary.return_value = {
-                "top_models": [
-                    ("gpt-4", 1.0),
-                    ("claude-3", 0.5),
-                    ("gpt-3.5", 0.25)
-                ]
+                "top_models": [("gpt-4", 1.0), ("claude-3", 0.5), ("gpt-3.5", 0.25)]
             }
 
             cost_command._show_top_models_mini()

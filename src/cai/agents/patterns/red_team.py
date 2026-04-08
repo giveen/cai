@@ -3,10 +3,11 @@ Implementation of a Cyclic Swarm Pattern for Red Team Operations
 
 This module establishes a coordinated multi-agent system where specialized agents
 collaborate on security assessment tasks. The pattern implements a directed graph
-of agent relationships, where each agent can transfer context (message history) 
+of agent relationships, where each agent can transfer context (message history)
 to another agent through handoff functions, creating a complete communication network
 for comprehensive security analysis.
 """
+
 from cai.agents.mail import dns_smtp_agent
 from cai.agents.red_teamer import redteam_agent
 from cai.agents.thought import thought_agent
@@ -25,17 +26,17 @@ _dns_smtp_agent_copy.handoffs = []
 # Create handoffs using the SDK handoff function
 _dns_smtp_handoff = handoff(
     agent=_dns_smtp_agent_copy,
-    tool_description_override="Use for DNS scans and domain reconnaissance about DMARC and DKIM records"
+    tool_description_override="Use for DNS scans and domain reconnaissance about DMARC and DKIM records",
 )
 
 _redteam_handoff = handoff(
     agent=_redteam_agent_copy,
-    tool_description_override="Transfer to Red Team Agent for security assessment and exploitation tasks"
+    tool_description_override="Transfer to Red Team Agent for security assessment and exploitation tasks",
 )
 
 _thought_handoff = handoff(
     agent=_thought_agent_copy,
-    tool_description_override="Transfer to Thought Agent for analysis and planning"
+    tool_description_override="Transfer to Thought Agent for analysis and planning",
 )
 
 _thought_agent_copy.name = "Red team manager"

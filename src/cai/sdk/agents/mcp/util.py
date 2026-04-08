@@ -88,8 +88,10 @@ class MCPUtil:
 
         try:
             # Check if server session is still valid
-            if not hasattr(server, 'session') or server.session is None:
-                logger.warning(f"MCP server session not found for tool {tool.name}, attempting to reconnect...")
+            if not hasattr(server, "session") or server.session is None:
+                logger.warning(
+                    f"MCP server session not found for tool {tool.name}, attempting to reconnect..."
+                )
                 # Try to reconnect
                 try:
                     await server.connect()
@@ -125,14 +127,19 @@ class MCPUtil:
             error_str = str(e).lower()
 
             # Also check for ExceptionGroup which wraps SSE errors
-            if (error_type in ("ClosedResourceError", "ExceptionGroup") or
-                "closedresourceerror" in error_str or
-                "taskgroup" in error_str):
+            if (
+                error_type in ("ClosedResourceError", "ExceptionGroup")
+                or "closedresourceerror" in error_str
+                or "taskgroup" in error_str
+            ):
                 # Connection was closed, attempt to reconnect
-                logger.debug(f"MCP connection issue for tool {tool.name}, attempting to reconnect...")
+                logger.debug(
+                    f"MCP connection issue for tool {tool.name}, attempting to reconnect..."
+                )
                 try:
                     # Suppress warnings during reconnection
                     import warnings
+
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", category=RuntimeWarning)
                         # Force reconnection

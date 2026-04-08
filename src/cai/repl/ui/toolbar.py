@@ -1,6 +1,7 @@
 """
 Module for the CAI REPL toolbar functionality.
 """
+
 import datetime
 import os
 import platform
@@ -18,36 +19,32 @@ toolbar_last_refresh = [datetime.datetime.now()]
 
 # Cache for toolbar data
 toolbar_cache = {
-    'html': "",
-    'last_update': datetime.datetime.now(),
-    'refresh_interval': 5,  # Refresh every 5 seconds
-    'context_warning_shown': False  # Track if we've shown context warning
+    "html": "",
+    "last_update": datetime.datetime.now(),
+    "refresh_interval": 5,  # Refresh every 5 seconds
+    "context_warning_shown": False,  # Track if we've shown context warning
 }
 
 # Cache for system information that rarely changes
-system_info = {
-    'ip_address': None,
-    'os_name': None,
-    'os_version': None
-}
+system_info = {"ip_address": None, "os_name": None, "os_version": None}
 
 
 @lru_cache(maxsize=1)
 def get_system_info():
     """Get system information that rarely changes (cached)."""
-    if not system_info['ip_address']:
+    if not system_info["ip_address"]:
         try:
             # Get local IP addresses
             hostname = socket.gethostname()
-            system_info['ip_address'] = socket.gethostbyname(hostname)
+            system_info["ip_address"] = socket.gethostbyname(hostname)
 
             # Get OS information
-            system_info['os_name'] = platform.system()
-            system_info['os_version'] = platform.release()
+            system_info["os_name"] = platform.system()
+            system_info["os_version"] = platform.release()
         except Exception:  # pylint: disable=broad-except
-            system_info['ip_address'] = "unknown"
-            system_info['os_name'] = "unknown"
-            system_info['os_version'] = "unknown"
+            system_info["ip_address"] = "unknown"
+            system_info["os_name"] = "unknown"
+            system_info["os_version"] = "unknown"
 
     return system_info
 
@@ -65,9 +62,9 @@ def update_toolbar_in_background():
     try:
         # Get system info (cached)
         sys_info = get_system_info()
-        _ip_address = sys_info['ip_address']
-        _os_name = sys_info['os_name']
-        _os_version = sys_info['os_version']
+        _ip_address = sys_info["ip_address"]
+        _os_name = sys_info["os_name"]
+        _os_version = sys_info["os_version"]
 
         # Get the current workspace and base directory
         workspace_name = os.getenv("CAI_WORKSPACE")
@@ -91,12 +88,12 @@ def update_toolbar_in_background():
         else:
             active_env_name, active_env_icon, active_env_color = "Host System", "💻", "ansiblue"
 
-
         # Get Ollama information
         _ollama_status = "unavailable"
         try:
             # Get Ollama models with a short timeout to prevent hanging
             from cai.util import get_ollama_api_base
+
             api_base = get_ollama_api_base()
 
             # Add authentication headers for Ollama Cloud if using OPENAI_BASE_URL
@@ -107,17 +104,16 @@ def update_toolbar_in_background():
                     headers["Authorization"] = f"Bearer {api_key}"
 
             response = requests.get(
-                f"{api_base.replace('/v1', '')}/api/tags",
-                headers=headers,
-                timeout=0.5)
+                f"{api_base.replace('/v1', '')}/api/tags", headers=headers, timeout=0.5
+            )
 
             if response.status_code == 200:
                 data = response.json()
-                if 'models' in data:
-                    ollama_models = len(data['models'])
+                if "models" in data:
+                    ollama_models = len(data["models"])
                 else:
                     # Fallback for older Ollama versions
-                    ollama_models = len(data.get('items', []))
+                    ollama_models = len(data.get("items", []))
                 _ollama_status = f"{ollama_models} models"
         except Exception:  # pylint: disable=broad-except
             # Silently fail if Ollama is not available
@@ -131,12 +127,12 @@ def update_toolbar_in_background():
         current_time_with_tz = f"{current_time} {timezone_name}"
 
         # Get auto-compact status and context usage
-        auto_compact = os.getenv('CAI_AUTO_COMPACT', 'true').lower() == 'true'
+        auto_compact = os.getenv("CAI_AUTO_COMPACT", "true").lower() == "true"
 
         # Try to get context usage from environment (set by openai_chatcompletions.py)
         context_usage = 0.0
         try:
-            context_usage = float(os.getenv('CAI_CONTEXT_USAGE', '0.0'))
+            context_usage = float(os.getenv("CAI_CONTEXT_USAGE", "0.0"))
         except Exception:
             pass
 
@@ -146,8 +142,8 @@ def update_toolbar_in_background():
                 auto_compact_str = f"⚠️ {int(context_usage * 100)}%"
                 auto_compact_color = "ansired"  # Red for warning
                 # Show warning if not already shown
-                if not toolbar_cache.get('context_warning_shown', False) and context_usage > 0:
-                    toolbar_cache['context_warning_shown'] = True
+                if not toolbar_cache.get("context_warning_shown", False) and context_usage > 0:
+                    toolbar_cache["context_warning_shown"] = True
             elif context_usage >= 0.6:  # Above 60%
                 auto_compact_str = f"✓ {int(context_usage * 100)}%"
                 auto_compact_color = "ansiyellow"  # Yellow for caution
@@ -166,21 +162,21 @@ def update_toolbar_in_background():
                 auto_compact_color = "ansired"
 
         # Get memory status
-        memory_enabled = os.getenv('CAI_MEMORY', 'false').lower() == 'true'
-        memory_str = "✓"  if memory_enabled else "✗"
+        memory_enabled = os.getenv("CAI_MEMORY", "false").lower() == "true"
+        memory_str = "✓" if memory_enabled else "✗"
         memory_color = "ansigreen" if memory_enabled else "ansigray"
 
         # Get streaming status
-        streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+        streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
         stream_str = "✓" if streaming_enabled else "✗"
         stream_color = "ansigreen" if streaming_enabled else "ansigray"
 
         # Get parallel agent count
-        parallel_count = os.getenv('CAI_PARALLEL', '1')
+        parallel_count = os.getenv("CAI_PARALLEL", "1")
         parallel_color = "ansigreen" if int(parallel_count) > 1 else "ansigray"
 
         # Get tracing status
-        tracing_enabled = os.getenv('CAI_TRACING', 'false').lower() == 'true'
+        tracing_enabled = os.getenv("CAI_TRACING", "false").lower() == "true"
         trace_str = "✓" if tracing_enabled else "✗"
         trace_color = "ansigreen" if tracing_enabled else "ansigray"
 
@@ -191,11 +187,11 @@ def update_toolbar_in_background():
         if terminal_width < 120:  # Compact mode
             # Show only the most critical information
             # Shorten model name for compact view
-            model_name = os.getenv('CAI_MODEL', 'default')
+            model_name = os.getenv("CAI_MODEL", "default")
             if len(model_name) > 10:
                 model_name = model_name[:9] + "…"
 
-            toolbar_cache['html'] = HTML(
+            toolbar_cache["html"] = HTML(
                 f"<{active_env_color}>{active_env_icon}</{active_env_color}> "
                 f"<ansigreen>{model_name}</ansigreen> | "
                 f"<{auto_compact_color}>AC:{auto_compact_str}</{auto_compact_color}> | "
@@ -204,7 +200,7 @@ def update_toolbar_in_background():
                 f"<ansigray>{current_time}</ansigray>"
             )
         elif terminal_width < 160:  # Medium mode
-            toolbar_cache['html'] = HTML(
+            toolbar_cache["html"] = HTML(
                 f"<{active_env_color}><b>ENV:</b> {active_env_icon} {active_env_name[:15]}</{active_env_color}> | "
                 f"<ansiyellow><b>Model:</b></ansiyellow> <ansigreen>{os.getenv('CAI_MODEL', 'default')}</ansigreen> | "
                 f"<ansicyan><b>AutoC:</b></ansicyan> <{auto_compact_color}>{auto_compact_str}</{auto_compact_color}> | "
@@ -214,7 +210,7 @@ def update_toolbar_in_background():
                 f"<ansigray>{current_time_with_tz}</ansigray>"
             )
         else:  # Full mode
-            toolbar_cache['html'] = HTML(
+            toolbar_cache["html"] = HTML(
                 f"<{active_env_color}><b>ENV:</b> {active_env_icon} {active_env_name}</{active_env_color}> | "
                 f"<ansiyellow><b>Model:</b></ansiyellow> <ansigreen>{os.getenv('CAI_MODEL', 'default')}</ansigreen> | "
                 f"<ansicyan><b>AutoCompact:</b></ansicyan> <{auto_compact_color}>{auto_compact_str}</{auto_compact_color}> | "
@@ -226,10 +222,10 @@ def update_toolbar_in_background():
                 f"<ansiyellow><b>$Limit:</b></ansiyellow> <ansiblue>${os.getenv('CAI_PRICE_LIMIT', 'inf')}</ansiblue> | "
                 f"<ansigray>{current_time_with_tz}</ansigray>"
             )
-        toolbar_cache['last_update'] = datetime.datetime.now()
+        toolbar_cache["last_update"] = datetime.datetime.now()
     except Exception:  # pylint: disable=broad-except
         # If there's an error, set a simple toolbar
-        toolbar_cache['html'] = HTML(
+        toolbar_cache["html"] = HTML(
             f"<ansigray>{datetime.datetime.now().strftime('%H:%M')}</ansigray>"
         )
 
@@ -237,35 +233,29 @@ def update_toolbar_in_background():
 def get_bottom_toolbar():
     """Get the bottom toolbar with system information (cached)."""
     # If the toolbar is empty, initialize it
-    if not toolbar_cache['html']:
+    if not toolbar_cache["html"]:
         # Create a simple initial toolbar while the full one loads
         current_time = datetime.datetime.now().strftime("%H:%M")
         timezone_name = datetime.datetime.now().astimezone().tzname()
-        toolbar_cache['html'] = HTML(
+        toolbar_cache["html"] = HTML(
             f"<ansigray>Loading system information... {current_time} {timezone_name}</ansigray>"
         )
         # Start background update
-        threading.Thread(
-            target=update_toolbar_in_background,
-            daemon=True
-        ).start()
+        threading.Thread(target=update_toolbar_in_background, daemon=True).start()
 
     # Return the cached toolbar HTML
-    return toolbar_cache['html']
+    return toolbar_cache["html"]
 
 
 def get_toolbar_with_refresh():
     """Get toolbar with refresh control."""
     now = datetime.datetime.now()
-    seconds_elapsed = (now - toolbar_cache['last_update']).total_seconds()
+    seconds_elapsed = (now - toolbar_cache["last_update"]).total_seconds()
 
     # Check if we need to refresh the toolbar
-    if seconds_elapsed >= toolbar_cache['refresh_interval']:
+    if seconds_elapsed >= toolbar_cache["refresh_interval"]:
         # Start a background thread to update the toolbar
-        threading.Thread(
-            target=update_toolbar_in_background,
-            daemon=True
-        ).start()
+        threading.Thread(target=update_toolbar_in_background, daemon=True).start()
 
     # Always return the cached version immediately
     return get_bottom_toolbar()
@@ -273,17 +263,15 @@ def get_toolbar_with_refresh():
 
 def set_context_usage(usage_percentage: float):
     """Set the current context usage percentage (called from openai_chatcompletions.py)."""
-    os.environ['CAI_CONTEXT_USAGE'] = str(usage_percentage)
+    os.environ["CAI_CONTEXT_USAGE"] = str(usage_percentage)
     # Reset warning flag if usage drops below threshold
     if usage_percentage < 0.8:
-        toolbar_cache['context_warning_shown'] = False
+        toolbar_cache["context_warning_shown"] = False
 
 
 # Initialize the toolbar on module import
-threading.Thread(
-    target=update_toolbar_in_background,
-    daemon=True
-).start()
+threading.Thread(target=update_toolbar_in_background, daemon=True).start()
+
 
 def get_container_info(container_id):
     """
@@ -302,7 +290,8 @@ def get_container_info(container_id):
         # Get the container's image name.
         image = subprocess.run(
             ["docker", "inspect", "--format", "{{.Config.Image}}", container_id],
-            capture_output=True, text=True
+            capture_output=True,
+            text=True,
         ).stdout.strip()
 
         # Determine the appropriate icon and color based on the image type.
@@ -317,7 +306,8 @@ def get_container_info(container_id):
         # Check whether the container is currently running.
         running = subprocess.run(
             ["docker", "ps", "--filter", f"id={container_id}", "--format", "{{.Status}}"],
-            capture_output=True, text=True
+            capture_output=True,
+            text=True,
         ).stdout.strip()
 
         if not running:

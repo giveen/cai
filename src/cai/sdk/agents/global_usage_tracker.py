@@ -13,14 +13,16 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Import fcntl only on Unix-like systems
-if platform.system() != 'Windows':
+if platform.system() != "Windows":
     import fcntl
+
 
 class GlobalUsageTracker:
     """
     Singleton class that tracks usage globally across all CAI executions.
     Persists data to $HOME/.cai/usage.json
     """
+
     _instance = None
     _lock = threading.Lock()
 
@@ -43,7 +45,12 @@ class GlobalUsageTracker:
 
         if not self.enabled:
             # Create minimal structure to avoid errors
-            self.usage_data = {"global_totals": {}, "model_usage": {}, "daily_usage": {}, "sessions": []}
+            self.usage_data = {
+                "global_totals": {},
+                "model_usage": {},
+                "daily_usage": {},
+                "sessions": [],
+            }
             self.session_id = None
             return
 
@@ -70,10 +77,10 @@ class GlobalUsageTracker:
                 try:
                     with open(self.usage_file) as f:
                         # Try to get shared lock for reading (Unix only)
-                        if platform.system() != 'Windows':
+                        if platform.system() != "Windows":
                             fcntl.flock(f.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
                         data = json.load(f)
-                        if platform.system() != 'Windows':
+                        if platform.system() != "Windows":
                             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                         return data
                 except OSError:
@@ -85,7 +92,7 @@ class GlobalUsageTracker:
                         break
                 except json.JSONDecodeError:
                     # If file is corrupted, start fresh but backup the old one
-                    backup_path = self.usage_file.with_suffix(f'.json.backup.{int(time.time())}')
+                    backup_path = self.usage_file.with_suffix(f".json.backup.{int(time.time())}")
                     try:
                         self.usage_file.rename(backup_path)
                         print(f"Corrupted usage.json backed up to {backup_path}")
@@ -100,11 +107,11 @@ class GlobalUsageTracker:
                 "total_input_tokens": 0,
                 "total_output_tokens": 0,
                 "total_requests": 0,
-                "total_sessions": 0
+                "total_sessions": 0,
             },
             "model_usage": {},  # Usage per model
             "daily_usage": {},  # Usage per day
-            "sessions": []      # Individual session records
+            "sessions": [],  # Individual session records
         }
 
     def _save_usage_data(self):
@@ -149,13 +156,13 @@ class GlobalUsageTracker:
                 for attempt in range(max_retries):
                     try:
                         # Write to temporary file first with exclusive lock
-                        temp_file = self.usage_file.with_suffix(f'.json.tmp.{os.getpid()}')
-                        with open(temp_file, 'w') as f:
+                        temp_file = self.usage_file.with_suffix(f".json.tmp.{os.getpid()}")
+                        with open(temp_file, "w") as f:
                             # Try to get exclusive lock (Unix only)
-                            if platform.system() != 'Windows':
+                            if platform.system() != "Windows":
                                 fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                             f.write(data_copy)
-                            if platform.system() != 'Windows':
+                            if platform.system() != "Windows":
                                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
                         # Before atomic rename, do one final check
@@ -163,20 +170,26 @@ class GlobalUsageTracker:
                         if self.usage_file.exists():
                             try:
                                 with open(self.usage_file) as f:
-                                    if platform.system() != 'Windows':
+                                    if platform.system() != "Windows":
                                         fcntl.flock(f.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
                                     final_check_data = json.load(f)
-                                    if platform.system() != 'Windows':
+                                    if platform.system() != "Windows":
                                         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
-                                final_file_cost = final_check_data["global_totals"].get("total_cost", 0)
-                                our_cost = json.loads(data_copy)["global_totals"].get("total_cost", 0)
+                                final_file_cost = final_check_data["global_totals"].get(
+                                    "total_cost", 0
+                                )
+                                our_cost = json.loads(data_copy)["global_totals"].get(
+                                    "total_cost", 0
+                                )
 
                                 # Only save if our cost is >= file cost
                                 if our_cost < final_file_cost:
                                     # Don't overwrite with lower value
                                     if os.getenv("CAI_DEBUG", "1") == "2":
-                                        print(f"Skipping save: file cost ({final_file_cost}) > our cost ({our_cost})")
+                                        print(
+                                            f"Skipping save: file cost ({final_file_cost}) > our cost ({our_cost})"
+                                        )
                                     return
                             except Exception:
                                 pass  # If we can't read, continue with save
@@ -196,7 +209,9 @@ class GlobalUsageTracker:
                         if attempt < max_retries - 1:
                             time.sleep(retry_delay * (attempt + 1))
                         else:
-                            print(f"Warning: Could not save usage data after {max_retries} attempts: {e}")
+                            print(
+                                f"Warning: Could not save usage data after {max_retries} attempts: {e}"
+                            )
                     finally:
                         # Clean up temp file if it still exists
                         if temp_file.exists():
@@ -240,7 +255,7 @@ class GlobalUsageTracker:
                     "total_input_tokens": 0,
                     "total_output_tokens": 0,
                     "total_requests": 0,
-                    "models_used": []
+                    "models_used": [],
                 }
 
                 with self._lock:
@@ -257,12 +272,14 @@ class GlobalUsageTracker:
             # Silently continue if tracking fails - don't disrupt the main program
             pass
 
-    def track_usage(self,
-                   model_name: str,
-                   input_tokens: int,
-                   output_tokens: int,
-                   cost: float,
-                   agent_name: Optional[str] = None):
+    def track_usage(
+        self,
+        model_name: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost: float,
+        agent_name: Optional[str] = None,
+    ):
         """Track usage for a single model interaction with proper synchronization"""
         if not self.enabled:
             return
@@ -303,7 +320,7 @@ class GlobalUsageTracker:
                         "total_cost": 0.0,
                         "total_input_tokens": 0,
                         "total_output_tokens": 0,
-                        "total_requests": 0
+                        "total_requests": 0,
                     }
 
                 model_stats = self.usage_data["model_usage"][model_name]
@@ -319,7 +336,7 @@ class GlobalUsageTracker:
                         "total_cost": 0.0,
                         "total_input_tokens": 0,
                         "total_output_tokens": 0,
-                        "total_requests": 0
+                        "total_requests": 0,
                     }
 
                 daily_stats = self.usage_data["daily_usage"][today]
@@ -357,6 +374,7 @@ class GlobalUsageTracker:
         except Exception as e:
             # Log the error but continue
             import traceback
+
             if os.getenv("CAI_DEBUG", "1") == "2":
                 print(f"Error tracking usage: {e}")
                 traceback.print_exc()
@@ -401,13 +419,16 @@ class GlobalUsageTracker:
             return {
                 "global_totals": self.usage_data["global_totals"].copy(),
                 "top_models": sorted(
-                    [(model, stats["total_cost"])
-                     for model, stats in self.usage_data["model_usage"].items()],
+                    [
+                        (model, stats["total_cost"])
+                        for model, stats in self.usage_data["model_usage"].items()
+                    ],
                     key=lambda x: x[1],
-                    reverse=True
+                    reverse=True,
                 )[:5],
-                "recent_sessions": self.usage_data["sessions"][-10:]
+                "recent_sessions": self.usage_data["sessions"][-10:],
             }
+
 
 # Global instance
 GLOBAL_USAGE_TRACKER = GlobalUsageTracker()

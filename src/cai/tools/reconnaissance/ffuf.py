@@ -6,6 +6,7 @@ values (e.g. wordlists, headers, cookies, passwords). It also runs
 light validation via `cai.tools.validation` and returns sanitized
 output.
 """
+
 from __future__ import annotations
 
 import subprocess

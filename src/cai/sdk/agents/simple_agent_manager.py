@@ -6,7 +6,7 @@ unless explicitly configured for parallel execution.
 """
 
 import weakref
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from cai.sdk.agents.manager import AgentManager
 
@@ -17,20 +17,25 @@ class SimpleAgentManager(AgentManager):
     def __init__(self):
         self._active_agent = None  # The ONE active agent
         self._agent_id = "P1"  # Default ID
-        self._message_history: Dict[str, list] = {}  # Agent name -> history
-        self._agent_registry: Dict[str, str] = {}  # Agent name -> ID mapping
+        self._message_history: dict[str, list] = {}  # Agent name -> history
+        self._agent_registry: dict[str, str] = {}  # Agent name -> ID mapping
         self._id_counter = 0  # Counter for generating IDs
-        self._parallel_agents: Dict[str, Any] = {}  # ID -> agent ref for parallel mode
+        self._parallel_agents: dict[str, Any] = {}  # ID -> agent ref for parallel mode
         self._pending_history_transfer = None  # Temporary storage for history transfer
+        # Strong reference holder used transiently during agent switching to
+        # prevent garbage collection of freshly created agents. This may be
+        # populated by external callers; define it here to satisfy static
+        # type checkers like Pylance that expect the attribute to exist.
+        self._current_agent_strong_ref: Any | None = None
         self._active_agent_name = None  # Track the currently active agent name
-        self._swarm_agents: Dict[str, str] = {}  # Track swarm pattern agents: agent_name -> ID
+        self._swarm_agents: dict[str, str] = {}  # Track swarm pattern agents: agent_name -> ID
         self._swarm_counter = 0  # Counter for swarm agent IDs
 
     def set_active_agent(self, agent, agent_name: str, agent_id: str = None):
         """Set the active agent instance."""
         # CRITICAL: Always use the agent's proper name, not the agent key
         # This prevents duplicate registrations like "blueteam_agent" and "Blue Team Agent"
-        if hasattr(agent, 'name') and agent.name:
+        if hasattr(agent, "name") and agent.name:
             agent_name = agent.name
 
         # In single agent mode, use switch_to_single_agent for proper cleanup
@@ -48,7 +53,7 @@ class SimpleAgentManager(AgentManager):
 
         # Check if this agent is part of a swarm pattern
         is_swarm_agent = False
-        if hasattr(agent, 'pattern') and agent.pattern == 'swarm':
+        if hasattr(agent, "pattern") and agent.pattern == "swarm":
             is_swarm_agent = True
 
         # In single agent mode, check for swarm patterns
@@ -84,7 +89,7 @@ class SimpleAgentManager(AgentManager):
         # Initialize message history for this agent if needed
         if agent_name not in self._message_history:
             # Check if the agent's model already has a history and use that reference
-            if hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
+            if hasattr(agent, "model") and hasattr(agent.model, "message_history"):
                 self._message_history[agent_name] = agent.model.message_history
             else:
                 self._message_history[agent_name] = []
@@ -120,14 +125,14 @@ class SimpleAgentManager(AgentManager):
         # This handles cases where they don't share the same reference
         if self._active_agent and self._active_agent_name == agent_name:
             agent = self._active_agent()
-            if agent and hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
+            if agent and hasattr(agent, "model") and hasattr(agent.model, "message_history"):
                 agent.model.message_history.clear()
 
     def clear_all_histories(self):
         """Clear all message histories."""
         self._message_history.clear()
 
-    def get_all_histories(self) -> Dict[str, list]:
+    def get_all_histories(self) -> dict[str, list]:
         """Get all agent histories."""
         # Clean up duplicates first in single agent mode
         if not self._parallel_agents:
@@ -194,7 +199,7 @@ class SimpleAgentManager(AgentManager):
         """Register a parallel agent."""
         # CRITICAL: Always use the agent's proper name, not the agent key
         # This prevents duplicate registrations like "blueteam_agent" and "Blue Team Agent"
-        if hasattr(agent, 'name') and agent.name:
+        if hasattr(agent, "name") and agent.name:
             agent_name = agent.name
 
         # Check if this ID is already registered to a different agent
@@ -210,7 +215,7 @@ class SimpleAgentManager(AgentManager):
         # Initialize message history for this agent if needed
         if agent_name not in self._message_history:
             # Check if the agent's model already has a history and use that reference
-            if hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
+            if hasattr(agent, "model") and hasattr(agent.model, "message_history"):
                 self._message_history[agent_name] = agent.model.message_history
             else:
                 self._message_history[agent_name] = []
@@ -221,7 +226,7 @@ class SimpleAgentManager(AgentManager):
 
     def clear_all_agents_except_pending_history(self):
         """Clear ALL agents from registry but preserve any pending history transfer.
-        
+
         This is used when switching from parallel to single agent mode to ensure
         no lingering agents remain active.
         """
@@ -246,7 +251,7 @@ class SimpleAgentManager(AgentManager):
         # Restore pending history if any
         self._pending_history_transfer = pending_history
 
-    def get_active_agents(self) -> Dict[str, str]:
+    def get_active_agents(self) -> dict[str, str]:
         """Get only truly active agents with their IDs."""
         active = {}
 
@@ -267,7 +272,7 @@ class SimpleAgentManager(AgentManager):
 
         return active
 
-    def get_registered_agents(self) -> Dict[str, str]:
+    def get_registered_agents(self) -> dict[str, str]:
         """Get all registered agents, whether active or not."""
         return dict(self._agent_registry)
 
@@ -277,8 +282,11 @@ class SimpleAgentManager(AgentManager):
 
         # Find agents to remove (not active and have no message history)
         to_remove = []
-        for agent_name, agent_id in list(self._agent_registry.items()):
-            if agent_name not in active_agents and len(self._message_history.get(agent_name, [])) == 0:
+        for agent_name, _agent_id in list(self._agent_registry.items()):
+            if (
+                agent_name not in active_agents
+                and len(self._message_history.get(agent_name, [])) == 0
+            ):
                 to_remove.append(agent_name)
 
         # Remove stale registrations
@@ -340,12 +348,14 @@ class SimpleAgentManager(AgentManager):
                         # For pattern-based configs, we need to resolve to the actual agent name
                         if config.agent_name.endswith("_pattern"):
                             from cai.agents.patterns import get_pattern
+
                             pattern = get_pattern(config.agent_name)
-                            if pattern and hasattr(pattern, 'entry_agent'):
+                            if pattern and hasattr(pattern, "entry_agent"):
                                 correct_agent_name = getattr(pattern.entry_agent, "name", None)
                                 break
                         else:
                             from cai.agents import get_available_agents
+
                             available_agents = get_available_agents()
                             if config.agent_name in available_agents:
                                 agent = available_agents[config.agent_name]
@@ -379,13 +389,13 @@ class SimpleAgentManager(AgentManager):
         """Switch to a new single agent, properly cleaning up the previous one."""
         # CRITICAL: Always use the agent's proper name, not the agent key
         # This prevents duplicate registrations like "blueteam_agent" and "Blue Team Agent"
-        if hasattr(agent, 'name') and agent.name:
+        if hasattr(agent, "name") and agent.name:
             agent_name = agent.name
 
         # Determine transfer_history. Prefer an explicit pending transfer set by callers,
         # otherwise attempt to extract a best-effort copy from the currently active agent.
         transfer_history = None
-        if hasattr(self, '_pending_history_transfer') and self._pending_history_transfer:
+        if hasattr(self, "_pending_history_transfer") and self._pending_history_transfer:
             transfer_history = self._pending_history_transfer
             self._pending_history_transfer = None
         else:
@@ -393,10 +403,16 @@ class SimpleAgentManager(AgentManager):
                 current_agent = self.get_active_agent()
                 if current_agent:
                     # Prefer the model's own history when available
-                    if hasattr(current_agent, 'model') and hasattr(current_agent.model, 'message_history'):
+                    if hasattr(current_agent, "model") and hasattr(
+                        current_agent.model, "message_history"
+                    ):
                         transfer_history = list(current_agent.model.message_history)
-                    elif self._active_agent_name and self._active_agent_name in self._message_history:
-                        transfer_history = list(self._message_history.get(self._active_agent_name, []))
+                    elif (
+                        self._active_agent_name and self._active_agent_name in self._message_history
+                    ):
+                        transfer_history = list(
+                            self._message_history.get(self._active_agent_name, [])
+                        )
             except Exception:
                 transfer_history = None
 
@@ -425,11 +441,11 @@ class SimpleAgentManager(AgentManager):
         # Clear any duplicate P1 entries before setting new one
         self._cleanup_single_agent_duplicates()
 
-    # `sync_models` moved to base `AgentManager` in manager.py
+        # `sync_models` moved to base `AgentManager` in manager.py
 
         # Check if this agent is part of a swarm pattern
         is_swarm_agent = False
-        if hasattr(agent, 'pattern') and agent.pattern == 'swarm':
+        if hasattr(agent, "pattern") and agent.pattern == "swarm":
             is_swarm_agent = True
 
         # Assign ID based on whether it's a swarm agent
@@ -462,7 +478,7 @@ class SimpleAgentManager(AgentManager):
 
         # Ensure the agent's model.message_history references the manager's list when possible
         try:
-            if agent and hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
+            if agent and hasattr(agent, "model") and hasattr(agent.model, "message_history"):
                 mgr_hist = self._message_history.get(agent_name)
                 if mgr_hist is not None:
                     try:
@@ -486,7 +502,7 @@ class SimpleAgentManager(AgentManager):
 
     def share_swarm_history(self, agent1_name: str, agent2_name: str):
         """Share message history between two swarm agents.
-        
+
         This ensures both agents share the same list reference,
         so changes made by one agent are visible to the other.
         """
@@ -499,6 +515,7 @@ class SimpleAgentManager(AgentManager):
 
         # Make agent2 share the same reference
         self._message_history[agent2_name] = shared_history
+
 
 # Global instance
 AGENT_MANAGER = SimpleAgentManager()

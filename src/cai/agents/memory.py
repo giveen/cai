@@ -90,7 +90,7 @@ from cai.sdk.agents import Agent, ModelSettings, OpenAIChatCompletionsModel
 from cai.tools.misc.rag import add_to_memory_episodic, add_to_memory_semantic
 
 # Get model from environment or use default
-model_name = os.getenv('CAI_MODEL', "alias1")
+model_name = os.getenv("CAI_MODEL", "alias1")
 api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
 
 
@@ -98,6 +98,7 @@ def get_previous_memory(query: str) -> str:
     """Query the vector DB for previous memory context."""
     try:
         from cai.rag.vector_db_adapter import get_vector_db_adapter
+
         adapter = get_vector_db_adapter()
         results = adapter.search(collection_name="_all_", query_text=query or "", limit=3)
         return str(results) if results else ""
@@ -205,20 +206,20 @@ QUERY_PROMPT = """INSTRUCTIONS:
 
 _openai_client = None
 if AsyncOpenAI is not None:
-   try:
-      _openai_client = AsyncOpenAI()
-   except Exception:
-      _openai_client = None
+    try:
+        _openai_client = AsyncOpenAI()
+    except Exception:
+        _openai_client = None
 
 _model_inst = None
 if _openai_client is not None:
-   try:
-      _model_inst = OpenAIChatCompletionsModel(
-         model=model_name,
-         openai_client=_openai_client,
-      )
-   except Exception:
-      _model_inst = None
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=model_name,
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
 
 semantic_builder = Agent(
     name="Semantic_Builder",
@@ -230,26 +231,26 @@ semantic_builder = Agent(
     model=OpenAIChatCompletionsModel(
         model=model_name,
         openai_client=AsyncOpenAI(api_key=api_key),
-    )
+    ),
 )
 
 
 _openai_client = None
 if AsyncOpenAI is not None:
-   try:
-      _openai_client = AsyncOpenAI()
-   except Exception:
-      _openai_client = None
+    try:
+        _openai_client = AsyncOpenAI()
+    except Exception:
+        _openai_client = None
 
 _model_inst = None
 if _openai_client is not None:
-   try:
-      _model_inst = OpenAIChatCompletionsModel(
-         model=model_name,
-         openai_client=_openai_client,
-      )
-   except Exception:
-      _model_inst = None
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=model_name,
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
 
 episodic_builder = Agent(
     name="Episodic_Builder",
@@ -261,25 +262,25 @@ episodic_builder = Agent(
     model=OpenAIChatCompletionsModel(
         model=model_name,
         openai_client=AsyncOpenAI(api_key=api_key),
-    )
+    ),
 )
 
 _openai_client = None
 if AsyncOpenAI is not None:
-   try:
-      _openai_client = AsyncOpenAI()
-   except Exception:
-      _openai_client = None
+    try:
+        _openai_client = AsyncOpenAI()
+    except Exception:
+        _openai_client = None
 
 _model_inst = None
 if _openai_client is not None:
-   try:
-      _model_inst = OpenAIChatCompletionsModel(
-         model=model_name,
-         openai_client=_openai_client,
-      )
-   except Exception:
-      _model_inst = None
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=model_name,
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
 
 query_agent = Agent(
     name="Query_Agent",
@@ -291,5 +292,5 @@ query_agent = Agent(
     model=OpenAIChatCompletionsModel(
         model=model_name,
         openai_client=AsyncOpenAI(api_key=api_key),
-    )
+    ),
 )

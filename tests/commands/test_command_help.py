@@ -270,9 +270,7 @@ class TestHelpCommand:
         mock_platform_manager.get_platform.return_value = mock_platform
 
         with patch("cai.repl.commands.help.HAS_PLATFORM_EXTENSIONS", True):
-            with patch(
-                "cai.is_caiextensions_platform_available", return_value=True
-            ):
+            with patch("cai.is_caiextensions_platform_available", return_value=True):
                 # Mock the platform manager without importing caiextensions
                 with patch(
                     "sys.modules",
@@ -355,9 +353,7 @@ class TestHelpCommand:
     def test_handle_platform_with_import_error(self, help_command, mock_console):
         """Test platform help with import errors."""
         with patch("cai.repl.commands.help.HAS_PLATFORM_EXTENSIONS", True):
-            with patch(
-                "cai.is_caiextensions_platform_available", return_value=False
-            ):
+            with patch("cai.is_caiextensions_platform_available", return_value=False):
                 result = help_command.handle_help_platform_manager()
 
         assert result is True
@@ -369,9 +365,7 @@ class TestHelpCommand:
         mock_platform_manager.list_platforms.return_value = []
 
         with patch("cai.repl.commands.help.HAS_PLATFORM_EXTENSIONS", True):
-            with patch(
-                "cai.is_caiextensions_platform_available", return_value=True
-            ):
+            with patch("cai.is_caiextensions_platform_available", return_value=True):
                 with patch(
                     "sys.modules",
                     {"caiextensions.platform.base": Mock(platform_manager=mock_platform_manager)},

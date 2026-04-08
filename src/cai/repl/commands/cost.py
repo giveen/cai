@@ -2,6 +2,7 @@
 Cost command for CAI REPL.
 This module provides commands for viewing usage costs and statistics.
 """
+
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,7 +24,7 @@ console = Console()
 class CostCommand(Command):
     """
     Command for viewing usage costs and statistics.
-    
+
     This command displays:
     - Current session costs
     - Global usage statistics
@@ -37,7 +38,7 @@ class CostCommand(Command):
         super().__init__(
             name="/cost",
             description="View usage costs and statistics",
-            aliases=["/costs", "/usage"]
+            aliases=["/costs", "/usage"],
         )
 
         # Add subcommands
@@ -81,7 +82,7 @@ class CostCommand(Command):
             title="[cyan]Current Session[/cyan]",
             border_style="cyan",
             box=box.ROUNDED,
-            padding=(1, 2)
+            padding=(1, 2),
         )
 
         # Global Usage Panel
@@ -91,7 +92,7 @@ class CostCommand(Command):
             title="[green]Global Usage (All Time)[/green]",
             border_style="green",
             box=box.ROUNDED,
-            padding=(1, 2)
+            padding=(1, 2),
         )
 
         # Display panels side by side if terminal is wide enough
@@ -121,13 +122,13 @@ class CostCommand(Command):
         lines.append(f"[bold]Total Cost:[/bold] [yellow]${session_cost:.6f}[/yellow]")
 
         # Current agent costs
-        if hasattr(COST_TRACKER, 'current_agent_total_cost'):
+        if hasattr(COST_TRACKER, "current_agent_total_cost"):
             agent_cost = COST_TRACKER.current_agent_total_cost
             if agent_cost > 0:
                 lines.append(f"[bold]Current Agent:[/bold] ${agent_cost:.6f}")
 
         # Token usage
-        if hasattr(COST_TRACKER, 'current_agent_input_tokens'):
+        if hasattr(COST_TRACKER, "current_agent_input_tokens"):
             input_tokens = COST_TRACKER.current_agent_input_tokens
             output_tokens = COST_TRACKER.current_agent_output_tokens
             total_tokens = input_tokens + output_tokens
@@ -229,7 +230,7 @@ class CostCommand(Command):
             title="[bold cyan]Model Usage Statistics[/bold cyan]",
             show_header=True,
             header_style="bold",
-            box=box.ROUNDED
+            box=box.ROUNDED,
         )
 
         table.add_column("Model", style="cyan", no_wrap=True)
@@ -241,9 +242,7 @@ class CostCommand(Command):
 
         # Sort by cost descending
         sorted_models = sorted(
-            model_usage.items(),
-            key=lambda x: x[1].get("total_cost", 0),
-            reverse=True
+            model_usage.items(), key=lambda x: x[1].get("total_cost", 0), reverse=True
         )
 
         total_cost = 0
@@ -270,7 +269,7 @@ class CostCommand(Command):
                 f"{requests:,}",
                 f"{input_tokens:,}",
                 f"{output_tokens:,}",
-                f"${avg_cost:.6f}"
+                f"${avg_cost:.6f}",
             )
 
         # Add totals row
@@ -281,7 +280,7 @@ class CostCommand(Command):
             f"[bold]{total_requests:,}[/bold]",
             f"[bold]{total_input:,}[/bold]",
             f"[bold]{total_output:,}[/bold]",
-            ""
+            "",
         )
 
         # Print a plain title so tests and simple consoles can match text output
@@ -321,7 +320,7 @@ class CostCommand(Command):
             title="[bold cyan]Daily Usage Statistics[/bold cyan]",
             show_header=True,
             header_style="bold",
-            box=box.ROUNDED
+            box=box.ROUNDED,
         )
 
         table.add_column("Date", style="cyan")
@@ -368,13 +367,7 @@ class CostCommand(Command):
             except Exception:
                 date_str = date
 
-            table.add_row(
-                date_str,
-                f"${cost:.6f}",
-                f"{requests:,}",
-                f"{tokens:,}",
-                trend
-            )
+            table.add_row(date_str, f"${cost:.6f}", f"{requests:,}", f"{tokens:,}", trend)
 
         # Print a plain title so tests and simple consoles can match text output
         console.print("[bold cyan]Daily Usage Statistics[/bold cyan]")
@@ -445,7 +438,7 @@ class CostCommand(Command):
             title=f"[bold cyan]Recent {len(recent_sessions)} Sessions[/bold cyan]",
             show_header=True,
             header_style="bold",
-            box=box.ROUNDED
+            box=box.ROUNDED,
         )
 
         table.add_column("Session ID", style="cyan", no_wrap=True)
@@ -498,17 +491,12 @@ class CostCommand(Command):
             if models:
                 models_str = ", ".join(models[:2])  # Show first 2
                 if len(models) > 2:
-                    models_str += f" (+{len(models)-2})"
+                    models_str += f" (+{len(models) - 2})"
             else:
                 models_str = "[dim]None[/dim]"
 
             table.add_row(
-                session_id,
-                start_str,
-                duration_str,
-                f"${cost:.6f}",
-                str(requests),
-                models_str
+                session_id, start_str, duration_str, f"${cost:.6f}", str(requests), models_str
             )
 
         # Print a plain title so tests and simple consoles can match text output

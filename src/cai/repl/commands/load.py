@@ -37,8 +37,14 @@ class LoadCommand(Command):
         # Add subcommands
         self.add_subcommand("agent", "Load history into a specific agent", self.handle_agent)
         self.add_subcommand("all", "Show all available agents", self.handle_all)
-        self.add_subcommand("parallel", "Load JSONL matching configured parallel agents", self.handle_parallel)
-        self.add_subcommand("load-all", "Load JSONL into all parallel agents with same messages", self.handle_load_all)
+        self.add_subcommand(
+            "parallel", "Load JSONL matching configured parallel agents", self.handle_parallel
+        )
+        self.add_subcommand(
+            "load-all",
+            "Load JSONL into all parallel agents with same messages",
+            self.handle_load_all,
+        )
 
     def handle(self, args: Optional[List[str]] = None) -> bool:
         """Handle the load command.
@@ -161,7 +167,9 @@ class LoadCommand(Command):
                             display_name = getattr(agent, "name", config.agent_name)
 
                             # Count how many instances of this agent type exist
-                            total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                            total_count = sum(
+                                1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name
+                            )
 
                             # Count instances to find the right one
                             instance_num = 0
@@ -192,10 +200,10 @@ class LoadCommand(Command):
 
     def handle_load_pattern_from_jsonl(self, jsonl_file: Optional[str] = None) -> bool:
         """Load a JSONL file and match agent messages to configured parallel agents.
-        
+
         Args:
             jsonl_file: Optional jsonl file path, defaults to "logs/last"
-            
+
         Returns:
             bool: True if successful
         """
@@ -215,7 +223,7 @@ class LoadCommand(Command):
             agent_conversations = {}
 
             try:
-                with open(jsonl_file, encoding='utf-8') as f:
+                with open(jsonl_file, encoding="utf-8") as f:
                     current_agent = None
                     current_messages = []
 
@@ -239,7 +247,11 @@ class LoadCommand(Command):
                                 current_messages = []
 
                             # Check if this is a request record with messages
-                            elif "model" in record and "messages" in record and isinstance(record["messages"], list):
+                            elif (
+                                "model" in record
+                                and "messages" in record
+                                and isinstance(record["messages"], list)
+                            ):
                                 # These messages belong to the current agent
                                 for msg in record["messages"]:
                                     if msg.get("role") != "system":  # Skip system messages
@@ -298,6 +310,7 @@ class LoadCommand(Command):
             # Match configured agents with loaded messages
             loaded_count = 0
             from cai.agents import get_available_agents
+
             agents = get_available_agents()
 
             # Count instances of each agent type
@@ -313,21 +326,26 @@ class LoadCommand(Command):
                 if config.agent_name.endswith("_pattern"):
                     # Try to get the pattern
                     from cai.agents.patterns import get_pattern
+
                     pattern = get_pattern(config.agent_name)
-                    if pattern and hasattr(pattern, 'entry_agent'):
+                    if pattern and hasattr(pattern, "entry_agent"):
                         # For swarm patterns, use the entry agent
                         agent = pattern.entry_agent
                         agent_display_name = getattr(agent, "name", config.agent_name)
                     else:
                         # Skip if pattern not found
-                        console.print(f"[yellow]Warning: Pattern '{config.agent_name}' not found[/yellow]")
+                        console.print(
+                            f"[yellow]Warning: Pattern '{config.agent_name}' not found[/yellow]"
+                        )
                         continue
                 elif config.agent_name in agents:
                     agent = agents[config.agent_name]
                     agent_display_name = getattr(agent, "name", config.agent_name)
                 else:
                     # Skip if agent not found
-                    console.print(f"[yellow]Warning: Agent '{config.agent_name}' not found[/yellow]")
+                    console.print(
+                        f"[yellow]Warning: Agent '{config.agent_name}' not found[/yellow]"
+                    )
                     continue
 
                 # Determine the instance name
@@ -363,7 +381,10 @@ class LoadCommand(Command):
                     best_count = 0
 
                     for name in possible_names:
-                        if name in agent_conversations and len(agent_conversations[name]) > best_count:
+                        if (
+                            name in agent_conversations
+                            and len(agent_conversations[name]) > best_count
+                        ):
                             best_match = name
                             best_count = len(agent_conversations[name])
 
@@ -387,7 +408,6 @@ class LoadCommand(Command):
                         # Check if we're in parallel mode with isolation
                         from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
 
-
                         # Check if we should be in parallel mode based on configs
                         if len(PARALLEL_CONFIGS) >= 2:
                             # Ensure parallel mode is enabled
@@ -397,14 +417,18 @@ class LoadCommand(Command):
                             # Update the isolated history instead of the main history
                             agent_id = config.id or f"P{idx}"
                             # Replace the entire isolated history with the loaded messages
-                            PARALLEL_ISOLATION.replace_isolated_history(agent_id, agent_conversations[best_match])
+                            PARALLEL_ISOLATION.replace_isolated_history(
+                                agent_id, agent_conversations[best_match]
+                            )
 
                             # Verify it was stored
                             _test_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
 
                             # Also sync with AGENT_MANAGER for consistency
                             # Don't use set_message_history or any method that might register the agent
-                            AGENT_MANAGER._message_history[instance_name] = list(agent_conversations[best_match])
+                            AGENT_MANAGER._message_history[instance_name] = list(
+                                agent_conversations[best_match]
+                            )
 
                             # Force sync the isolated histories back to AGENT_MANAGER for display
                             # This ensures /history and /graph see the loaded data
@@ -420,18 +444,27 @@ class LoadCommand(Command):
                                 from cai.sdk.agents.models.openai_chatcompletions import (
                                     PERSISTENT_MESSAGE_HISTORIES,
                                 )
-                                PERSISTENT_MESSAGE_HISTORIES[instance_name] = list(agent_conversations[best_match])
+
+                                PERSISTENT_MESSAGE_HISTORIES[instance_name] = list(
+                                    agent_conversations[best_match]
+                                )
 
                                 # CRITICAL: Also update AGENT_MANAGER to ensure consistency
                                 # This ensures the history is available when the agent is created
                                 # Don't use set_message_history or any method that might register the agent
-                                AGENT_MANAGER._message_history[instance_name] = list(agent_conversations[best_match])
+                                AGENT_MANAGER._message_history[instance_name] = list(
+                                    agent_conversations[best_match]
+                                )
 
-                        console.print(f"[green]Loaded {best_count} messages into '{instance_name}' [P{idx}][/green]")
+                        console.print(
+                            f"[green]Loaded {best_count} messages into '{instance_name}' [P{idx}][/green]"
+                        )
                         loaded_count += 1
 
             if loaded_count > 0:
-                console.print(f"[bold green]Successfully loaded history for {loaded_count} agents[/bold green]")
+                console.print(
+                    f"[bold green]Successfully loaded history for {loaded_count} agents[/bold green]"
+                )
 
                 # Final sync to ensure all histories are visible
                 if PARALLEL_ISOLATION.is_parallel_mode():
@@ -442,12 +475,18 @@ class LoadCommand(Command):
 
                 # If no agents were found, provide helpful information
                 if not agent_conversations:
-                    console.print("[dim]The JSONL file appears to be empty or does not contain agent messages[/dim]")
-                    console.print("[dim]Agent names should be in 'name', 'sender', or 'agent_name' fields[/dim]")
+                    console.print(
+                        "[dim]The JSONL file appears to be empty or does not contain agent messages[/dim]"
+                    )
+                    console.print(
+                        "[dim]Agent names should be in 'name', 'sender', or 'agent_name' fields[/dim]"
+                    )
                     return False
                 else:
                     console.print("\n[dim]Found agents in JSONL:[/dim]")
-                    for agent, messages in sorted(agent_conversations.items(), key=lambda x: len(x[1]), reverse=True)[:5]:
+                    for agent, messages in sorted(
+                        agent_conversations.items(), key=lambda x: len(x[1]), reverse=True
+                    )[:5]:
                         console.print(f"  • {agent} ({len(messages)} messages)")
                     if len(agent_conversations) > 5:
                         console.print(f"  ... and {len(agent_conversations) - 5} more")
@@ -459,7 +498,9 @@ class LoadCommand(Command):
                             display_name = getattr(agent, "name", config.agent_name)
                             console.print(f"  • [P{idx}] {display_name}")
 
-                    console.print("\n[dim]Tip: Agent names in JSONL must match the configured agent names[/dim]")
+                    console.print(
+                        "\n[dim]Tip: Agent names in JSONL must match the configured agent names[/dim]"
+                    )
 
             return True
 
@@ -512,7 +553,9 @@ class LoadCommand(Command):
             if not all_histories:
                 all_histories = {f"{current_agent_name} [P1]": []}
 
-            console.print(f"[cyan]Merging {len(messages)} messages into {len(all_histories)} active agent(s)...[/cyan]")
+            console.print(
+                f"[cyan]Merging {len(messages)} messages into {len(all_histories)} active agent(s)...[/cyan]"
+            )
 
             # Merge messages into all active agents with duplicate control
             from cai.repl.commands.parallel import ParallelCommand
@@ -569,14 +612,18 @@ class LoadCommand(Command):
                     # Update existing model's history
                     model_instance.message_history.clear()
                     # Reset context usage since we're rebuilding history
-                    os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+                    os.environ["CAI_CONTEXT_USAGE"] = "0.0"
                     for msg in final_history:
                         model_instance.add_to_message_history(msg)
-                    console.print(f"[green]✓ Updated {agent_name} - added {len(unique_messages)} new messages[/green]")
+                    console.print(
+                        f"[green]✓ Updated {agent_name} - added {len(unique_messages)} new messages[/green]"
+                    )
                 else:
                     # No active instance, store in persistent history
                     PERSISTENT_MESSAGE_HISTORIES[agent_name] = final_history
-                    console.print(f"[green]✓ Updated {agent_name} (persistent) - added {len(unique_messages)} new messages[/green]")
+                    console.print(
+                        f"[green]✓ Updated {agent_name} (persistent) - added {len(unique_messages)} new messages[/green]"
+                    )
 
                 # Also update AGENT_MANAGER - using _message_history directly to avoid registration
                 AGENT_MANAGER._message_history[agent_name] = final_history
@@ -584,13 +631,18 @@ class LoadCommand(Command):
                 # Update PARALLEL_ISOLATION if needed
                 if agent_id:
                     from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
+
                     if PARALLEL_ISOLATION.get_isolated_history(agent_id) is not None:
                         PARALLEL_ISOLATION.replace_isolated_history(agent_id, final_history)
 
                 agents_updated.append(agent_name)
 
-            console.print(f"\n[bold green]Successfully merged {len(messages)} messages into {len(agents_updated)} agent(s)[/bold green]")
-            console.print("[dim]All agents now have the combined history with duplicate control[/dim]")
+            console.print(
+                f"\n[bold green]Successfully merged {len(messages)} messages into {len(agents_updated)} agent(s)[/bold green]"
+            )
+            console.print(
+                "[dim]All agents now have the combined history with duplicate control[/dim]"
+            )
 
             return True
 
@@ -600,10 +652,10 @@ class LoadCommand(Command):
 
     def handle_load_to_agent(self, args: List[str]) -> bool:
         """Load a jsonl file into a specific agent by parsing agent name from args.
-        
+
         Args:
             args: List where first elements form agent name, last is optional file
-            
+
         Returns:
             bool: True if successful
         """
@@ -637,10 +689,10 @@ class LoadCommand(Command):
 
     def handle_agent(self, args: Optional[List[str]] = None) -> bool:
         """Load a jsonl file into a specific agent's history using 'agent' subcommand.
-        
+
         Args:
             args: List containing agent name and optional jsonl file path
-            
+
         Returns:
             bool: True if successful
         """
@@ -656,11 +708,11 @@ class LoadCommand(Command):
 
     def _load_to_agent(self, agent_name: str, jsonl_file: str) -> bool:
         """Common method to merge a jsonl file into a specific agent's history.
-        
+
         Args:
             agent_name: Name of the agent
             jsonl_file: Path to jsonl file
-            
+
         Returns:
             bool: True if successful
         """
@@ -684,9 +736,14 @@ class LoadCommand(Command):
 
             # If agent_name is an ID (P1, P2, etc), resolve it to actual agent name
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
             resolved_agent_name = agent_name
 
-            if agent_name.upper().startswith("P") and len(agent_name) >= 2 and agent_name[1:].isdigit():
+            if (
+                agent_name.upper().startswith("P")
+                and len(agent_name) >= 2
+                and agent_name[1:].isdigit()
+            ):
                 # This is an ID, resolve it
                 agent_id = agent_name.upper()
                 resolved_name = AGENT_MANAGER.get_agent_by_id(agent_id)
@@ -731,7 +788,9 @@ class LoadCommand(Command):
                     original_signatures.add(sig)
 
             if not unique_messages:
-                console.print(f"[yellow]No new messages to add - all {len(messages)} messages already exist in history[/yellow]")
+                console.print(
+                    f"[yellow]No new messages to add - all {len(messages)} messages already exist in history[/yellow]"
+                )
                 return True
 
             # The final history is original + unique messages
@@ -750,7 +809,7 @@ class LoadCommand(Command):
                 # Update existing model's history
                 model_instance.message_history.clear()
                 # Reset context usage since we're rebuilding history
-                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+                os.environ["CAI_CONTEXT_USAGE"] = "0.0"
                 for msg in final_history:
                     model_instance.add_to_message_history(msg)
             else:
@@ -764,12 +823,18 @@ class LoadCommand(Command):
             # The agent should already exist if we're loading history into it
             # This prevents creating empty agents when loading
 
-            console.print(f"[green]Merged {len(unique_messages)} new messages into agent '{resolved_agent_name}'[/green]")
-            console.print(f"[dim]Skipped {len(messages) - len(unique_messages)} duplicate messages[/dim]")
+            console.print(
+                f"[green]Merged {len(unique_messages)} new messages into agent '{resolved_agent_name}'[/green]"
+            )
+            console.print(
+                f"[dim]Skipped {len(messages) - len(unique_messages)} duplicate messages[/dim]"
+            )
 
             # Show current message count for this agent
             total_messages = len(final_history)
-            console.print(f"[dim]Agent '{resolved_agent_name}' now has {total_messages} messages in history[/dim]")
+            console.print(
+                f"[dim]Agent '{resolved_agent_name}' now has {total_messages} messages in history[/dim]"
+            )
 
             return True
 
@@ -779,10 +844,10 @@ class LoadCommand(Command):
 
     def handle_parallel(self, args: Optional[List[str]] = None) -> bool:
         """Load a JSONL file matching messages to configured parallel agents.
-        
+
         Args:
             args: Optional list containing jsonl file path
-            
+
         Returns:
             bool: True if successful
         """
@@ -794,7 +859,7 @@ class LoadCommand(Command):
 
     def handle_all(self, args: Optional[List[str]] = None) -> bool:
         """Show all available agents that can have history loaded.
-        
+
         Returns:
             bool: True if successful
         """
@@ -813,7 +878,9 @@ class LoadCommand(Command):
                     display_name = getattr(agent, "name", config.agent_name)
 
                     # Count instances to get the right name
-                    instance_count = sum(1 for c in PARALLEL_CONFIGS[:idx] if c.agent_name == config.agent_name)
+                    instance_count = sum(
+                        1 for c in PARALLEL_CONFIGS[:idx] if c.agent_name == config.agent_name
+                    )
                     if instance_count > 1:
                         display_name = f"{display_name} #{instance_count}"
 
@@ -824,7 +891,9 @@ class LoadCommand(Command):
 
         if not all_agents:
             console.print("[yellow]No agents have been initialized or configured yet[/yellow]")
-            console.print("[dim]Agents are created when they are first used in a conversation[/dim]")
+            console.print(
+                "[dim]Agents are created when they are first used in a conversation[/dim]"
+            )
             console.print("[dim]Or configured using '/parallel add <agent>'[/dim]")
             return True
 
@@ -832,9 +901,9 @@ class LoadCommand(Command):
         agent_ids = {}
         for agent_name, history in all_histories.items():
             # Extract ID from display format "Agent Name [ID]"
-            if '[' in agent_name and ']' in agent_name:
-                id_part = agent_name[agent_name.rindex('[') + 1:agent_name.rindex(']')]
-                name_part = agent_name[:agent_name.rindex('[')].strip()
+            if "[" in agent_name and "]" in agent_name:
+                id_part = agent_name[agent_name.rindex("[") + 1 : agent_name.rindex("]")]
+                name_part = agent_name[: agent_name.rindex("[")].strip()
                 agent_ids[name_part] = id_part
 
         # Also add configured but inactive agents from PARALLEL_CONFIGS
@@ -845,7 +914,11 @@ class LoadCommand(Command):
                     agent_ids[config.agent_name] = config.id
 
         # Create a table showing all agents
-        table = Table(title="Available Agents for Loading History", show_header=True, header_style="bold yellow")
+        table = Table(
+            title="Available Agents for Loading History",
+            show_header=True,
+            header_style="bold yellow",
+        )
         table.add_column("ID", style="magenta", width=4)
         table.add_column("Agent Name", style="cyan")
         table.add_column("Current Messages", style="green", justify="right")
@@ -864,7 +937,9 @@ class LoadCommand(Command):
                     role_counts[role] = role_counts.get(role, 0) + 1
 
                 # Format role counts
-                role_str = ", ".join([f"{role}: {count}" for role, count in sorted(role_counts.items())])
+                role_str = ", ".join(
+                    [f"{role}: {count}" for role, count in sorted(role_counts.items())]
+                )
                 status = "Active"
             else:
                 role_str = "No messages"
@@ -878,7 +953,9 @@ class LoadCommand(Command):
         console.print(table)
         console.print("\n[dim]Usage: /load agent <agent_name> [jsonl_file][/dim]")
         console.print("[dim]       /load <ID> [jsonl_file][/dim]")
-        console.print("[dim]       /load load-all [jsonl_file] - Load same messages to all parallel agents[/dim]")
+        console.print(
+            "[dim]       /load load-all [jsonl_file] - Load same messages to all parallel agents[/dim]"
+        )
         console.print("[dim]Example: /load agent red_teamer logs/session_20240101.jsonl[/dim]")
         console.print('[dim]Example: /load agent "Bug Bounter #1"[/dim]')
         console.print("[dim]Example: /load P2 logs/last[/dim]")
@@ -890,10 +967,10 @@ class LoadCommand(Command):
 
     def handle_load_all(self, args: Optional[List[str]] = None) -> bool:
         """Load the same JSONL messages into all configured parallel agents.
-        
+
         Args:
             args: Optional list containing jsonl file path
-            
+
         Returns:
             bool: True if successful
         """
@@ -976,7 +1053,7 @@ class LoadCommand(Command):
                         if model_instance:
                             # Clear existing messages and add new ones
                             model_instance.message_history.clear()
-                            os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+                            os.environ["CAI_CONTEXT_USAGE"] = "0.0"
                             for message in messages:
                                 model_instance.add_to_message_history(message)
                         else:
@@ -988,7 +1065,9 @@ class LoadCommand(Command):
                     loaded_agents.append(f"{instance_name} [{agent_id}]")
                     console.print(f"[green]✓ Loaded into {instance_name} [{agent_id}][/green]")
 
-            console.print(f"\n[bold green]Successfully loaded {len(messages)} messages into {len(loaded_agents)} agents[/bold green]")
+            console.print(
+                f"\n[bold green]Successfully loaded {len(messages)} messages into {len(loaded_agents)} agents[/bold green]"
+            )
 
             return True
 

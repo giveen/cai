@@ -108,11 +108,13 @@ from cai.util import (
 # <|...|> pattern so they consume the trailing hallucinated text before the
 # shorter pattern eats just the tag itself.
 _LLM_TAG_PATTERNS = [
-    _re.compile(r'<\|tool_response\|>.*', _re.DOTALL),  # hallucinated inline response (greedy, first)
-    _re.compile(r'<tool_response>.*', _re.DOTALL),       # undecorated variant
-    _re.compile(r'</tool_call>.*', _re.DOTALL),          # everything after </tool_call>
-    _re.compile(r'<\|"\|>'),                             # <|"|>  (Gemma-4 quote tokens)
-    _re.compile(r'<\|[^>]{0,30}\|>'),                    # remaining generic <|...|> tokens
+    _re.compile(
+        r"<\|tool_response\|>.*", _re.DOTALL
+    ),  # hallucinated inline response (greedy, first)
+    _re.compile(r"<tool_response>.*", _re.DOTALL),  # undecorated variant
+    _re.compile(r"</tool_call>.*", _re.DOTALL),  # everything after </tool_call>
+    _re.compile(r'<\|"\|>'),  # <|"|>  (Gemma-4 quote tokens)
+    _re.compile(r"<\|[^>]{0,30}\|>"),  # remaining generic <|...|> tokens
 ]
 
 # Stop-tags that signal the LLM tried to "one-shot" its own tool response.
@@ -149,6 +151,7 @@ def _parse_tool_args(raw: str | None, tool_name: str = "") -> dict:
     3. If all else fails, return {}.
     """
     import json as _json
+
     cleaned = _sanitize_llm_tool_args(raw)
     try:
         parsed = _json.loads(cleaned)
@@ -227,11 +230,13 @@ ACTIVE_MODEL_INSTANCES = {}
 PERSISTENT_MESSAGE_HISTORIES = {}
 
 # Context variable to track the current active model per async context
-_current_model_context = contextvars.ContextVar('current_model', default=None)
+_current_model_context = contextvars.ContextVar("current_model", default=None)
+
 
 def set_current_active_model(model):
     """Set the current active model for tool execution context."""
     _current_model_context.set(weakref.ref(model) if model else None)
+
 
 def get_current_active_model():
     """Get the current active model."""
@@ -243,7 +248,7 @@ def get_current_active_model():
 
 def get_agent_message_history(agent_name: str) -> list:
     """Get message history for a specific agent.
-    
+
     With SimpleAgentManager, this is much simpler - we only have one active agent.
     """
     # Remove any ID suffix if present (e.g., "[P1]")
@@ -267,7 +272,9 @@ def register_active_model_instance(display_name: str, agent_id: str, instance: o
         key = (display_name, agent_id)
         ACTIVE_MODEL_INSTANCES[key] = weakref.ref(instance)
     except Exception:
-        logger.exception("Failed to register active model instance for %s", (display_name, agent_id))
+        logger.exception(
+            "Failed to register active model instance for %s", (display_name, agent_id)
+        )
 
 
 def unregister_active_model_instance(display_name: str, agent_id: str) -> None:
@@ -277,12 +284,14 @@ def unregister_active_model_instance(display_name: str, agent_id: str) -> None:
         if key in ACTIVE_MODEL_INSTANCES:
             del ACTIVE_MODEL_INSTANCES[key]
     except Exception:
-        logger.exception("Failed to unregister active model instance for %s", (display_name, agent_id))
+        logger.exception(
+            "Failed to unregister active model instance for %s", (display_name, agent_id)
+        )
 
 
 def get_all_agent_histories() -> dict:
     """Get all agent message histories.
-    
+
     With SimpleAgentManager, we only track the active agent's history.
     """
     return AGENT_MANAGER.get_all_histories()
@@ -290,7 +299,7 @@ def get_all_agent_histories() -> dict:
 
 def clear_agent_history(agent_name: str):
     """Clear history for a specific agent.
-    
+
     With SimpleAgentManager, this is much simpler.
     """
     # Remove any ID suffix if present
@@ -304,11 +313,11 @@ def clear_agent_history(agent_name: str):
 
     # Also clear the current instance if it matches
     active_agent = AGENT_MANAGER.get_active_agent()
-    if active_agent and hasattr(active_agent, 'message_history'):
-        if hasattr(active_agent, 'agent_name') and active_agent.agent_name == base_name:
+    if active_agent and hasattr(active_agent, "message_history"):
+        if hasattr(active_agent, "agent_name") and active_agent.agent_name == base_name:
             active_agent.message_history.clear()
             # Reset context usage for this agent
-            os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+            os.environ["CAI_CONTEXT_USAGE"] = "0.0"
 
 
 def clear_all_histories():
@@ -318,14 +327,14 @@ def clear_all_histories():
 
     # Clear active agent's history if present
     active_agent = AGENT_MANAGER.get_active_agent()
-    if active_agent and hasattr(active_agent, 'message_history'):
+    if active_agent and hasattr(active_agent, "message_history"):
         active_agent.message_history.clear()
 
     # Clear all persistent histories
     PERSISTENT_MESSAGE_HISTORIES.clear()
 
     # Reset context usage since all histories are cleared
-    os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+    os.environ["CAI_CONTEXT_USAGE"] = "0.0"
 
 
 @dataclass
@@ -461,6 +470,7 @@ class ContextCompactedError(Exception):
     """Raised inside get_response/stream_response when a CAI_SUPPORT_INTERVAL-based
     auto-compact fires mid-runner.  The outer CLI loop catches this, sets
     _post_compact_input, and restarts the runner with a clean context window."""
+
     pass
 
 
@@ -490,7 +500,9 @@ class OpenAIChatCompletionsModel(Model):
         self.total_reasoning_tokens = 0
         self.total_cost = 0.0
         self.agent_name = agent_name
-        self.agent_type = agent_type or agent_name.lower().replace(" ", "_")  # For registry tracking
+        self.agent_type = agent_type or agent_name.lower().replace(
+            " ", "_"
+        )  # For registry tracking
         self.uses_unified_context = False  # Flag to indicate if using shared message history
 
         # For SimpleAgentManager, we don't auto-register
@@ -556,11 +568,11 @@ class OpenAIChatCompletionsModel(Model):
         """Clean up when the model instance is destroyed."""
         try:
             # DEPRECATED: Remove from old registry for backward compatibility
-                if hasattr(self, '_display_name') and hasattr(self, 'agent_id'):
-                    unregister_active_model_instance(self._display_name, self.agent_id)
+            if hasattr(self, "_display_name") and hasattr(self, "agent_id"):
+                unregister_active_model_instance(self._display_name, self.agent_id)
 
-            # SimpleAgentManager handles history persistence
-            # No need to save to PERSISTENT_MESSAGE_HISTORIES
+        # SimpleAgentManager handles history persistence
+        # No need to save to PERSISTENT_MESSAGE_HISTORIES
 
         except Exception:
             # Ignore any errors during cleanup
@@ -597,21 +609,21 @@ class OpenAIChatCompletionsModel(Model):
             pass
 
         try:
-            key = (getattr(self, '_display_name', None), getattr(self, 'agent_id', None))
+            key = (getattr(self, "_display_name", None), getattr(self, "agent_id", None))
             if key in ACTIVE_MODEL_INSTANCES:
                 del ACTIVE_MODEL_INSTANCES[key]
         except Exception:
             pass
 
         try:
-            if hasattr(self, 'message_history') and isinstance(self.message_history, list):
+            if hasattr(self, "message_history") and isinstance(self.message_history, list):
                 self.message_history.clear()
         except Exception:
             pass
 
     def add_to_message_history(self, msg):
         """Add a message to this instance's history if it's not a duplicate.
-        
+
         Now only adds to the instance's local history, no global registry.
         """
         is_duplicate = False
@@ -630,9 +642,11 @@ class OpenAIChatCompletionsModel(Model):
                 # Remove duplicates in-place to preserve list reference (important for swarm patterns)
                 indices_to_remove = []
                 for i, existing in enumerate(self.message_history):
-                    if (existing.get("role") == "assistant"
+                    if (
+                        existing.get("role") == "assistant"
                         and existing.get("tool_calls")
-                        and existing["tool_calls"][0].get("id") == tool_call_id):
+                        and existing["tool_calls"][0].get("id") == tool_call_id
+                    ):
                         indices_to_remove.append(i)
                 # Remove in reverse order to avoid index shifting
                 for i in reversed(indices_to_remove):
@@ -710,14 +724,18 @@ class OpenAIChatCompletionsModel(Model):
 
                 # Handle LiteLLM/OpenAI RateLimitError heuristics
                 try:
-                    if not retriable and hasattr(litellm, "exceptions") and isinstance(e, litellm.exceptions.RateLimitError):
+                    if (
+                        not retriable
+                        and hasattr(litellm, "exceptions")
+                        and isinstance(e, litellm.exceptions.RateLimitError)
+                    ):
                         retriable = True
                         err_str = str(e)
-                        m = re.search(r'retry[_-]?after[:\s]+(\d+)', err_str, re.IGNORECASE)
+                        m = re.search(r"retry[_-]?after[:\s]+(\d+)", err_str, re.IGNORECASE)
                         if m:
                             retry_delay = int(m.group(1))
                         else:
-                            m2 = re.search(r'wait\s+(\d+)\s+seconds?', err_str, re.IGNORECASE)
+                            m2 = re.search(r"wait\s+(\d+)\s+seconds?", err_str, re.IGNORECASE)
                             if m2:
                                 retry_delay = int(m2.group(1))
                 except Exception:
@@ -726,7 +744,13 @@ class OpenAIChatCompletionsModel(Model):
                 # Basic string heuristics for other providers
                 if not retriable:
                     es = str(e).lower()
-                    if "rate limit" in es or "429" in es or "too many requests" in es or "503" in es or "service unavailable" in es:
+                    if (
+                        "rate limit" in es
+                        or "429" in es
+                        or "too many requests" in es
+                        or "503" in es
+                        or "service unavailable" in es
+                    ):
                         retriable = True
 
                 if not retriable or attempt > max_retries:
@@ -798,7 +822,11 @@ class OpenAIChatCompletionsModel(Model):
                         if getattr(it, "type", None) == "function_call":
                             return
                         # Check common text-like attributes
-                        txt = getattr(it, "text", None) or getattr(it, "content", None) or getattr(it, "refusal", None)
+                        txt = (
+                            getattr(it, "text", None)
+                            or getattr(it, "content", None)
+                            or getattr(it, "refusal", None)
+                        )
                         if txt and str(txt).strip():
                             is_content_non_empty = True
                             break
@@ -970,7 +998,7 @@ class OpenAIChatCompletionsModel(Model):
             # Calculate and set context usage for toolbar
             max_tokens = self._get_model_max_tokens(str(self.model))
             context_usage = estimated_input_tokens / max_tokens if max_tokens > 0 else 0.0
-            os.environ['CAI_CONTEXT_USAGE'] = str(context_usage)
+            os.environ["CAI_CONTEXT_USAGE"] = str(context_usage)
 
             # Check if auto-compaction is needed
             try:
@@ -1143,11 +1171,7 @@ class OpenAIChatCompletionsModel(Model):
 
                 # Process interaction cost
                 COST_TRACKER.process_interaction_cost(
-                    model_name,
-                    input_tokens,
-                    output_tokens,
-                    reasoning_tokens,
-                    interaction_cost
+                    model_name, input_tokens, output_tokens, reasoning_tokens, interaction_cost
                 )
 
                 # Process total cost
@@ -1156,7 +1180,7 @@ class OpenAIChatCompletionsModel(Model):
                     self.total_input_tokens,
                     self.total_output_tokens,
                     self.total_reasoning_tokens,
-                    None
+                    None,
                 )
 
                 # Track usage globally
@@ -1165,7 +1189,7 @@ class OpenAIChatCompletionsModel(Model):
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     cost=interaction_cost,
-                    agent_name=self.agent_name
+                    agent_name=self.agent_name,
                 )
             else:
                 # For free models
@@ -1177,7 +1201,7 @@ class OpenAIChatCompletionsModel(Model):
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     cost=0.0,
-                    agent_name=self.agent_name
+                    agent_name=self.agent_name,
                 )
 
             # Check if this message contains tool calls
@@ -1226,7 +1250,9 @@ class OpenAIChatCompletionsModel(Model):
                                 # Check if this has auto_output flag
                                 has_auto_output = args.get("auto_output", False)
                         except Exception as e:
-                            logger.exception("Error inspecting tool args for streaming check: %s", e)
+                            logger.exception(
+                                "Error inspecting tool args for streaming check: %s", e
+                            )
 
                         # For regular commands that were already shown via streaming, suppress the agent message
                         if (
@@ -1328,7 +1354,6 @@ class OpenAIChatCompletionsModel(Model):
                 # Store pending tool calls but don't add to history yet
                 if not hasattr(self, "_pending_tool_calls"):
                     self._pending_tool_calls = {}
-
 
                 # Fix Google Gemini OpenAI compatibility issues.
                 # When using the OpenAI-compatible API to call tools with Google Gemini
@@ -1499,7 +1524,9 @@ class OpenAIChatCompletionsModel(Model):
                 if not has_tool_calls:
                     try:
                         converted_items = self._converter.message_to_output_items(msg)
-                        has_tool_calls = any(getattr(it, "type", None) == "function_call" for it in converted_items)
+                        has_tool_calls = any(
+                            getattr(it, "type", None) == "function_call" for it in converted_items
+                        )
                     except Exception:
                         # If conversion fails, ignore and continue with available data
                         pass
@@ -1717,9 +1744,13 @@ class OpenAIChatCompletionsModel(Model):
 
                 # If compaction occurred, recalculate tokens with new input
                 if compacted:
-                    converted_messages = self._converter.items_to_messages(input, model_instance=self)
+                    converted_messages = self._converter.items_to_messages(
+                        input, model_instance=self
+                    )
                     if system_instructions:
-                        converted_messages.insert(0, {"role": "system", "content": system_instructions})
+                        converted_messages.insert(
+                            0, {"role": "system", "content": system_instructions}
+                        )
                     estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
 
                 # Pre-check price limit using estimated input tokens and a conservative estimate for output
@@ -1957,7 +1988,7 @@ class OpenAIChatCompletionsModel(Model):
                             for _stop in _STREAM_STOP_SUBSTRINGS:
                                 if _stop in content:
                                     # Keep content up to but not including the stop tag
-                                    content = content[:content.index(_stop)]
+                                    content = content[: content.index(_stop)]
                                     # Signal the outer loop to break after this chunk
                                     if content:
                                         # still emit the clean prefix
@@ -2300,9 +2331,9 @@ class OpenAIChatCompletionsModel(Model):
                                 ):
                                     if tool_call_msg not in streamed_tool_calls:
                                         streamed_tool_calls.append(tool_call_msg)
-                                    # Don't add to message history here - wait for tool output
-                                    # to add both tool call and response atomically
-                                    # NEW: Display tool call immediately when detected in streaming mode
+                                        # Don't add to message history here - wait for tool output
+                                        # to add both tool call and response atomically
+                                        # NEW: Display tool call immediately when detected in streaming mode
                                         # First, finish any existing streaming context if it exists
                                         if streaming_context:
                                             try:
@@ -2433,7 +2464,10 @@ class OpenAIChatCompletionsModel(Model):
                                             del args_dict["ctf"]
                                         arguments_str = json.dumps(args_dict)
                                     except Exception as e:
-                                        logger.exception("Failed to parse tool arguments as JSON, falling back to string: %s", e)
+                                        logger.exception(
+                                            "Failed to parse tool arguments as JSON, falling back to string: %s",
+                                            e,
+                                        )
                                         # If not valid JSON, encode it as a JSON string
                                         arguments_str = json.dumps(parsed["arguments"])
                                 else:
@@ -2667,7 +2701,9 @@ class OpenAIChatCompletionsModel(Model):
                     text_content = ""
                     if state.text_content_index_and_output:
                         text_out = state.text_content_index_and_output[1]
-                        text_content = getattr(text_out, 'text', '') or getattr(text_out, 'content', '')
+                        text_content = getattr(text_out, "text", "") or getattr(
+                            text_out, "content", ""
+                        )
                     self._warn_empty_response(
                         text_content,
                         bool(state.function_calls),
@@ -2750,7 +2786,7 @@ class OpenAIChatCompletionsModel(Model):
                         and final_response.usage.output_tokens_details
                         and hasattr(final_response.usage.output_tokens_details, "reasoning_tokens")
                         else 0,
-                        interaction_cost
+                        interaction_cost,
                     )
 
                     # Process the total cost (updates session total correctly)
@@ -2759,7 +2795,7 @@ class OpenAIChatCompletionsModel(Model):
                         total_input,
                         total_output,
                         getattr(self, "total_reasoning_tokens", 0),
-                        None  # Let it calculate from tokens
+                        None,  # Let it calculate from tokens
                     )
 
                     # Track usage globally
@@ -2768,7 +2804,7 @@ class OpenAIChatCompletionsModel(Model):
                         input_tokens=interaction_input,
                         output_tokens=interaction_output,
                         cost=interaction_cost,
-                        agent_name=self.agent_name
+                        agent_name=self.agent_name,
                     )
                 else:
                     # For free models, still track token usage
@@ -2777,7 +2813,7 @@ class OpenAIChatCompletionsModel(Model):
                         input_tokens=interaction_input,
                         output_tokens=interaction_output,
                         cost=0.0,
-                        agent_name=self.agent_name
+                        agent_name=self.agent_name,
                     )
 
                 # Store the total cost for future recording
@@ -2919,7 +2955,7 @@ class OpenAIChatCompletionsModel(Model):
                     tool_response_msg = {
                         "role": "tool",
                         "tool_call_id": call_id,
-                        "content": "Tool execution interrupted"
+                        "content": "Tool execution interrupted",
                     }
                     self.add_to_message_history(tool_response_msg)
 
@@ -2994,7 +3030,9 @@ class OpenAIChatCompletionsModel(Model):
         Returns an async iterator of stream events identical to calling
         `stream_response` with a continuation prompt appended to the original input.
         """
-        if not getattr(self, "_resume_available", False) or not getattr(self, "_last_stream_request", None):
+        if not getattr(self, "_resume_available", False) or not getattr(
+            self, "_last_stream_request", None
+        ):
             raise AgentsException("No resumable stream available")
 
         req = self._last_stream_request
@@ -3190,7 +3228,11 @@ class OpenAIChatCompletionsModel(Model):
             )
 
         # Default store to True if not explicitly set (tests expect store present)
-        store = True if model_settings.store is None else self._non_null_or_not_given(model_settings.store)
+        store = (
+            True
+            if model_settings.store is None
+            else self._non_null_or_not_given(model_settings.store)
+        )
 
         # Check if we should use the agent's model instead of self.model
         # This prioritizes the model from Agent when available
@@ -3221,7 +3263,7 @@ class OpenAIChatCompletionsModel(Model):
         # Determine provider based on model string
         model_str = str(kwargs["model"]).lower()
 
-        if "alias" in model_str and "alias1.5" not in model_str:  # NOTE: exclude alias1.5
+        if "alias" in model_str and "alias1.5" not in model_str:  # NOTE: exclude alias1.5
             kwargs["api_base"] = "https://api.aliasrobotics.com:666/"
             kwargs["custom_llm_provider"] = "openai"
             kwargs["api_key"] = os.getenv("ALIAS_API_KEY", "REDACTED_ALIAS_KEY")
@@ -3439,10 +3481,7 @@ class OpenAIChatCompletionsModel(Model):
                     ollama_base_url = f"{ollama_base_url}/v1"
 
                 # Create a temporary client configured for Ollama Cloud
-                ollama_client = AsyncOpenAI(
-                    api_key=ollama_api_key,
-                    base_url=ollama_base_url
-                )
+                ollama_client = AsyncOpenAI(api_key=ollama_api_key, base_url=ollama_base_url)
 
                 # Remove the ollama_cloud/ prefix from the model name
                 clean_model = kwargs["model"].replace("ollama_cloud/", "")
@@ -3467,6 +3506,12 @@ class OpenAIChatCompletionsModel(Model):
                     f"Verify OLLAMA_API_KEY and OLLAMA_API_BASE are configured correctly."
                 ) from e
 
+        # Preserve a raw copy of kwargs for downstream litellm/openai helpers
+        try:
+            kwargs_raw = dict(kwargs)
+        except Exception:
+            kwargs_raw = kwargs
+
         while retry_count < max_retries:
             try:
                 if self.is_ollama:
@@ -3475,7 +3520,11 @@ class OpenAIChatCompletionsModel(Model):
                     )
                 else:
                     return await self._fetch_response_litellm_openai(
-                        kwargs, model_settings, tool_choice, stream, parallel_tool_calls,
+                        kwargs,
+                        model_settings,
+                        tool_choice,
+                        stream,
+                        parallel_tool_calls,
                         raw_kwargs=kwargs_raw,
                     )
             except litellm.exceptions.RateLimitError as e:
@@ -3484,7 +3533,9 @@ class OpenAIChatCompletionsModel(Model):
                     print(f"\n❌ Rate limit exceeded after {max_retries} retries")
                     raise
 
-                print(f"\n⏳ Rate limit reached - Too many requests (attempt {retry_count}/{max_retries})")
+                print(
+                    f"\n⏳ Rate limit reached - Too many requests (attempt {retry_count}/{max_retries})"
+                )
                 # Try to extract retry delay from error response or use default
                 retry_delay = 60  # Default delay in seconds
                 try:
@@ -3505,22 +3556,28 @@ class OpenAIChatCompletionsModel(Model):
                 except Exception:
                     # Try other common formats
                     import re
+
                     error_str = str(e)
 
                     # Look for "Retry-After" header or similar patterns
-                    retry_match = re.search(r'retry[_-]?after[:\s]+(\d+)', error_str, re.IGNORECASE)
+                    retry_match = re.search(r"retry[_-]?after[:\s]+(\d+)", error_str, re.IGNORECASE)
                     if retry_match:
                         retry_delay = int(retry_match.group(1))
                     # Look for "wait X seconds" patterns
-                    elif wait_match := re.search(r'wait\s+(\d+)\s+seconds?', error_str, re.IGNORECASE):
+                    elif wait_match := re.search(
+                        r"wait\s+(\d+)\s+seconds?", error_str, re.IGNORECASE
+                    ):
                         retry_delay = int(wait_match.group(1))
                     # Look for explicit retry delay mentions
-                    elif delay_match := re.search(r'retry\s+in\s+(\d+)\s+seconds?', error_str, re.IGNORECASE):
+                    elif delay_match := re.search(
+                        r"retry\s+in\s+(\d+)\s+seconds?", error_str, re.IGNORECASE
+                    ):
                         retry_delay = int(delay_match.group(1))
 
                 # Use exponential backoff with jitter if no explicit delay found
                 if retry_count > 1 and retry_delay == 60:
                     import random
+
                     retry_delay = min(300, retry_delay * retry_count) + random.randint(0, 10)
 
                 print(f"💤 Waiting {retry_delay}s before retry... (Rate limit protection)")
@@ -3555,7 +3612,9 @@ class OpenAIChatCompletionsModel(Model):
 
                         retry_delay = min(300, 60 * retry_count) + random.randint(0, 10)
 
-                    print(f"\n⏳ HTTP {status} - retrying in {retry_delay}s (attempt {retry_count}/{max_retries})")
+                    print(
+                        f"\n⏳ HTTP {status} - retrying in {retry_delay}s (attempt {retry_count}/{max_retries})"
+                    )
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
@@ -3568,8 +3627,10 @@ class OpenAIChatCompletionsModel(Model):
                     raise
                 import random
 
-                retry_delay = min(300, 2 ** retry_count) + random.uniform(0, 0.1 * (2 ** retry_count))
-                logger.debug(f"Network error during model call, retrying in {retry_delay:.1f}s: {e}")
+                retry_delay = min(300, 2**retry_count) + random.uniform(0, 0.1 * (2**retry_count))
+                logger.debug(
+                    f"Network error during model call, retrying in {retry_delay:.1f}s: {e}"
+                )
                 await asyncio.sleep(retry_delay)
                 continue  # Retry
 
@@ -3672,7 +3733,9 @@ class OpenAIChatCompletionsModel(Model):
                         provider_kwargs = kwargs.copy()
                         if provider == "deepseek":
                             provider_kwargs["custom_llm_provider"] = "deepseek"
-                            provider_kwargs.pop("store", None)  # DeepSeek doesn't support store parameter
+                            provider_kwargs.pop(
+                                "store", None
+                            )  # DeepSeek doesn't support store parameter
                             provider_kwargs.pop(
                                 "parallel_tool_calls", None
                             )  # DeepSeek doesn't support parallel tool calls
@@ -3682,13 +3745,17 @@ class OpenAIChatCompletionsModel(Model):
                                 hasattr(model_settings, "reasoning_effort")
                                 and model_settings.reasoning_effort
                             ):
-                                provider_kwargs["reasoning_effort"] = model_settings.reasoning_effort
+                                provider_kwargs["reasoning_effort"] = (
+                                    model_settings.reasoning_effort
+                                )
                             else:
                                 # Default to "low" reasoning effort
                                 provider_kwargs["reasoning_effort"] = "low"
                         elif provider == "claude" or "claude" in model_str:
                             provider_kwargs["custom_llm_provider"] = "anthropic"
-                            provider_kwargs.pop("store", None)  # Claude doesn't support store parameter
+                            provider_kwargs.pop(
+                                "store", None
+                            )  # Claude doesn't support store parameter
                             provider_kwargs.pop(
                                 "parallel_tool_calls", None
                             )  # Claude doesn't support parallel tool calls
@@ -3697,7 +3764,10 @@ class OpenAIChatCompletionsModel(Model):
                             if "thinking" in model_str:
                                 # Clean the model name by removing "thinking" before sending to API
                                 clean_model = provider_kwargs["model"]
-                                if isinstance(clean_model, str) and "thinking" in clean_model.lower():
+                                if (
+                                    isinstance(clean_model, str)
+                                    and "thinking" in clean_model.lower()
+                                ):
                                     # Remove "thinking" and clean up any extra spaces/separators
                                     clean_model = re.sub(
                                         r"[_-]?thinking[_-]?", "", clean_model, flags=re.IGNORECASE
@@ -3705,7 +3775,9 @@ class OpenAIChatCompletionsModel(Model):
                                     clean_model = re.sub(
                                         r"[-_]{2,}", "-", clean_model
                                     )  # Clean up multiple separators
-                                    clean_model = clean_model.strip("-_")  # Clean up leading/trailing separators
+                                    clean_model = clean_model.strip(
+                                        "-_"
+                                    )  # Clean up leading/trailing separators
                                     provider_kwargs["model"] = clean_model
 
                                 # Check if message history is compatible with reasoning
@@ -3718,11 +3790,17 @@ class OpenAIChatCompletionsModel(Model):
                                     )
                         elif provider == "gemini":
                             provider_kwargs["custom_llm_provider"] = "gemini"
-                            provider_kwargs.pop("store", None)  # Gemini doesn't support store parameter
+                            provider_kwargs.pop(
+                                "store", None
+                            )  # Gemini doesn't support store parameter
                             provider_kwargs.pop(
                                 "parallel_tool_calls", None
                             )  # Gemini doesn't support parallel tool calls
-                        elif provider == "minimax" or "minimax" in model_str or str(self.model).lower().startswith("mm-"):
+                        elif (
+                            provider == "minimax"
+                            or "minimax" in model_str
+                            or str(self.model).lower().startswith("mm-")
+                        ):
                             # Route MiniMax models to the minimax provider in LiteLLM
                             provider_kwargs["custom_llm_provider"] = "minimax"
                             # Minimax may not support store/parallel_tool_calls params
@@ -3830,7 +3908,9 @@ class OpenAIChatCompletionsModel(Model):
                             try:
                                 from cai.util import print_message_history
 
-                                print_message_history(fixed_messages, title="Fixed Message Sequence")
+                                print_message_history(
+                                    fixed_messages, title="Fixed Message Sequence"
+                                )
                             except ImportError:
                                 print("✅ Message sequence fixed successfully")
 
@@ -3861,7 +3941,9 @@ class OpenAIChatCompletionsModel(Model):
                     e
                 ) or "cache_control cannot be set for empty text blocks" in str(e):  # noqa
                     # Print the error message only once
-                    print("⚠️  Empty text blocks detected - Adding placeholder content") if not self.empty_content_error_shown else None
+                    print(
+                        "⚠️  Empty text blocks detected - Adding placeholder content"
+                    ) if not self.empty_content_error_shown else None
                     self.empty_content_error_shown = True
 
                     # Fix for empty content in messages for Anthropic models
@@ -3885,7 +3967,8 @@ class OpenAIChatCompletionsModel(Model):
                     "context_length_exceeded" in str(e)
                     or "prompt is too long" in str(e).lower()
                     or "maximum context length" in str(e).lower()
-                    or "max_tokens" in str(e) and "exceeded" in str(e).lower()
+                    or "max_tokens" in str(e)
+                    and "exceeded" in str(e).lower()
                     or "too many tokens" in str(e).lower()
                     or "token limit" in str(e).lower()
                 ):
@@ -3893,14 +3976,17 @@ class OpenAIChatCompletionsModel(Model):
 
                     # Try to extract token info from different error formats
                     import re
+
                     error_str = str(e)
 
                     # Pattern 1: "X tokens > Y maximum" (Anthropic)
-                    match1 = re.search(r'(\d+)\s*tokens?\s*>\s*(\d+)\s*maximum', error_str)
+                    match1 = re.search(r"(\d+)\s*tokens?\s*>\s*(\d+)\s*maximum", error_str)
                     # Pattern 2: "requested X tokens...maximum context length is Y" (OpenAI)
-                    match2 = re.search(r'requested\s+(\d+)\s+tokens.*maximum.*?(\d+)', error_str)
+                    match2 = re.search(r"requested\s+(\d+)\s+tokens.*maximum.*?(\d+)", error_str)
                     # Pattern 3: "This model's maximum context length is X tokens, however you requested Y"
-                    match3 = re.search(r'maximum context length is\s+(\d+).*requested\s+(\d+)', error_str)
+                    match3 = re.search(
+                        r"maximum context length is\s+(\d+).*requested\s+(\d+)", error_str
+                    )
 
                     if match1:
                         used_tokens = int(match1.group(1))
@@ -3980,6 +4066,22 @@ class OpenAIChatCompletionsModel(Model):
                 return tc
             except Exception:
                 return "auto"
+        # Determine whether to call a direct OpenAI-compatible client (self._client)
+        use_direct_client = False
+        client_kwargs = kwargs
+        try:
+            if getattr(self, "_client", None) is not None:
+                chat_obj = getattr(self._client, "chat", None)
+                if chat_obj is not None and getattr(chat_obj, "completions", None) is not None:
+                    create_fn = getattr(chat_obj.completions, "create", None)
+                    if callable(create_fn):
+                        use_direct_client = True
+            # Prefer raw_kwargs for direct client calls when available
+            if use_direct_client and raw_kwargs is not None:
+                client_kwargs = raw_kwargs
+
+        except Exception:
+            use_direct_client = False
 
         try:
             if stream:
@@ -4072,7 +4174,10 @@ class OpenAIChatCompletionsModel(Model):
                     "parse error",
                 ]
                 lower_msg = error_msg.lower()
-                should_retry_without_tools = any(sig.lower() in lower_msg for sig in parse_error_signals) and "tool" in lower_msg
+                should_retry_without_tools = (
+                    any(sig.lower() in lower_msg for sig in parse_error_signals)
+                    and "tool" in lower_msg
+                )
 
                 if should_retry_without_tools:
                     # Prepare a conservative copy of kwargs without any tools or
@@ -4086,12 +4191,18 @@ class OpenAIChatCompletionsModel(Model):
                     kwargs_retry.pop("response_format", None)
                     kwargs_retry.pop("store", None)
 
-                    client_kwargs_retry = raw_kwargs if (use_direct_client and raw_kwargs is not None) else kwargs_retry
+                    client_kwargs_retry = (
+                        raw_kwargs
+                        if (use_direct_client and raw_kwargs is not None)
+                        else kwargs_retry
+                    )
 
                     try:
                         if stream:
                             if use_direct_client:
-                                stream_obj = await self._client.chat.completions.create(**client_kwargs_retry)
+                                stream_obj = await self._client.chat.completions.create(
+                                    **client_kwargs_retry
+                                )
                             else:
                                 stream_obj = await litellm.acompletion(**kwargs_retry)
 
@@ -4114,7 +4225,9 @@ class OpenAIChatCompletionsModel(Model):
                             return response, stream_obj
                         else:
                             if use_direct_client:
-                                ret = await self._client.chat.completions.create(**client_kwargs_retry)
+                                ret = await self._client.chat.completions.create(
+                                    **client_kwargs_retry
+                                )
                             else:
                                 ret = await litellm.acompletion(**kwargs_retry)
                             return ret
@@ -4188,7 +4301,7 @@ class OpenAIChatCompletionsModel(Model):
                 model=self.model,
                 object="response",
                 output=[],
-                    tool_choice=_sanitize_tool_choice_value(tool_choice),
+                tool_choice=_sanitize_tool_choice_value(tool_choice),
                 top_p=model_settings.top_p,
                 temperature=model_settings.temperature,
                 tools=[],
@@ -4211,6 +4324,7 @@ class OpenAIChatCompletionsModel(Model):
         """Get the maximum input tokens for a model from pricing.json or default."""
         try:
             import pathlib
+
             pricing_path = pathlib.Path("pricing.json")
             if pricing_path.exists():
                 with open(pricing_path, encoding="utf-8") as f:
@@ -4222,9 +4336,14 @@ class OpenAIChatCompletionsModel(Model):
         # Default to 200k if not found
         return 200000
 
-    async def _auto_compact_if_needed(self, estimated_tokens: int, input: str | list[TResponseInputItem], system_instructions: str | None) -> tuple[str | list[TResponseInputItem], str | None, bool]:
+    async def _auto_compact_if_needed(
+        self,
+        estimated_tokens: int,
+        input: str | list[TResponseInputItem],
+        system_instructions: str | None,
+    ) -> tuple[str | list[TResponseInputItem], str | None, bool]:
         """Check if auto-compaction is needed and perform it if necessary.
-        
+
         Returns:
             tuple: (potentially modified input, potentially modified system_instructions, whether compaction occurred)
         """
@@ -4242,11 +4361,13 @@ class OpenAIChatCompletionsModel(Model):
                 _support_interval = int(_support_interval_raw)
                 if _support_interval > 0:
                     _asst_count = sum(
-                        1 for m in self.message_history
+                        1
+                        for m in self.message_history
                         if isinstance(m, dict) and m.get("role") == "assistant"
                     )
                     if _asst_count >= _support_interval:
                         from rich.console import Console as _Console
+
                         _console = _Console()
                         _console.print(
                             f"\n[bold yellow]⟳ Auto-compact: {_asst_count} LLM responses "
@@ -4260,6 +4381,7 @@ class OpenAIChatCompletionsModel(Model):
                                 COMPACTED_SUMMARIES,
                                 MEMORY_COMMAND_INSTANCE,
                             )
+
                             # Avoid mutating the global CompactCommand singleton in
                             # concurrent contexts. Instead, temporarily set the
                             # CAI_MODEL env var for the narrow scope of the
@@ -4289,25 +4411,29 @@ class OpenAIChatCompletionsModel(Model):
                                 # Re-inject the summary as the first exchange so
                                 # the next Runner turn has full context and won't
                                 # repeat work that was already attempted.
-                                self.message_history.append({
-                                    "role": "user",
-                                    "content": (
-                                        "<previous_session_memory>\n"
-                                        + _summary
-                                        + "\n</previous_session_memory>\n\n"
-                                        "This is your memory from the previous context window. "
-                                        "Use it to continue your work. "
-                                        "Do NOT retry any approach already marked as failed or exhausted."
-                                    ),
-                                })
-                                self.message_history.append({
-                                    "role": "assistant",
-                                    "content": (
-                                        "Understood. I have reviewed my previous session memory. "
-                                        "I will continue the task using only new approaches "
-                                        "and will not repeat anything already attempted."
-                                    ),
-                                })
+                                self.message_history.append(
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "<previous_session_memory>\n"
+                                            + _summary
+                                            + "\n</previous_session_memory>\n\n"
+                                            "This is your memory from the previous context window. "
+                                            "Use it to continue your work. "
+                                            "Do NOT retry any approach already marked as failed or exhausted."
+                                        ),
+                                    }
+                                )
+                                self.message_history.append(
+                                    {
+                                        "role": "assistant",
+                                        "content": (
+                                            "Understood. I have reviewed my previous session memory. "
+                                            "I will continue the task using only new approaches "
+                                            "and will not repeat anything already attempted."
+                                        ),
+                                    }
+                                )
                                 os.environ["CAI_CONTEXT_USAGE"] = "0.0"
                                 _console.print(
                                     "[bold green]✓ Memory summary applied — "
@@ -4341,7 +4467,7 @@ class OpenAIChatCompletionsModel(Model):
         if estimated_tokens <= threshold:
             # Context dropped below threshold — clear any previous failure record so we
             # can attempt compaction again the next time it's needed.
-            if hasattr(self, '_compact_failed_tokens'):
+            if hasattr(self, "_compact_failed_tokens"):
                 del self._compact_failed_tokens
             return input, system_instructions, False
 
@@ -4350,7 +4476,7 @@ class OpenAIChatCompletionsModel(Model):
         # small), suppress further attempts until the token count changes
         # meaningfully (>5 % growth).  This prevents the support model from
         # being called on every single LLM turn when it cannot possibly succeed.
-        if hasattr(self, '_compact_failed_tokens'):
+        if hasattr(self, "_compact_failed_tokens"):
             growth = (estimated_tokens - self._compact_failed_tokens) / max(estimated_tokens, 1)
             if growth < 0.05:
                 # Still at roughly the same size — skip silently.
@@ -4361,13 +4487,16 @@ class OpenAIChatCompletionsModel(Model):
 
         # Auto-compaction needed
         from rich.console import Console
+
         console = Console()
 
         # Update context usage in environment for toolbar
         context_usage = estimated_tokens / max_tokens
-        os.environ['CAI_CONTEXT_USAGE'] = str(context_usage)
+        os.environ["CAI_CONTEXT_USAGE"] = str(context_usage)
 
-        console.print(f"\n[yellow]⚠️  Context usage at {(estimated_tokens/max_tokens)*100:.1f}% ({estimated_tokens:,}/{max_tokens:,} tokens)[/yellow]")
+        console.print(
+            f"\n[yellow]⚠️  Context usage at {(estimated_tokens / max_tokens) * 100:.1f}% ({estimated_tokens:,}/{max_tokens:,} tokens)[/yellow]"
+        )
         console.print("[yellow]Triggering automatic context compaction...[/yellow]\n")
 
         # Import compact command components
@@ -4379,17 +4508,18 @@ class OpenAIChatCompletionsModel(Model):
 
             if summary:
                 # Clear the failure record on success
-                if hasattr(self, '_compact_failed_tokens'):
+                if hasattr(self, "_compact_failed_tokens"):
                     del self._compact_failed_tokens
 
                 # Store the summary
                 from cai.repl.commands.memory import COMPACTED_SUMMARIES
+
                 COMPACTED_SUMMARIES[self.agent_name] = summary
 
                 # Clear the message history and keep only essential messages
                 self.message_history.clear()
                 # Reset context usage after clearing
-                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+                os.environ["CAI_CONTEXT_USAGE"] = "0.0"
 
                 # Create new input with summary
                 new_system_instructions = system_instructions or ""
@@ -4404,9 +4534,9 @@ class OpenAIChatCompletionsModel(Model):
                     # For list input, keep only user messages
                     new_input = []
                     for item in input:
-                        if hasattr(item, 'role') and item.role == 'user':
+                        if hasattr(item, "role") and item.role == "user":
                             new_input.append(item)
-                        elif isinstance(item, dict) and item.get('role') == 'user':
+                        elif isinstance(item, dict) and item.get("role") == "user":
                             new_input.append(item)
 
                     # If no user messages found, keep the original input
@@ -4419,23 +4549,31 @@ class OpenAIChatCompletionsModel(Model):
                     test_messages.insert(0, {"role": "system", "content": new_system_instructions})
                 new_tokens, _ = count_tokens_with_tiktoken(test_messages)
 
-                console.print(f"[green]✓ Context compacted: {estimated_tokens:,} → {new_tokens:,} tokens ({(1-new_tokens/estimated_tokens)*100:.1f}% reduction)[/green]\n")
+                console.print(
+                    f"[green]✓ Context compacted: {estimated_tokens:,} → {new_tokens:,} tokens ({(1 - new_tokens / estimated_tokens) * 100:.1f}% reduction)[/green]\n"
+                )
 
                 # Update context usage after compaction
                 new_context_usage = new_tokens / max_tokens if max_tokens > 0 else 0.0
-                os.environ['CAI_CONTEXT_USAGE'] = str(new_context_usage)
+                os.environ["CAI_CONTEXT_USAGE"] = str(new_context_usage)
 
                 return new_input, new_system_instructions, True
 
             # Summary returned None — treat the same as an exception (record failure).
-            console.print("[yellow]Auto-compact did not produce a summary — continuing without compaction.[/yellow]")
-            console.print("[yellow]Future compaction attempts will be suppressed until the conversation grows further.[/yellow]\n")
+            console.print(
+                "[yellow]Auto-compact did not produce a summary — continuing without compaction.[/yellow]"
+            )
+            console.print(
+                "[yellow]Future compaction attempts will be suppressed until the conversation grows further.[/yellow]\n"
+            )
             self._compact_failed_tokens = estimated_tokens
 
         except Exception as e:
             console.print(f"[red]Auto-compaction failed: {e}[/red]")
             console.print("[yellow]Continuing with full context...[/yellow]")
-            console.print("[yellow]Future compaction attempts will be suppressed until the conversation grows further.[/yellow]\n")
+            console.print(
+                "[yellow]Future compaction attempts will be suppressed until the conversation grows further.[/yellow]\n"
+            )
             # Record the failure so we don't spam the support model on every turn.
             self._compact_failed_tokens = estimated_tokens
 
@@ -4724,9 +4862,7 @@ class _Converter:
             elif isinstance(c, dict) and c.get("type") == "input_image":
                 casted_image_param = cast(ResponseInputImageParam, c)
                 if "image_url" not in casted_image_param or not casted_image_param["image_url"]:
-                    raise UserError(
-                        "🖼️ Image URLs required - Upload images to a URL first"
-                    )
+                    raise UserError("🖼️ Image URLs required - Upload images to a URL first")
                 out.append(
                     ChatCompletionContentPartImageParam(
                         type="image_url",
@@ -4739,7 +4875,9 @@ class _Converter:
             elif isinstance(c, dict) and c.get("type") == "input_file":
                 raise UserError("📄 File uploads not supported - Use image URLs or text content")
             else:
-                raise UserError("❓ Unrecognized content type - Expected 'input_text' or 'input_image'")
+                raise UserError(
+                    "❓ Unrecognized content type - Expected 'input_text' or 'input_image'"
+                )
         return out
 
     def items_to_messages(
@@ -4885,7 +5023,9 @@ class _Converter:
                     }
                     result.append(msg_assistant)
                 else:
-                    raise UserError(f"👥 Invalid role '{role}' - Use: user, assistant, system, or developer")
+                    raise UserError(
+                        f"👥 Invalid role '{role}' - Use: user, assistant, system, or developer"
+                    )
 
             # 2) Check input message
             elif in_msg := self.maybe_input_message(item):
@@ -4912,7 +5052,9 @@ class _Converter:
                     }
                     result.append(msg_developer)
                 else:
-                    raise UserError(f"👥 Invalid message role '{role}' - Must be: user, system, or developer")
+                    raise UserError(
+                        f"👥 Invalid message role '{role}' - Must be: user, system, or developer"
+                    )
 
             # 3) response output message => assistant
             elif resp_msg := self.maybe_response_output_message(item):
@@ -4932,7 +5074,9 @@ class _Converter:
                             "🎵 Audio content must use audio IDs - Direct audio data not supported"
                         )
                     else:
-                        raise UserError("❓ Unknown assistant message content - Check message format")
+                        raise UserError(
+                            "❓ Unknown assistant message content - Check message format"
+                        )
 
                 if text_segments:
                     combined = "\n".join(text_segments)
@@ -5080,7 +5224,9 @@ class _Converter:
                     from cai.util import COST_TRACKER
 
                     # Use the last recorded costs instead of recalculating
-                    token_info["interaction_cost"] = getattr(COST_TRACKER, "last_interaction_cost", 0.0)
+                    token_info["interaction_cost"] = getattr(
+                        COST_TRACKER, "last_interaction_cost", 0.0
+                    )
                     token_info["total_cost"] = getattr(COST_TRACKER, "last_total_cost", 0.0)
 
                 # Check if we're in streaming mode
@@ -5118,9 +5264,10 @@ class _Converter:
                                 ):
                                     should_display = False
                             except Exception as e:
-                                logger.exception("Failed parsing tool args to decide display: %s", e)
+                                logger.exception(
+                                    "Failed parsing tool args to decide display: %s", e
+                                )
                                 should_display = False
-
 
                 # Only display if it hasn't been shown during streaming
                 if should_display:
@@ -5173,13 +5320,13 @@ class _Converter:
 
             # 6) item reference => handle or raise
             elif _item_ref := self.maybe_item_reference(item):
-                raise UserError(
-                    "🔗 Item references not supported - Include content directly"
-                )
+                raise UserError("🔗 Item references not supported - Include content directly")
 
             # 7) If we haven't recognized it => fail or ignore
             else:
-                raise UserError("❌ Invalid message format - Check documentation for supported types")
+                raise UserError(
+                    "❌ Invalid message format - Check documentation for supported types"
+                )
 
         flush_assistant_message()
         return result

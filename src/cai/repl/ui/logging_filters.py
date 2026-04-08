@@ -5,6 +5,7 @@ This module contains `ComprehensiveErrorFilter` moved out of
 orchestrator while the filter implementation lives near UI/logging
 concerns.
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,7 +53,9 @@ class ComprehensiveErrorFilter(logging.Filter):
                 return False
 
         # SSE cleanup messages
-        if "sse" in msg and any(word in msg for word in ["cleanup", "closing", "shutdown", "closed"]):
+        if "sse" in msg and any(
+            word in msg for word in ["cleanup", "closing", "shutdown", "closed"]
+        ):
             return False
 
         # MCP specific errors we handle
@@ -101,7 +104,9 @@ def install_comprehensive_error_filter(logger_names: list[str] | None = None) ->
                 logger.setLevel(logging.WARNING)
     except Exception:
         # Best-effort: don't crash the application during bootstrap
-        logging.getLogger(__name__).debug("Failed to install comprehensive logging filter", exc_info=True)
+        logging.getLogger(__name__).debug(
+            "Failed to install comprehensive logging filter", exc_info=True
+        )
 
 
 __all__ = ["ComprehensiveErrorFilter", "install_comprehensive_error_filter"]

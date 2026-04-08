@@ -81,7 +81,11 @@ class AgentManager:
                                 if hasattr(fn, "__closure__") and fn.__closure__:
                                     for cell in fn.__closure__:
                                         cell_contents = getattr(cell, "cell_contents", None)
-                                        if cell_contents and hasattr(cell_contents, "model") and hasattr(cell_contents, "name"):
+                                        if (
+                                            cell_contents
+                                            and hasattr(cell_contents, "model")
+                                            and hasattr(cell_contents, "name")
+                                        ):
                                             _update(cell_contents)
                                             break
                             except Exception:

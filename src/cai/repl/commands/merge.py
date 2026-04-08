@@ -30,10 +30,10 @@ class MergeCommand(Command):
 
     def handle(self, args: Optional[List[str]] = None) -> bool:
         """Handle the merge command by delegating to /parallel merge.
-        
+
         Args:
             args: Arguments to pass to the merge subcommand
-            
+
         Returns:
             True if successful
         """

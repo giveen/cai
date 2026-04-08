@@ -39,7 +39,9 @@ def test_reranker_improves_order():
     sparse = SimpleBM25(docs=docs)
     from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
 
-    reranker = Reranker(embeddings_provider=LocalDeterministicEmbeddingsProvider({"vector_dim": 32}))
+    reranker = Reranker(
+        embeddings_provider=LocalDeterministicEmbeddingsProvider({"vector_dim": 32})
+    )
     pipeline = RetrieverPipeline(dense=dense, sparse=sparse, reranker=reranker)
 
     res = pipeline.retrieve("sql injection", top_k=3)
@@ -61,7 +63,14 @@ def test_wakeup_integration():
     # Add a high-priority session fact
     wake.add_fact("sess-x", "wf1", "sql injection observed inside app", priority=10.0)
 
-    pipeline = RetrieverPipeline(dense=dense, sparse=sparse, combiner=RetrieverCombiner(), wakeup_index=wake, wakeup_k=2, wakeup_boost=5.0)
+    pipeline = RetrieverPipeline(
+        dense=dense,
+        sparse=sparse,
+        combiner=RetrieverCombiner(),
+        wakeup_index=wake,
+        wakeup_k=2,
+        wakeup_boost=5.0,
+    )
     res = pipeline.retrieve("sql", top_k=3, session_id="sess-x")
     texts = [r.get("text", "").lower() for r in res]
     assert any("sql" in t for t in texts)

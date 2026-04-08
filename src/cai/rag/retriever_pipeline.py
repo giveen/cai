@@ -7,6 +7,7 @@ local development and benchmarking. The pipeline composes:
 - Reciprocal Rank Fusion combiner
 - Optional reranker using embeddings-based cosine similarity
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,7 +30,9 @@ class DenseRetriever:
 
     def retrieve(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         # Delegate to adapter.search which may use embeddings internally
-        res = self.adapter.search(collection_name=self.collection_name, query_text=query, limit=top_k)
+        res = self.adapter.search(
+            collection_name=self.collection_name, query_text=query, limit=top_k
+        )
         # Normalize into list of dicts if needed
         if isinstance(res, dict):
             return [res]
@@ -42,7 +45,7 @@ class SimpleBM25:
     def __init__(self, docs: List[Dict[str, Any]]):
         # docs: list of {id,text,metadata}
         self.docs = docs
-        self.corpus_tokens = [ _tokenize(d.get("text", "")) for d in docs ]
+        self.corpus_tokens = [_tokenize(d.get("text", "")) for d in docs]
         self.N = len(self.docs)
         self.avgdl = sum(len(toks) for toks in self.corpus_tokens) / max(1, self.N)
         self.k1 = 1.5
@@ -88,7 +91,14 @@ class SimpleBM25:
         out = []
         for sc, i in scores[:top_k]:
             d = self.docs[i]
-            out.append({"id": d.get("id"), "text": d.get("text"), "metadata": d.get("metadata", {}), "score": float(sc)})
+            out.append(
+                {
+                    "id": d.get("id"),
+                    "text": d.get("text"),
+                    "metadata": d.get("metadata", {}),
+                    "score": float(sc),
+                }
+            )
         return out
 
 
@@ -122,7 +132,9 @@ class Reranker:
     def __init__(self, embeddings_provider: Optional[Any] = None):
         self.embeddings_provider = embeddings_provider
 
-    def rerank(self, query: str, candidates: List[Dict[str, Any]], top_k: Optional[int] = None) -> List[Dict[str, Any]]:
+    def rerank(
+        self, query: str, candidates: List[Dict[str, Any]], top_k: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         if not candidates:
             return []
         top_k = top_k or len(candidates)
@@ -174,9 +186,16 @@ class CrossEncoderReranker(Reranker):
     token-overlap heuristic when CrossEncoder isn't available.
     """
 
-    def __init__(self, model_name: Optional[str] = None, embeddings_provider: Optional[Any] = None, device: str = "cpu"):
+    def __init__(
+        self,
+        model_name: Optional[str] = None,
+        embeddings_provider: Optional[Any] = None,
+        device: str = "cpu",
+    ):
         super().__init__(embeddings_provider=embeddings_provider)
-        self.model_name = model_name or os.getenv("CAI_CE_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+        self.model_name = model_name or os.getenv(
+            "CAI_CE_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        )
         self.device = device
         self._ce_model = None
         try:
@@ -188,7 +207,9 @@ class CrossEncoderReranker(Reranker):
             logging.debug("CrossEncoder model not available; falling back to cheaper rerankers")
             self._ce_model = None
 
-    def rerank(self, query: str, candidates: List[Dict[str, Any]], top_k: Optional[int] = None) -> List[Dict[str, Any]]:
+    def rerank(
+        self, query: str, candidates: List[Dict[str, Any]], top_k: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         if not candidates:
             return []
         top_k = top_k or len(candidates)
@@ -252,7 +273,13 @@ class RetrieverPipeline:
         self.wakeup_k = int(wakeup_k)
         self.wakeup_boost = float(wakeup_boost)
 
-    def retrieve(self, query: str, top_k: int = 10, rerank_top_k: Optional[int] = None, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = 10,
+        rerank_top_k: Optional[int] = None,
+        session_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         lists = []
         if self.dense:
             lists.append(self.dense.retrieve(query, top_k=top_k * 2))
@@ -273,6 +300,7 @@ class RetrieverPipeline:
             if wakeup_hits:
                 # build a map of existing candidates by unique key
                 candidate_map: Dict[str, Dict[str, Any]] = {}
+
                 def unique_key(item: Dict[str, Any]) -> str:
                     return str(item.get("id") or item.get("key") or item.get("text") or "")
 
@@ -295,12 +323,16 @@ class RetrieverPipeline:
                     }
                     if key in candidate_map:
                         # keep the higher score
-                        candidate_map[key]["score"] = max(candidate_map[key].get("score", 0.0), w_item["score"])
+                        candidate_map[key]["score"] = max(
+                            candidate_map[key].get("score", 0.0), w_item["score"]
+                        )
                     else:
                         candidate_map[key] = w_item
 
                 # rebuild combined list from map sorted by score
-                merged_list = sorted(candidate_map.values(), key=lambda it: float(it.get("score", 0.0)), reverse=True)
+                merged_list = sorted(
+                    candidate_map.values(), key=lambda it: float(it.get("score", 0.0)), reverse=True
+                )
                 combined = merged_list[:top_k]
 
         if self.reranker:

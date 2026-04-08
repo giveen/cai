@@ -20,30 +20,34 @@ class ParallelHistoryIsolation:
         self._base_history: List[dict] = []  # The base history before parallel execution
         self._lock = Lock()
         self._parallel_mode = False
-        self._selected_agent_id: Optional[str] = None  # Track which agent was selected after parallel
+        self._selected_agent_id: Optional[str] = (
+            None  # Track which agent was selected after parallel
+        )
 
     def create_isolated_history(self, base_history: List[dict]) -> List[dict]:
         """Create a deep copy of the given history to ensure complete isolation.
-        
+
         Args:
             base_history: The history to copy
-            
+
         Returns:
             A completely independent copy of the history
         """
         # Use deepcopy to ensure no shared references at any level
         return copy.deepcopy(base_history)
 
-    def transfer_to_parallel(self, base_history: List[dict], num_agents: int, agent_ids: List[str]) -> Dict[str, List[dict]]:
+    def transfer_to_parallel(
+        self, base_history: List[dict], num_agents: int, agent_ids: List[str]
+    ) -> Dict[str, List[dict]]:
         """Transfer from single agent mode to parallel mode.
-        
+
         Creates N isolated copies of the base history, one for each parallel agent.
-        
+
         Args:
             base_history: The current single agent's history
             num_agents: Number of parallel agents
             agent_ids: List of agent IDs for the parallel agents
-            
+
         Returns:
             Dictionary mapping agent_id to isolated history
         """
@@ -62,15 +66,17 @@ class ParallelHistoryIsolation:
 
             return isolated_histories
 
-    def transfer_from_parallel(self, agent_histories: Dict[str, List[dict]], selected_agent_id: Optional[str] = None) -> List[dict]:
+    def transfer_from_parallel(
+        self, agent_histories: Dict[str, List[dict]], selected_agent_id: Optional[str] = None
+    ) -> List[dict]:
         """Transfer from parallel mode back to single agent mode.
-        
+
         Selects one agent's history to continue with in single agent mode.
-        
+
         Args:
             agent_histories: Dictionary of agent_id -> history
             selected_agent_id: Optional specific agent to select. If None, selects the longest history.
-            
+
         Returns:
             The selected history for single agent mode
         """
@@ -87,8 +93,9 @@ class ParallelHistoryIsolation:
                 selected_history = agent_histories[selected_agent_id]
             else:
                 # Otherwise, select the agent with the longest history (most interactions)
-                selected_agent_id = max(agent_histories.keys(),
-                                       key=lambda aid: len(agent_histories[aid]))
+                selected_agent_id = max(
+                    agent_histories.keys(), key=lambda aid: len(agent_histories[aid])
+                )
                 self._selected_agent_id = selected_agent_id
                 selected_history = agent_histories[selected_agent_id]
 
@@ -97,10 +104,10 @@ class ParallelHistoryIsolation:
 
     def get_isolated_history(self, agent_id: str) -> Optional[List[dict]]:
         """Get the isolated history for a specific agent.
-        
+
         Args:
             agent_id: The agent's ID
-            
+
         Returns:
             The agent's isolated history or None if not found
         """
@@ -112,7 +119,7 @@ class ParallelHistoryIsolation:
 
     def update_isolated_history(self, agent_id: str, new_message: dict):
         """Update an agent's isolated history with a new message.
-        
+
         Args:
             agent_id: The agent's ID
             new_message: The message to add
@@ -124,7 +131,7 @@ class ParallelHistoryIsolation:
 
     def replace_isolated_history(self, agent_id: str, new_history: List[dict]):
         """Replace an agent's entire isolated history.
-        
+
         Args:
             agent_id: The agent's ID
             new_history: The new history to set
@@ -170,7 +177,7 @@ class ParallelHistoryIsolation:
 
     def sync_with_agent_manager(self):
         """Synchronize isolated histories with AGENT_MANAGER.
-        
+
         This ensures that the agent manager's view of histories matches
         our isolated copies.
         """
@@ -184,13 +191,15 @@ class ParallelHistoryIsolation:
                     for msg in history:
                         AGENT_MANAGER.add_to_history(agent_name, copy.deepcopy(msg))
 
-    def create_parallel_agent_histories(self, base_agent_name: str, agent_configs: List[Tuple[str, str]]) -> Dict[str, List[dict]]:
+    def create_parallel_agent_histories(
+        self, base_agent_name: str, agent_configs: List[Tuple[str, str]]
+    ) -> Dict[str, List[dict]]:
         """Create isolated histories for parallel agents based on configurations.
-        
+
         Args:
             base_agent_name: The name of the current single agent
             agent_configs: List of (agent_name, agent_id) tuples for parallel agents
-            
+
         Returns:
             Dictionary mapping agent_id to isolated history
         """
@@ -219,7 +228,7 @@ class ParallelHistoryIsolation:
 
     def merge_parallel_histories_to_single(self, selected_agent_name: str, target_agent_name: str):
         """Merge a selected parallel agent's history to a single agent.
-        
+
         Args:
             selected_agent_name: The parallel agent whose history to use
             target_agent_name: The single agent to receive the history
@@ -290,10 +299,16 @@ def save_parallel_histories(parallel_configs, parallel_agent_instances):
     for idx, config in enumerate(parallel_configs, 1):
         instance_key = (config.agent_name, idx)
         instance_agent = parallel_agent_instances.get(instance_key)
-        if instance_agent and hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
-            agent_id = getattr(config, 'id', None) or f"P{idx}"
+        if (
+            instance_agent
+            and hasattr(instance_agent, "model")
+            and hasattr(instance_agent.model, "message_history")
+        ):
+            agent_id = getattr(config, "id", None) or f"P{idx}"
             try:
-                PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
+                PARALLEL_ISOLATION.replace_isolated_history(
+                    agent_id, instance_agent.model.message_history
+                )
             except Exception:
                 # Best-effort: ignore errors during shutdown saving
                 pass

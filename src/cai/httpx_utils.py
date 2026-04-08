@@ -3,6 +3,7 @@
 Provides a small helper to POST files with retries and exponential backoff
 for common transient errors (429, 503, network errors).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,7 +55,9 @@ async def post_file_with_retries(
                     delay = None
 
                 if delay is None:
-                    delay = min(max_delay, base_delay * (2 ** (attempt - 1))) + random.uniform(0, 0.1 * base_delay)
+                    delay = min(max_delay, base_delay * (2 ** (attempt - 1))) + random.uniform(
+                        0, 0.1 * base_delay
+                    )
 
                 if attempt >= max_retries:
                     return False
@@ -70,7 +73,9 @@ async def post_file_with_retries(
             if attempt >= max_retries:
                 return False
 
-            delay = min(max_delay, base_delay * (2 ** (attempt - 1))) + random.uniform(0, 0.1 * base_delay)
+            delay = min(max_delay, base_delay * (2 ** (attempt - 1))) + random.uniform(
+                0, 0.1 * base_delay
+            )
             await asyncio.sleep(delay)
             continue
         except Exception:

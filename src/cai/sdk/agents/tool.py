@@ -11,8 +11,11 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Union, overload
 try:
     from pydantic import ValidationError
 except ImportError:  # pragma: no cover
+
     class ValidationError(Exception):  # type: ignore[no-redef]
         pass
+
+
 if TYPE_CHECKING:
     from openai.types.responses.file_search_tool_param import Filters, RankingOptions
     from openai.types.responses.web_search_tool_param import UserLocation
@@ -35,7 +38,11 @@ except Exception:  # pragma: no cover - optional docstring parsing support
     DocstringStyle = Any
 
     def function_schema(*args, **kwargs):
-        raise RuntimeError("function_schema is unavailable because optional dependencies are missing")
+        raise RuntimeError(
+            "function_schema is unavailable because optional dependencies are missing"
+        )
+
+
 from .items import RunItem
 from .logger import logger
 from .run_context import RunContextWrapper
@@ -141,6 +148,7 @@ def _forgiving_json_loads(s: str) -> Any:
         pass
 
     raise ValueError("Unable to parse input as JSON")
+
 
 ToolParams = ParamSpec("ToolParams")
 
@@ -370,10 +378,14 @@ def function_tool(
                 # discover expected param names from the pydantic model
                 expected_fields = set()
                 try:
-                    expected_fields = set(getattr(schema.params_pydantic_model, "__fields__", {}).keys())
+                    expected_fields = set(
+                        getattr(schema.params_pydantic_model, "__fields__", {}).keys()
+                    )
                 except Exception:
                     try:
-                        expected_fields = set(getattr(schema.params_pydantic_model, "model_fields", {}).keys())
+                        expected_fields = set(
+                            getattr(schema.params_pydantic_model, "model_fields", {}).keys()
+                        )
                     except Exception:
                         expected_fields = set()
 
@@ -413,15 +425,27 @@ def function_tool(
                 expected_types: dict[str, Any] = {}
                 try:
                     # Pydantic v1
-                    if hasattr(schema.params_pydantic_model, "__fields__") and getattr(schema.params_pydantic_model, "__fields__", None):
-                        for fname, fobj in getattr(schema.params_pydantic_model, "__fields__", {}).items():
-                            expected_types[fname] = getattr(fobj, "outer_type_", None) or getattr(fobj, "type_", None)
+                    if hasattr(schema.params_pydantic_model, "__fields__") and getattr(
+                        schema.params_pydantic_model, "__fields__", None
+                    ):
+                        for fname, fobj in getattr(
+                            schema.params_pydantic_model, "__fields__", {}
+                        ).items():
+                            expected_types[fname] = getattr(fobj, "outer_type_", None) or getattr(
+                                fobj, "type_", None
+                            )
                     # Pydantic v2
-                    elif hasattr(schema.params_pydantic_model, "model_fields") and getattr(schema.params_pydantic_model, "model_fields", None):
-                        for fname, finfo in getattr(schema.params_pydantic_model, "model_fields", {}).items():
+                    elif hasattr(schema.params_pydantic_model, "model_fields") and getattr(
+                        schema.params_pydantic_model, "model_fields", None
+                    ):
+                        for fname, finfo in getattr(
+                            schema.params_pydantic_model, "model_fields", {}
+                        ).items():
                             # finfo is a dict-like with an 'annotation' key
                             try:
-                                expected_types[fname] = finfo.get("annotation") if isinstance(finfo, dict) else None
+                                expected_types[fname] = (
+                                    finfo.get("annotation") if isinstance(finfo, dict) else None
+                                )
                             except Exception:
                                 expected_types[fname] = None
                 except Exception:
@@ -461,7 +485,6 @@ def function_tool(
             except Exception:
                 return json_data
 
-
         async def _on_invoke_tool_impl(ctx: RunContextWrapper[Any], input: str) -> Any:
             # Parse JSON input; attempt forgiving repairs for common LLM output formats
             json_data: dict[str, Any] = {}
@@ -474,7 +497,9 @@ def function_tool(
                         if _debug.DONT_LOG_TOOL_DATA:
                             logger.debug(f"Forgiving-parse succeeded for tool {schema.name}")
                         else:
-                            logger.debug(f"Forgiving-parse succeeded for tool {schema.name}: {input}")
+                            logger.debug(
+                                f"Forgiving-parse succeeded for tool {schema.name}: {input}"
+                            )
                     except Exception as e2:
                         if _debug.DONT_LOG_TOOL_DATA:
                             logger.debug(f"Invalid JSON input for tool {schema.name}")

@@ -4,6 +4,7 @@ This lightweight collector is intentionally dependency-free so it can
 be used in CI and development. It provides counters, gauges, and
 simple histograms (as lists) that can be exported for monitoring.
 """
+
 from __future__ import annotations
 
 import threading

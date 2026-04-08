@@ -24,7 +24,7 @@ class TestParallelCustomPrompts:
     def test_prompt_subcommand_adds_prompt_to_config(self):
         """Test that the prompt subcommand correctly adds a custom prompt to a config."""
         # Add an agent first
-        with patch('cai.repl.commands.parallel.console'):
+        with patch("cai.repl.commands.parallel.console"):
             self.command.handle_add(["redteam_agent"])
 
         # Verify agent was added
@@ -32,7 +32,7 @@ class TestParallelCustomPrompts:
         assert PARALLEL_CONFIGS[0].prompt is None
 
         # Set a custom prompt
-        with patch('cai.repl.commands.parallel.console') as mock_console:
+        with patch("cai.repl.commands.parallel.console") as mock_console:
             result = self.command.handle_prompt(["P1", "Focus on SQL injection vulnerabilities"])
 
         assert result is True
@@ -46,11 +46,11 @@ class TestParallelCustomPrompts:
     def test_prompt_subcommand_with_index(self):
         """Test that the prompt subcommand works with numeric index."""
         # Add an agent
-        with patch('cai.repl.commands.parallel.console'):
+        with patch("cai.repl.commands.parallel.console"):
             self.command.handle_add(["bug_bounter_agent"])
 
         # Set prompt using index
-        with patch('cai.repl.commands.parallel.console'):
+        with patch("cai.repl.commands.parallel.console"):
             result = self.command.handle_prompt(["1", "Test for XSS vulnerabilities"])
 
         assert result is True
@@ -59,14 +59,14 @@ class TestParallelCustomPrompts:
     def test_prompt_subcommand_error_handling(self):
         """Test error handling for invalid prompt commands."""
         # Test with no arguments
-        with patch('cai.repl.commands.parallel.console') as mock_console:
+        with patch("cai.repl.commands.parallel.console") as mock_console:
             result = self.command.handle_prompt([])
 
         assert result is False
         mock_console.print.assert_any_call("[red]Error: Agent ID/index and prompt required[/red]")
 
         # Test with invalid ID
-        with patch('cai.repl.commands.parallel.console') as mock_console:
+        with patch("cai.repl.commands.parallel.console") as mock_console:
             result = self.command.handle_prompt(["P99", "Some prompt"])
 
         assert result is False
@@ -77,13 +77,15 @@ class TestParallelCustomPrompts:
         # Add agents with prompts
         config1 = ParallelConfig("redteam_agent", prompt="Focus on authentication bypass")
         config1.id = "P1"
-        config2 = ParallelConfig("bug_bounter_agent", prompt="Look for IDOR vulnerabilities in the API endpoints")
+        config2 = ParallelConfig(
+            "bug_bounter_agent", prompt="Look for IDOR vulnerabilities in the API endpoints"
+        )
         config2.id = "P2"
         PARALLEL_CONFIGS.extend([config1, config2])
 
         # Mock the table print to capture output
-        with patch('cai.repl.commands.parallel.Table') as mock_table:
-            with patch('cai.repl.commands.parallel.console'):
+        with patch("cai.repl.commands.parallel.Table") as mock_table:
+            with patch("cai.repl.commands.parallel.console"):
                 self.command.handle_list()
 
             # Verify table was created with correct columns
@@ -110,7 +112,7 @@ class TestParallelCustomPrompts:
         config.id = "P1"
         PARALLEL_CONFIGS.append(config)
 
-        with patch('cai.repl.commands.parallel.console') as mock_console:
+        with patch("cai.repl.commands.parallel.console") as mock_console:
             self.command.handle_no_args()
 
         # Verify that prompt info is included in status
@@ -120,9 +122,9 @@ class TestParallelCustomPrompts:
             if call[0]:  # Check if arguments exist
                 arg = call[0][0]
                 # Check if it's a Panel object
-                if hasattr(arg, '__class__') and arg.__class__.__name__ == 'Panel':
+                if hasattr(arg, "__class__") and arg.__class__.__name__ == "Panel":
                     # Check the renderable content
-                    if hasattr(arg, 'renderable'):
+                    if hasattr(arg, "renderable"):
                         content = str(arg.renderable)
                         if "Prompt: Analyze memory dumps for malware artifacts" in content:
                             panel_found = True
@@ -188,7 +190,7 @@ class TestParallelCustomPrompts:
         PARALLEL_CONFIGS.append(config)
 
         # Update the prompt
-        with patch('cai.repl.commands.parallel.console') as mock_console:
+        with patch("cai.repl.commands.parallel.console") as mock_console:
             self.command.handle_prompt(["P1", "Updated prompt with new instructions"])
 
         assert PARALLEL_CONFIGS[0].prompt == "Updated prompt with new instructions"

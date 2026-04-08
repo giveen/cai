@@ -36,6 +36,7 @@ class FuncSchema:
     strict_json_schema: bool = True
     """Whether the JSON schema is in strict mode. We **strongly** recommend setting this to True,
     as it increases the likelihood of correct JSON input."""
+
     def to_call_args(self, data: BaseModel) -> tuple[list[Any], dict[str, Any]]:
         """
         Converts validated data from the Pydantic model into (args, kwargs), suitable for calling
@@ -52,7 +53,7 @@ class FuncSchema:
                 continue
 
             # Skip parameters named 'ctf' or 'CTF'
-            if name.lower() == 'ctf':
+            if name.lower() == "ctf":
                 continue
 
             value = getattr(data, name, None)
@@ -264,9 +265,7 @@ def function_schema(
     fields: dict[str, Any] = {}
 
     filtered_params_no_ctf = [
-        (name, param)
-        for name, param in filtered_params
-        if name.lower() != 'ctf'
+        (name, param) for name, param in filtered_params if name.lower() != "ctf"
     ]
 
     for name, param in filtered_params_no_ctf:

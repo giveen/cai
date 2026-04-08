@@ -15,7 +15,7 @@ from cai.util import create_system_prompt_renderer, load_prompt_template
 def create_reasoner_agent(
     name: str = "Reasoner",
     model: Optional[str] = None,
-    instructions: Optional[Union[str, Callable[[], str]]] = None
+    instructions: Optional[Union[str, Callable[[], str]]] = None,
 ) -> Agent:
     """
     Create a Reasoner Agent for autonomous pentesting.
@@ -54,12 +54,7 @@ def create_reasoner_agent(
         kwargs["reasoning_effort"] = "high"
 
     # Create and return the reasoner agent
-    return Agent(
-        name=name,
-        model=model,
-        instructions=agent_instructions,
-        **kwargs
-    )
+    return Agent(name=name, model=model, instructions=agent_instructions, **kwargs)
 
 
 reasoner_agent = create_reasoner_agent()

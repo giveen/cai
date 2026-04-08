@@ -18,15 +18,16 @@ from cai.tools.common import run_command
 def execute_cli_command(command: str) -> str:
     return run_command(command)
 
+
 # Define Flag Discriminator Agent (handles extracting flags from CTF output)
 flag_discriminator = Agent(
     name="Flag discriminator",
     description="Agent focused on extracting the flag from the output",
     instructions="You are an agent tailored to extract the flag from a given output.",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )
 
 # Define CTF Agent (performs the actual challenge)
@@ -38,24 +39,27 @@ ctf_agent = Agent(
         execute_cli_command,
     ],
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )
+
 
 # Main handler function for CTF process
 async def main():
+    # Step 1: Execute command in CTF environment
+    ctf_result = await Runner.run(
+        ctf_agent, "List directories with a simple ls command, the flag is in flag.txt"
+    )
 
-        # Step 1: Execute command in CTF environment
-        ctf_result = await Runner.run(ctf_agent, "List directories with a simple ls command, the flag is in flag.txt")
+    # Step 2: Pass result to flag discriminator
+    flag_discriminator_result = await Runner.run(
+        flag_discriminator,
+        ctf_result.final_output,
+    )
 
-        # Step 2: Pass result to flag discriminator
-        flag_discriminator_result = await Runner.run(
-            flag_discriminator,
-            ctf_result.final_output,
-        )
+    print(f"Flag found: {flag_discriminator_result.final_output}")
 
-        print(f"Flag found: {flag_discriminator_result.final_output}")
 
 if __name__ == "__main__":
     asyncio.run(main())

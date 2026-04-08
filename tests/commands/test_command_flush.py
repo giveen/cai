@@ -68,7 +68,10 @@ class TestFlushCommand:
     def test_command_initialization(self, flush_command):
         """Test that FlushCommand initializes correctly."""
         assert flush_command.name == "/flush"
-        assert flush_command.description == "Clear conversation history (all agents by default, or specific agent)"
+        assert (
+            flush_command.description
+            == "Clear conversation history (all agents by default, or specific agent)"
+        )
         assert flush_command.aliases == ["/clear"]
 
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_all_agent_histories")
@@ -76,7 +79,7 @@ class TestFlushCommand:
         """Test handling with no arguments shows help menu."""
         mock_get_all.return_value = {
             "Assistant": [{"role": "user", "content": "test"}],
-            "red_teamer": [{"role": "user", "content": "test2"}]
+            "red_teamer": [{"role": "user", "content": "test2"}],
         }
         result = flush_command.handle([])
         assert result is True
@@ -102,7 +105,9 @@ class TestFlushCommand:
 
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_agent_message_history")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_agent_history")
-    def test_handle_with_agent_name_with_spaces(self, mock_clear_agent, mock_get_history, flush_command):
+    def test_handle_with_agent_name_with_spaces(
+        self, mock_clear_agent, mock_get_history, flush_command
+    ):
         """Test handling with agent name containing spaces."""
         mock_get_history.return_value = []
         result = flush_command.handle(["Bug", "Bounty", "Hunter"])
@@ -161,11 +166,13 @@ class TestFlushCommand:
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_all_agent_histories")
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_agent_message_history")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_agent_history")
-    def test_handle_with_confirmation_message(self, mock_clear_agent, mock_get_history, mock_get_all, flush_command, capsys):
+    def test_handle_with_confirmation_message(
+        self, mock_clear_agent, mock_get_history, mock_get_all, flush_command, capsys
+    ):
         """Test that flush command provides user feedback when clearing an agent."""
         mock_get_history.return_value = [
             {"role": "user", "content": "test"},
-            {"role": "assistant", "content": "response"}
+            {"role": "assistant", "content": "response"},
         ]
         # Actually test flushing a specific agent, not the help screen
         result = flush_command.handle(["test_agent"])
@@ -175,13 +182,11 @@ class TestFlushCommand:
 
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_all_agent_histories")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_all_histories")
-    def test_flush_all_with_multiple_agents(
-        self, mock_clear_all, mock_get_all, flush_command
-    ):
+    def test_flush_all_with_multiple_agents(self, mock_clear_all, mock_get_all, flush_command):
         """Test flushing all histories when multiple agents are active."""
         mock_get_all.return_value = {
             "agent1": [{"role": "user", "content": "test1"}],
-            "agent2": [{"role": "user", "content": "test2"}]
+            "agent2": [{"role": "user", "content": "test2"}],
         }
 
         result = flush_command.handle(["all"])
@@ -190,7 +195,9 @@ class TestFlushCommand:
 
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_agent_message_history")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_agent_history")
-    def test_handle_with_empty_string_agent_name(self, mock_clear_agent, mock_get_history, flush_command):
+    def test_handle_with_empty_string_agent_name(
+        self, mock_clear_agent, mock_get_history, flush_command
+    ):
         """Test handling with empty string as agent name."""
         mock_get_history.return_value = []
         result = flush_command.handle([""])
@@ -218,9 +225,7 @@ class TestFlushCommandIntegration:
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_all_agent_histories")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_all_histories")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_agent_history")
-    def test_flush_workflow(
-        self, mock_clear_agent, mock_clear_all, mock_get_all, mock_get_history
-    ):
+    def test_flush_workflow(self, mock_clear_agent, mock_clear_all, mock_get_all, mock_get_history):
         """Test a complete flush workflow."""
         # Setup mock returns
         mock_get_history.return_value = [{"role": "user", "content": "test"}]
@@ -277,9 +282,7 @@ class TestFlushCommandIntegration:
 
     @patch("cai.sdk.agents.models.openai_chatcompletions.get_all_agent_histories")
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_all_histories")
-    def test_flush_and_verify_empty_history(
-        self, mock_clear_all, mock_get_all_histories
-    ):
+    def test_flush_and_verify_empty_history(self, mock_clear_all, mock_get_all_histories):
         """Test flushing and verifying histories are empty."""
         # Before flush - histories exist
         mock_get_all_histories.return_value = {
@@ -323,7 +326,9 @@ class TestFlushCommandIntegration:
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_agent_history")
     @patch("cai.sdk.agents.parallel_isolation.PARALLEL_ISOLATION")
     @patch("cai.agents.get_available_agents")
-    def test_handle_with_agent_id(self, mock_get_available_agents, mock_parallel_isolation, mock_clear_agent, mock_get_history):
+    def test_handle_with_agent_id(
+        self, mock_get_available_agents, mock_parallel_isolation, mock_clear_agent, mock_get_history
+    ):
         """Test flushing agent by ID."""
         from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
 
@@ -359,7 +364,9 @@ class TestFlushCommandIntegration:
     @patch("cai.sdk.agents.models.openai_chatcompletions.clear_agent_history")
     @patch("cai.sdk.agents.parallel_isolation.PARALLEL_ISOLATION")
     @patch("cai.agents.get_available_agents")
-    def test_handle_numbered_agent_with_id(self, mock_get_available_agents, mock_parallel_isolation, mock_clear_agent, mock_get_history):
+    def test_handle_numbered_agent_with_id(
+        self, mock_get_available_agents, mock_parallel_isolation, mock_clear_agent, mock_get_history
+    ):
         """Test flushing numbered agents with IDs."""
         from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
 
@@ -402,7 +409,14 @@ class TestFlushCommandIntegration:
     @patch("cai.sdk.agents.parallel_isolation.PARALLEL_ISOLATION")
     @patch("cai.repl.commands.parallel.PARALLEL_CONFIGS")
     @patch("cai.agents.get_available_agents")
-    def test_handle_invalid_id(self, mock_get_available_agents, mock_parallel_configs, mock_parallel_isolation, mock_clear_agent, mock_get_history):
+    def test_handle_invalid_id(
+        self,
+        mock_get_available_agents,
+        mock_parallel_configs,
+        mock_parallel_isolation,
+        mock_clear_agent,
+        mock_get_history,
+    ):
         """Test handling invalid agent ID."""
         from cai.repl.commands.parallel import ParallelConfig
 

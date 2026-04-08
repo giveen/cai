@@ -1,11 +1,14 @@
 """Red Team Base Agent"""
+
 import os
 
 try:
     from dotenv import load_dotenv
 except Exception:
+
     def load_dotenv(*args, **kwargs):  # noop when python-dotenv missing
         return False
+
 
 try:
     from openai import AsyncOpenAI
@@ -60,6 +63,7 @@ redteam_agent = Agent(
     output_guardrails=output_guardrails,
     model=_model_inst,
 )
+
 
 # Transfer function
 def transfer_to_redteam_agent(**kwargs):  # pylint: disable=W0613

@@ -8,7 +8,7 @@ without manual intervention.
 
 Usage:
     python examples/continue_mode_security_audit.py
-    
+
 Or directly from command line:
     cai --continue --prompt "perform a security audit of all Python files"
 """
@@ -31,7 +31,7 @@ def run_security_audit():
     # Create a sample vulnerable file for demonstration
     sample_file = "sample_vulnerable.py"
     with open(sample_file, "w") as f:
-        f.write('''
+        f.write("""
 # Sample file with security vulnerabilities for CAI to find
 
 import os
@@ -56,15 +56,16 @@ def read_file(filename):
 # Hardcoded credentials
 API_KEY = "sk-1234567890abcdef"
 DB_PASSWORD = "admin123"
-''')
+""")
 
     # Command to run CAI audit
     cmd = [
         sys.executable,
         "src/cai/cli.py",
         "--continue",
-        "--prompt", f"Perform a comprehensive security audit of {sample_file}, "
-                   f"identify all vulnerabilities, and suggest fixes"
+        "--prompt",
+        f"Perform a comprehensive security audit of {sample_file}, "
+        f"identify all vulnerabilities, and suggest fixes",
     ]
 
     try:
@@ -75,7 +76,7 @@ DB_PASSWORD = "admin123"
             stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE,
             text=True,
-            bufsize=1
+            bufsize=1,
         )
 
         # Close stdin
@@ -87,11 +88,17 @@ DB_PASSWORD = "admin123"
 
         # Read output
         for line in proc.stdout:
-            print(line, end='')
+            print(line, end="")
 
             # Track vulnerabilities
-            vuln_keywords = ["injection", "vulnerability", "security issue",
-                           "hardcoded", "insecure", "exposed"]
+            vuln_keywords = [
+                "injection",
+                "vulnerability",
+                "security issue",
+                "hardcoded",
+                "insecure",
+                "exposed",
+            ]
             if any(keyword in line.lower() for keyword in vuln_keywords):
                 vulnerabilities_found.append(line.strip())
 
@@ -126,6 +133,7 @@ DB_PASSWORD = "admin123"
     if vulnerabilities_found:
         print(f"   Found {len(set(vulnerabilities_found))} potential security issues")
     print("=" * 60)
+
 
 if __name__ == "__main__":
     # Change to project root directory

@@ -4,36 +4,38 @@ Agent patterns for CAI.
 This module exports both swarm patterns (for handoff-based collaboration)
 and parallel patterns (for simultaneous execution).
 """
+
 import importlib
 import pkgutil
 from typing import Dict, Optional, Union
 
 __all__ = [
-    'Pattern',
-    'PatternType',
-    'get_pattern',
-    'get_patterns_by_type',
-    'get_parallel_patterns',
-    'get_swarm_patterns',
-    'create_pattern',
-    'parallel_pattern',
-    'swarm_pattern',
-    'hierarchical_pattern',
-    'sequential_pattern',
-    'conditional_pattern',
-    'PATTERNS',
-    'is_swarm_pattern'
+    "Pattern",
+    "PatternType",
+    "get_pattern",
+    "get_patterns_by_type",
+    "get_parallel_patterns",
+    "get_swarm_patterns",
+    "create_pattern",
+    "parallel_pattern",
+    "swarm_pattern",
+    "hierarchical_pattern",
+    "sequential_pattern",
+    "conditional_pattern",
+    "PATTERNS",
+    "is_swarm_pattern",
 ]
 
 # Pattern registry for easy access
 PATTERNS = {}
 
-def discover_patterns() -> Dict[str, 'Pattern']:
+
+def discover_patterns() -> Dict[str, "Pattern"]:
     """Discover all patterns in the patterns directory.
-    
+
     Automatically identifies and loads both swarm and parallel patterns,
     wrapping them in appropriate Pattern classes.
-    
+
     Returns:
         Dictionary mapping pattern names to Pattern instances.
     """
@@ -89,7 +91,7 @@ def discover_patterns() -> Dict[str, 'Pattern']:
                         name=pattern_display_name,
                         type=PatternType.SWARM,
                         description=getattr(attr, "description", ""),
-                        entry_agent=attr
+                        entry_agent=attr,
                     )
                     pattern.agents = [attr]  # Add to agents list
                     patterns[pattern_key] = pattern
@@ -98,9 +100,7 @@ def discover_patterns() -> Dict[str, 'Pattern']:
                         __all__.append(attr_name)
 
                 # Check if it's a Pattern class (not instance)
-                elif (isinstance(attr, type) and
-                      issubclass(attr, Pattern) and
-                      attr is not Pattern):
+                elif isinstance(attr, type) and issubclass(attr, Pattern) and attr is not Pattern:
                     # Create an instance of the pattern class
                     try:
                         pattern_instance = attr()
@@ -115,21 +115,19 @@ def discover_patterns() -> Dict[str, 'Pattern']:
                         continue
 
                 # Check for dict-based pattern definitions
-                elif (isinstance(attr, dict) and
-                      'name' in attr and
-                      'type' in attr and
-                      attr_name.endswith('_pattern')):
+                elif (
+                    isinstance(attr, dict)
+                    and "name" in attr
+                    and "type" in attr
+                    and attr_name.endswith("_pattern")
+                ):
                     # Convert dict to Pattern instance
                     try:
                         pattern_config = attr.copy()
-                        pattern_name = pattern_config.pop('name')
-                        pattern_type = pattern_config.pop('type')
+                        pattern_name = pattern_config.pop("name")
+                        pattern_type = pattern_config.pop("type")
 
-                        pattern = Pattern(
-                            name=pattern_name,
-                            type=pattern_type,
-                            **pattern_config
-                        )
+                        pattern = Pattern(name=pattern_name, type=pattern_type, **pattern_config)
                         patterns[pattern_name] = pattern
 
                         if attr_name not in __all__:
@@ -143,10 +141,12 @@ def discover_patterns() -> Dict[str, 'Pattern']:
             # Silently ignore circular import errors for pattern files
             if "circular import" not in str(e):
                 import sys
+
                 print(f"Error importing {module_name}: {e}", file=sys.stderr)
             continue
 
     return patterns
+
 
 # Defer pattern discovery until after all imports are done
 def _initialize_patterns():
@@ -154,6 +154,7 @@ def _initialize_patterns():
     global PATTERNS
     if not PATTERNS:  # Only initialize once
         PATTERNS.update(discover_patterns())
+
 
 # Import Pattern and related items after defining functions to avoid circular imports
 from .pattern import (  # noqa: E402
@@ -169,23 +170,25 @@ from .pattern import (  # noqa: E402
 # Initialize patterns after imports
 _initialize_patterns()
 
-def get_pattern(pattern_name: str) -> Optional['Pattern']:
+
+def get_pattern(pattern_name: str) -> Optional["Pattern"]:
     """Get a pattern by name.
-    
+
     Args:
         pattern_name: Name of the pattern to retrieve
-        
+
     Returns:
         Pattern instance if found, None otherwise
     """
     return PATTERNS.get(pattern_name)
 
-def get_patterns_by_type(pattern_type: Union[str, 'PatternType']) -> Dict[str, 'Pattern']:
+
+def get_patterns_by_type(pattern_type: Union[str, "PatternType"]) -> Dict[str, "Pattern"]:
     """Get all available patterns of a specific type.
-    
+
     Args:
         pattern_type: Type of patterns to retrieve (e.g., "swarm", "parallel")
-        
+
     Returns:
         Dictionary mapping pattern names to Pattern instances
     """
@@ -204,49 +207,47 @@ def get_patterns_by_type(pattern_type: Union[str, 'PatternType']) -> Dict[str, '
 
     return result
 
-def get_parallel_patterns() -> Dict[str, 'Pattern']:
+
+def get_parallel_patterns() -> Dict[str, "Pattern"]:
     """Get all available parallel patterns.
-    
+
     Returns:
         Dictionary of pattern name to Pattern instances of type PARALLEL
     """
     from .pattern import PatternType
+
     return get_patterns_by_type(PatternType.PARALLEL)
 
-def get_swarm_patterns() -> Dict[str, 'Pattern']:
+
+def get_swarm_patterns() -> Dict[str, "Pattern"]:
     """Get all available swarm patterns.
-    
+
     Returns:
         Dictionary of pattern name to Pattern instances of type SWARM
     """
     from .pattern import PatternType
+
     return get_patterns_by_type(PatternType.SWARM)
 
+
 def create_pattern(
-    name: str,
-    pattern_type: Union[str, 'PatternType'],
-    description: str = "",
-    **kwargs
-) -> 'Pattern':
+    name: str, pattern_type: Union[str, "PatternType"], description: str = "", **kwargs
+) -> "Pattern":
     """Create a new pattern programmatically.
-    
+
     Args:
         name: Pattern name
         pattern_type: Type of pattern (parallel, swarm, etc.)
         description: Pattern description
         **kwargs: Additional pattern-specific arguments
-        
+
     Returns:
         New Pattern instance
     """
     from .pattern import Pattern
 
-    return Pattern(
-        name=name,
-        type=pattern_type,
-        description=description,
-        **kwargs
-    )
+    return Pattern(name=name, type=pattern_type, description=description, **kwargs)
+
 
 # Import utility functions
 from .utils import is_swarm_pattern  # noqa: E402

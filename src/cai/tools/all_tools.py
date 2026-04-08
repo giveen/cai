@@ -89,17 +89,20 @@ ALL_TOOLS = [
 ]
 
 # ── Conditional: OSINT / search ───────────────────────────────────────────────
-if os.getenv('SHODAN_API_KEY'):
+if os.getenv("SHODAN_API_KEY"):
     from cai.tools.reconnaissance.shodan import shodan_host_info, shodan_search  # noqa: E402
+
     ALL_TOOLS.extend([shodan_search, shodan_host_info])
 
-if os.getenv('GOOGLE_SEARCH_API_KEY') and os.getenv('GOOGLE_SEARCH_CX'):
+if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_CX"):
     from cai.tools.web.search_web import make_google_search  # noqa: E402
+
     ALL_TOOLS.append(make_google_search)
 
-if os.getenv('PERPLEXITY_API_KEY'):
+if os.getenv("PERPLEXITY_API_KEY"):
     from cai.tools.web.search_web import (  # noqa: E402
         make_web_search_with_explanation,
         query_perplexity,
     )
+
     ALL_TOOLS.extend([make_web_search_with_explanation, query_perplexity])

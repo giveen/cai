@@ -56,7 +56,9 @@ def test_end_to_end_recon_hybrid_prioritizes_recent(tmp_path, monkeypatch):
 
     # most-recent valid l.wilson entry (should be prioritized)
     valid_text = "SMB access: l.wilson password: VALID_HASH_LW_ABC123 - successful login"
-    valid_meta = {"provenance": {"timestamp": now_ts, "source": "test", "original_text": valid_text}}
+    valid_meta = {
+        "provenance": {"timestamp": now_ts, "source": "test", "original_text": valid_text}
+    }
     specials.append((valid_text, valid_meta))
 
     # Fill up to ~500 lines with noisy logs
@@ -64,7 +66,7 @@ def test_end_to_end_recon_hybrid_prioritizes_recent(tmp_path, monkeypatch):
     filler_count = total - len(specials)
     fillers = []
     for i in range(filler_count):
-        t = f"Random log entry {i} user=usr{random.randint(0,9999)} event={random.choice(['connect','disconnect','timeout'])}"
+        t = f"Random log entry {i} user=usr{random.randint(0, 9999)} event={random.choice(['connect', 'disconnect', 'timeout'])}"
         # stagger timestamps across older..now range
         ts = (older + _dt.timedelta(seconds=i)).isoformat() + "Z"
         m = {"provenance": {"timestamp": ts, "source": "test", "original_text": t}}
@@ -102,7 +104,7 @@ def test_end_to_end_recon_hybrid_prioritizes_recent(tmp_path, monkeypatch):
     res = pipeline.retrieve("l.wilson password", top_k=10)
     assert isinstance(res, list)
     assert len(res) > 0
-    texts = [ (r.get("text") or "") for r in res ]
+    texts = [(r.get("text") or "") for r in res]
 
     # locate valid and older invalid entries in the returned list
     valid_idx = next((i for i, t in enumerate(texts) if "VALID_HASH_LW_ABC123" in t), None)

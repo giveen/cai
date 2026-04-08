@@ -2,6 +2,7 @@
 Kill command for CAI REPL.
 This module provides commands for terminating active processes or sessions.
 """
+
 import os
 import signal
 from typing import List, Optional
@@ -19,9 +20,7 @@ class KillCommand(Command):
     def __init__(self):
         """Initialize the kill command."""
         super().__init__(
-            name="/kill",
-            description="Terminate active processes or sessions",
-            aliases=["/k"]
+            name="/kill", description="Terminate active processes or sessions", aliases=["/k"]
         )
 
     def handle(self, args: Optional[List[str]] = None) -> bool:
@@ -66,8 +65,7 @@ class KillCommand(Command):
             console.print("[red]Error: Invalid PID format[/red]")
             return False
         except ProcessLookupError:
-            console.print(
-                f"[yellow]No process with PID {args[0]} found[/yellow]")
+            console.print(f"[yellow]No process with PID {args[0]} found[/yellow]")
             return False
         except Exception as e:  # pylint: disable=broad-exception-caught
             console.print(f"[red]Error killing process: {str(e)}[/red]")

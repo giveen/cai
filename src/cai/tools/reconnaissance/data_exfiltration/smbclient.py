@@ -13,6 +13,7 @@ Note: callers should ensure CAI guardrails are applied at a higher
 level; this module calls into `cai.tools.validation` for light validation
 and to sanitize returned output.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -144,7 +145,9 @@ async def run_smbclient(
         except FileNotFoundError:
             return "Error: smbclient not found on PATH"
         try:
-            stdout_data, stderr_data = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            stdout_data, stderr_data = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
         except asyncio.TimeoutError:
             try:
                 process.kill()
@@ -152,8 +155,8 @@ async def run_smbclient(
                 pass
             return "Error: smbclient timed out"
 
-        out = (stdout_data.decode('utf-8', errors='replace') if stdout_data else "") + (
-            stderr_data.decode('utf-8', errors='replace') if stderr_data else ""
+        out = (stdout_data.decode("utf-8", errors="replace") if stdout_data else "") + (
+            stderr_data.decode("utf-8", errors="replace") if stderr_data else ""
         )
         return validation.sanitize_tool_output(cmd_for_validate, out)
     finally:
@@ -206,7 +209,9 @@ async def list_shares(
             return "Error: smbclient not found on PATH"
 
         try:
-            stdout_data, stderr_data = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            stdout_data, stderr_data = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
         except asyncio.TimeoutError:
             try:
                 process.kill()
@@ -214,8 +219,8 @@ async def list_shares(
                 pass
             return "Error: smbclient timed out"
 
-        out = (stdout_data.decode('utf-8', errors='replace') if stdout_data else "") + (
-            stderr_data.decode('utf-8', errors='replace') if stderr_data else ""
+        out = (stdout_data.decode("utf-8", errors="replace") if stdout_data else "") + (
+            stderr_data.decode("utf-8", errors="replace") if stderr_data else ""
         )
         return validation.sanitize_tool_output(cmd_for_validate, out)
     finally:

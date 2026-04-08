@@ -3,6 +3,7 @@ Virtualization command for CAI cli.
 This module provides commands for setting up and managing Docker virtualization
 environments.
 """
+
 import datetime
 import json
 import os
@@ -25,15 +26,16 @@ DEFAULT_IMAGES = {
         "image": "kalilinux/kali-rolling",
         "description": "Official Kali Linux distribution for penetration testing and security audits",
         "category": "Offensive Pentesting",
-        "id": "pen1"
+        "id": "pen1",
     },
     "parrotsec/security": {
         "image": "parrotsec/security",
         "description": "Official Parrot Security OS image, popular for penetration testing and forensic analysis",
         "category": "Offensive Pentesting",
-        "id": "pen2"
+        "id": "pen2",
     },
 }
+
 
 # --- Helper function for image name normalization ---
 def normalize_image_name(image_name: str) -> str:
@@ -63,10 +65,7 @@ class DockerManager:
         """
         try:
             result = subprocess.run(
-                ["docker", "--version"],
-                capture_output=True,
-                text=True,
-                check=False
+                ["docker", "--version"], capture_output=True, text=True, check=False
             )
             return result.returncode == 0
         except FileNotFoundError:
@@ -80,12 +79,7 @@ class DockerManager:
             bool: True if Docker daemon is running, False otherwise
         """
         try:
-            result = subprocess.run(
-                ["docker", "info"],
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            result = subprocess.run(["docker", "info"], capture_output=True, text=True, check=False)
             return result.returncode == 0
         except FileNotFoundError:
             return False
@@ -99,17 +93,14 @@ class DockerManager:
         """
         try:
             result = subprocess.run(
-                [
-                    "docker", "ps", "--all",
-                    "--format", "{{json .}}"
-                ],
+                ["docker", "ps", "--all", "--format", "{{json .}}"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
 
             containers = []
-            for line in result.stdout.strip().split('\n'):
+            for line in result.stdout.strip().split("\n"):
                 if line:
                     try:
                         containers.append(json.loads(line))
@@ -129,17 +120,14 @@ class DockerManager:
         """
         try:
             result = subprocess.run(
-                [
-                    "docker", "images",
-                    "--format", "{{json .}}"
-                ],
+                ["docker", "images", "--format", "{{json .}}"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
 
             images = []
-            for line in result.stdout.strip().split('\n'):
+            for line in result.stdout.strip().split("\n"):
                 if line:
                     try:
                         images.append(json.loads(line))
@@ -178,21 +166,13 @@ class DockerManager:
             pull_proc.wait()
 
             if pull_proc.returncode == 0:
-                return True, (
-                    f"Successfully pulled image: {image_name}"
-                )
-            return False, (
-                f"Failed to pull image: {image_name} "
-                f"(code {pull_proc.returncode})"
-            )
+                return True, (f"Successfully pulled image: {image_name}")
+            return False, (f"Failed to pull image: {image_name} (code {pull_proc.returncode})")
         except (subprocess.SubprocessError, FileNotFoundError) as e:
             return False, f"Error pulling image: {str(e)}"
 
     @staticmethod
-    def run_container(
-        image_name: str,
-        container_name: str = None
-    ) -> Tuple[bool, str]:
+    def run_container(image_name: str, container_name: str = None) -> Tuple[bool, str]:
         """Run a Docker container.
 
         Args:
@@ -219,7 +199,7 @@ class DockerManager:
                 # Image name: [needs_entrypoint_override, no_mount]
                 "parrotsec/security": [True, True],
                 "remnux/remnux-distro": [True, True],
-                "lauriewired/linux-malware-analysis-container": [True, True]
+                "lauriewired/linux-malware-analysis-container": [True, True],
             }
 
             # Get flags for this image
@@ -248,33 +228,38 @@ class DockerManager:
             try_mount = not no_mount
 
             if try_mount:
-                cmd.extend([
-                    "-v", f"{workspace_dir}:{target_mount}",
-                    "--workdir", target_mount
-                ])
+                cmd.extend(["-v", f"{workspace_dir}:{target_mount}", "--workdir", target_mount])
 
             # Add specific flags based on container type
             if image_name == "kalilinux/kali-rolling":
                 # For Kali, add additional flags for security tools
-                cmd.extend([
-                    "--cap-add=NET_ADMIN",  # Allow network admin capabilities
-                ])
+                cmd.extend(
+                    [
+                        "--cap-add=NET_ADMIN",  # Allow network admin capabilities
+                    ]
+                )
             elif image_name == "cai-container":
                 # For CAI container, add any specific flags needed
                 # Like extra volume mounts or environment variables
                 home_dir = os.path.expanduser("~")
                 if os.path.exists(home_dir):
-                    cmd.extend([
-                        "-v", f"{home_dir}/.ssh:/root/.ssh:ro",  # Mount ssh keys as read-only
-                        "-e", "DISPLAY=host.docker.internal:0"   # X11 forwarding
-                    ])
+                    cmd.extend(
+                        [
+                            "-v",
+                            f"{home_dir}/.ssh:/root/.ssh:ro",  # Mount ssh keys as read-only
+                            "-e",
+                            "DISPLAY=host.docker.internal:0",  # X11 forwarding
+                        ]
+                    )
 
             # For all containers, add these capabilities and privileges
-            cmd.extend([
-                "--cap-add=NET_ADMIN",       # Network administration (for nmap, etc.)
-                "--cap-add=NET_RAW",         # Raw network access (for packet capture)
-                "--security-opt=seccomp=unconfined"  # Disable seccomp for better tool compatibility
-            ])
+            cmd.extend(
+                [
+                    "--cap-add=NET_ADMIN",  # Network administration (for nmap, etc.)
+                    "--cap-add=NET_RAW",  # Raw network access (for packet capture)
+                    "--security-opt=seccomp=unconfined",  # Disable seccomp for better tool compatibility
+                ]
+            )
 
             # Add the image name
             cmd.append(image_name)
@@ -289,32 +274,32 @@ class DockerManager:
             # Print the command for debugging
             console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
 
-            process = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            process = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
             if process.returncode == 0:
                 container_id = process.stdout.strip()
 
                 # Verify the container is actually running
                 time.sleep(0.5)  # Brief pause to give it time to fully start
-                verify_cmd = ["docker", "ps", "--filter", f"id={container_id}", "--format", "{{.ID}}"]
+                verify_cmd = [
+                    "docker",
+                    "ps",
+                    "--filter",
+                    f"id={container_id}",
+                    "--format",
+                    "{{.ID}}",
+                ]
                 verify_result = subprocess.run(
-                    verify_cmd,
-                    capture_output=True,
-                    text=True,
-                    check=False
+                    verify_cmd, capture_output=True, text=True, check=False
                 )
 
                 if not verify_result.stdout.strip():
-                    return False, "Container created but exited immediately. Check image compatibility."
+                    return (
+                        False,
+                        "Container created but exited immediately. Check image compatibility.",
+                    )
 
-                return True, (
-                    f"Successfully started container with ID: {container_id}"
-                )
+                return True, (f"Successfully started container with ID: {container_id}")
             else:
                 error_msg = process.stderr
 
@@ -338,11 +323,13 @@ class DockerManager:
                     new_cmd.extend(["--network=host"])
 
                     # For all containers, add these capabilities and privileges
-                    new_cmd.extend([
-                        "--cap-add=NET_ADMIN",
-                        "--cap-add=NET_RAW",
-                        "--security-opt=seccomp=unconfined"
-                    ])
+                    new_cmd.extend(
+                        [
+                            "--cap-add=NET_ADMIN",
+                            "--cap-add=NET_RAW",
+                            "--security-opt=seccomp=unconfined",
+                        ]
+                    )
 
                     # Add the image name
                     new_cmd.append(image_name)
@@ -357,10 +344,7 @@ class DockerManager:
 
                     # Try again
                     retry_process = subprocess.run(
-                        new_cmd,
-                        capture_output=True,
-                        text=True,
-                        check=False
+                        new_cmd, capture_output=True, text=True, check=False
                     )
 
                     if retry_process.returncode == 0:
@@ -368,12 +352,16 @@ class DockerManager:
 
                         # Verify the container is actually running
                         time.sleep(0.5)
-                        verify_cmd = ["docker", "ps", "--filter", f"id={container_id}", "--format", "{{.ID}}"]
+                        verify_cmd = [
+                            "docker",
+                            "ps",
+                            "--filter",
+                            f"id={container_id}",
+                            "--format",
+                            "{{.ID}}",
+                        ]
                         verify_result = subprocess.run(
-                            verify_cmd,
-                            capture_output=True,
-                            text=True,
-                            check=False
+                            verify_cmd, capture_output=True, text=True, check=False
                         )
 
                         if not verify_result.stdout.strip():
@@ -406,10 +394,7 @@ class DockerManager:
                                 elif "exited" in container_status or "created" in container_status:
                                     start_cmd = ["docker", "start", container_id]
                                     start_process = subprocess.run(
-                                        start_cmd,
-                                        capture_output=True,
-                                        text=True,
-                                        check=False
+                                        start_cmd, capture_output=True, text=True, check=False
                                     )
                                     if start_process.returncode == 0:
                                         return True, (
@@ -421,7 +406,7 @@ class DockerManager:
                                             ["docker", "rm", "-f", container_id],
                                             capture_output=True,
                                             text=True,
-                                            check=False
+                                            check=False,
                                         )
                                         # Try again with a new name
                                         new_name = f"{container_name}-new"
@@ -432,7 +417,7 @@ class DockerManager:
                                     ["docker", "rm", "-f", container.get("ID", "")],
                                     capture_output=True,
                                     text=True,
-                                    check=False
+                                    check=False,
                                 )
                                 # Try again with the same name
                                 return DockerManager.run_container(image_name, container_name)
@@ -448,21 +433,22 @@ class DockerManager:
                                 # Start it if needed
                                 start_cmd = ["docker", "start", container_id]
                                 start_process = subprocess.run(
-                                    start_cmd,
-                                    capture_output=True,
-                                    text=True,
-                                    check=False
+                                    start_cmd, capture_output=True, text=True, check=False
                                 )
 
                                 if start_process.returncode == 0:
                                     # Verify it's actually running
                                     time.sleep(0.5)
-                                    verify_cmd = ["docker", "ps", "--filter", f"id={container_id}", "--format", "{{.ID}}"]
+                                    verify_cmd = [
+                                        "docker",
+                                        "ps",
+                                        "--filter",
+                                        f"id={container_id}",
+                                        "--format",
+                                        "{{.ID}}",
+                                    ]
                                     verify_result = subprocess.run(
-                                        verify_cmd,
-                                        capture_output=True,
-                                        text=True,
-                                        check=False
+                                        verify_cmd, capture_output=True, text=True, check=False
                                     )
 
                                     if not verify_result.stdout.strip():
@@ -477,7 +463,7 @@ class DockerManager:
                                             ["docker", "start", container_id],
                                             capture_output=True,
                                             text=True,
-                                            check=False
+                                            check=False,
                                         )
 
                                         # Try to commit the container to a new image
@@ -486,7 +472,7 @@ class DockerManager:
                                             ["docker", "commit", container_id, fixed_image],
                                             capture_output=True,
                                             text=True,
-                                            check=False
+                                            check=False,
                                         )
 
                                         if commit_result.returncode == 0:
@@ -495,27 +481,32 @@ class DockerManager:
                                                 ["docker", "rm", "-f", container_id],
                                                 capture_output=True,
                                                 text=True,
-                                                check=False
+                                                check=False,
                                             )
 
                                             # Create a new container with the fixed image
                                             fixed_cmd = [
-                                                "docker", "run", "-d",
-                                                "--entrypoint", "/bin/bash",
-                                                "--name", f"{container_name}-fixed",
+                                                "docker",
+                                                "run",
+                                                "-d",
+                                                "--entrypoint",
+                                                "/bin/bash",
+                                                "--name",
+                                                f"{container_name}-fixed",
                                                 "--network=host",
                                                 "--cap-add=NET_ADMIN",
                                                 "--cap-add=NET_RAW",
                                                 "--security-opt=seccomp=unconfined",
                                                 fixed_image,
-                                                "-c", "tail -f /dev/null"
+                                                "-c",
+                                                "tail -f /dev/null",
                                             ]
 
                                             fixed_result = subprocess.run(
                                                 fixed_cmd,
                                                 capture_output=True,
                                                 text=True,
-                                                check=False
+                                                check=False,
                                             )
 
                                             if fixed_result.returncode == 0:
@@ -540,7 +531,7 @@ class DockerManager:
                                             ["docker", "rm", "-f", container_id],
                                             capture_output=True,
                                             text=True,
-                                            check=False
+                                            check=False,
                                         )
 
                                         # Create new name to avoid conflicts
@@ -548,22 +539,24 @@ class DockerManager:
 
                                         # Create a new container with fixed entrypoint
                                         fixed_cmd = [
-                                            "docker", "run", "-d",
-                                            "--entrypoint", "/bin/bash",
-                                            "--name", new_name,
+                                            "docker",
+                                            "run",
+                                            "-d",
+                                            "--entrypoint",
+                                            "/bin/bash",
+                                            "--name",
+                                            new_name,
                                             "--network=host",
                                             "--cap-add=NET_ADMIN",
                                             "--cap-add=NET_RAW",
                                             "--security-opt=seccomp=unconfined",
                                             image_name,
-                                            "-c", "tail -f /dev/null"
+                                            "-c",
+                                            "tail -f /dev/null",
                                         ]
 
                                         fixed_result = subprocess.run(
-                                            fixed_cmd,
-                                            capture_output=True,
-                                            text=True,
-                                            check=False
+                                            fixed_cmd, capture_output=True, text=True, check=False
                                         )
 
                                         if fixed_result.returncode == 0:
@@ -571,8 +564,17 @@ class DockerManager:
                                             # Verify it's running
                                             time.sleep(0.5)
                                             if subprocess.run(
-                                                ["docker", "ps", "--filter", f"id={container_id}", "--format", "{{.ID}}"],
-                                                capture_output=True, text=True, check=False
+                                                [
+                                                    "docker",
+                                                    "ps",
+                                                    "--filter",
+                                                    f"id={container_id}",
+                                                    "--format",
+                                                    "{{.ID}}",
+                                                ],
+                                                capture_output=True,
+                                                text=True,
+                                                check=False,
                                             ).stdout.strip():
                                                 return True, (
                                                     f"Successfully started fixed container: {container_id}"
@@ -586,12 +588,7 @@ class DockerManager:
                             )
 
                             rm_cmd = ["docker", "rm", "-f", container.get("ID", "")]
-                            subprocess.run(
-                                rm_cmd,
-                                capture_output=True,
-                                text=True,
-                                check=False
-                            )
+                            subprocess.run(rm_cmd, capture_output=True, text=True, check=False)
 
                             # Try again with a slightly different name
                             new_name = f"{container_name}-new"
@@ -616,7 +613,7 @@ class DockerManager:
                 ["docker", "inspect", "--format", "{{.State.Running}}", container_id],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
 
             # If container exists but is not running, try to start it
@@ -628,10 +625,7 @@ class DockerManager:
 
                 # First try with standard start
                 start_process = subprocess.run(
-                    ["docker", "start", container_id],
-                    capture_output=True,
-                    text=True,
-                    check=False
+                    ["docker", "start", container_id], capture_output=True, text=True, check=False
                 )
 
                 # Check if start was successful
@@ -647,7 +641,7 @@ class DockerManager:
                             ["docker", "inspect", "--format", "{{.Config.Image}}", container_id],
                             capture_output=True,
                             text=True,
-                            check=False
+                            check=False,
                         )
 
                         if image_info.returncode == 0:
@@ -658,21 +652,26 @@ class DockerManager:
                                 ["docker", "rm", "-f", container_id],
                                 capture_output=True,
                                 text=True,
-                                check=False
+                                check=False,
                             )
 
                             # Create a new container with the same ID (hopefully)
                             # Using explicit keep-alive command
                             new_container = subprocess.run(
                                 [
-                                    "docker", "run", "-d",
-                                    "--name", f"cai-{image_name.replace('/', '-')}",
+                                    "docker",
+                                    "run",
+                                    "-d",
+                                    "--name",
+                                    f"cai-{image_name.replace('/', '-')}",
                                     image_name,
-                                    "/bin/sh", "-c", "while true; do sleep 1000; done"
+                                    "/bin/sh",
+                                    "-c",
+                                    "while true; do sleep 1000; done",
                                 ],
                                 capture_output=True,
                                 text=True,
-                                check=False
+                                check=False,
                             )
 
                             if new_container.returncode == 0:
@@ -693,7 +692,7 @@ class DockerManager:
                         ["docker", "ps", "--filter", f"id={container_id}", "--format", "{{.ID}}"],
                         capture_output=True,
                         text=True,
-                        check=False
+                        check=False,
                     )
 
                     if not verify.stdout.strip():
@@ -707,7 +706,7 @@ class DockerManager:
                             ["docker", "inspect", "--format", "{{.Config.Image}}", container_id],
                             capture_output=True,
                             text=True,
-                            check=False
+                            check=False,
                         )
 
                         if image_info.returncode == 0:
@@ -718,20 +717,25 @@ class DockerManager:
                                 ["docker", "rm", "-f", container_id],
                                 capture_output=True,
                                 text=True,
-                                check=False
+                                check=False,
                             )
 
                             # Create a new container with persistent command
                             new_container = subprocess.run(
                                 [
-                                    "docker", "run", "-d",
-                                    "--name", f"cai-{image_name.replace('/', '-')}",
+                                    "docker",
+                                    "run",
+                                    "-d",
+                                    "--name",
+                                    f"cai-{image_name.replace('/', '-')}",
                                     image_name,
-                                    "/bin/sh", "-c", "while true; do sleep 1000; done"
+                                    "/bin/sh",
+                                    "-c",
+                                    "while true; do sleep 1000; done",
                                 ],
                                 capture_output=True,
                                 text=True,
-                                check=False
+                                check=False,
                             )
 
                             if new_container.returncode == 0:
@@ -756,7 +760,7 @@ class DockerManager:
             # Get current workspace name
             workspace_name = os.getenv("CAI_WORKSPACE", None)
             # Make sure workspace name is valid
-            if not all(c.isalnum() or c in ['_', '-'] for c in workspace_name):
+            if not all(c.isalnum() or c in ["_", "-"] for c in workspace_name):
                 workspace_name = "cai_default"
 
             # Create workspace directory path inside container
@@ -767,17 +771,21 @@ class DockerManager:
                 ["docker", "inspect", "--format", "{{.State.Running}}", container_id],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
 
             if check_running.returncode == 0 and "true" in check_running.stdout.lower():
                 # Create the workspace directory in the container
-                mkdir_cmd = ["docker", "exec", container_id, "mkdir", "-p", container_workspace_path]
+                mkdir_cmd = [
+                    "docker",
+                    "exec",
+                    container_id,
+                    "mkdir",
+                    "-p",
+                    container_workspace_path,
+                ]
                 mkdir_result = subprocess.run(
-                    mkdir_cmd,
-                    capture_output=True,
-                    text=True,
-                    check=False
+                    mkdir_cmd, capture_output=True, text=True, check=False
                 )
 
                 if mkdir_result.returncode == 0:
@@ -789,7 +797,9 @@ class DockerManager:
                         f"[yellow]Warning: Could not create workspace directory in container: {mkdir_result.stderr}[/yellow]"
                     )
         except Exception as e:
-            console.print(f"[yellow]Warning: Failed to setup workspace in container: {str(e)}[/yellow]")
+            console.print(
+                f"[yellow]Warning: Failed to setup workspace in container: {str(e)}[/yellow]"
+            )
 
 
 class VirtualizationCommand(Command):
@@ -799,18 +809,14 @@ class VirtualizationCommand(Command):
         """Initialize the virtualization command."""
         super().__init__(
             name="/virtualization",
-            description=(
-                "Set up and manage Docker virtualization environments"
-            ),
-            aliases=["/virt"]
+            description=("Set up and manage Docker virtualization environments"),
+            aliases=["/virt"],
         )
 
         # Cache for Docker information
         self.cached_containers = []
         self.cached_images = []
-        self.last_docker_fetch = (
-            datetime.datetime.now() - datetime.timedelta(minutes=10)
-        )
+        self.last_docker_fetch = datetime.datetime.now() - datetime.timedelta(minutes=10)
 
         # Create mapping from ID to image name
         self.id_to_image = {}
@@ -819,16 +825,8 @@ class VirtualizationCommand(Command):
                 self.id_to_image[image_info["id"]] = image_name
 
         # Add subcommands
-        self.add_subcommand(
-            "pull",
-            "Pull a Docker image",
-            self.handle_pull_subcommand
-        )
-        self.add_subcommand(
-            "run",
-            "Run a Docker container",
-            self.handle_run_subcommand
-        )
+        self.add_subcommand("pull", "Pull a Docker image", self.handle_pull_subcommand)
+        self.add_subcommand("run", "Run a Docker container", self.handle_run_subcommand)
 
     def handle(self, args: Optional[List[str]] = None) -> bool:
         """Handle the virtualization command.
@@ -872,7 +870,7 @@ class VirtualizationCommand(Command):
                     "Docker is not installed on your system.\n"
                     "Please install Docker to use virtualization features.",
                     title="Docker Not Found",
-                    border_style="red"
+                    border_style="red",
                 )
             )
             return True
@@ -884,7 +882,7 @@ class VirtualizationCommand(Command):
                     "Docker is not running.\n"
                     "Please start the Docker service to use virtualization.",
                     title="Docker Not Running",
-                    border_style="yellow"
+                    border_style="yellow",
                 )
             )
             return True
@@ -961,7 +959,7 @@ class VirtualizationCommand(Command):
             f"[bold cyan]Current active environment:[/bold cyan] [bold green]{env_name}[/bold green]",
             f"[cyan]Details:[/cyan] {env_info}",
             "",
-            "[bold yellow]Select an environment from below to switch:[/bold yellow]"
+            "[bold yellow]Select an environment from below to switch:[/bold yellow]",
         ]
 
         console.print(
@@ -970,7 +968,7 @@ class VirtualizationCommand(Command):
                 border_style=border_style,
                 title=title,
                 title_align="left",
-                padding=(1, 2)
+                padding=(1, 2),
             )
         )
 
@@ -1003,16 +1001,10 @@ class VirtualizationCommand(Command):
                     break
 
         # Process information about available images
-        available_images = {
-            img.get("Repository", ""): img
-            for img in self.cached_images
-        }
+        available_images = {img.get("Repository", ""): img for img in self.cached_images}
 
         # Define essential images to always show
-        essential_images = [
-            "kalilinux/kali-rolling",
-            "parrotsec/security"
-        ]
+        essential_images = ["kalilinux/kali-rolling", "parrotsec/security"]
 
         # Create main images table
         image_table = Table(
@@ -1020,7 +1012,7 @@ class VirtualizationCommand(Command):
             show_header=True,
             header_style="bold yellow",
             title_style="bold cyan",
-            box=rich.box.SQUARE
+            box=rich.box.SQUARE,
         )
 
         image_table.add_column("ID", style="bold blue", justify="center", width=6)
@@ -1030,14 +1022,22 @@ class VirtualizationCommand(Command):
 
         # Add Host System as the first option
         is_host_active = not active_container
-        host_status = "[bold green]CURRENT ENVIRONMENT[/bold green]" if is_host_active else "[dim]Available[/dim]"
-        display_host = "💻 [bold green]Host System ⭐ ACTIVE[/bold green]" if is_host_active else "💻 Host System"
+        host_status = (
+            "[bold green]CURRENT ENVIRONMENT[/bold green]"
+            if is_host_active
+            else "[dim]Available[/dim]"
+        )
+        display_host = (
+            "💻 [bold green]Host System ⭐ ACTIVE[/bold green]"
+            if is_host_active
+            else "💻 Host System"
+        )
 
         image_table.add_row(
             "[bold]host[/bold]",
             display_host,
             "Execute commands directly on the host operating system",
-            host_status
+            host_status,
         )
 
         # Add essential images
@@ -1082,7 +1082,9 @@ class VirtualizationCommand(Command):
 
                 # Display name with category
                 _category = info.get("category", "")
-                display_name = f"{icon} {image_name} [ID: {image_id}]" if image_id else f"{icon} {image_name}"
+                display_name = (
+                    f"{icon} {image_name} [ID: {image_id}]" if image_id else f"{icon} {image_name}"
+                )
 
                 # Highlight active image
                 if image_name == active_image:
@@ -1091,10 +1093,7 @@ class VirtualizationCommand(Command):
 
                 # Add row to table
                 image_table.add_row(
-                    f"[bold]{image_id}[/bold]",
-                    display_name,
-                    info["description"],
-                    status
+                    f"[bold]{image_id}[/bold]", display_name, info["description"], status
                 )
 
         # Print the essential images table
@@ -1110,7 +1109,7 @@ class VirtualizationCommand(Command):
 
     def _show_all_images_by_category(self, available_images, active_image):
         """Show all images organized by category.
-        
+
         Args:
             available_images: Dictionary of available Docker images
             active_image: Name of the currently active image, if any
@@ -1130,7 +1129,7 @@ class VirtualizationCommand(Command):
             "Forensic Analysis",
             "Malware Analysis",
             "Reverse Engineering",
-            "Container Security"
+            "Container Security",
         ]
 
         # Display tables in the preferred order
@@ -1148,7 +1147,7 @@ class VirtualizationCommand(Command):
                 show_header=True,
                 header_style="bold yellow",
                 title_style="bold cyan",
-                box=rich.box.SIMPLE
+                box=rich.box.SIMPLE,
             )
 
             image_table.add_column("ID", style="bold blue", justify="center", width=6)
@@ -1203,7 +1202,9 @@ class VirtualizationCommand(Command):
                 image_id = info.get("id", "")
 
                 # Display name with ID if available
-                image_name_display = f"{icon} {name} [ID: {image_id}]" if image_id else f"{icon} {name}"
+                image_name_display = (
+                    f"{icon} {name} [ID: {image_id}]" if image_id else f"{icon} {name}"
+                )
                 description_display = info["description"]
 
                 # Highlight active image
@@ -1213,10 +1214,7 @@ class VirtualizationCommand(Command):
                     status = "[bold green]CURRENT ENVIRONMENT[/bold green]"
 
                 image_table.add_row(
-                    f"[bold]{image_id}[/bold]",
-                    image_name_display,
-                    description_display,
-                    status
+                    f"[bold]{image_id}[/bold]", image_name_display, description_display, status
                 )
 
             console.print(image_table)
@@ -1225,44 +1223,44 @@ class VirtualizationCommand(Command):
         """Display usage information for the virtualization command with category examples."""
         console.print("\n[bold cyan]Available Commands:[/bold cyan]")
         console.print(
-            "  [bold]/virtualization[/bold]                      - "
-            "Show environment selection menu")
+            "  [bold]/virtualization[/bold]                      - Show environment selection menu"
+        )
         console.print(
-            "  [bold]/virtualization <image_name>[/bold]         - "
-            "Switch to environment by name")
+            "  [bold]/virtualization <image_name>[/bold]         - Switch to environment by name"
+        )
         console.print(
-            "  [bold]/virtualization <image_id>[/bold]           - "
-            "Switch by ID (e.g.: sec1, pen1)")
+            "  [bold]/virtualization <image_id>[/bold]           - Switch by ID (e.g.: sec1, pen1)"
+        )
 
         # Common commands with examples
         console.print("\n[bold yellow]Common Commands:[/bold yellow]")
         console.print(
             "  [bold]/virtualization kalilinux/kali-rolling[/bold] - "
-            "Kali Linux with security tools [ID: pen1]")
+            "Kali Linux with security tools [ID: pen1]"
+        )
         console.print(
             "  [bold]/virtualization parrotsec/security[/bold]   - "
-            "Parrot Security OS with tools [ID: pen2]")
-        console.print(
-            "  [bold]/virtualization host[/bold]                 - "
-            "Return to host system")
+            "Parrot Security OS with tools [ID: pen2]"
+        )
+        console.print("  [bold]/virtualization host[/bold]                 - Return to host system")
 
         # General note
         console.print("\n[bold red]Important:[/bold red]")
-        console.print("[dim]When a container is active, all shell commands will execute inside that container. LLM commands will also be executed in this environment.[/dim]")
+        console.print(
+            "[dim]When a container is active, all shell commands will execute inside that container. LLM commands will also be executed in this environment.[/dim]"
+        )
 
     def handle_pull_subcommand(self, args: Optional[List[str]] = None) -> bool:
         """Handle the pull subcommand.
-        
+
         Args:
             args: Optional list of subcommand arguments
-            
+
         Returns:
             True if the subcommand was handled successfully, False otherwise
         """
         if not args:
-            console.print(
-                "[yellow]Please specify an image to pull.[/yellow]"
-            )
+            console.print("[yellow]Please specify an image to pull.[/yellow]")
             return False
 
         image_name = args[0]
@@ -1270,15 +1268,11 @@ class VirtualizationCommand(Command):
 
         # Check Docker status
         if not docker_manager.is_docker_installed():
-            console.print(
-                "[red]Docker is not installed on your system.[/red]"
-            )
+            console.print("[red]Docker is not installed on your system.[/red]")
             return False
 
         if not docker_manager.is_docker_running():
-            console.print(
-                "[yellow]Docker daemon is not running.[/yellow]"
-            )
+            console.print("[yellow]Docker daemon is not running.[/yellow]")
             return False
 
         # Show progress message
@@ -1298,17 +1292,15 @@ class VirtualizationCommand(Command):
 
     def handle_run_subcommand(self, args: Optional[List[str]] = None) -> bool:
         """Handle the run subcommand.
-        
+
         Args:
             args: Optional list of subcommand arguments
-            
+
         Returns:
             True if the subcommand was handled successfully, False otherwise
         """
         if not args:
-            console.print(
-                "[yellow]Please specify an image to run.[/yellow]"
-            )
+            console.print("[yellow]Please specify an image to run.[/yellow]")
             return False
 
         image_name = args[0]
@@ -1322,22 +1314,17 @@ class VirtualizationCommand(Command):
 
         # Check Docker status
         if not docker_manager.is_docker_installed():
-            console.print(
-                "[red]Docker is not installed on your system.[/red]"
-            )
+            console.print("[red]Docker is not installed on your system.[/red]")
             return False
 
         if not docker_manager.is_docker_running():
-            console.print(
-                "[yellow]Docker daemon is not running.[/yellow]"
-            )
+            console.print("[yellow]Docker daemon is not running.[/yellow]")
             return False
 
         # Show progress message
         status_message = f"Running Docker container from image: {image_name}..."
         with console.status(status_message):
-            success, message = docker_manager.run_container(
-                image_name, container_name)
+            success, message = docker_manager.run_container(image_name, container_name)
 
         # Show result
         if success:
@@ -1361,10 +1348,10 @@ class VirtualizationCommand(Command):
 
     def handle_activate_image(self, image_identifier: str) -> bool:
         """Handle activating a Docker image by name or ID.
-        
+
         Args:
             image_identifier: Name or ID of the image to activate
-            
+
         Returns:
             True if the image was activated successfully, False otherwise
         """
@@ -1381,24 +1368,18 @@ class VirtualizationCommand(Command):
                 )
                 return True
             else:
-                console.print(
-                    "[yellow]Already using host system environment.[/yellow]"
-                )
+                console.print("[yellow]Already using host system environment.[/yellow]")
                 return True
 
         docker_manager = DockerManager()
 
         # Check Docker status
         if not docker_manager.is_docker_installed():
-            console.print(
-                "[red]Docker is not installed on your system.[/red]"
-            )
+            console.print("[red]Docker is not installed on your system.[/red]")
             return False
 
         if not docker_manager.is_docker_running():
-            console.print(
-                "[yellow]Docker daemon is not running.[/yellow]"
-            )
+            console.print("[yellow]Docker daemon is not running.[/yellow]")
             return False
 
         # Refresh container and image cache
@@ -1409,9 +1390,7 @@ class VirtualizationCommand(Command):
             container_id = container.get("ID", "")
             if container_id.startswith(image_identifier):
                 # Found a container with matching ID (or starting with the provided ID)
-                console.print(
-                    f"[yellow]Found container with ID: {container_id[:12]}[/yellow]"
-                )
+                console.print(f"[yellow]Found container with ID: {container_id[:12]}[/yellow]")
 
                 # Get container status
                 container_status = container.get("Status", "").lower()
@@ -1429,7 +1408,7 @@ class VirtualizationCommand(Command):
                             ["docker", "start", container_id],
                             capture_output=True,
                             text=True,
-                            check=False
+                            check=False,
                         )
 
                         if start_process.returncode != 0:
@@ -1464,9 +1443,7 @@ class VirtualizationCommand(Command):
         image_name = image_identifier
         if image_identifier in self.id_to_image:
             image_name = self.id_to_image[image_identifier]
-            console.print(
-                f"[dim]Using image '{image_name}' for ID '{image_identifier}'[/dim]"
-            )
+            console.print(f"[dim]Using image '{image_name}' for ID '{image_identifier}'[/dim]")
 
         # SPECIAL HANDLING FOR PARROTSEC
         # ==============================
@@ -1506,7 +1483,7 @@ class VirtualizationCommand(Command):
                             ["docker", "start", container_id],
                             capture_output=True,
                             text=True,
-                            check=False
+                            check=False,
                         )
 
                         # Check if start was successful
@@ -1525,7 +1502,9 @@ class VirtualizationCommand(Command):
                             # Find the category information
                             category = "Docker Container"
                             if image_name in DEFAULT_IMAGES:
-                                category = DEFAULT_IMAGES[image_name].get("category", "Docker Container")
+                                category = DEFAULT_IMAGES[image_name].get(
+                                    "category", "Docker Container"
+                                )
 
                             console.print(
                                 f"[yellow]Container {container_id[:12]} is not running, but it's now the active environment.[/yellow]\n"
@@ -1562,15 +1541,16 @@ class VirtualizationCommand(Command):
         image_available = False
         for image in self.cached_images:
             # Normalize both image names for comparison
-            if normalize_image_name(image.get("Repository", "")) == normalize_image_name(image_name):
+            if normalize_image_name(image.get("Repository", "")) == normalize_image_name(
+                image_name
+            ):
                 image_available = True
                 break
 
         # If not available, pull it
         if not image_available:
             console.print(
-                f"[yellow]Image {image_name} not found locally. "
-                f"Pulling from Docker Hub...[/yellow]"
+                f"[yellow]Image {image_name} not found locally. Pulling from Docker Hub...[/yellow]"
             )
 
             with console.status(f"Pulling Docker image: {image_name}..."):
@@ -1584,9 +1564,7 @@ class VirtualizationCommand(Command):
             console.print(f"[green]{message}[/green]")
 
         # Run a container from the image
-        with console.status(
-            f"Starting {image_name} environment..."
-        ):
+        with console.status(f"Starting {image_name} environment..."):
             success, message = docker_manager.run_container(image_name, container_name)
 
         if not success:
@@ -1601,15 +1579,15 @@ class VirtualizationCommand(Command):
             #         f"Setting it as active anyway to enable fallback to host execution.[/yellow]"
             #     )
 
-                # Create a dummy ID that will be treated as the active container
-                # dummy_id = f"dummy-{image_name.replace('/', '-')}"
-                # os.environ["CAI_ACTIVE_CONTAINER"] = dummy_id
+            # Create a dummy ID that will be treated as the active container
+            # dummy_id = f"dummy-{image_name.replace('/', '-')}"
+            # os.environ["CAI_ACTIVE_CONTAINER"] = dummy_id
 
-                # console.print(
-                #     f"[yellow]Set '{dummy_id}' as active environment.[/yellow]\n"
-                #     f"[dim]Commands will execute on host, but environment name will show as {image_name}.[/dim]"
-                # )
-                # return True
+            # console.print(
+            #     f"[yellow]Set '{dummy_id}' as active environment.[/yellow]\n"
+            #     f"[dim]Commands will execute on host, but environment name will show as {image_name}.[/dim]"
+            # )
+            # return True
 
             return False
 
@@ -1638,7 +1616,7 @@ class VirtualizationCommand(Command):
 
     def _handle_parrotsec(self) -> bool:
         """Special handler for Parrot Security which is particularly problematic.
-        
+
         Returns:
             True if the image was activated successfully, False otherwise
         """
@@ -1646,9 +1624,7 @@ class VirtualizationCommand(Command):
         fixed_image_name = "cai-fixed-parrotsec"
         container_name = "cai-parrotsec"
 
-        console.print(
-            f"[yellow]Using special handling for {image_name}.[/yellow]"
-        )
+        console.print(f"[yellow]Using special handling for {image_name}.[/yellow]")
 
         # Step 1: Check if we already have the fixed image
         fixed_image_exists = False
@@ -1659,9 +1635,7 @@ class VirtualizationCommand(Command):
 
         # Step 2: If we don't have a fixed image, create one
         if not fixed_image_exists:
-            console.print(
-                "[yellow]Creating a fixed Parrot Security image...[/yellow]"
-            )
+            console.print("[yellow]Creating a fixed Parrot Security image...[/yellow]")
 
             # 2.1: First pull the original image if needed
             original_exists = False
@@ -1671,21 +1645,14 @@ class VirtualizationCommand(Command):
                     break
 
             if not original_exists:
-                console.print(
-                    f"[yellow]Pulling {image_name} image...[/yellow]"
-                )
+                console.print(f"[yellow]Pulling {image_name} image...[/yellow]")
                 with console.status(f"Pulling {image_name}..."):
                     result = subprocess.run(
-                        ["docker", "pull", image_name],
-                        capture_output=True,
-                        text=True,
-                        check=False
+                        ["docker", "pull", image_name], capture_output=True, text=True, check=False
                     )
 
                     if result.returncode != 0:
-                        console.print(
-                            f"[red]Failed to pull {image_name}: {result.stderr}[/red]"
-                        )
+                        console.print(f"[red]Failed to pull {image_name}: {result.stderr}[/red]")
                         return False
 
             # 2.2: Create a temporary container and export a fixed Dockerfile
@@ -1694,14 +1661,10 @@ class VirtualizationCommand(Command):
             # Create temp container using the original image
             with console.status("Creating temporary container..."):
                 create_result = subprocess.run(
-                    [
-                        "docker", "create",
-                        "--name", temp_name,
-                        image_name
-                    ],
+                    ["docker", "create", "--name", temp_name, image_name],
                     capture_output=True,
                     text=True,
-                    check=False
+                    check=False,
                 )
 
                 if create_result.returncode != 0:
@@ -1718,6 +1681,7 @@ CMD ["-c", "tail -f /dev/null"]
 
             # Write Dockerfile to a temporary file
             import tempfile
+
             with tempfile.NamedTemporaryFile(mode="w", suffix=".dockerfile") as f:
                 f.write(dockerfile_content)
                 f.flush()
@@ -1725,15 +1689,10 @@ CMD ["-c", "tail -f /dev/null"]
                 # 2.4: Build the fixed image
                 with console.status(f"Building fixed {fixed_image_name}..."):
                     build_result = subprocess.run(
-                        [
-                            "docker", "build",
-                            "-f", f.name,
-                            "-t", fixed_image_name,
-                            "."
-                        ],
+                        ["docker", "build", "-f", f.name, "-t", fixed_image_name, "."],
                         capture_output=True,
                         text=True,
-                        check=False
+                        check=False,
                     )
 
                     if build_result.returncode != 0:
@@ -1743,12 +1702,7 @@ CMD ["-c", "tail -f /dev/null"]
                         return False
 
             # 2.5: Clean up the temporary container
-            subprocess.run(
-                ["docker", "rm", temp_name],
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            subprocess.run(["docker", "rm", temp_name], capture_output=True, text=True, check=False)
 
             console.print(
                 f"[green]Successfully created fixed Parrot Security image: {fixed_image_name}[/green]"
@@ -1766,16 +1720,14 @@ CMD ["-c", "tail -f /dev/null"]
 
         # Step 4: If container exists, try to start it if needed
         if existing_container_id:
-            console.print(
-                "[yellow]Found existing fixed container. Starting if needed...[/yellow]"
-            )
+            console.print("[yellow]Found existing fixed container. Starting if needed...[/yellow]")
 
             # Check if it's running
             check_result = subprocess.run(
                 ["docker", "inspect", "--format", "{{.State.Running}}", existing_container_id],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
 
             if check_result.returncode == 0 and "true" in check_result.stdout.lower():
@@ -1789,7 +1741,7 @@ CMD ["-c", "tail -f /dev/null"]
                     ["docker", "start", existing_container_id],
                     capture_output=True,
                     text=True,
-                    check=False
+                    check=False,
                 )
 
                 if start_result.returncode != 0:
@@ -1802,7 +1754,7 @@ CMD ["-c", "tail -f /dev/null"]
                         ["docker", "rm", "-f", existing_container_id],
                         capture_output=True,
                         text=True,
-                        check=False
+                        check=False,
                     )
 
                     existing_container_id = None
@@ -1813,40 +1765,36 @@ CMD ["-c", "tail -f /dev/null"]
 
         # Step 5: If no running container, create a new one
         if not existing_container_id:
-            console.print(
-                "[yellow]Creating new container from fixed image...[/yellow]"
-            )
+            console.print("[yellow]Creating new container from fixed image...[/yellow]")
 
             # Remove any existing container with the same name
             subprocess.run(
-                ["docker", "rm", "-f", container_name],
-                capture_output=True,
-                text=True,
-                check=False
+                ["docker", "rm", "-f", container_name], capture_output=True, text=True, check=False
             )
 
             # Create a new container
             with console.status("Creating container..."):
                 create_result = subprocess.run(
                     [
-                        "docker", "run", "-d",
-                        "--name", container_name,
+                        "docker",
+                        "run",
+                        "-d",
+                        "--name",
+                        container_name,
                         "--network=host",
                         "--cap-add=NET_ADMIN",
                         "--cap-add=NET_RAW",
                         "--security-opt=seccomp=unconfined",
-                        fixed_image_name
+                        fixed_image_name,
                         # No command needed - using CMD from the fixed image
                     ],
                     capture_output=True,
                     text=True,
-                    check=False
+                    check=False,
                 )
 
                 if create_result.returncode != 0:
-                    console.print(
-                        f"[red]Failed to create container: {create_result.stderr}[/red]"
-                    )
+                    console.print(f"[red]Failed to create container: {create_result.stderr}[/red]")
                     return False
 
                 existing_container_id = create_result.stdout.strip()
@@ -1854,10 +1802,17 @@ CMD ["-c", "tail -f /dev/null"]
                 # Verify it's running
                 time.sleep(1)
                 check_result = subprocess.run(
-                    ["docker", "ps", "--filter", f"id={existing_container_id}", "--format", "{{.ID}}"],
+                    [
+                        "docker",
+                        "ps",
+                        "--filter",
+                        f"id={existing_container_id}",
+                        "--format",
+                        "{{.ID}}",
+                    ],
                     capture_output=True,
                     text=True,
-                    check=False
+                    check=False,
                 )
 
                 if not check_result.stdout.strip():
@@ -1886,7 +1841,7 @@ CMD ["-c", "tail -f /dev/null"]
 
     def _fallback_to_best_environment(self) -> bool:
         """Attempt to fallback to the best available environment.
-        
+
         Returns:
             True if fallback was successful, False otherwise
         """
@@ -1910,11 +1865,10 @@ CMD ["-c", "tail -f /dev/null"]
 
         # Then try kalilinux/kali-rolling
         if "kalilinux/kali-rolling" in [img.get("Repository", "") for img in self.cached_images]:
-            console.print(
-                "[yellow]Falling back to kalilinux/kali-rolling image...[/yellow]"
-            )
+            console.print("[yellow]Falling back to kalilinux/kali-rolling image...[/yellow]")
             return self.handle_activate_image("kalilinux/kali-rolling")
         return self.handle_activate_image("kalilinux/kali-rolling")
+
 
 # Register the commands
 register_command(VirtualizationCommand())

@@ -4,6 +4,7 @@ Provides a small function-tool `get_rag_status()` that returns a snapshot
 of in-memory RAG metrics collected by the adapters (faiss cache metrics,
 recent queries, and totals).
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict

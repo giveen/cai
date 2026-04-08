@@ -33,7 +33,8 @@ from cai.sdk.agents import (
 )
 from cai.sdk.agents.models.fake_id import FAKE_RESPONSES_ID
 
-cai_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+cai_model = os.getenv("CAI_MODEL", "qwen2.5:14b")
+
 
 @pytest.mark.allow_call_model_methods
 @pytest.mark.asyncio
@@ -175,6 +176,7 @@ async def test_get_response_with_tool_call(monkeypatch) -> None:
     assert fn_call_item.name == "do_thing"
     assert fn_call_item.arguments == "{'x':1}"
 
+
 @pytest.mark.asyncio
 async def test_fetch_response_non_stream(monkeypatch) -> None:
     """
@@ -246,7 +248,8 @@ async def test_fetch_response_stream(monkeypatch) -> None:
     object along with the underlying async stream. The OpenAI client call
     should include `stream_options` to request usage-delimited chunks.
     """
-    os.environ['CAI_STREAM'] = 'true'
+    os.environ["CAI_STREAM"] = "true"
+
     async def event_stream() -> AsyncIterator[ChatCompletionChunk]:
         if False:  # pragma: no cover
             yield  # pragma: no cover
@@ -309,7 +312,7 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
     msg = ChatCompletionMessage(
         role="assistant",
         content="I'll help you with that. Let me use a tool.",
-        tool_calls=[tool_call]
+        tool_calls=[tool_call],
     )
     choice = Choice(index=0, finish_reason="stop", message=msg)
     chat = ChatCompletion(

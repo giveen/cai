@@ -1,8 +1,9 @@
 """
-A common tactic is to break down a task into a series of smaller steps. 
+A common tactic is to break down a task into a series of smaller steps.
 Each task can be performed by an agent, and the output of one agent is used as input to the next
 try stream and normal
 """
+
 import asyncio
 import os
 import sys
@@ -33,14 +34,17 @@ ctf_agent = Agent(
         execute_cli_command,
     ],
     model=OpenAIChatCompletionsModel(
-        model= os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )
+
+
 async def main():
     result = await Runner.run(ctf_agent, "List the files in the current directory?")
     print("\nAgent response:")
     print(result.final_output)
+
 
 async def main_streamed():
     print("\nAgent response (streaming):")
@@ -65,6 +69,7 @@ async def main_streamed():
     # Clear the progress line
     sys.stdout.write("\r" + " " * 60 + "\r")
     sys.stdout.flush()
+
 
 if __name__ == "__main__":
     set_tracing_disabled(True)

@@ -1,7 +1,7 @@
 """
 This module contains tests for the one-tool agent functionality, specifically
-for the CTF agent. It includes tests to verify the agent's instructions and 
-configuration, as well as its ability to execute a Linux command using the 
+for the CTF agent. It includes tests to verify the agent's instructions and
+configuration, as well as its ability to execute a Linux command using the
 generic_linux_command tool.
 """
 
@@ -30,6 +30,7 @@ async def test_ctf_agent_instructions_and_configuration():
     # Verify the agent's name
     assert agent.name == "CTF agent"
 
+
 @pytest.mark.asyncio
 async def test_ctf_agent_executes_linux_command():
     """Test the CTF agent's ability to execute a Linux command."""
@@ -42,11 +43,9 @@ async def test_ctf_agent_executes_linux_command():
         [
             [
                 get_text_message("executing comando..."),
-                get_function_tool_call("generic_linux_command", '{"command": "ls"}')
+                get_function_tool_call("generic_linux_command", '{"command": "ls"}'),
             ],
-            [
-                get_text_message("result of the command: flag{12345}")
-            ]
+            [get_text_message("result of the command: flag{12345}")],
         ]
     )
 

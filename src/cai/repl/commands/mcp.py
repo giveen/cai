@@ -169,9 +169,7 @@ class GlobalMCPUtil(MCPUtil):
                                 f"MCP server '{server_name}' is unavailable. Use /mcp status to verify it is loaded."
                             )
 
-                        lock = _SERVER_INVOCATION_LOCKS.setdefault(
-                            server_name, asyncio.Lock()
-                        )
+                        lock = _SERVER_INVOCATION_LOCKS.setdefault(server_name, asyncio.Lock())
 
                         async with lock:
                             while retry_count < max_retries:
@@ -350,6 +348,7 @@ def cleanup_mcp_servers():
     try:
         if _GLOBAL_MCP_SERVERS:
             import warnings
+
             # Suppress async generator warnings during cleanup
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -625,7 +624,7 @@ Example: `/mcp add burp 13`
         if not args or len(args) < 2:
             console.print("[red]Error: Invalid arguments[/red]")
             console.print("Usage:")
-            console.print("  /mcp load <url> <name> [--header \"Key: Value\"]  - For SSE servers")
+            console.print('  /mcp load <url> <name> [--header "Key: Value"]  - For SSE servers')
             console.print("  /mcp load stdio <name> <command> [args...]        - For STDIO servers")
             return False
 
@@ -657,7 +656,9 @@ Example: `/mcp add burp 13`
                     # Parse header in format "Key: Value"
                     header_str = args[i + 1]
                     if ":" not in header_str:
-                        console.print(f"[red]Error: Invalid header format '{header_str}'. Use 'Key: Value'[/red]")
+                        console.print(
+                            f"[red]Error: Invalid header format '{header_str}'. Use 'Key: Value'[/red]"
+                        )
                         return False
 
                     key, value = header_str.split(":", 1)
@@ -672,7 +673,9 @@ Example: `/mcp add burp 13`
 
             return self._load_sse_server(url, name, headers if headers else None)
 
-    def _load_sse_server(self, url: str, name: str, headers: Optional[Dict[str, str]] = None) -> bool:
+    def _load_sse_server(
+        self, url: str, name: str, headers: Optional[Dict[str, str]] = None
+    ) -> bool:
         """Load an SSE MCP server.
 
         Args:
@@ -697,7 +700,7 @@ Example: `/mcp add burp 13`
             params: MCPServerSseParams = {
                 "url": url,
                 "timeout": 10,  # Connection timeout
-                "sse_read_timeout": 300  # 5 minutes for SSE reads
+                "sse_read_timeout": 300,  # 5 minutes for SSE reads
             }
             # Add headers if provided
             if headers:
@@ -1219,10 +1222,10 @@ Example: `/mcp add burp 13`
 
     def handle_associations(self, args: Optional[List[str]] = None) -> bool:
         """Handle /mcp associations command to show agent-MCP associations.
-        
+
         Args:
             args: Optional list of command arguments (not used)
-            
+
         Returns:
             True
         """
@@ -1242,6 +1245,7 @@ Example: `/mcp add burp 13`
                 for server_name in server_names:
                     if server_name in _GLOBAL_MCP_SERVERS:
                         try:
+
                             async def count_tools(srv):
                                 tools = await srv.list_tools()
                                 return len(tools)
@@ -1260,10 +1264,10 @@ Example: `/mcp add burp 13`
 
     def handle_test(self, args: Optional[List[str]] = None) -> bool:
         """Handle /mcp test command to test server connectivity.
-        
+
         Args:
             args: List of command arguments
-            
+
         Returns:
             True if successful
         """
@@ -1283,6 +1287,7 @@ Example: `/mcp add burp 13`
         console.print(f"[cyan]Testing MCP server '{server_name}'...[/cyan]")
 
         try:
+
             async def test_server():
                 # Test 1: List tools
                 console.print("[yellow]Test 1: Listing tools...[/yellow]")
@@ -1300,14 +1305,18 @@ Example: `/mcp add burp 13`
                         result = await server.call_tool(test_tool.name, {})
                         console.print("[green]✓ Tool invocation successful[/green]")
                         if result and result.content:
-                            console.print(f"[dim]Result preview: {str(result.content[0])[:100]}...[/dim]")
+                            console.print(
+                                f"[dim]Result preview: {str(result.content[0])[:100]}...[/dim]"
+                            )
                     except Exception as tool_error:
-                        console.print("[yellow]⚠ Tool test failed (this is normal for tools requiring input)[/yellow]")
+                        console.print(
+                            "[yellow]⚠ Tool test failed (this is normal for tools requiring input)[/yellow]"
+                        )
                         console.print(f"[dim]Error: {str(tool_error)[:100]}[/dim]")
 
                 # Test 3: Test reconnection
                 console.print("[yellow]Test 3: Testing reconnection...[/yellow]")
-                if hasattr(server, 'session'):
+                if hasattr(server, "session"):
                     _old_session = server.session
                     server.session = None
                 await server.connect()
@@ -1326,10 +1335,10 @@ Example: `/mcp add burp 13`
 
 def get_mcp_servers_for_agent(agent_name: str) -> List[str]:
     """Get list of MCP server names associated with an agent.
-    
+
     Args:
         agent_name: Name of the agent
-        
+
     Returns:
         List of MCP server names
     """
@@ -1338,7 +1347,7 @@ def get_mcp_servers_for_agent(agent_name: str) -> List[str]:
 
 def add_mcp_server_to_agent(agent_name: str, server_name: str):
     """Associate an MCP server with an agent.
-    
+
     Args:
         agent_name: Name of the agent
         server_name: Name of the MCP server
@@ -1353,7 +1362,7 @@ def add_mcp_server_to_agent(agent_name: str, server_name: str):
 
 def remove_mcp_server_from_agent(agent_name: str, server_name: str):
     """Remove an MCP server association from an agent.
-    
+
     Args:
         agent_name: Name of the agent
         server_name: Name of the MCP server
@@ -1366,10 +1375,10 @@ def remove_mcp_server_from_agent(agent_name: str, server_name: str):
 
 def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
     """Get all MCP tools for an agent based on associations.
-    
+
     Args:
         agent_name: Name of the agent
-        
+
     Returns:
         List of FunctionTool objects
     """
@@ -1382,6 +1391,7 @@ def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
             try:
                 # Get tools from server synchronously
                 import asyncio
+
                 async def get_tools():
                     return await server.list_tools()
 
@@ -1389,6 +1399,7 @@ def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
                 try:
                     _loop = asyncio.get_running_loop()
                     import concurrent.futures
+
                     def run_in_thread():
                         new_loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(new_loop)

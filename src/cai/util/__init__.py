@@ -8,6 +8,7 @@ helpers (prompt/template rendering), and lightweight no-op streaming
 helpers to avoid import-time NameErrors. The goal is compatibility
 during the refactor while keeping behavior simple and safe.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -35,6 +36,7 @@ _idle_timer_start: Optional[float] = None
 _idle_time_total: float = 0.0
 _timing_lock = threading.Lock()
 
+
 def start_active_timer() -> None:
     global _active_timer_start, _idle_timer_start, _idle_time_total
     with _timing_lock:
@@ -43,6 +45,7 @@ def start_active_timer() -> None:
             _idle_timer_start = None
         if _active_timer_start is None:
             _active_timer_start = time.time()
+
 
 def stop_active_timer() -> None:
     global _active_timer_start, _active_time_total, _idle_timer_start
@@ -53,6 +56,7 @@ def stop_active_timer() -> None:
         if _idle_timer_start is None:
             _idle_timer_start = time.time()
 
+
 def start_idle_timer() -> None:
     global _idle_timer_start, _active_timer_start, _active_time_total
     with _timing_lock:
@@ -62,6 +66,7 @@ def start_idle_timer() -> None:
         if _idle_timer_start is None:
             _idle_timer_start = time.time()
 
+
 def stop_idle_timer() -> None:
     global _idle_timer_start, _idle_time_total, _active_timer_start
     with _timing_lock:
@@ -70,6 +75,7 @@ def stop_idle_timer() -> None:
             _idle_timer_start = None
         if _active_timer_start is None:
             _active_timer_start = time.time()
+
 
 def _format_seconds(sec: float) -> str:
     sec = int(sec)
@@ -81,12 +87,14 @@ def _format_seconds(sec: float) -> str:
         return f"{m}m {s}s"
     return f"{s}s"
 
+
 def get_active_time_seconds() -> float:
     with _timing_lock:
         total = _active_time_total
         if _active_timer_start is not None:
             total += time.time() - _active_timer_start
     return total
+
 
 def get_idle_time_seconds() -> float:
     with _timing_lock:
@@ -95,20 +103,23 @@ def get_idle_time_seconds() -> float:
             total += time.time() - _idle_timer_start
     return total
 
+
 def get_active_time() -> str:
     return _format_seconds(get_active_time_seconds())
 
+
 def get_idle_time() -> str:
     return _format_seconds(get_idle_time_seconds())
+
 
 # Start in idle state
 start_idle_timer()
 
 # -------------------- Cost tracking (minimal, test-friendly) --------------------
 LITELLM_URL = (
-    "https://raw.githubusercontent.com/BerriAI/litellm/main/"
-    "model_prices_and_context_window.json"
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 )
+
 
 @dataclass
 class CostTracker:
@@ -151,7 +162,10 @@ class CostTracker:
                 data = resp.json()
                 p = data.get(model_key) or data.get(model_key.lower())
                 if p:
-                    pricing = (float(p.get("input_cost_per_token", 0)), float(p.get("output_cost_per_token", 0)))
+                    pricing = (
+                        float(p.get("input_cost_per_token", 0)),
+                        float(p.get("output_cost_per_token", 0)),
+                    )
                     self.model_pricing_cache[model_key] = pricing
                     return pricing
         except Exception:
@@ -159,7 +173,14 @@ class CostTracker:
         self.model_pricing_cache[model_key] = (0.0, 0.0)
         return (0.0, 0.0)
 
-    def calculate_cost(self, model: str, input_tokens: int, output_tokens: int, label: Optional[str] = None, force_calculation: bool = False) -> float:
+    def calculate_cost(
+        self,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        label: Optional[str] = None,
+        force_calculation: bool = False,
+    ) -> float:
         key = f"{model}_{input_tokens}_{output_tokens}"
         if key in self.calculated_costs_cache and not force_calculation:
             return float(self.calculated_costs_cache[key])
@@ -188,9 +209,20 @@ class CostTracker:
 COST_TRACKER = CostTracker()
 atexit.register(COST_TRACKER.log_final_cost)
 
-def calculate_model_cost(model: str, input_tokens: int, output_tokens: int, label: Optional[str] = None, force_calculation: bool = False) -> float:
+
+def calculate_model_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    label: Optional[str] = None,
+    force_calculation: bool = False,
+) -> float:
     try:
-        return float(COST_TRACKER.calculate_cost(model, input_tokens, output_tokens, label=label, force_calculation=force_calculation))
+        return float(
+            COST_TRACKER.calculate_cost(
+                model, input_tokens, output_tokens, label=label, force_calculation=force_calculation
+            )
+        )
     except Exception:
         try:
             in_cost, out_cost = COST_TRACKER.get_model_pricing(model)
@@ -221,7 +253,9 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     tool_call_map = {}
 
     for i, msg in enumerate(sanitized_messages):
-        if msg.get("role") in ["user", "system"] and (msg.get("content") is None or not str(msg.get("content", "")).strip()):
+        if msg.get("role") in ["user", "system"] and (
+            msg.get("content") is None or not str(msg.get("content", "")).strip()
+        ):
             if msg.get("role") == "system":
                 msg["content"] = ""
                 processed_messages.append(msg)
@@ -232,15 +266,31 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 if tc.get("id"):
                     tool_id = tc.get("id")
                     if tool_id not in tool_call_map:
-                        tool_call_map[tool_id] = {"assistant_idx": len(processed_messages) - 1, "tool_idx": None}
+                        tool_call_map[tool_id] = {
+                            "assistant_idx": len(processed_messages) - 1,
+                            "tool_idx": None,
+                        }
         if msg.get("role") == "tool" and msg.get("tool_call_id"):
             tool_id = msg.get("tool_call_id")
             if tool_id in tool_call_map:
                 tool_call_map[tool_id]["tool_idx"] = len(processed_messages) - 1
             else:
-                assistant_msg = {"role": "assistant", "content": None, "tool_calls": [{"id": tool_id, "type": "function", "function": {"name": "unknown_function", "arguments": "{}"}}]}
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {"name": "unknown_function", "arguments": "{}"},
+                        }
+                    ],
+                }
                 processed_messages.insert(len(processed_messages) - 1, assistant_msg)
-                tool_call_map[tool_id] = {"assistant_idx": len(processed_messages) - 2, "tool_idx": len(processed_messages) - 1}
+                tool_call_map[tool_id] = {
+                    "assistant_idx": len(processed_messages) - 2,
+                    "tool_idx": len(processed_messages) - 1,
+                }
 
     # Re-order tool messages so they follow their assistant messages
     i = 0
@@ -259,26 +309,47 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                     j -= 1
                 prev_non_tool = processed_messages[j] if j >= 0 else None
                 is_valid = False
-                if prev_non_tool and prev_non_tool.get("role") == "assistant" and prev_non_tool.get("tool_calls"):
+                if (
+                    prev_non_tool
+                    and prev_non_tool.get("role") == "assistant"
+                    and prev_non_tool.get("tool_calls")
+                ):
                     if any(tc.get("id") == tool_id for tc in prev_non_tool.get("tool_calls", [])):
                         is_valid = True
                 if not is_valid:
                     assistant_idx = None
                     for k in range(i - 1, -1, -1):
                         a = processed_messages[k]
-                        if a.get("role") == "assistant" and a.get("tool_calls") and any(tc.get("id") == tool_id for tc in a.get("tool_calls", [])):
+                        if (
+                            a.get("role") == "assistant"
+                            and a.get("tool_calls")
+                            and any(tc.get("id") == tool_id for tc in a.get("tool_calls", []))
+                        ):
                             assistant_idx = k
                             break
                     if assistant_idx is not None:
                         tool_msg = processed_messages.pop(i)
                         insert_at = assistant_idx + 1
-                        while insert_at < len(processed_messages) and processed_messages[insert_at].get("role") == "tool":
+                        while (
+                            insert_at < len(processed_messages)
+                            and processed_messages[insert_at].get("role") == "tool"
+                        ):
                             insert_at += 1
                         processed_messages.insert(insert_at, tool_msg)
                         i = min(i, insert_at)
                         continue
                     else:
-                        assistant_msg = {"role": "assistant", "content": None, "tool_calls": [{"id": tool_id, "type": "function", "function": {"name": "unknown_function", "arguments": "{}"}}]}
+                        assistant_msg = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": tool_id,
+                                    "type": "function",
+                                    "function": {"name": "unknown_function", "arguments": "{}"},
+                                }
+                            ],
+                        }
                         processed_messages.insert(i, assistant_msg)
                         i += 2
                         continue
@@ -299,10 +370,18 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     while i < len(processed_messages) - 1:
         cur = processed_messages[i]
         nxt = processed_messages[i + 1]
-        if cur.get("role") == "assistant" and cur.get("tool_calls") and (nxt.get("role") != "tool" or not nxt.get("tool_call_id")):
+        if (
+            cur.get("role") == "assistant"
+            and cur.get("tool_calls")
+            and (nxt.get("role") != "tool" or not nxt.get("tool_call_id"))
+        ):
             tool_id = cur["tool_calls"][0].get("id", "unknown")
             tool_name = cur["tool_calls"][0].get("function", {}).get("name", "unknown_function")
-            tool_msg = {"role": "tool", "tool_call_id": tool_id, "content": f"Auto-generated response for {tool_name}"}
+            tool_msg = {
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": f"Auto-generated response for {tool_name}",
+            }
             processed_messages.insert(i + 1, tool_msg)
             i += 2
         else:
@@ -317,28 +396,81 @@ _AGENT_STREAMING_CONTEXTS: Dict[str, Dict[str, Any]] = {}
 # Backwards-compatible name used by older modules
 _LIVE_STREAMING_PANELS = _STREAMING_SESSIONS
 
-def cli_print_tool_output(tool_name: str, output: str, call_id: Optional[str] = None, agent_name: Optional[str] = None, **_kwargs) -> None:
-    if call_id:
-        _STREAMING_SESSIONS[call_id] = {"tool_name": tool_name, "current_output": output, "agent_name": agent_name, "is_complete": True}
-    try:
-        console.print(f"[tool][{tool_name}][/tool] {output}")
-    except Exception:
-        print(output)
 
-def cli_print_tool_call(tool_name: str,
-                        tool_args: Optional[dict] = None,
-                        tool_output: Optional[str] = None,
-                        call_id: Optional[str] = None,
-                        interaction_input_tokens: int = 0,
-                        interaction_output_tokens: int = 0,
-                        interaction_reasoning_tokens: int = 0,
-                        total_input_tokens: int = 0,
-                        total_output_tokens: int = 0,
-                        total_reasoning_tokens: int = 0,
-                        model: Optional[str] = None,
-                        agent_name: Optional[str] = None,
-                        debug: bool = False,
-                        **_kwargs) -> None:
+def cli_print_tool_output(
+    tool_name: str,
+    output: str,
+    call_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    **_kwargs,
+) -> None:
+    # Always suppress empty output
+    if not output or not output.strip():
+        return
+
+    # Build a deduplication key from tool_name + command args + agent_id
+    args = _kwargs.get("args") or {}
+    if isinstance(args, dict):
+        cmd_arg = args.get("command", "") or str(args)
+    else:
+        cmd_arg = str(args)
+    token_info = _kwargs.get("token_info") or {}
+    agent_id = token_info.get("agent_id", "") if isinstance(token_info, dict) else ""
+    command_key = f"{tool_name}:{cmd_arg}:{agent_id}"
+
+    streaming_enabled = os.getenv("CAI_STREAM", "true").lower() not in ("false", "0", "no")
+
+    if streaming_enabled:
+        # Content-based deduplication: suppress exact duplicates
+        seen = cli_print_tool_output._seen_calls  # type: ignore[attr-defined]
+        content_key = (command_key, output)
+        if content_key in seen:
+            return
+        seen.add(content_key)
+    else:
+        # Time-based deduplication: suppress if same key shown within threshold
+        display_times = cli_print_tool_output._command_display_times  # type: ignore[attr-defined]
+        threshold = 0.5
+        last = display_times.get(command_key)
+        if last is not None and (time.time() - last) < threshold:
+            return
+        display_times[command_key] = time.time()
+
+    if call_id:
+        _STREAMING_SESSIONS[call_id] = {
+            "tool_name": tool_name,
+            "current_output": output,
+            "agent_name": agent_name,
+            "is_complete": True,
+        }
+    try:
+        from rich.markup import escape as _escape
+        console.print(f"{_escape(tool_name)} {output}")
+    except Exception:
+        print(f"{tool_name} {output}")
+
+
+# Deduplication state attached to the function itself
+cli_print_tool_output._seen_calls: set = set()  # type: ignore[attr-defined]
+cli_print_tool_output._command_display_times: Dict[str, float] = {}  # type: ignore[attr-defined]
+
+
+def cli_print_tool_call(
+    tool_name: str,
+    tool_args: Optional[dict] = None,
+    tool_output: Optional[str] = None,
+    call_id: Optional[str] = None,
+    interaction_input_tokens: int = 0,
+    interaction_output_tokens: int = 0,
+    interaction_reasoning_tokens: int = 0,
+    total_input_tokens: int = 0,
+    total_output_tokens: int = 0,
+    total_reasoning_tokens: int = 0,
+    model: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    debug: bool = False,
+    **_kwargs,
+) -> None:
     """Minimal backward-compatible printer for tool calls used in templates."""
     if call_id:
         _STREAMING_SESSIONS[call_id] = {
@@ -369,7 +501,9 @@ def cli_print_tool_call(tool_name: str,
             display = out if len(out) <= 500 else out[:500] + "…"
             console.print(f"[tool][{tool_name}][/tool] {display}")
         if debug:
-            console.print(f"[debug] tokens={total_input_tokens}+{total_output_tokens} model={model}")
+            console.print(
+                f"[debug] tokens={total_input_tokens}+{total_output_tokens} model={model}"
+            )
     except Exception:
         try:
             if tool_output is not None:
@@ -377,24 +511,56 @@ def cli_print_tool_call(tool_name: str,
         except Exception:
             pass
 
+
 def cli_print_agent_messages(agent_name: str, messages: list, **_kwargs) -> None:
     try:
         console.print(f"[agent]{agent_name}[/agent] {len(messages)} messages")
     except Exception:
         pass
 
+
 def start_tool_streaming(call_id: str, tool_name: str, agent_name: Optional[str] = None) -> None:
-    _STREAMING_SESSIONS[call_id] = {"tool_name": tool_name, "current_output": "", "agent_name": agent_name, "is_complete": False}
+    _STREAMING_SESSIONS[call_id] = {
+        "tool_name": tool_name,
+        "current_output": "",
+        "agent_name": agent_name,
+        "is_complete": False,
+    }
+
 
 def update_tool_streaming(call_id: str, chunk: str) -> None:
     s = _STREAMING_SESSIONS.get(call_id)
     if s is not None:
         s["current_output"] = s.get("current_output", "") + str(chunk)
 
-def finish_tool_streaming(call_id: str, **_kwargs) -> None:
+
+def finish_tool_streaming(*args, **_kwargs) -> None:
+    """
+    Finish a tool streaming session.
+
+    Supports both legacy positional signature used across the codebase
+    (tool_name, tool_args, content, call_id, execution_info, token_info)
+    and the newer keyword-based form where `call_id` is provided.
+    """
+    call_id = None
+
+    # Prefer explicit keyword argument
+    if "call_id" in _kwargs and isinstance(_kwargs["call_id"], str):
+        call_id = _kwargs["call_id"]
+    # Legacy positional form: call_id is the 4th positional argument
+    elif args and len(args) >= 4 and isinstance(args[3], str):
+        call_id = args[3]
+    # Single-argument form where only call_id was provided
+    elif len(args) == 1 and isinstance(args[0], str):
+        call_id = args[0]
+
+    if not call_id:
+        return
+
     s = _STREAMING_SESSIONS.get(call_id)
     if s is not None:
         s["is_complete"] = True
+
 
 def create_agent_streaming_context(agent_name: str) -> Dict[str, Any]:
     ctx = {"agent_name": agent_name, "live": None, "is_started": False}
@@ -405,19 +571,23 @@ def create_agent_streaming_context(agent_name: str) -> Dict[str, Any]:
     create_agent_streaming_context._active_streaming[agent_name] = ctx
     return ctx
 
+
 def update_agent_streaming_content(agent_name: str, content: str) -> None:
     ctx = _AGENT_STREAMING_CONTEXTS.get(agent_name)
     if ctx is not None:
         ctx["last_content"] = content
+
 
 def finish_agent_streaming(agent_name: str) -> None:
     ctx = _AGENT_STREAMING_CONTEXTS.pop(agent_name, None)
     if hasattr(create_agent_streaming_context, "_active_streaming"):
         create_agent_streaming_context._active_streaming.pop(agent_name, None)
 
+
 def cleanup_all_streaming_resources() -> None:
     _STREAMING_SESSIONS.clear()
     _AGENT_STREAMING_CONTEXTS.clear()
+
 
 def cleanup_agent_streaming_resources(agent_name: str) -> None:
     for k, v in list(_STREAMING_SESSIONS.items()):
@@ -427,7 +597,9 @@ def cleanup_agent_streaming_resources(agent_name: str) -> None:
 
 
 # -------------------- Claude thinking helpers (minimal) --------------------
-def start_claude_thinking_if_applicable(agent_name: Optional[str] = None, *_, **__) -> Optional[Dict[str, Any]]:
+def start_claude_thinking_if_applicable(
+    agent_name: Optional[str] = None, *_, **__
+) -> Optional[Dict[str, Any]]:
     """Return a minimal thinking context when requested by callers.
 
     The real implementation shows a live 'thinking' panel. Here we return
@@ -443,10 +615,12 @@ def start_claude_thinking_if_applicable(agent_name: Optional[str] = None, *_, **
     _AGENT_STREAMING_CONTEXTS.setdefault(agent_name, ctx)
     return ctx
 
+
 def update_claude_thinking_content(agent_name: str, content: str) -> None:
     ctx = _AGENT_STREAMING_CONTEXTS.get(agent_name)
     if ctx is not None:
         ctx["thinking_content"] = content
+
 
 def finish_claude_thinking_display(agent_name: str) -> None:
     _AGENT_STREAMING_CONTEXTS.pop(agent_name, None)
@@ -466,28 +640,36 @@ def load_prompt_template(template_path: str) -> str:
     except Exception:
         return ""
 
+
 def create_system_prompt_renderer(base_instructions: str) -> Callable[..., str]:
     def render(run_context=None, agent=None):
         if run_context is None and agent is None:
             return base_instructions
         return base_instructions
+
     render._is_system_prompt_renderer = True
     render._base_instructions = base_instructions
     return render
 
+
 def append_instructions(agent: Any, additional_instructions: str) -> None:
     if not agent.instructions:
         return
-    if callable(agent.instructions) and getattr(agent.instructions, "_is_system_prompt_renderer", False):
+    if callable(agent.instructions) and getattr(
+        agent.instructions, "_is_system_prompt_renderer", False
+    ):
         base = agent.instructions._base_instructions
         agent.instructions = create_system_prompt_renderer(base + additional_instructions)
     elif callable(agent.instructions):
         orig = agent.instructions
+
         def wrapped(*a, **k):
             return orig(*a, **k) + additional_instructions
+
         agent.instructions = wrapped
     else:
         agent.instructions = str(agent.instructions) + additional_instructions
+
 
 def visualize_agent_graph(start_agent: Any) -> None:
     try:
@@ -500,6 +682,7 @@ def visualize_agent_graph(start_agent: Any) -> None:
 def fix_litellm_transcription_annotations() -> bool:
     return False
 
+
 def setup_ctf():
     """Minimal shim for CTF setup used by the CLI during startup.
 
@@ -509,18 +692,31 @@ def setup_ctf():
     """
     return None, ""
 
+
 def get_ollama_api_base() -> str:
-    return os.environ.get("OLLAMA_API_BASE") or os.environ.get("OPENAI_BASE_URL") or "http://localhost:8000/v1"
+    return (
+        os.environ.get("OLLAMA_API_BASE")
+        or os.environ.get("OPENAI_BASE_URL")
+        or "http://localhost:8000/v1"
+    )
+
 
 def get_ollama_auth_headers() -> Dict[str, str]:
     api_key = os.getenv("OLLAMA_API_KEY") or os.getenv("OPENAI_API_KEY")
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
+
 def get_minimax_api_base() -> str:
-    return os.environ.get("MINIMAX_API_BASE") or os.environ.get("OPENAI_BASE_URL") or "http://localhost:8080/v1"
+    return (
+        os.environ.get("MINIMAX_API_BASE")
+        or os.environ.get("OPENAI_BASE_URL")
+        or "http://localhost:8080/v1"
+    )
+
 
 def get_model_name(model: str) -> str:
     return model
+
 
 def get_model_input_tokens(model: str) -> Optional[int]:
     # Best-effort mapping for UI; returns None when unknown

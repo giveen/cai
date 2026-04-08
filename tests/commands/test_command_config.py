@@ -10,8 +10,7 @@ import sys
 import pytest
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__),
-                                '..', '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cai.repl.commands.base import Command
 from cai.repl.commands.config import ENV_VARS, ConfigCommand, get_env_var_value, set_env_var
@@ -24,8 +23,8 @@ class TestConfigCommand:
     def setup_and_cleanup(self):
         """Setup and cleanup for each test."""
         # Set up test environment
-        os.environ['CAI_TELEMETRY'] = 'false'
-        os.environ['CAI_TRACING'] = 'false'
+        os.environ["CAI_TELEMETRY"] = "false"
+        os.environ["CAI_TRACING"] = "false"
 
         # Store original values of environment variables we'll modify
         self.original_env_vars = {}
@@ -219,8 +218,14 @@ class TestConfigCommand:
     def test_specific_env_vars_exist(self):
         """Test that specific important environment variables are defined."""
         important_vars = [
-            "CAI_MODEL", "CAI_DEBUG", "CAI_BRIEF", "CAI_MAX_TURNS",
-            "CAI_TRACING", "CAI_AGENT_TYPE", "CTF_NAME", "CTF_CHALLENGE"
+            "CAI_MODEL",
+            "CAI_DEBUG",
+            "CAI_BRIEF",
+            "CAI_MAX_TURNS",
+            "CAI_TRACING",
+            "CAI_AGENT_TYPE",
+            "CTF_NAME",
+            "CTF_CHALLENGE",
         ]
 
         defined_var_names = [var_info["name"] for var_info in ENV_VARS.values()]
@@ -237,13 +242,25 @@ class TestConfigCommand:
 
             # Boolean-like variables should have "true"/"false" defaults or numeric values
             # Exclude interval variables as they have numeric values
-            boolean_keywords = ["debug", "brief", "tracing", "memory", "online", "offline", "inside"]
-            if (any(keyword in var_name.lower() for keyword in boolean_keywords) and
-                "interval" not in var_name.lower()):
+            boolean_keywords = [
+                "debug",
+                "brief",
+                "tracing",
+                "memory",
+                "online",
+                "offline",
+                "inside",
+            ]
+            if (
+                any(keyword in var_name.lower() for keyword in boolean_keywords)
+                and "interval" not in var_name.lower()
+            ):
                 if default is not None:
                     # Accept boolean strings or numeric values (for debug levels)
                     valid_values = ["true", "false", "0", "1", "2"]
-                    assert default.lower() in valid_values, f"{var_name} should have boolean-like or numeric default"
+                    assert default.lower() in valid_values, (
+                        f"{var_name} should have boolean-like or numeric default"
+                    )
 
             # Numeric variables should have numeric defaults
             if any(keyword in var_name.lower() for keyword in ["turns", "limit", "interval"]):
@@ -313,9 +330,9 @@ class TestConfigCommandIntegration:
 
         # Modify several variables
         modifications = [
-            ("6", "test-model"),      # CAI_MODEL
-            ("7", "2"),               # CAI_DEBUG
-            ("8", "true"),            # CAI_BRIEF
+            ("6", "test-model"),  # CAI_MODEL
+            ("7", "2"),  # CAI_DEBUG
+            ("8", "true"),  # CAI_BRIEF
         ]
 
         for var_num, value in modifications:
@@ -338,12 +355,12 @@ class TestConfigCommandIntegration:
         cmd = ConfigCommand()
 
         edge_cases = [
-            ("6", ""),                    # Empty string
-            ("6", "value with spaces"),   # Spaces
-            ("6", "special!@#$%chars"),   # Special characters
+            ("6", ""),  # Empty string
+            ("6", "value with spaces"),  # Spaces
+            ("6", "special!@#$%chars"),  # Special characters
             ("6", "very_long_value_that_exceeds_normal_length_expectations"),  # Long value
-            ("7", "0"),                   # Zero
-            ("7", "999"),                 # Large number
+            ("7", "0"),  # Zero
+            ("7", "999"),  # Large number
         ]
 
         for var_num, value in edge_cases:
@@ -375,5 +392,5 @@ class TestConfigCommandIntegration:
             assert os.environ.get(var_name) == test_value
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__, "-v"])

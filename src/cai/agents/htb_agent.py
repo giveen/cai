@@ -1,4 +1,5 @@
 """Hack The Box (HTB) Agent"""
+
 import os
 
 from dotenv import load_dotenv

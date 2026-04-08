@@ -1,6 +1,7 @@
 """
 Here are the nmap tools.
 """
+
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
 from cai.tools.common import run_command  # pylint: disable=E0401
@@ -13,12 +14,10 @@ from cai.tools.validation import (  # pylint: disable=import-error
 def _validate_nmap_input(args: str, target: str):
     """Return an error string if inputs are unsafe, else None."""
     if contains_shell_metacharacters(args):
-        return (
-            f"Invalid args '{args}': shell metacharacters (;|&`$<>\\) are not allowed."
-        )
+        return f"Invalid args '{args}': shell metacharacters (;|&`$<>\\) are not allowed."
     # Normalize and sanitize target (strip whitespace and trailing punctuation
     # that LLMs sometimes append like a trailing period).
-    t = (target or "").strip().rstrip('.,;:')
+    t = (target or "").strip().rstrip(".,;:")
     if not t:
         return "Invalid target: target is required."
     if not is_valid_target(t):
@@ -27,7 +26,6 @@ def _validate_nmap_input(args: str, target: str):
             "CIDR block, IP range, or hostname."
         )
     return None
-
 
 
 @function_tool
@@ -66,8 +64,8 @@ def nmap(target: str, args: str = "", timeout: int = 300) -> str:
         return err
 
     # sanitize target for final command construction
-    target_s = (target or "").strip().rstrip('.,;:')
-    command = f'nmap {args} {target_s}'
+    target_s = (target or "").strip().rstrip(".,;:")
+    command = f"nmap {args} {target_s}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err

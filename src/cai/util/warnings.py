@@ -4,6 +4,7 @@ This module contains `custom_warning_handler` previously defined in
 `cai.bootstrap`. Keeping it under `cai.util` groups utility helpers
 and avoids bloating the early-bootstrap orchestrator.
 """
+
 from __future__ import annotations
 
 import os
@@ -12,7 +13,9 @@ import warnings
 from typing import Any
 
 
-def custom_warning_handler(message: Any, category: Any, filename: str, lineno: int, file=None, line=None):
+def custom_warning_handler(
+    message: Any, category: Any, filename: str, lineno: int, file=None, line=None
+):
     """Custom warning handler used to reduce noise unless debug mode enabled.
 
     Only shows warnings when `CAI_DEBUG==2` to avoid noisy test and CLI

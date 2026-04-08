@@ -27,13 +27,34 @@ def execute_python_code(code: str) -> str:
 
     # Minimal safe builtins: only allow harmless functions
     safe_builtins = {
-        'abs': abs, 'all': all, 'any': any, 'bool': bool, 'chr': chr,
-        'dict': dict, 'enumerate': enumerate, 'filter': filter,
-        'float': float, 'int': int, 'len': len, 'list': list,
-        'map': map, 'max': max, 'min': min, 'next': next, 'pow': pow,
-        'print': print, 'range': range, 'repr': repr, 'round': round,
-        'set': set, 'slice': slice, 'sorted': sorted, 'str': str,
-        'sum': sum, 'tuple': tuple, 'zip': zip
+        "abs": abs,
+        "all": all,
+        "any": any,
+        "bool": bool,
+        "chr": chr,
+        "dict": dict,
+        "enumerate": enumerate,
+        "filter": filter,
+        "float": float,
+        "int": int,
+        "len": len,
+        "list": list,
+        "map": map,
+        "max": max,
+        "min": min,
+        "next": next,
+        "pow": pow,
+        "print": print,
+        "range": range,
+        "repr": repr,
+        "round": round,
+        "set": set,
+        "slice": slice,
+        "sorted": sorted,
+        "str": str,
+        "sum": sum,
+        "tuple": tuple,
+        "zip": zip,
     }
 
     try:
@@ -43,10 +64,10 @@ def execute_python_code(code: str) -> str:
         sys.stdout = captured
 
         # Compile first to provide clearer syntax errors
-        compiled = compile(code, '<string>', 'exec')
+        compiled = compile(code, "<string>", "exec")
 
         # Execute in a restricted environment
-        restricted_globals = {'__builtins__': safe_builtins}
+        restricted_globals = {"__builtins__": safe_builtins}
         # pylint: disable=exec-used
         exec(compiled, restricted_globals, local_vars)  # nosec B102
 

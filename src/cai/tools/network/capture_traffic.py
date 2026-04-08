@@ -15,8 +15,11 @@ from cai.sdk.agents import function_tool
 # Stores (tmp_dir, pipe_thread) for active captures, keyed by fifo_path
 _CAPTURE_STATE: dict = {}
 
+
 @function_tool
-def capture_remote_traffic(ip, username, password, interface, capture_filter="", port=22, timeout=10):
+def capture_remote_traffic(
+    ip, username, password, interface, capture_filter="", port=22, timeout=10
+):
     """
     Captures network traffic from a remote VM via tcpdump over SSH.
 
@@ -88,7 +91,7 @@ def capture_remote_traffic(ip, username, password, interface, capture_filter="",
 
         def pipe_ssh_to_fifo():
             try:
-                with open(fifo_path, 'wb') as fifo:
+                with open(fifo_path, "wb") as fifo:
                     while True:
                         data = stdout.read(4096)
                         if not data:
@@ -145,8 +148,9 @@ def remote_capture_session(ip, username, password, interface, capture_filter="",
     """
     fifo_path = None
     try:
-        fifo_path = capture_remote_traffic(ip, username, password, interface,
-                                           capture_filter=capture_filter, port=port)
+        fifo_path = capture_remote_traffic(
+            ip, username, password, interface, capture_filter=capture_filter, port=port
+        )
         yield fifo_path
     finally:
         if fifo_path:
@@ -174,7 +178,10 @@ def remote_capture_session_tool(ip, username, password, interface, capture_filte
     """
     # Delegate to the existing capture_remote_traffic helper which is itself
     # a tool-friendly function and returns the FIFO path when successful.
-    return capture_remote_traffic(ip, username, password, interface, capture_filter=capture_filter, port=port)
+    return capture_remote_traffic(
+        ip, username, password, interface, capture_filter=capture_filter, port=port
+    )
+
 
 if __name__ == "__main__":
     # Example usage

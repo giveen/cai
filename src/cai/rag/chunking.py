@@ -3,6 +3,7 @@
 Provides deterministic chunking (size + overlap) and stable
 fingerprinting combining content hash and an embedding fingerprint.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -52,9 +53,7 @@ def _embed_fingerprint_from_vec(vec: List[float]) -> Optional[str]:
     if vec is None:
         return None
     try:
-        b = b"".join(struct.pack(
-            ">d", float(v)
-        ) for v in vec)
+        b = b"".join(struct.pack(">d", float(v)) for v in vec)
         return hashlib.sha256(b).hexdigest()
     except Exception:
         # Fallback: hash the repr string
@@ -96,12 +95,14 @@ def fingerprint_chunks(
         chunk_id = f"{content_hash}-{i}" if content_hash else f"chunk-{i}"
 
         new = dict(c)
-        new.update({
-            "content_hash": content_hash,
-            "embed_fingerprint": embed_fp,
-            "fingerprint": fingerprint,
-            "chunk_id": chunk_id,
-        })
+        new.update(
+            {
+                "content_hash": content_hash,
+                "embed_fingerprint": embed_fp,
+                "fingerprint": fingerprint,
+                "chunk_id": chunk_id,
+            }
+        )
         out.append(new)
     return out
 

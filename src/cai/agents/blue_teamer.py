@@ -3,13 +3,16 @@ SSH_PASS
 SSH_HOST
 SSH_USER
 """
+
 import os
 
 try:
     from dotenv import load_dotenv
 except Exception:
+
     def load_dotenv(*args, **kwargs):
         return False
+
 
 try:
     from openai import AsyncOpenAI
@@ -41,7 +44,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:

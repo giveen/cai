@@ -1,6 +1,7 @@
 """
 In many situations, you have specialized sub-agents that handle specific tasks. You can use handoffs to route the task to the right agent.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,10 +31,10 @@ flag_discriminator = Agent(
     description="Agent focused on extracting the flag from the output",
     instructions="You are an agent tailored to extract the flag from a given output.",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
-    )
-    #handoff_description = "Agent focused on extracting the flag from the output"
+    ),
+    # handoff_description = "Agent focused on extracting the flag from the output"
 )
 
 ctf_agent = Agent(
@@ -44,15 +45,15 @@ ctf_agent = Agent(
         execute_cli_command,
     ],
     model=OpenAIChatCompletionsModel(
-        model= os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
     ),
-    handoffs = [flag_discriminator]
+    handoffs=[flag_discriminator],
 )
 
 
 # Complex way to do a handoff
-async def invoke_flag_discriminator(context: RunContextWrapper[Any], args: str="") -> Agent:
+async def invoke_flag_discriminator(context: RunContextWrapper[Any], args: str = "") -> Agent:
     """
     This function is called when we need to hand off the task to the flag_discriminator.
     """
@@ -66,14 +67,15 @@ async def invoke_flag_discriminator(context: RunContextWrapper[Any], args: str="
     # Return the agent (flag_discriminator) that will handle extracting the flag
     return flag_discriminator
 
+
 # input_filter: can be used for additional data filtering during the handoff
 flag_discriminator_complex_handoff = handoff(
-    agent=flag_discriminator,
-    input_filter = invoke_flag_discriminator
+    agent=flag_discriminator, input_filter=invoke_flag_discriminator
 )
 
 
 ctf_agent.handoffs.append(flag_discriminator_complex_handoff)
+
 
 # Main function to execute the workflow
 async def main():
@@ -85,14 +87,18 @@ async def main():
         # Step 2: Ask an additional question for calling the Flag Discriminator agent
         result = await Runner.run(
             ctf_agent,
-            input=result.to_input_list() + [
-                {"content": "Here is some output from a task. The first file is the name of the flag", "role": "user"}
+            input=result.to_input_list()
+            + [
+                {
+                    "content": "Here is some output from a task. The first file is the name of the flag",
+                    "role": "user",
+                }
             ],
         )
 
     for message in result.to_input_list():
         print(json.dumps(message, indent=2))
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     asyncio.run(main())

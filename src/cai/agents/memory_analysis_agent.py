@@ -1,11 +1,14 @@
 """Memory Analysis and Manipulation Agent"""
+
 import os
 
 try:
     from dotenv import load_dotenv
 except Exception:
+
     def load_dotenv(*args, **kwargs):
         return False
+
 
 try:
     from openai import AsyncOpenAI
@@ -36,7 +39,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:
@@ -50,7 +53,7 @@ memory_analysis_agent = Agent(
                    for security assessment, vulnerability discovery, and runtime behavior analysis.""",
     tools=tools,
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "alias1"),
+        model=os.getenv("CAI_MODEL", "alias1"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )

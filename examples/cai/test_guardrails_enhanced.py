@@ -85,7 +85,11 @@ async def test_guardrails():
     """
 
     sanitized = sanitize_external_content(malicious_content)
-    print("✅ Content wrapped with security markers" if "EXTERNAL CONTENT START" in sanitized else "❌ Content not sanitized")
+    print(
+        "✅ Content wrapped with security markers"
+        if "EXTERNAL CONTENT START" in sanitized
+        else "❌ Content not sanitized"
+    )
 
     print("\n" + "=" * 60)
     print("ENHANCED GUARDRAIL TESTS COMPLETE")

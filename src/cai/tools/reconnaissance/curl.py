@@ -13,7 +13,7 @@ from cai.tools.validation import (  # pylint: disable=import-error
 
 def _validate_curl_input(args: str, target: str):
     """Return an error string if inputs are unsafe, else None."""
-    err = validate_args_no_injection(args, 'args')
+    err = validate_args_no_injection(args, "args")
     if err:
         return err
     if target and not is_url_safe(target):
@@ -65,7 +65,7 @@ def curl(target: str, args: str = "", timeout: int = 30) -> str:
     if err:
         return err
 
-    command = f'curl {args} {target.strip()}'
+    command = f"curl {args} {target.strip()}"
     # Global guardrails
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:

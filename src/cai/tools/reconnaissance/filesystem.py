@@ -1,6 +1,7 @@
 """
 Here are the CLI tools for executing commands.
 """
+
 import shlex
 from typing import List
 
@@ -10,11 +11,18 @@ from cai.tools.common import run_command  # pylint: disable=E0401
 
 # Dangerous flags that enable RCE, file writes, or file deletion
 DANGEROUS_FIND_FLAGS = {
-    "-exec", "-execdir", "-ok", "-okdir",
+    "-exec",
+    "-execdir",
+    "-ok",
+    "-okdir",
     "-delete",
-    "-fprintf", "-fprint", "-fls", "-fprint0",
+    "-fprintf",
+    "-fprint",
+    "-fls",
+    "-fprint0",
     "-print0",
 }
+
 
 @function_tool
 def list_dir(path: str, args: str = "", ctf=None) -> str:
@@ -28,11 +36,12 @@ def list_dir(path: str, args: str = "", ctf=None) -> str:
     Returns:
         str: The output of running the ls command
     """
-    command = f'ls {path} {args}'
+    command = f"ls {path} {args}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
     return run_command(command, ctf=ctf)
+
 
 @function_tool
 def cat_file(file_path: str, args: str = "", ctf=None) -> str:
@@ -46,7 +55,7 @@ def cat_file(file_path: str, args: str = "", ctf=None) -> str:
     Returns:
         str: The output of running the cat command
     """
-    command = f'cat {args} {file_path} '
+    command = f"cat {args} {file_path} "
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
@@ -62,6 +71,7 @@ def cat_file(file_path: str, args: str = "", ctf=None) -> str:
 # FilePermissionsTool
 # FileCompressionTool
 
+
 @function_tool
 def pwd_command(ctf=None) -> str:
     """
@@ -70,11 +80,12 @@ def pwd_command(ctf=None) -> str:
     Returns:
         str: The absolute path of the current working directory
     """
-    command = 'pwd'
+    command = "pwd"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
     return run_command(command, ctf=ctf)
+
 
 @function_tool
 def find_file(file_path: str, args: str = "", ctf=None) -> str:
@@ -91,7 +102,7 @@ def find_file(file_path: str, args: str = "", ctf=None) -> str:
         if flag in args_tokens:
             return f"Error: DANGEROUS flag '{flag}' is not allowed"
 
-    command = f'find {file_path} {args}'
+    command = f"find {file_path} {args}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err

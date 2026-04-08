@@ -5,6 +5,7 @@ functions. It is a thread-safe extract of the session-related code from
 `common.py` and provides a clean API for creating, listing, sending input
 to, reading from, and terminating interactive sessions.
 """
+
 from __future__ import annotations
 
 import os
@@ -99,7 +100,9 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
         if self.ctf:
             try:
                 self.is_running = True
-                self.output_buffer.append(f"[Session {self.session_id}] Started CTF command: {self.command}")
+                self.output_buffer.append(
+                    f"[Session {self.session_id}] Started CTF command: {self.command}"
+                )
                 output = self.ctf.get_shell(self.command)
                 if output:
                     self.output_buffer.append(output)
@@ -146,7 +149,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                             break
                         continue
 
-                    output = os.read(self.master, 4096).decode('utf-8', errors='replace')
+                    output = os.read(self.master, 4096).decode("utf-8", errors="replace")
 
                     if output is not None and output != "":
                         self.output_buffer.append(output)
@@ -158,7 +161,9 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                             self.is_running = False
                             break
                 except UnicodeDecodeError:
-                    self.output_buffer.append(f"[Session {self.session_id}] Unicode decode error in output\n")
+                    self.output_buffer.append(
+                        f"[Session {self.session_id}] Unicode decode error in output\n"
+                    )
                     continue
                 except Exception as read_err:
                     self.output_buffer.append(f"Error reading output buffer: {str(read_err)}\n")
@@ -197,7 +202,9 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                 input_data_bytes = (input_data.rstrip() + "\n").encode()
                 bytes_written = os.write(self.master, input_data_bytes)
                 if bytes_written != len(input_data_bytes):
-                    self.output_buffer.append(f"[Session {self.session_id}] Warning: Partial input write.")
+                    self.output_buffer.append(
+                        f"[Session {self.session_id}] Warning: Partial input write."
+                    )
                 self.last_activity = time.time()
                 return "Input sent to session"
             else:
@@ -213,9 +220,9 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
         return output
 
     def get_new_output(self, mark_position=True):
-        if not hasattr(self, '_last_output_position'):
+        if not hasattr(self, "_last_output_position"):
             self._last_output_position = 0
-        new_output_lines = self.output_buffer[self._last_output_position:]
+        new_output_lines = self.output_buffer[self._last_output_position :]
         new_output = "\n".join(new_output_lines)
         if mark_position:
             self._last_output_position = len(self.output_buffer)
@@ -241,7 +248,12 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                 except ProcessLookupError:
                     pass
                 except subprocess.TimeoutExpired:
-                    print(color(f"Session {session_id_short} did not terminate gracefully, sending SIGKILL...", fg="yellow"))
+                    print(
+                        color(
+                            f"Session {session_id_short} did not terminate gracefully, sending SIGKILL...",
+                            fg="yellow",
+                        )
+                    )
                     try:
                         if pgid:
                             os.killpg(pgid, signal.SIGKILL)
@@ -259,7 +271,12 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                         pass
 
                 if self.process.poll() is None:
-                    print(color(f"Session {session_id_short} process {self.process.pid} may still be running after termination attempts.", fg="red"))
+                    print(
+                        color(
+                            f"Session {session_id_short} process {self.process.pid} may still be running after termination attempts.",
+                            fg="red",
+                        )
+                    )
                     termination_message += " (Warning: Process may still be running)"
 
             if self.master:
@@ -282,7 +299,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
 
 def create_shell_session(command, ctf=None, container_id=None, **kwargs):
     """Create a new shell session in the correct workspace/environment."""
-    workspace_dir = kwargs.get('workspace_dir') if 'workspace_dir' in kwargs else None
+    workspace_dir = kwargs.get("workspace_dir") if "workspace_dir" in kwargs else None
     if container_id:
         session = ShellSession(command, ctf=ctf, container_id=container_id)
     else:
@@ -315,13 +332,17 @@ def list_shell_sessions():
                 del ACTIVE_SESSIONS[session_id]
                 continue
 
-            result.append({
-                "friendly_id": getattr(session, 'friendly_id', None),
-                "session_id": session_id,
-                "command": session.command,
-                "running": session.is_running,
-                "last_activity": time.strftime("%H:%M:%S", time.localtime(session.last_activity)),
-            })
+            result.append(
+                {
+                    "friendly_id": getattr(session, "friendly_id", None),
+                    "session_id": session_id,
+                    "command": session.command,
+                    "running": session.is_running,
+                    "last_activity": time.strftime(
+                        "%H:%M:%S", time.localtime(session.last_activity)
+                    ),
+                }
+            )
     return result
 
 
@@ -331,22 +352,22 @@ def _resolve_session_id(session_identifier: Optional[str]) -> Optional[str]:
         return None
     sid = str(session_identifier).strip()
     key = sid
-    if sid.lower() == 'last':
+    if sid.lower() == "last":
         with SESSIONS_LOCK:
             if not ACTIVE_SESSIONS:
                 return None
             latest = None
             latest_t = -1
             for _sid, sess in ACTIVE_SESSIONS.items():
-                if hasattr(sess, 'created_at') and sess.created_at > latest_t and sess.is_running:
+                if hasattr(sess, "created_at") and sess.created_at > latest_t and sess.is_running:
                     latest = _sid
                     latest_t = sess.created_at
             return latest or next(iter(ACTIVE_SESSIONS.keys()))
-    if sid.startswith('#'):
+    if sid.startswith("#"):
         key = f"S{sid[1:]}"
     elif sid.isdigit():
         key = f"S{sid}"
-    elif sid.upper().startswith('S') and sid[1:].isdigit():
+    elif sid.upper().startswith("S") and sid[1:].isdigit():
         key = sid.upper()
 
     with SESSIONS_LOCK:

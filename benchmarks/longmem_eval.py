@@ -8,6 +8,7 @@ and reports Recall@K for several pipeline variants: dense-only,
 sparse-only, combiner, and combiner+rerank. Results are reproducible
 when using the default `LocalDeterministicEmbeddingsProvider`.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,8 +67,16 @@ def evaluate(adapter, docs, queries, gt_ids, provider, top_ks=(1, 3, 5)):
     pipelines = {
         "dense": lambda q: dense.retrieve(q, top_k=max_k),
         "sparse": lambda q: sparse.retrieve(q, top_k=max_k),
-        "combiner": lambda q: combiner.combine([dense.retrieve(q, top_k=max_k), sparse.retrieve(q, top_k=max_k)], top_k=max_k),
-        "combiner_rerank": lambda q: reranker.rerank(q, combiner.combine([dense.retrieve(q, top_k=max_k), sparse.retrieve(q, top_k=max_k)], top_k=max_k), top_k=max_k),
+        "combiner": lambda q: combiner.combine(
+            [dense.retrieve(q, top_k=max_k), sparse.retrieve(q, top_k=max_k)], top_k=max_k
+        ),
+        "combiner_rerank": lambda q: reranker.rerank(
+            q,
+            combiner.combine(
+                [dense.retrieve(q, top_k=max_k), sparse.retrieve(q, top_k=max_k)], top_k=max_k
+            ),
+            top_k=max_k,
+        ),
     }
 
     results: Dict[str, List[float]] = {name: [0.0 for _ in top_ks] for name in pipelines.keys()}
@@ -96,7 +105,9 @@ def main():
     parser.add_argument("--out", type=str, default=None, help="Write JSON results to file")
     args = parser.parse_args()
 
-    adapter, docs, queries, gt_ids, provider = build_dataset(args.num_docs, args.num_topics, args.vector_dim)
+    adapter, docs, queries, gt_ids, provider = build_dataset(
+        args.num_docs, args.num_topics, args.vector_dim
+    )
     res = evaluate(adapter, docs, queries, gt_ids, provider, top_ks=tuple(args.top_ks))
 
     print("Retrieval Recall@K results")

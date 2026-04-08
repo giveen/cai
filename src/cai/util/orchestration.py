@@ -5,6 +5,7 @@ Contains support for auto-compaction (CAI_SUPPORT_INTERVAL), the
 which implements the previous CLI loop.  Keeping this functionality in a
 separate module keeps ``cli.py`` small and allows targeted unit testing.
 """
+
 from __future__ import annotations
 
 import logging
@@ -65,7 +66,10 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 if tc.get("id"):
                     tool_id = tc.get("id")
                     if tool_id not in tool_call_map:
-                        tool_call_map[tool_id] = {"assistant_idx": len(processed_messages) - 1, "tool_idx": None}
+                        tool_call_map[tool_id] = {
+                            "assistant_idx": len(processed_messages) - 1,
+                            "tool_idx": None,
+                        }
 
         if msg.get("role") == "tool" and msg.get("tool_call_id"):
             tool_id = msg.get("tool_call_id")
@@ -76,11 +80,18 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [
-                        {"id": tool_id, "type": "function", "function": {"name": "unknown_function", "arguments": "{}"}}
+                        {
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {"name": "unknown_function", "arguments": "{}"},
+                        }
                     ],
                 }
                 processed_messages.insert(len(processed_messages) - 1, assistant_msg)
-                tool_call_map[tool_id] = {"assistant_idx": len(processed_messages) - 2, "tool_idx": len(processed_messages) - 1}
+                tool_call_map[tool_id] = {
+                    "assistant_idx": len(processed_messages) - 2,
+                    "tool_idx": len(processed_messages) - 1,
+                }
 
     i = 0
     max_iterations = max(10, len(processed_messages) * 3 + 10)
@@ -103,7 +114,11 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 prev_non_tool = processed_messages[j] if j >= 0 else None
 
                 is_valid_sequence = False
-                if prev_non_tool and prev_non_tool.get("role") == "assistant" and prev_non_tool.get("tool_calls"):
+                if (
+                    prev_non_tool
+                    and prev_non_tool.get("role") == "assistant"
+                    and prev_non_tool.get("tool_calls")
+                ):
                     if any(tc.get("id") == tool_id for tc in prev_non_tool.get("tool_calls", [])):
                         is_valid_sequence = True
 
@@ -114,7 +129,10 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                         if (
                             assistant_msg.get("role") == "assistant"
                             and assistant_msg.get("tool_calls")
-                            and any(tc.get("id") == tool_id for tc in assistant_msg.get("tool_calls", []))
+                            and any(
+                                tc.get("id") == tool_id
+                                for tc in assistant_msg.get("tool_calls", [])
+                            )
                         ):
                             assistant_idx = k
                             break
@@ -122,19 +140,42 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                     if assistant_idx is not None:
                         tool_msg = processed_messages.pop(i)
                         insert_at = assistant_idx + 1
-                        while insert_at < len(processed_messages) and processed_messages[insert_at].get("role") == "tool":
+                        while (
+                            insert_at < len(processed_messages)
+                            and processed_messages[insert_at].get("role") == "tool"
+                        ):
                             insert_at += 1
 
                         processed_messages.insert(insert_at, tool_msg)
                         i = min(i, insert_at)
                         continue
                     else:
-                        assistant_msg = {"role": "assistant", "content": None, "tool_calls": [{"id": tool_id, "type": "function", "function": {"name": "unknown_function", "arguments": "{}"}}]}
+                        assistant_msg = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": tool_id,
+                                    "type": "function",
+                                    "function": {"name": "unknown_function", "arguments": "{}"},
+                                }
+                            ],
+                        }
                         processed_messages.insert(i, assistant_msg)
                         i += 2
                         continue
             else:
-                assistant_msg = {"role": "assistant", "content": None, "tool_calls": [{"id": tool_id, "type": "function", "function": {"name": "unknown_function", "arguments": "{}"}}]}
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {"name": "unknown_function", "arguments": "{}"},
+                        }
+                    ],
+                }
                 processed_messages.insert(0, assistant_msg)
                 i += 2
                 continue
@@ -153,7 +194,11 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                         tool_name = tc["function"].get("name")
                     break
 
-            tool_msg = {"role": "tool", "tool_call_id": tool_id, "content": f"Auto-generated response for {tool_name}"}
+            tool_msg = {
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": f"Auto-generated response for {tool_name}",
+            }
 
             if assistant_idx + 1 < len(processed_messages):
                 processed_messages.insert(assistant_idx + 1, tool_msg)
@@ -187,7 +232,11 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
             if current_msg["tool_calls"][0].get("function"):
                 tool_name = current_msg["tool_calls"][0]["function"].get("name", "unknown_function")
 
-            tool_msg = {"role": "tool", "tool_call_id": tool_id, "content": f"Auto-generated response for {tool_name}"}
+            tool_msg = {
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": f"Auto-generated response for {tool_name}",
+            }
             processed_messages.insert(i + 1, tool_msg)
             i += 2
         else:
@@ -211,7 +260,14 @@ def notify_auto_compact_enabled(console: Optional[Console] = None) -> None:
             pass
 
 
-def maybe_auto_compact(agent, console: Console, last_user_input: str, post_compact_input: Optional[str], skip_auto_compact_after_interrupt: bool, parallel_count: int):
+def maybe_auto_compact(
+    agent,
+    console: Console,
+    last_user_input: str,
+    post_compact_input: Optional[str],
+    skip_auto_compact_after_interrupt: bool,
+    parallel_count: int,
+):
     """Perform an auto-compact pass if configured. Returns (agent, post_compact_input, skip_flag)."""
     _support_model = os.getenv("CAI_SUPPORT_MODEL")
     _support_interval_raw = os.getenv("CAI_SUPPORT_INTERVAL")
@@ -222,7 +278,9 @@ def maybe_auto_compact(agent, console: Console, last_user_input: str, post_compa
 
     if skip_auto_compact_after_interrupt:
         try:
-            console.print("[dim yellow]Auto-compact skipped due to recent interrupt; resuming.[/dim yellow]")
+            console.print(
+                "[dim yellow]Auto-compact skipped due to recent interrupt; resuming.[/dim yellow]"
+            )
         except Exception:
             pass
         return agent, post_compact_input, False
@@ -233,27 +291,37 @@ def maybe_auto_compact(agent, console: Console, last_user_input: str, post_compa
     try:
         _support_interval = int(_support_interval_raw)
         if _support_interval > 0:
-            _history = getattr(getattr(agent, 'model', None), 'message_history', [])
+            _history = getattr(getattr(agent, "model", None), "message_history", [])
             _llm_call_count = sum(
-                1 for m in _history
-                if (m.get("role") if isinstance(m, dict) else getattr(m, "role", None)) == "assistant"
+                1
+                for m in _history
+                if (m.get("role") if isinstance(m, dict) else getattr(m, "role", None))
+                == "assistant"
             )
             if _llm_call_count > 0:
                 _calls_until = max(0, _support_interval - _llm_call_count)
                 if _calls_until > 0:
-                    console.print(f"[dim cyan]  ↻ auto-compact in {_calls_until} LLM response(s) [{_llm_call_count}/{_support_interval}][/dim cyan]")
+                    console.print(
+                        f"[dim cyan]  ↻ auto-compact in {_calls_until} LLM response(s) [{_llm_call_count}/{_support_interval}][/dim cyan]"
+                    )
                 if _llm_call_count >= _support_interval:
                     from cai.repl.commands.compact import COMPACT_COMMAND_INSTANCE
+
                     console.print(
                         f"\n[bold yellow]⟳ Auto-compact: {_llm_call_count} LLM responses (threshold {_support_interval}) — summarising with {_support_model}[/bold yellow]"
                     )
                     COMPACT_COMMAND_INSTANCE._perform_compaction(model_override=_support_model)
                     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AM
+
                     _reloaded = _AM.get_active_agent()
                     if _reloaded is not None:
                         agent = _reloaded
-                    post_compact_input = last_user_input if last_user_input.strip() else "Continue the current task."
-                    console.print("[bold green]✓ Memory summary applied to agent system prompt — context window reset — continuing task[/bold green]\n")
+                    post_compact_input = (
+                        last_user_input if last_user_input.strip() else "Continue the current task."
+                    )
+                    console.print(
+                        "[bold green]✓ Memory summary applied to agent system prompt — context window reset — continuing task[/bold green]\n"
+                    )
     except (ValueError, Exception) as _e:
         console.print(f"[red]Auto-compact error: {_e}[/red]")
 
@@ -280,7 +348,13 @@ def create_last_log_symlink(log_filename: Optional[str]) -> None:
         pass
 
 
-def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"), force_until_flag=False, initial_prompt=None):
+def start_cli_loop(
+    starting_agent,
+    context_variables=None,
+    max_turns=float("inf"),
+    force_until_flag=False,
+    initial_prompt=None,
+):
     """Start the full interactive CLI loop (extracted from ``cli.run_cai_cli``).
 
     This function intentionally mirrors the original loop implementation so
@@ -315,6 +389,7 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
 
     # Reset cost tracking and agent registry
     from cai.util import COST_TRACKER
+
     COST_TRACKER.reset_agent_costs()
     AGENT_MANAGER.reset_registry()
 
@@ -345,7 +420,13 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
         # to preserve behavior while keeping `cli.py` small.
         try:
             # Start idle timer
-            from cai.util import start_active_timer, start_idle_timer, stop_idle_timer
+            from cai.util import (
+                start_active_timer,
+                start_idle_timer,
+                stop_idle_timer,
+                stop_active_timer,
+            )
+
             start_idle_timer()
             idle_start_time = time.time()
 
@@ -381,6 +462,7 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
                 # Fallback: attempt manual timer swaps if metrics helper unavailable
                 try:
                     from cai.util import start_idle_timer, stop_active_timer
+
                     try:
                         stop_active_timer()
                     except Exception:
@@ -399,14 +481,19 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
                         instance_key = (config.agent_name, idx)
                         if instance_key in PARALLEL_AGENT_INSTANCES:
                             instance_agent = PARALLEL_AGENT_INSTANCES[instance_key]
-                            if hasattr(instance_agent, "model") and hasattr(instance_agent.model, "message_history"):
+                            if hasattr(instance_agent, "model") and hasattr(
+                                instance_agent.model, "message_history"
+                            ):
                                 agent_id = config.id or f"P{idx}"
                                 if instance_agent.model.message_history:
-                                    PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
+                                    PARALLEL_ISOLATION.replace_isolated_history(
+                                        agent_id, instance_agent.model.message_history
+                                    )
                                     saved_count += 1
 
                     if saved_count > 0:
                         from cai.agents import get_available_agents
+
                         for idx, config in enumerate(PARALLEL_CONFIGS, 1):
                             agent_id = config.id or f"P{idx}"
                             isolated_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
@@ -415,7 +502,11 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
                                 if config.agent_name in available_agents:
                                     a = available_agents[config.agent_name]
                                     agent_display_name = getattr(a, "name", config.agent_name)
-                                    total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                                    total_count = sum(
+                                        1
+                                        for c in PARALLEL_CONFIGS
+                                        if c.agent_name == config.agent_name
+                                    )
                                     if total_count > 1:
                                         instance_num = 0
                                         for c in PARALLEL_CONFIGS:
@@ -434,8 +525,12 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
             # Clean up pending tool calls and ensure message history is consistent
             try:
                 pending_calls = []
-                if hasattr(agent.model, "_converter") and hasattr(agent.model._converter, "recent_tool_calls"):
-                    for call_id, call_info in list(agent.model._converter.recent_tool_calls.items()):
+                if hasattr(agent.model, "_converter") and hasattr(
+                    agent.model._converter, "recent_tool_calls"
+                ):
+                    for call_id, call_info in list(
+                        agent.model._converter.recent_tool_calls.items()
+                    ):
                         tool_response_exists = False
                         for msg in agent.model.message_history:
                             if msg.get("role") == "tool" and msg.get("tool_call_id") == call_id:
@@ -448,14 +543,33 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
                                 if (
                                     msg.get("role") == "assistant"
                                     and msg.get("tool_calls")
-                                    and any(tc.get("id") == call_id for tc in msg.get("tool_calls", []))
+                                    and any(
+                                        tc.get("id") == call_id for tc in msg.get("tool_calls", [])
+                                    )
                                 ):
                                     assistant_exists = True
                                     break
                             if not assistant_exists:
-                                tool_call_msg = {"role": "assistant", "content": None, "tool_calls": [{"id": call_id, "type": "function", "function": {"name": call_info.get("name", "unknown_function"), "arguments": call_info.get("arguments", "{}")}}]}
+                                tool_call_msg = {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "id": call_id,
+                                            "type": "function",
+                                            "function": {
+                                                "name": call_info.get("name", "unknown_function"),
+                                                "arguments": call_info.get("arguments", "{}"),
+                                            },
+                                        }
+                                    ],
+                                }
                                 agent.model.add_to_message_history(tool_call_msg)
-                            tool_msg = {"role": "tool", "tool_call_id": call_id, "content": "Operation interrupted by user (Keyboard Interrupt during shutdown)"}
+                            tool_msg = {
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": "Operation interrupted by user (Keyboard Interrupt during shutdown)",
+                            }
                             agent.model.add_to_message_history(tool_msg)
                             pending_calls.append(call_info.get("name", "unknown"))
 
@@ -496,6 +610,7 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
                     # Best-effort stop of pentestperf ctf if present
                     try:
                         from cai import is_pentestperf_available
+
                         if is_pentestperf_available():
                             pass  # lint-safe import
                     except Exception:
@@ -506,7 +621,13 @@ def start_cli_loop(starting_agent, context_variables=None, max_turns=float("inf"
             break
 
 
-__all__ = ["fix_message_list", "notify_auto_compact_enabled", "maybe_auto_compact", "start_cli_loop", "create_last_log_symlink"]
+__all__ = [
+    "fix_message_list",
+    "notify_auto_compact_enabled",
+    "maybe_auto_compact",
+    "start_cli_loop",
+    "create_last_log_symlink",
+]
 
 
 def handle_post_turn(
@@ -537,7 +658,12 @@ def handle_post_turn(
 
     try:
         agent, post_compact_input, skip_auto_compact_after_interrupt = maybe_auto_compact(
-            agent, console, last_user_input, post_compact_input, skip_auto_compact_after_interrupt, parallel_count
+            agent,
+            console,
+            last_user_input,
+            post_compact_input,
+            skip_auto_compact_after_interrupt,
+            parallel_count,
         )
     except Exception:
         # Swallow to avoid breaking the main loop on orchestration errors
@@ -555,7 +681,9 @@ def handle_orphaned_tool_calls(agent):
         # First, try to recover from recent_tool_calls stored on the model converter
         pending_calls = []
         try:
-            if hasattr(agent.model, "_converter") and hasattr(agent.model._converter, "recent_tool_calls"):
+            if hasattr(agent.model, "_converter") and hasattr(
+                agent.model._converter, "recent_tool_calls"
+            ):
                 for call_id, call_info in list(agent.model._converter.recent_tool_calls.items()):
                     tool_response_exists = False
                     for msg in agent.model.message_history:
@@ -574,7 +702,20 @@ def handle_orphaned_tool_calls(agent):
                                 assistant_exists = True
                                 break
                         if not assistant_exists:
-                            tool_call_msg = {"role": "assistant", "content": None, "tool_calls": [{"id": call_id, "type": "function", "function": {"name": call_info.get("name", "unknown_function"), "arguments": call_info.get("arguments", "{}")}}]}
+                            tool_call_msg = {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": call_info.get("name", "unknown_function"),
+                                            "arguments": call_info.get("arguments", "{}"),
+                                        },
+                                    }
+                                ],
+                            }
                             if hasattr(agent.model, "add_to_message_history"):
                                 try:
                                     agent.model.add_to_message_history(tool_call_msg)
@@ -582,7 +723,11 @@ def handle_orphaned_tool_calls(agent):
                                     agent.model.message_history.append(tool_call_msg)
                             else:
                                 agent.model.message_history.append(tool_call_msg)
-                        tool_msg = {"role": "tool", "tool_call_id": call_id, "content": "Operation interrupted by user (Keyboard Interrupt during shutdown)"}
+                        tool_msg = {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": "Operation interrupted by user (Keyboard Interrupt during shutdown)",
+                        }
                         if hasattr(agent.model, "add_to_message_history"):
                             try:
                                 agent.model.add_to_message_history(tool_msg)
@@ -612,7 +757,11 @@ def handle_orphaned_tool_calls(agent):
 
             if orphaned_tool_calls:
                 for call_id, tool_call in orphaned_tool_calls:
-                    tool_response_msg = {"role": "tool", "tool_call_id": call_id, "content": "Tool execution interrupted"}
+                    tool_response_msg = {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": "Tool execution interrupted",
+                    }
                     if hasattr(agent.model, "add_to_message_history"):
                         try:
                             agent.model.add_to_message_history(tool_response_msg)

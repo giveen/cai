@@ -5,6 +5,7 @@ This module provides commands for visualizing the agent interaction graph.
 It allows users to display a simple directed graph of the conversation history,
 showing the sequence of user and agent interactions, including tool calls.
 """
+
 import importlib.util
 import os
 from typing import List, Optional
@@ -42,7 +43,10 @@ def find_agent_name_by_instructions(target_instructions: str, agents_dir: str) -
                 attr = getattr(agent_mod, attr_name)
                 if hasattr(attr, "instructions"):
                     agent_instructions = getattr(attr, "instructions", None)
-                    if agent_instructions and agent_instructions.strip() == target_instructions.strip():
+                    if (
+                        agent_instructions
+                        and agent_instructions.strip() == target_instructions.strip()
+                    ):
                         agent_name = getattr(attr, "name", None)
                         if agent_name:
                             return agent_name
@@ -63,9 +67,7 @@ class GraphCommand(Command):
     def __init__(self):
         """Initialize the graph command."""
         super().__init__(
-            name="/graph",
-            description="Visualize the agent interaction graph",
-            aliases=["/g"]
+            name="/graph", description="Visualize the agent interaction graph", aliases=["/g"]
         )
 
         # Add subcommands
@@ -125,7 +127,7 @@ class GraphCommand(Command):
             # Try to get the current active agent
             current_agent = AGENT_MANAGER.get_active_agent()
             if current_agent:
-                agent_name = getattr(current_agent, 'name', None)
+                agent_name = getattr(current_agent, "name", None)
                 if not agent_name:
                     # Fallback to getting from active agents dict
                     active_agents = AGENT_MANAGER.get_active_agents()
@@ -153,7 +155,9 @@ class GraphCommand(Command):
             G = nx.DiGraph()
             prev_node_idx = None
             node_counter = 0  # Use a separate counter for node IDs
-            current_turn = 0  # Track current turn number (will be incremented on first assistant message)
+            current_turn = (
+                0  # Track current turn number (will be incremented on first assistant message)
+            )
             _last_role = None  # Track last role to detect turn changes
 
             for idx, msg in enumerate(history):
@@ -185,7 +189,7 @@ class GraphCommand(Command):
                         if tool_info:
                             extra_info = f"\n[cyan]Tools:[/cyan] {', '.join(tool_info)}"
                         if len(tool_calls) > 3:
-                            extra_info += f" (+{len(tool_calls)-3} more)"
+                            extra_info += f" (+{len(tool_calls) - 3} more)"
                 elif role == "user":
                     user_content = msg.get("content", "")
                     if user_content:
@@ -214,7 +218,9 @@ class GraphCommand(Command):
                 if role == "user":
                     G.add_node(node_counter, role=label, extra_info=extra_info, turn_number=0)
                 else:
-                    G.add_node(node_counter, role=label, extra_info=extra_info, turn_number=current_turn)
+                    G.add_node(
+                        node_counter, role=label, extra_info=extra_info, turn_number=current_turn
+                    )
                 if prev_node_idx is not None:
                     G.add_edge(prev_node_idx, node_counter)
                 prev_node_idx = node_counter
@@ -251,11 +257,7 @@ class GraphCommand(Command):
                     if extra_info:
                         panel_content += extra_info
 
-                    panel = Panel(
-                        panel_content,
-                        expand=False,
-                        border_style=border_style
-                    )
+                    panel = Panel(panel_content, expand=False, border_style=border_style)
                     lines.append(panel)
                     if i < len(node_list) - 1:
                         lines.append("[dim]   │\n   │\n   ▼[/dim]")
@@ -300,7 +302,9 @@ class GraphCommand(Command):
             all_histories[name] = hist
 
         # Also check isolated histories if we have them (even if not explicitly in parallel mode)
-        if PARALLEL_CONFIGS and (PARALLEL_ISOLATION.is_parallel_mode() or PARALLEL_ISOLATION.has_isolated_histories()):
+        if PARALLEL_CONFIGS and (
+            PARALLEL_ISOLATION.is_parallel_mode() or PARALLEL_ISOLATION.has_isolated_histories()
+        ):
             available_agents = get_available_agents()
             for idx, config in enumerate(PARALLEL_CONFIGS, 1):
                 agent_id = config.id or f"P{idx}"
@@ -330,7 +334,9 @@ class GraphCommand(Command):
                     all_histories[full_name] = isolated_history
 
         if not all_histories and not PARALLEL_CONFIGS:
-            console.print("[yellow]No agents configured or no conversation history available.[/yellow]")
+            console.print(
+                "[yellow]No agents configured or no conversation history available.[/yellow]"
+            )
             return True
 
         console.print("\n[bold cyan]Multi-Agent Conversation Graphs[/bold cyan]")
@@ -358,8 +364,9 @@ class GraphCommand(Command):
                 if config.agent_name.endswith("_pattern"):
                     # Try to get the pattern
                     from cai.agents.patterns import get_pattern
+
                     pattern = get_pattern(config.agent_name)
-                    if pattern and hasattr(pattern, 'entry_agent'):
+                    if pattern and hasattr(pattern, "entry_agent"):
                         # For swarm patterns, use the entry agent
                         base_agent = pattern.entry_agent
                         base_display_name = getattr(base_agent, "name", config.agent_name)
@@ -421,13 +428,15 @@ class GraphCommand(Command):
         for display_name, history in agents_to_show:
             if not history:
                 # Empty history
-                graphs.append(Panel(
-                    "[dim]No messages yet[/dim]",
-                    title=f"[cyan]{display_name}[/cyan]",
-                    border_style="dim",
-                    padding=(0, 1),
-                    expand=False
-                ))
+                graphs.append(
+                    Panel(
+                        "[dim]No messages yet[/dim]",
+                        title=f"[cyan]{display_name}[/cyan]",
+                        border_style="dim",
+                        padding=(0, 1),
+                        expand=False,
+                    )
+                )
                 continue
 
             try:
@@ -503,11 +512,15 @@ class GraphCommand(Command):
                                     role_short = "Tool"
                                 else:
                                     role_short = role
-                                graph_lines.append(f"{turn_prefix}[magenta]◆ {role_short}[/magenta]")
+                                graph_lines.append(
+                                    f"{turn_prefix}[magenta]◆ {role_short}[/magenta]"
+                                )
                             elif "Assistant" in role:
                                 # Check if it has tool calls
                                 if "tools)" in role:
-                                    graph_lines.append(f"{turn_prefix}[yellow]▶ Agent (tools)[/yellow]")
+                                    graph_lines.append(
+                                        f"{turn_prefix}[yellow]▶ Agent (tools)[/yellow]"
+                                    )
                                 else:
                                     graph_lines.append(f"{turn_prefix}[yellow]▶ Agent[/yellow]")
                             else:
@@ -526,16 +539,18 @@ class GraphCommand(Command):
                     subtitle=f"[dim]{message_count} msgs[/dim]" if message_count > 0 else None,
                     border_style="blue",
                     padding=(0, 1),
-                    expand=False
+                    expand=False,
                 )
                 graphs.append(agent_graph)
 
             except Exception as e:
-                graphs.append(Panel(
-                    f"[red]Error: {str(e)}[/red]",
-                    title=f"[cyan]{display_name}[/cyan]",
-                    border_style="red"
-                ))
+                graphs.append(
+                    Panel(
+                        f"[red]Error: {str(e)}[/red]",
+                        title=f"[cyan]{display_name}[/cyan]",
+                        border_style="red",
+                    )
+                )
 
         # Display graphs in columns if multiple agents
         if len(graphs) > 1:
@@ -557,7 +572,9 @@ class GraphCommand(Command):
 
         console.print(f"• Total agents: {len(agents_to_show)}")
         console.print(f"• Total messages: {total_messages}")
-        console.print(f"• Average messages per agent: {total_messages / len(agents_to_show) if agents_to_show else 0:.1f}")
+        console.print(
+            f"• Average messages per agent: {total_messages / len(agents_to_show) if agents_to_show else 0:.1f}"
+        )
 
         return True
 
@@ -582,12 +599,15 @@ class GraphCommand(Command):
                     # Check if config.agent_name is a pattern
                     if config.agent_name.endswith("_pattern"):
                         from cai.agents.patterns import get_pattern
+
                         pattern = get_pattern(config.agent_name)
-                        if pattern and hasattr(pattern, 'entry_agent'):
+                        if pattern and hasattr(pattern, "entry_agent"):
                             agent = pattern.entry_agent
                             agent_display_name = getattr(agent, "name", config.agent_name)
                         else:
-                            console.print(f"[yellow]Pattern '{config.agent_name}' not found[/yellow]")
+                            console.print(
+                                f"[yellow]Pattern '{config.agent_name}' not found[/yellow]"
+                            )
                             return True
                     elif config.agent_name in available_agents:
                         agent = available_agents[config.agent_name]
@@ -623,7 +643,9 @@ class GraphCommand(Command):
 
                     if history:
                         # Build a temporary graph for this specific agent
-                        console.print(f"[cyan]Showing graph for {full_agent_name} [{agent_id}][/cyan]")
+                        console.print(
+                            f"[cyan]Showing graph for {full_agent_name} [{agent_id}][/cyan]"
+                        )
                         # Manually build the graph using the isolated history
                         try:
                             import networkx as nx
@@ -659,9 +681,11 @@ class GraphCommand(Command):
                                                 func_name = tc["function"].get("name", "")
                                                 tool_info.append(func_name)
                                         if tool_info:
-                                            extra_info = f"\n[cyan]Tools:[/cyan] {', '.join(tool_info)}"
+                                            extra_info = (
+                                                f"\n[cyan]Tools:[/cyan] {', '.join(tool_info)}"
+                                            )
                                         if len(tool_calls) > 3:
-                                            extra_info += f" (+{len(tool_calls)-3} more)"
+                                            extra_info += f" (+{len(tool_calls) - 3} more)"
                                 elif role == "user":
                                     user_content = msg.get("content", "")
                                     if user_content:
@@ -675,10 +699,14 @@ class GraphCommand(Command):
                                     tool_name = "Tool Result"
                                     # Look back for the tool call
                                     for prev_msg in history[:idx]:
-                                        if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
+                                        if prev_msg.get("role") == "assistant" and prev_msg.get(
+                                            "tool_calls"
+                                        ):
                                             for tc in prev_msg["tool_calls"]:
                                                 if tc.get("id") == tool_call_id:
-                                                    tool_name = tc.get("function", {}).get("name", "Tool")
+                                                    tool_name = tc.get("function", {}).get(
+                                                        "name", "Tool"
+                                                    )
                                                     break
                                     label = f"Tool: {tool_name}"
                                     content = msg.get("content", "")
@@ -688,9 +716,19 @@ class GraphCommand(Command):
 
                                 # User messages don't get turn numbers
                                 if role == "user":
-                                    G.add_node(node_counter, role=label, extra_info=extra_info, turn_number=0)
+                                    G.add_node(
+                                        node_counter,
+                                        role=label,
+                                        extra_info=extra_info,
+                                        turn_number=0,
+                                    )
                                 else:
-                                    G.add_node(node_counter, role=label, extra_info=extra_info, turn_number=current_turn)
+                                    G.add_node(
+                                        node_counter,
+                                        role=label,
+                                        extra_info=extra_info,
+                                        turn_number=current_turn,
+                                    )
                                 if prev_node_idx is not None:
                                     G.add_edge(prev_node_idx, node_counter)
                                 prev_node_idx = node_counter
@@ -725,21 +763,23 @@ class GraphCommand(Command):
                                     if role == "user" or role.lower() == "user":
                                         panel_content = role_fmt
                                     else:
-                                        panel_content = f"[bold red][{turn_number}][/bold red] {role_fmt}"
+                                        panel_content = (
+                                            f"[bold red][{turn_number}][/bold red] {role_fmt}"
+                                        )
                                     if extra_info:
                                         panel_content += extra_info
 
                                     panel = Panel(
-                                        panel_content,
-                                        expand=False,
-                                        border_style=border_style
+                                        panel_content, expand=False, border_style=border_style
                                     )
                                     lines.append(panel)
                                     if i < len(node_list) - 1:
                                         lines.append("[dim]   │\n   │\n   ▼[/dim]")
                                 return lines
 
-                            console.print(f"\n[bold]Conversation Graph for {full_agent_name}:[/bold]")
+                            console.print(
+                                f"\n[bold]Conversation Graph for {full_agent_name}:[/bold]"
+                            )
                             console.print("-" * (20 + len(full_agent_name)))
 
                             if len(G.nodes) == 0:
@@ -754,7 +794,9 @@ class GraphCommand(Command):
                             console.print(f"[red]Error displaying graph: {e}[/red]")
                             return False
                     else:
-                        console.print(f"[yellow]No history found for {full_agent_name} [{agent_id}][/yellow]")
+                        console.print(
+                            f"[yellow]No history found for {full_agent_name} [{agent_id}][/yellow]"
+                        )
                         return True
 
         # Fall back to regular AGENT_MANAGER lookup
@@ -790,29 +832,31 @@ class GraphCommand(Command):
                 # Extract agent ID from display name
                 agent_id = None
                 if "[" in display_name and "]" in display_name:
-                    agent_id = display_name[display_name.rindex("[")+1:display_name.rindex("]")]
-                    agent_base_name = display_name[:display_name.rindex("[")].strip()
+                    agent_id = display_name[display_name.rindex("[") + 1 : display_name.rindex("]")]
+                    agent_base_name = display_name[: display_name.rindex("[")].strip()
                 else:
                     agent_base_name = display_name
 
-                timeline_events.append({
-                    'agent': agent_base_name,
-                    'agent_id': agent_id or "?",
-                    'index': idx,
-                    'role': msg.get('role', 'unknown'),
-                    'content': msg.get('content', ''),
-                    'tool_calls': msg.get('tool_calls', []),
-                    'timestamp': idx  # Using index as pseudo-timestamp
-                })
+                timeline_events.append(
+                    {
+                        "agent": agent_base_name,
+                        "agent_id": agent_id or "?",
+                        "index": idx,
+                        "role": msg.get("role", "unknown"),
+                        "content": msg.get("content", ""),
+                        "tool_calls": msg.get("tool_calls", []),
+                        "timestamp": idx,  # Using index as pseudo-timestamp
+                    }
+                )
 
         # Sort by pseudo-timestamp (in real implementation, would use actual timestamps)
-        timeline_events.sort(key=lambda x: x['timestamp'])
+        timeline_events.sort(key=lambda x: x["timestamp"])
 
         # Create timeline table
         table = Table(
             title="[bold cyan]Unified Agent Timeline[/bold cyan]",
             show_header=True,
-            header_style="bold yellow"
+            header_style="bold yellow",
         )
         table.add_column("Time", style="dim", width=6)
         table.add_column("Agent", style="magenta", width=25)
@@ -827,34 +871,49 @@ class GraphCommand(Command):
             agent_str = f"{event['agent']} [{event['agent_id']}]"
 
             # Format action based on role
-            if event['role'] == 'user':
-                action = f"User: {event['content'][:80]}..." if len(event['content']) > 80 else f"User: {event['content']}"
-            elif event['role'] == 'assistant':
-                if event['tool_calls']:
-                    tools = [tc.get('function', {}).get('name', '?') for tc in event['tool_calls'][:3]]
+            if event["role"] == "user":
+                action = (
+                    f"User: {event['content'][:80]}..."
+                    if len(event["content"]) > 80
+                    else f"User: {event['content']}"
+                )
+            elif event["role"] == "assistant":
+                if event["tool_calls"]:
+                    tools = [
+                        tc.get("function", {}).get("name", "?") for tc in event["tool_calls"][:3]
+                    ]
                     action = f"Called tools: {', '.join(tools)}"
-                    if len(event['tool_calls']) > 3:
-                        action += f" (+{len(event['tool_calls'])-3} more)"
+                    if len(event["tool_calls"]) > 3:
+                        action += f" (+{len(event['tool_calls']) - 3} more)"
                 else:
-                    action = f"Response: {event['content'][:60]}..." if len(event['content']) > 60 else f"Response: {event['content']}"
-            elif event['role'] == 'tool':
-                action = f"Tool result: {event['content'][:60]}..." if len(event['content']) > 60 else f"Tool result: {event['content']}"
+                    action = (
+                        f"Response: {event['content'][:60]}..."
+                        if len(event["content"]) > 60
+                        else f"Response: {event['content']}"
+                    )
+            elif event["role"] == "tool":
+                action = (
+                    f"Tool result: {event['content'][:60]}..."
+                    if len(event["content"]) > 60
+                    else f"Tool result: {event['content']}"
+                )
             else:
-                action = f"{event['role']}: {event['content'][:60]}..." if len(event['content']) > 60 else f"{event['role']}: {event['content']}"
+                action = (
+                    f"{event['role']}: {event['content'][:60]}..."
+                    if len(event["content"]) > 60
+                    else f"{event['role']}: {event['content']}"
+                )
 
             # Color role
             role_style = {
                 "user": "cyan",
                 "assistant": "yellow",
                 "tool": "magenta",
-                "system": "blue"
-            }.get(event['role'], "white")
+                "system": "blue",
+            }.get(event["role"], "white")
 
             table.add_row(
-                time_str,
-                agent_str,
-                f"[{role_style}]{event['role']}[/{role_style}]",
-                action
+                time_str, agent_str, f"[{role_style}]{event['role']}[/{role_style}]", action
             )
 
         console.print(table)
@@ -879,7 +938,7 @@ class GraphCommand(Command):
         stats_table = Table(
             title="[bold cyan]Agent Conversation Statistics[/bold cyan]",
             show_header=True,
-            header_style="bold yellow"
+            header_style="bold yellow",
         )
         stats_table.add_column("Agent", style="cyan")
         stats_table.add_column("Messages", style="green", justify="right")
@@ -896,36 +955,32 @@ class GraphCommand(Command):
                 continue
 
             # Count message types
-            role_counts = Counter(msg.get('role', 'unknown') for msg in history)
+            role_counts = Counter(msg.get("role", "unknown") for msg in history)
 
             # Count total tool calls
             total_tool_calls = sum(
-                len(msg.get('tool_calls', []))
-                for msg in history
-                if msg.get('role') == 'assistant'
+                len(msg.get("tool_calls", [])) for msg in history if msg.get("role") == "assistant"
             )
 
             # Calculate average message length
             content_lengths = [
-                len(str(msg.get('content', '')))
-                for msg in history
-                if msg.get('content')
+                len(str(msg.get("content", ""))) for msg in history if msg.get("content")
             ]
             avg_length = sum(content_lengths) / len(content_lengths) if content_lengths else 0
 
             # Add to totals
             total_stats.update(role_counts)
-            total_stats['total_tool_calls'] += total_tool_calls
-            total_stats['total_messages'] += len(history)
+            total_stats["total_tool_calls"] += total_tool_calls
+            total_stats["total_messages"] += len(history)
 
             stats_table.add_row(
                 display_name,
                 str(len(history)),
-                str(role_counts.get('user', 0)),
-                str(role_counts.get('assistant', 0)),
-                str(role_counts.get('tool', 0)),
+                str(role_counts.get("user", 0)),
+                str(role_counts.get("assistant", 0)),
+                str(role_counts.get("tool", 0)),
                 str(total_tool_calls),
-                f"{avg_length:.0f}"
+                f"{avg_length:.0f}",
             )
 
         # Add totals row
@@ -937,23 +992,29 @@ class GraphCommand(Command):
             f"[bold]{total_stats.get('assistant', 0)}[/bold]",
             f"[bold]{total_stats.get('tool', 0)}[/bold]",
             f"[bold]{total_stats.get('total_tool_calls', 0)}[/bold]",
-            ""
+            "",
         )
 
         console.print(stats_table)
 
         # Additional insights
         console.print("\n[bold]Insights:[/bold]")
-        if total_stats['total_messages'] > 0:
-            user_ratio = total_stats.get('user', 0) / total_stats['total_messages'] * 100
-            assistant_ratio = total_stats.get('assistant', 0) / total_stats['total_messages'] * 100
-            tool_ratio = total_stats.get('tool', 0) / total_stats['total_messages'] * 100
+        if total_stats["total_messages"] > 0:
+            user_ratio = total_stats.get("user", 0) / total_stats["total_messages"] * 100
+            assistant_ratio = total_stats.get("assistant", 0) / total_stats["total_messages"] * 100
+            tool_ratio = total_stats.get("tool", 0) / total_stats["total_messages"] * 100
 
-            console.print(f"• Message distribution: User {user_ratio:.1f}%, Assistant {assistant_ratio:.1f}%, Tools {tool_ratio:.1f}%")
+            console.print(
+                f"• Message distribution: User {user_ratio:.1f}%, Assistant {assistant_ratio:.1f}%, Tools {tool_ratio:.1f}%"
+            )
 
-            if total_stats.get('assistant', 0) > 0:
-                tools_per_assistant = total_stats.get('total_tool_calls', 0) / total_stats.get('assistant', 0)
-                console.print(f"• Average tool calls per assistant message: {tools_per_assistant:.2f}")
+            if total_stats.get("assistant", 0) > 0:
+                tools_per_assistant = total_stats.get("total_tool_calls", 0) / total_stats.get(
+                    "assistant", 0
+                )
+                console.print(
+                    f"• Average tool calls per assistant message: {tools_per_assistant:.2f}"
+                )
 
         console.print(f"• Active agents: {len(all_histories)}")
         console.print(f"• Total conversations: {sum(1 for h in all_histories.values() if h)}")
@@ -995,25 +1056,22 @@ class GraphCommand(Command):
         try:
             if format_type == "json":
                 # Export as JSON
-                export_data = {
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "agents": {}
-                }
+                export_data = {"timestamp": datetime.datetime.now().isoformat(), "agents": {}}
 
                 for agent_name, history in all_histories.items():
                     export_data["agents"][agent_name] = {
                         "message_count": len(history),
-                        "messages": history
+                        "messages": history,
                     }
 
-                with open(filename, 'w', encoding='utf-8') as f:
+                with open(filename, "w", encoding="utf-8") as f:
                     json.dump(export_data, f, indent=2)
 
             elif format_type == "dot":
                 # Export as Graphviz DOT format
                 dot_content = ["digraph CAI_Conversations {"]
-                dot_content.append('  rankdir=TB;')
-                dot_content.append('  node [shape=box];')
+                dot_content.append("  rankdir=TB;")
+                dot_content.append("  node [shape=box];")
 
                 node_id = 0
                 for agent_name, history in all_histories.items():
@@ -1022,31 +1080,31 @@ class GraphCommand(Command):
 
                     prev_node = None
                     for msg in history:
-                        if msg.get('role') == 'system':
+                        if msg.get("role") == "system":
                             continue
 
-                        role = msg.get('role', 'unknown')
+                        role = msg.get("role", "unknown")
                         node_name = f"node_{node_id}"
 
-                        if role == 'user':
+                        if role == "user":
                             dot_content.append(f'    {node_name} [label="{role}", color=blue];')
-                        elif role == 'assistant':
+                        elif role == "assistant":
                             dot_content.append(f'    {node_name} [label="{role}", color=green];')
-                        elif role == 'tool':
+                        elif role == "tool":
                             dot_content.append(f'    {node_name} [label="{role}", color=red];')
 
                         if prev_node:
-                            dot_content.append(f'    {prev_node} -> {node_name};')
+                            dot_content.append(f"    {prev_node} -> {node_name};")
 
                         prev_node = node_name
                         node_id += 1
 
-                    dot_content.append('  }')
+                    dot_content.append("  }")
 
-                dot_content.append('}')
+                dot_content.append("}")
 
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(dot_content))
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write("\n".join(dot_content))
 
             elif format_type == "mermaid":
                 # Export as Mermaid diagram
@@ -1058,37 +1116,39 @@ class GraphCommand(Command):
 
                     prev_node = None
                     for msg in history:
-                        if msg.get('role') == 'system':
+                        if msg.get("role") == "system":
                             continue
 
-                        role = msg.get('role', 'unknown')
+                        role = msg.get("role", "unknown")
                         node_name = f"{agent_safe_name}_{node_id}"
 
-                        if role == 'user':
+                        if role == "user":
                             mermaid_content.append(f'    {node_name}["{role}"]:::user')
-                        elif role == 'assistant':
-                            tools = len(msg.get('tool_calls', []))
+                        elif role == "assistant":
+                            tools = len(msg.get("tool_calls", []))
                             label = f"{role} ({tools} tools)" if tools > 0 else role
                             mermaid_content.append(f'    {node_name}["{label}"]:::assistant')
-                        elif role == 'tool':
+                        elif role == "tool":
                             mermaid_content.append(f'    {node_name}["{role}"]:::tool')
 
                         if prev_node:
-                            mermaid_content.append(f'    {prev_node} --> {node_name}')
+                            mermaid_content.append(f"    {prev_node} --> {node_name}")
 
                         prev_node = node_name
                         node_id += 1
 
                 # Add styling
-                mermaid_content.extend([
-                    "",
-                    "classDef user fill:#3498db,stroke:#2c3e50,color:#fff",
-                    "classDef assistant fill:#2ecc71,stroke:#27ae60,color:#fff",
-                    "classDef tool fill:#e74c3c,stroke:#c0392b,color:#fff"
-                ])
+                mermaid_content.extend(
+                    [
+                        "",
+                        "classDef user fill:#3498db,stroke:#2c3e50,color:#fff",
+                        "classDef assistant fill:#2ecc71,stroke:#27ae60,color:#fff",
+                        "classDef tool fill:#e74c3c,stroke:#c0392b,color:#fff",
+                    ]
+                )
 
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(mermaid_content))
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write("\n".join(mermaid_content))
 
             console.print(f"[green]Successfully exported to {filename}[/green]")
 

@@ -69,7 +69,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         self._last_message_logged = False
         self._session_end_logged = False
 
-        log_dir = 'logs'
+        log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
 
         # Get current username
@@ -96,18 +96,16 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             try:
                 # Using a simple and lightweight service
                 with urllib.request.urlopen(  # nosec: B310
-                    "https://api.ipify.org",
-                    timeout=2
+                    "https://api.ipify.org", timeout=2
                 ) as response:
-                    public_ip = response.read().decode('utf-8')
+                    public_ip = response.read().decode("utf-8")
             except (URLError, socket.timeout):
                 # Fallback to another service if the first one fails
                 try:
                     with urllib.request.urlopen(  # nosec: B310
-                        "https://ifconfig.me",
-                        timeout=2
+                        "https://ifconfig.me", timeout=2
                     ) as response:
-                        public_ip = response.read().decode('utf-8')
+                        public_ip = response.read().decode("utf-8")
                 except (URLError, socket.timeout):
                     # If both services fail, keep the default value
                     pass
@@ -116,14 +114,13 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             pass
 
         # Create filename with username, OS info, and IP
-        timestamp = datetime.now().astimezone(
-            pytz.timezone("Europe/Madrid")).strftime("%Y%m%d_%H%M%S")
-        base_filename = f'cai_{self.session_id}_{timestamp}_{username}_{os_info}_{public_ip.replace(".", "_")}.jsonl'
+        timestamp = (
+            datetime.now().astimezone(pytz.timezone("Europe/Madrid")).strftime("%Y%m%d_%H%M%S")
+        )
+        base_filename = f"cai_{self.session_id}_{timestamp}_{username}_{os_info}_{public_ip.replace('.', '_')}.jsonl"
 
         if workspace_name:
-            self.filename = os.path.join(
-                log_dir, f'{workspace_name}_{base_filename}'
-            )
+            self.filename = os.path.join(log_dir, f"{workspace_name}_{base_filename}")
         else:
             self.filename = os.path.join(log_dir, base_filename)
 
@@ -131,16 +128,15 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         self.total_cost = 0.0
 
         # Log the session start
-        with open(self.filename, 'a', encoding='utf-8') as f:
+        with open(self.filename, "a", encoding="utf-8") as f:
             session_start = {
                 "event": "session_start",
-                "timestamp": datetime.now().astimezone(
-                    pytz.timezone("Europe/Madrid")).isoformat(),
+                "timestamp": datetime.now().astimezone(pytz.timezone("Europe/Madrid")).isoformat(),
                 "session_id": self.session_id,
                 "alias_api_key": os.getenv("ALIAS_API_KEY", ""),
             }
             json.dump(session_start, f)
-            f.write('\n')
+            f.write("\n")
 
     def rec_training_data(self, create_params, msg, total_cost=None, agent_name=None) -> None:
         """
@@ -155,13 +151,15 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         request_data = {
             "model": create_params["model"],
             "messages": create_params["messages"],
-            "stream": create_params["stream"]
+            "stream": create_params["stream"],
         }
         if "tools" in create_params:
-            request_data.update({
-                "tools": create_params["tools"],
-                "tool_choice": create_params["tool_choice"],
-            })
+            request_data.update(
+                {
+                    "tools": create_params["tools"],
+                    "tool_choice": create_params["tool_choice"],
+                }
+            )
 
         # Obtener el coste de la interacción
         interaction_cost = 0.0
@@ -232,64 +230,70 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
                 {
                     "role": m.role,
                     "content": m.content,
-                    "tool_calls": [t.model_dump() for t in (m.tool_calls or [])]  # pylint: disable=line-too-long  # noqa: E501
+                    "tool_calls": [t.model_dump() for t in (m.tool_calls or [])],  # pylint: disable=line-too-long  # noqa: E501
                 }
                 for m in msg.messages
-            ] if hasattr(msg, "messages") else [],
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": msg.choices[0].message.role if hasattr(msg, "choices") and msg.choices else "assistant",
-                    "content": msg.choices[0].message.content if hasattr(msg, "choices") and msg.choices else None,
-                    "tool_calls": [t.model_dump() for t in (msg.choices[0].message.tool_calls or [])] if hasattr(msg, "choices") and msg.choices else []  # pylint: disable=line-too-long  # noqa: E501
-                },
-                "finish_reason": msg.choices[0].finish_reason if hasattr(msg, "choices") and msg.choices else "stop"
-            }],
+            ]
+            if hasattr(msg, "messages")
+            else [],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": msg.choices[0].message.role
+                        if hasattr(msg, "choices") and msg.choices
+                        else "assistant",
+                        "content": msg.choices[0].message.content
+                        if hasattr(msg, "choices") and msg.choices
+                        else None,
+                        "tool_calls": [
+                            t.model_dump() for t in (msg.choices[0].message.tool_calls or [])
+                        ]
+                        if hasattr(msg, "choices") and msg.choices
+                        else [],  # pylint: disable=line-too-long  # noqa: E501
+                    },
+                    "finish_reason": msg.choices[0].finish_reason
+                    if hasattr(msg, "choices") and msg.choices
+                    else "stop",
+                }
+            ],
             "usage": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens
+                "total_tokens": total_tokens,
             },
-            "cost": {
-                "interaction_cost": interaction_cost,
-                "total_cost": self.total_cost
-            },
-            "timing": {
-                "active_seconds": active_time_seconds,
-                "idle_seconds": idle_time_seconds
-            },
-            "timestamp_iso": datetime.now().astimezone(
-                pytz.timezone("Europe/Madrid")).isoformat()
+            "cost": {"interaction_cost": interaction_cost, "total_cost": self.total_cost},
+            "timing": {"active_seconds": active_time_seconds, "idle_seconds": idle_time_seconds},
+            "timestamp_iso": datetime.now().astimezone(pytz.timezone("Europe/Madrid")).isoformat(),
         }
 
         # Append both request and completion to the instance's jsonl file
-        with open(self.filename, 'a', encoding='utf-8') as f:
+        with open(self.filename, "a", encoding="utf-8") as f:
             json.dump(request_data, f)
-            f.write('\n')
+            f.write("\n")
             json.dump(completion_data, f)
-            f.write('\n')
+            f.write("\n")
 
     def log_user_message(self, user_message):
         """
         Logs a user message to the JSONL file.
-        
+
         Args:
             user_message: The message from the user to log
         """
-        with open(self.filename, 'a', encoding='utf-8') as f:
+        with open(self.filename, "a", encoding="utf-8") as f:
             user_data = {
                 "event": "user_message",
-                "timestamp": datetime.now().astimezone(
-                    pytz.timezone("Europe/Madrid")).isoformat(),
-                "content": user_message
+                "timestamp": datetime.now().astimezone(pytz.timezone("Europe/Madrid")).isoformat(),
+                "content": user_message,
             }
             json.dump(user_data, f)
-            f.write('\n')
+            f.write("\n")
 
     def log_assistant_message(self, assistant_message, tool_calls=None):
         """
         Logs an assistant message to the JSONL file.
-        
+
         Args:
             assistant_message: The message from the assistant to log
             tool_calls: Optional tool calls included in the assistant message
@@ -298,17 +302,16 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         self.last_assistant_message = assistant_message
         self.last_assistant_tool_calls = tool_calls
 
-        with open(self.filename, 'a', encoding='utf-8') as f:
+        with open(self.filename, "a", encoding="utf-8") as f:
             assistant_data = {
                 "event": "assistant_message",
-                "timestamp": datetime.now().astimezone(
-                    pytz.timezone("Europe/Madrid")).isoformat(),
-                "content": assistant_message
+                "timestamp": datetime.now().astimezone(pytz.timezone("Europe/Madrid")).isoformat(),
+                "content": assistant_message,
             }
             if tool_calls:
                 assistant_data["tool_calls"] = tool_calls
             json.dump(assistant_data, f)
-            f.write('\n')
+            f.write("\n")
 
         # Mark that the message has been logged
         self._last_message_logged = True
@@ -323,6 +326,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
 
         try:
             from cai.util import COST_TRACKER, get_active_time_seconds, get_idle_time_seconds
+
             active_time = get_active_time_seconds()
             idle_time = get_idle_time_seconds()
             # Get the global session cost from COST_TRACKER
@@ -332,37 +336,39 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             idle_time = 0.0
             session_cost = self.total_cost
 
-        with open(self.filename, 'a', encoding='utf-8') as f:
+        with open(self.filename, "a", encoding="utf-8") as f:
             session_end = {
                 "event": "session_end",
-                "timestamp": datetime.now().astimezone(
-                    pytz.timezone("Europe/Madrid")).isoformat(),
+                "timestamp": datetime.now().astimezone(pytz.timezone("Europe/Madrid")).isoformat(),
                 "session_id": self.session_id,
                 "timing_metrics": {
                     "active_time_seconds": active_time,
                     "idle_time_seconds": idle_time,
                     "total_time_seconds": active_time + idle_time,
-                    "active_percentage": round((active_time / (active_time + idle_time)) * 100, 2) if (active_time + idle_time) > 0 else 0.0
+                    "active_percentage": round((active_time / (active_time + idle_time)) * 100, 2)
+                    if (active_time + idle_time) > 0
+                    else 0.0,
                 },
                 "cost": {
                     "total_cost": session_cost  # Use the global session cost
-                }
+                },
             }
             json.dump(session_end, f)
-            f.write('\n')
+            f.write("\n")
+
 
 def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List[Dict]:
     """
-    Load conversation history from JSONL using only model and completion records.    
-    
+    Load conversation history from JSONL using only model and completion records.
+
     This implementation ignores event records to avoid confusion and ensures
     we get the complete conversation history as it was sent to and received from
     the models.
-    
+
     Args:
         file_path: Path to the JSONL file
         system_prompt: Whether to include system prompts
-        
+
     Returns:
         List of message dictionaries in conversation order
     """
@@ -434,9 +440,10 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
 
                     # Only add if this exact assistant message is not already in model record
                     is_duplicate = any(
-                        msg.get("role") == "assistant" and
-                        msg.get("content") == response_msg.get("content") and
-                        str(msg.get("tool_calls", [])) == str(response_msg.get("tool_calls", []))
+                        msg.get("role") == "assistant"
+                        and msg.get("content") == response_msg.get("content")
+                        and str(msg.get("tool_calls", []))
+                        == str(response_msg.get("tool_calls", []))
                         for msg in model_messages
                     )
                     if not is_duplicate:
@@ -462,14 +469,16 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
 
             # Check if we already have this user message with the same responding agent
             for existing_msg in unique_messages:
-                if (existing_msg.get("role") == "user" and
-                    existing_msg.get("content") == msg.get("content")):
+                if existing_msg.get("role") == "user" and existing_msg.get("content") == msg.get(
+                    "content"
+                ):
                     # Find the agent that responded to the existing message
                     existing_responding_agent = None
                     existing_idx = unique_messages.index(existing_msg)
                     for k in range(existing_idx + 1, len(unique_messages)):
-                        if (unique_messages[k].get("role") == "assistant" and
-                            unique_messages[k].get("agent_name")):
+                        if unique_messages[k].get("role") == "assistant" and unique_messages[k].get(
+                            "agent_name"
+                        ):
                             existing_responding_agent = unique_messages[k].get("agent_name")
                             break
 
@@ -480,11 +489,13 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
         else:
             # For non-user messages, use the original logic
             for existing_msg in unique_messages:
-                if (existing_msg.get("role") == msg.get("role") and
-                    existing_msg.get("content") == msg.get("content") and
-                    existing_msg.get("tool_call_id") == msg.get("tool_call_id") and
-                    str(existing_msg.get("tool_calls", [])) == str(msg.get("tool_calls", [])) and
-                    existing_msg.get("agent_name") == msg.get("agent_name")):
+                if (
+                    existing_msg.get("role") == msg.get("role")
+                    and existing_msg.get("content") == msg.get("content")
+                    and existing_msg.get("tool_call_id") == msg.get("tool_call_id")
+                    and str(existing_msg.get("tool_calls", [])) == str(msg.get("tool_calls", []))
+                    and existing_msg.get("agent_name") == msg.get("agent_name")
+                ):
                     is_duplicate = True
                     break
 
@@ -514,7 +525,7 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                 system_msg = {
                     "role": "system",
                     "content": system_prompts_by_agent[next_agent],
-                    "agent_name": next_agent
+                    "agent_name": next_agent,
                 }
                 final_messages.append(system_msg)
                 last_agent = next_agent
@@ -533,11 +544,12 @@ def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List
                     tool_msg = {
                         "role": "tool",
                         "tool_call_id": tool_id,
-                        "content": tool_outputs[tool_id]
+                        "content": tool_outputs[tool_id],
                     }
                     final_messages.append(tool_msg)
 
     return final_messages
+
 
 def get_token_stats(file_path):
     """
@@ -558,7 +570,7 @@ def get_token_stats(file_path):
     last_active_time = 0.0
     last_idle_time = 0.0
 
-    with open(file_path, encoding='utf-8') as file:
+    with open(file_path, encoding="utf-8") as file:
         for line in file:
             line = line.strip()
             if not line:
@@ -567,9 +579,7 @@ def get_token_stats(file_path):
                 record = json.loads(line)
                 if "usage" in record:
                     total_prompt_tokens += record["usage"]["prompt_tokens"]
-                    total_completion_tokens += (
-                        record["usage"]["completion_tokens"]
-                    )
+                    total_completion_tokens += record["usage"]["completion_tokens"]
                 if "cost" in record:
                     if isinstance(record["cost"], dict):
                         # Si cost es un diccionario, obtener total_cost
@@ -579,19 +589,15 @@ def get_token_stats(file_path):
                         last_total_cost = float(record["cost"])
                 if "timing_metrics" in record:
                     if isinstance(record["timing_metrics"], dict):
-                        last_active_time = record["timing_metrics"].get(
-                            "active_time_seconds", 0.0)
-                        last_idle_time = record["timing_metrics"].get(
-                            "idle_time_seconds", 0.0)
+                        last_active_time = record["timing_metrics"].get("active_time_seconds", 0.0)
+                        last_idle_time = record["timing_metrics"].get("idle_time_seconds", 0.0)
                 if "model" in record:
                     model_name = record["model"]
                 # Keep track of the last record for session_end event
                 if record.get("event") == "session_end":
                     if "timing_metrics" in record and isinstance(record["timing_metrics"], dict):
-                        last_active_time = record["timing_metrics"].get(
-                            "active_time_seconds", 0.0)
-                        last_idle_time = record["timing_metrics"].get(
-                            "idle_time_seconds", 0.0)
+                        last_active_time = record["timing_metrics"].get("active_time_seconds", 0.0)
+                        last_idle_time = record["timing_metrics"].get("idle_time_seconds", 0.0)
                     if "cost" in record and isinstance(record["cost"], dict):
                         last_total_cost = record["cost"].get("total_cost", 0.0)
             except Exception as e:  # pylint: disable=broad-except
@@ -601,8 +607,15 @@ def get_token_stats(file_path):
     # Usar el último total_cost encontrado como el total
     total_cost = last_total_cost
 
-    return (model_name, total_prompt_tokens, total_completion_tokens,
-            total_cost, last_active_time, last_idle_time)
+    return (
+        model_name,
+        total_prompt_tokens,
+        total_completion_tokens,
+        total_cost,
+        last_active_time,
+        last_idle_time,
+    )
+
 
 def atexit_handler():
     """
@@ -614,19 +627,22 @@ def atexit_handler():
         return
 
     # Check if we have an unlogged assistant message and log it
-    if hasattr(_session_recorder, 'last_assistant_message') and not getattr(_session_recorder, '_last_message_logged', False):
+    if hasattr(_session_recorder, "last_assistant_message") and not getattr(
+        _session_recorder, "_last_message_logged", False
+    ):
         if _session_recorder.last_assistant_message or _session_recorder.last_assistant_tool_calls:
             _session_recorder.log_assistant_message(
                 _session_recorder.last_assistant_message,
-                _session_recorder.last_assistant_tool_calls
+                _session_recorder.last_assistant_tool_calls,
             )
 
     # Check if we've already logged the session end (via KeyboardInterrupt)
-    if getattr(_session_recorder, '_session_end_logged', False):
+    if getattr(_session_recorder, "_session_end_logged", False):
         return
 
     # Log the session end
     _session_recorder.log_session_end()
+
 
 # Register the exit handler
 atexit.register(atexit_handler)

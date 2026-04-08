@@ -10,6 +10,7 @@ Features:
 This implementation favors simplicity and safe defaults so it can be
 used in CI/development without extra dependencies.
 """
+
 from __future__ import annotations
 
 import os
@@ -26,7 +27,18 @@ def _now_ts() -> float:
 
 
 class IngestionManager:
-    def __init__(self, adapter: Any, *, batch_size: int = 50, batch_interval: float = 1.0, max_retries: int = 3, backoff_base: float = 0.2, backoff_factor: float = 2.0, ttl_seconds: Optional[int] = None, retention_interval: int = 3600):
+    def __init__(
+        self,
+        adapter: Any,
+        *,
+        batch_size: int = 50,
+        batch_interval: float = 1.0,
+        max_retries: int = 3,
+        backoff_base: float = 0.2,
+        backoff_factor: float = 2.0,
+        ttl_seconds: Optional[int] = None,
+        retention_interval: int = 3600,
+    ):
         self.adapter = adapter
         self.batch_size = int(batch_size)
         self.batch_interval = float(batch_interval)
@@ -56,7 +68,9 @@ class IngestionManager:
         else:
             self._retention_thread = None
 
-    def enqueue(self, collection: str, id_point: Any, texts: List[str], metadata: List[dict]) -> None:
+    def enqueue(
+        self, collection: str, id_point: Any, texts: List[str], metadata: List[dict]
+    ) -> None:
         with self._lock:
             self._queue.append((collection, id_point, texts, metadata))
             if len(self._queue) >= self.batch_size:
@@ -128,7 +142,9 @@ class IngestionManager:
                     try:
                         # best-effort: call adapter.add_points synchronously in background
                         self.adapter.add_points(
-                            id_point=combined_ids if len(combined_ids) > 1 else (combined_ids[0] if combined_ids else None),
+                            id_point=combined_ids
+                            if len(combined_ids) > 1
+                            else (combined_ids[0] if combined_ids else None),
                             collection_name=collection,
                             texts=combined_texts,
                             metadata=combined_meta,
@@ -146,7 +162,7 @@ class IngestionManager:
                             except Exception:
                                 pass
 
-                elapsed_ms = ( _now_ts() - start_ts ) * 1000.0
+                elapsed_ms = (_now_ts() - start_ts) * 1000.0
                 collector().incr("ingest_indexed_docs", len(combined_texts))
                 collector().observe("ingest_index_time_ms", elapsed_ms)
                 # best-effort update collection size if adapter supports export_collection
@@ -170,7 +186,9 @@ class IngestionManager:
                         pass
                 else:
                     # Best-effort: export collection and delete by id if adapter supports delete_points
-                    if hasattr(self.adapter, "export_collection") and hasattr(self.adapter, "delete_points"):
+                    if hasattr(self.adapter, "export_collection") and hasattr(
+                        self.adapter, "delete_points"
+                    ):
                         try:
                             # iterate collections
                             if hasattr(self.adapter, "list_collections"):
@@ -181,14 +199,30 @@ class IngestionManager:
                             for c in cols:
                                 exported = self.adapter.export_collection(c)
                                 to_delete = []
-                                for d in (exported or []):
+                                for d in exported or []:
                                     meta = d.get("metadata") or {}
-                                    prov = meta.get("provenance") if isinstance(meta, dict) else d.get("provenance")
+                                    prov = (
+                                        meta.get("provenance")
+                                        if isinstance(meta, dict)
+                                        else d.get("provenance")
+                                    )
                                     if isinstance(prov, dict):
                                         ts = prov.get("timestamp")
                                         try:
                                             # assume ISO ending with Z
-                                            tsec = time.mktime(time.strptime(ts.replace("Z", ""), "%Y-%m-%dT%H:%M:%S.%f")) if ts and "." in ts else time.mktime(time.strptime(ts.replace("Z", ""), "%Y-%m-%dT%H:%M:%S"))
+                                            tsec = (
+                                                time.mktime(
+                                                    time.strptime(
+                                                        ts.replace("Z", ""), "%Y-%m-%dT%H:%M:%S.%f"
+                                                    )
+                                                )
+                                                if ts and "." in ts
+                                                else time.mktime(
+                                                    time.strptime(
+                                                        ts.replace("Z", ""), "%Y-%m-%dT%H:%M:%S"
+                                                    )
+                                                )
+                                            )
                                         except Exception:
                                             tsec = None
                                         if tsec is not None and tsec < cutoff:

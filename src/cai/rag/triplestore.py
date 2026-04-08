@@ -4,6 +4,7 @@ This module provides a minimal, dependency-free TripleStore backed by
 SQLite suitable for storing simple RDF-like triples and running quick
 sanity/contradiction checks over recent facts.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,7 +14,9 @@ from typing import Any, Dict, List, Optional
 
 
 class TripleStore:
-    def __init__(self, db_path: Optional[str] = ":memory:", pragmas: Optional[Dict[str, str]] = None):
+    def __init__(
+        self, db_path: Optional[str] = ":memory:", pragmas: Optional[Dict[str, str]] = None
+    ):
         self.db_path = db_path or ":memory:"
         # allow easy use in tests by defaulting to in-memory
         self.conn = sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
@@ -105,7 +108,9 @@ class TripleStore:
         rows = cur.fetchall()
         return [self._row_to_dict(r) for r in rows]
 
-    def get_facts_for_entity(self, entity: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_facts_for_entity(
+        self, entity: str, limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM triples WHERE subject = ? OR object = ?"
         params: List[Any] = [entity, entity]
         if limit is not None:
@@ -154,7 +159,10 @@ class TripleStore:
             s = g["subject"]
             p = g["predicate"]
             cur2 = self.conn.cursor()
-            cur2.execute("SELECT * FROM triples WHERE subject = ? AND predicate = ? ORDER BY timestamp DESC", (s, p))
+            cur2.execute(
+                "SELECT * FROM triples WHERE subject = ? AND predicate = ? ORDER BY timestamp DESC",
+                (s, p),
+            )
             rows = cur2.fetchall()
             objs: List[Any] = []
             facts: List[Dict[str, Any]] = []
@@ -170,7 +178,15 @@ class TripleStore:
                 ctype = "boolean_contradiction"
             else:
                 ctype = "value_mismatch"
-            out.append({"subject": s, "predicate": p, "objects": distinct_objs, "facts": facts, "type": ctype})
+            out.append(
+                {
+                    "subject": s,
+                    "predicate": p,
+                    "objects": distinct_objs,
+                    "facts": facts,
+                    "type": ctype,
+                }
+            )
 
         return out
 

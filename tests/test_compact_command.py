@@ -22,7 +22,9 @@ class TestCompactCommand:
         """Test command is properly initialized."""
         assert compact_command.name == "/compact"
         assert "/cmp" in compact_command.aliases
-        assert len(compact_command.subcommands) >= 3  # Should have model, prompt, status subcommands
+        assert (
+            len(compact_command.subcommands) >= 3
+        )  # Should have model, prompt, status subcommands
         assert compact_command.compact_model is None  # Default to current model
 
     def test_handle_model(self, compact_command):
@@ -62,7 +64,7 @@ class TestCompactCommand:
         result = compact_command.handle_status([])
         assert result is True
 
-    @patch.object(CompactCommand, '_perform_compaction')
+    @patch.object(CompactCommand, "_perform_compaction")
     def test_command_with_args(self, mock_perform, compact_command):
         """Test compact command with model and prompt arguments."""
         # Mock the actual compaction to avoid dependencies
@@ -77,5 +79,3 @@ class TestCompactCommand:
         result = compact_command.handle(["--prompt", "Custom prompt"])
         assert result is True
         mock_perform.assert_called_with(None, "Custom prompt")
-
-

@@ -6,6 +6,7 @@ control and interact with remote shells.
 It handles starting/stopping listeners,
 sending commands, and managing shell sessions.
 """
+
 import socket
 import sys
 import threading
@@ -25,7 +26,7 @@ class ReverseShellClient:
     - Monitor shell status
     """
 
-    def __init__(self, host='127.0.0.1', port=4444):
+    def __init__(self, host="127.0.0.1", port=4444):
         """
         Initialize reverse shell client
         Args:
@@ -70,10 +71,7 @@ class ReverseShellClient:
             self.socket.listen(1)
             while self.running:
                 client_socket, _ = self.socket.accept()
-                client_handler = threading.Thread(
-                    target=self.handle_client,
-                    args=(client_socket,)
-                )
+                client_handler = threading.Thread(target=self.handle_client, args=(client_socket,))
                 client_handler.daemon = True
                 client_handler.start()
         except OSError as e:
@@ -92,7 +90,7 @@ class ReverseShellClient:
         self.listener_thread.daemon = True
         self.listener_thread.start()
         self.socket.close()
-        return f'Listener started on {self.host}:{self.port}'
+        return f"Listener started on {self.host}:{self.port}"
 
     def stop(self):
         """
@@ -143,5 +141,5 @@ class ReverseShellClient:
             "history": self.command_history,
             "host": self.host,
             "port": self.port,
-            "status": connected
+            "status": connected,
         }

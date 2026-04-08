@@ -37,10 +37,10 @@ class QuickstartCommand(Command):
 
     def check_local_endpoint(self, url: str) -> tuple[bool, str]:
         """Check if a local endpoint is accessible.
-        
+
         Args:
             url: The endpoint URL to check
-            
+
         Returns:
             Tuple of (is_accessible, message)
         """
@@ -89,6 +89,7 @@ class QuickstartCommand(Command):
             try:
                 import urllib.error
                 import urllib.request
+
                 with urllib.request.urlopen(url, timeout=2) as response:
                     if response.status == 200:
                         return True, "✅ Accessible"
@@ -112,7 +113,7 @@ class QuickstartCommand(Command):
                         resp = await client.get("http://localhost:11434/api/tags")
                         if resp.status_code == 200:
                             data = resp.json()
-                            return [model['name'] for model in data.get('models', [])]
+                            return [model["name"] for model in data.get("models", [])]
                 except Exception:
                     return []
                 return []
@@ -126,7 +127,7 @@ class QuickstartCommand(Command):
                         response = client.get("http://localhost:11434/api/tags")
                         if response.status_code == 200:
                             data = response.json()
-                            return [model['name'] for model in data.get('models', [])]
+                            return [model["name"] for model in data.get("models", [])]
                 except Exception:
                     return []
                 return []
@@ -135,10 +136,13 @@ class QuickstartCommand(Command):
             try:
                 import json
                 import urllib.request
-                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2) as response:
+
+                with urllib.request.urlopen(
+                    "http://localhost:11434/api/tags", timeout=2
+                ) as response:
                     if response.status == 200:
                         data = json.loads(response.read())
-                        return [model['name'] for model in data.get('models', [])]
+                        return [model["name"] for model in data.get("models", [])]
             except Exception:
                 pass
         except Exception:
@@ -147,10 +151,10 @@ class QuickstartCommand(Command):
 
     def get_provider_name(self, api_key: str) -> str:
         """Get a formatted provider name from API key name.
-        
+
         Args:
             api_key: Environment variable name (e.g., OPENAI_API_KEY)
-            
+
         Returns:
             Formatted provider name
         """
@@ -186,6 +190,7 @@ class QuickstartCommand(Command):
         # Also check .env file for any API keys not in current environment
         try:
             from pathlib import Path
+
             env_file = Path.home() / "cai" / ".env"
             if not env_file.exists():
                 # Try current directory
@@ -195,8 +200,8 @@ class QuickstartCommand(Command):
                 with open(env_file) as f:
                     for line in f:
                         line = line.strip()
-                        if '=' in line and not line.startswith('#'):
-                            key, _ = line.split('=', 1)
+                        if "=" in line and not line.startswith("#"):
+                            key, _ = line.split("=", 1)
                             key = key.strip()
                             if key.endswith("_API_KEY") and key not in keys:
                                 # Check if it's in environment (might be loaded)
@@ -273,7 +278,9 @@ class QuickstartCommand(Command):
         ollama_table.add_row("http://localhost:11434", status, model_str)
 
         # Check Docker internal
-        is_docker_accessible, docker_status = self.check_local_endpoint("http://host.docker.internal:11434")
+        is_docker_accessible, docker_status = self.check_local_endpoint(
+            "http://host.docker.internal:11434"
+        )
         ollama_table.add_row("http://host.docker.internal:11434", docker_status, "Docker access")
 
         console.print(ollama_table)
@@ -304,10 +311,18 @@ class QuickstartCommand(Command):
         if has_api_keys:
             console.print("Great! You have API keys configured. Now you need to select a model.")
             console.print("\n[cyan]To see which models are available for your API keys:[/cyan]")
-            console.print("  [yellow]1.[/yellow] Run: [bold green]/model-show[/bold green] to see all available models")
-            console.print("  [yellow]2.[/yellow] Run: [bold green]/model-show supported[/bold green] to see only models with function calling support")
-            console.print("  [yellow]3.[/yellow] Select a model: [bold green]/model <model-name>[/bold green]")
-            console.print("\n[dim]Note: The default model 'alias1' requires configuration. Please select a specific model.[/dim]")
+            console.print(
+                "  [yellow]1.[/yellow] Run: [bold green]/model-show[/bold green] to see all available models"
+            )
+            console.print(
+                "  [yellow]2.[/yellow] Run: [bold green]/model-show supported[/bold green] to see only models with function calling support"
+            )
+            console.print(
+                "  [yellow]3.[/yellow] Select a model: [bold green]/model <model-name>[/bold green]"
+            )
+            console.print(
+                "\n[dim]Note: The default model 'alias1' requires configuration. Please select a specific model.[/dim]"
+            )
         else:
             console.print(
                 Panel(
@@ -349,24 +364,33 @@ class QuickstartCommand(Command):
         console.print("\n[bold yellow]💡 Step 5: Quick Examples[/bold yellow]\n")
 
         examples = [
-            ("[bold]Basic CTF Challenge:[/bold]", [
-                "# Select the CTF agent",
-                "/agent select one_tool_agent",
-                "# Describe your challenge",
-                "I have a binary at /tmp/challenge that asks for a password",
-            ]),
-            ("[bold]Web Security Testing:[/bold]", [
-                "# Switch to bug bounty agent",
-                "/agent select bug_bounter",
-                "# Test a website",
-                "Test https://example.com for common vulnerabilities",
-            ]),
-            ("[bold]Network Reconnaissance:[/bold]", [
-                "# Use the red team agent",
-                "/agent select red_teamer",
-                "# Scan network",
-                "Scan the network 192.168.1.0/24 for open ports",
-            ]),
+            (
+                "[bold]Basic CTF Challenge:[/bold]",
+                [
+                    "# Select the CTF agent",
+                    "/agent select one_tool_agent",
+                    "# Describe your challenge",
+                    "I have a binary at /tmp/challenge that asks for a password",
+                ],
+            ),
+            (
+                "[bold]Web Security Testing:[/bold]",
+                [
+                    "# Switch to bug bounty agent",
+                    "/agent select bug_bounter",
+                    "# Test a website",
+                    "Test https://example.com for common vulnerabilities",
+                ],
+            ),
+            (
+                "[bold]Network Reconnaissance:[/bold]",
+                [
+                    "# Use the red team agent",
+                    "/agent select red_teamer",
+                    "# Scan network",
+                    "Scan the network 192.168.1.0/24 for open ports",
+                ],
+            ),
         ]
 
         for title, commands in examples:

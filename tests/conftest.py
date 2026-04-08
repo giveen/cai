@@ -73,7 +73,9 @@ def skip_integration_agent_tests(request):
     if request.node.get_closest_marker("allow_call_model_methods"):
         enabled = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower()
         if enabled not in ("1", "true", "yes"):
-            pytest.skip("Skipping integration tests that call real model/methods by default. Set RUN_AGENT_INTEGRATION_TESTS=1 to run them.")
+            pytest.skip(
+                "Skipping integration tests that call real model/methods by default. Set RUN_AGENT_INTEGRATION_TESTS=1 to run them."
+            )
 
 
 @pytest.fixture(autouse=True)

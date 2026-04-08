@@ -64,7 +64,9 @@ def main() -> int:
     if short_preview == "ok" and not short_collapsed:
         ok("tool output preview no-collapse")
     else:
-        fail(f"tool output preview unexpected (short): {short_preview}, collapsed={short_collapsed}")
+        fail(
+            f"tool output preview unexpected (short): {short_preview}, collapsed={short_collapsed}"
+        )
         return 1
 
     long_output = "\n".join(["line"] * 30)
@@ -127,7 +129,12 @@ def main() -> int:
             fail(f"team #{i + 1} does not define 4 terminals: {composition}")
             return 1
         tooltip = app._team_tooltip_text(i, label, composition)
-        if f"#{i + 1}:" not in tooltip or "T1:" not in tooltip or "T4:" not in tooltip or "Best for:" not in tooltip:
+        if (
+            f"#{i + 1}:" not in tooltip
+            or "T1:" not in tooltip
+            or "T4:" not in tooltip
+            or "Best for:" not in tooltip
+        ):
             fail(f"team tooltip format invalid: {tooltip}")
             return 1
     ok("team preset layout and tooltip format")
@@ -365,7 +372,7 @@ def main() -> int:
 
     app._telemetry_run_started(1, "one_tool_agent", "hello")
     app._telemetry_first_token(1, "one_tool_agent")
-    app._telemetry_tool_called(1, "one_tool_agent", "web_search_preview", "c1", "{\"q\":\"x\"}")
+    app._telemetry_tool_called(1, "one_tool_agent", "web_search_preview", "c1", '{"q":"x"}')
     app._telemetry_tool_output(1, "one_tool_agent", "c1", "result")
     status = app._telemetry_run_finished(1, "one_tool_agent", _FakeResult(), "completed")
     if "tok" in status and "retr" in status:
@@ -392,7 +399,15 @@ def main() -> int:
         return 1
 
     events = {r.get("event") for r in telemetry_records}
-    required_events = {"run_started", "first_token", "tool_called", "tool_output", "retrieval_called", "retrieval_output", "run_finished"}
+    required_events = {
+        "run_started",
+        "first_token",
+        "tool_called",
+        "tool_output",
+        "retrieval_called",
+        "retrieval_output",
+        "run_finished",
+    }
     if required_events.issubset(events):
         ok("telemetry event coverage")
     else:
@@ -400,7 +415,11 @@ def main() -> int:
         return 1
 
     snapshot = app._get_context_snapshot(1)
-    if snapshot and int(snapshot.get("used_tokens", 0)) > 0 and int(snapshot.get("max_tokens", 0)) > 0:
+    if (
+        snapshot
+        and int(snapshot.get("used_tokens", 0)) > 0
+        and int(snapshot.get("max_tokens", 0)) > 0
+    ):
         ok("context snapshot created")
     else:
         fail(f"context snapshot unexpected: {snapshot}")
@@ -449,14 +468,21 @@ def main() -> int:
         return 1
 
     provider_usage = (snapshot or {}).get("provider_usage_details", {})
-    if int(provider_usage.get("cached_tokens", 0)) == 2 and int(provider_usage.get("reasoning_tokens", 0)) == 3:
+    if (
+        int(provider_usage.get("cached_tokens", 0)) == 2
+        and int(provider_usage.get("reasoning_tokens", 0)) == 3
+    ):
         ok("provider usage details attribution")
     else:
         fail(f"provider usage details unexpected: {provider_usage}")
         return 1
 
     summary_text = app._render_metrics_summary_text()
-    if "Stats" in summary_text and "Total Cost:" in summary_text and "Average cost per turn:" in summary_text:
+    if (
+        "Stats" in summary_text
+        and "Total Cost:" in summary_text
+        and "Average cost per turn:" in summary_text
+    ):
         ok("stats summary render")
     else:
         fail(f"stats summary render unexpected: {summary_text}")

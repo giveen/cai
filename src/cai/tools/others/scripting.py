@@ -10,9 +10,9 @@ from cai.sdk.agents import function_tool
 
 @function_tool
 def scripting_tool(
-        command: str = "",
-        args: str = "",
-        ctf=None  # pylint: disable=unused-argument
+    command: str = "",
+    args: str = "",
+    ctf=None,  # pylint: disable=unused-argument
 ) -> str:
     """Scripting tool for executing Python code directly in memory.
     IMPORTANT: Use with caution - executes Python code directly.
@@ -48,9 +48,9 @@ def scripting_tool(
 
     markdown_patterns = [
         r"^```python\n(.*?)\n```",  # Standard markdown
-        r"^```python(.+?)```",      # No newlines
-        r"^```\n(.*?)\n```",        # No language specified
-        r"^`{1,3}(.*?)`{1,3}"      # Single or triple backticks
+        r"^```python(.+?)```",  # No newlines
+        r"^```\n(.*?)\n```",  # No language specified
+        r"^`{1,3}(.*?)`{1,3}",  # Single or triple backticks
     ]
     script = command
     for pattern in markdown_patterns:
@@ -63,7 +63,7 @@ def scripting_tool(
     if not script:
         raise ValueError("No valid Python code found in command")
 
-    _BLOCKED_MODULES = {'os', 'sys', 'subprocess', 'shutil'}
+    _BLOCKED_MODULES = {"os", "sys", "subprocess", "shutil"}
 
     try:
         tree = ast.parse(script)
@@ -71,23 +71,21 @@ def scripting_tool(
             if isinstance(node, ast.Import):
                 # Iterate all aliases: `import os, sys` has two names
                 for alias in node.names:
-                    module = alias.name.split('.')[0]
+                    module = alias.name.split(".")[0]
                     if module in _BLOCKED_MODULES:
-                        raise SecurityError(
-                            f"Importing potentially dangerous module: {module}")
+                        raise SecurityError(f"Importing potentially dangerous module: {module}")
             elif isinstance(node, ast.ImportFrom):
                 # `from os import path` — check the module being imported from
-                module = (node.module or "").split('.')[0]
+                module = (node.module or "").split(".")[0]
                 if module in _BLOCKED_MODULES:
-                    raise SecurityError(
-                        f"Importing potentially dangerous module: {module}")
+                    raise SecurityError(f"Importing potentially dangerous module: {module}")
     except SyntaxError as e:
         err = {
             "error": "SyntaxError",
             "message": str(e),
-            "lineno": getattr(e, 'lineno', None),
-            "offset": getattr(e, 'offset', None),
-            "text": getattr(e, 'text', None),
+            "lineno": getattr(e, "lineno", None),
+            "offset": getattr(e, "offset", None),
+            "text": getattr(e, "text", None),
         }
         return json.dumps(err)
     except SecurityError as e:
@@ -101,32 +99,64 @@ def scripting_tool(
     try:
         local_vars = {}
         if args:
-            local_vars['args'] = args
+            local_vars["args"] = args
 
         # Create a restricted environment for execution
         safe_builtins = {
-            'abs': abs, 'all': all, 'any': any, 'ascii': ascii,
-            'bin': bin, 'bool': bool, 'bytearray': bytearray,
-            'bytes': bytes, 'chr': chr, 'complex': complex,
-            'dict': dict, 'divmod': divmod, 'enumerate': enumerate,
-            'filter': filter, 'float': float, 'format': format,
-            'frozenset': frozenset, 'hash': hash, 'hex': hex,
-            'int': int, 'isinstance': isinstance, 'issubclass': issubclass,
-            'iter': iter, 'len': len, 'list': list, 'map': map,
-            'max': max, 'min': min, 'next': next, 'object': object,
-            'oct': oct, 'ord': ord, 'pow': pow, 'print': print,
-            'range': range, 'repr': repr, 'reversed': reversed,
-            'round': round, 'set': set, 'slice': slice, 'sorted': sorted,
-            'str': str, 'sum': sum, 'tuple': tuple, 'type': type,
-            'zip': zip
+            "abs": abs,
+            "all": all,
+            "any": any,
+            "ascii": ascii,
+            "bin": bin,
+            "bool": bool,
+            "bytearray": bytearray,
+            "bytes": bytes,
+            "chr": chr,
+            "complex": complex,
+            "dict": dict,
+            "divmod": divmod,
+            "enumerate": enumerate,
+            "filter": filter,
+            "float": float,
+            "format": format,
+            "frozenset": frozenset,
+            "hash": hash,
+            "hex": hex,
+            "int": int,
+            "isinstance": isinstance,
+            "issubclass": issubclass,
+            "iter": iter,
+            "len": len,
+            "list": list,
+            "map": map,
+            "max": max,
+            "min": min,
+            "next": next,
+            "object": object,
+            "oct": oct,
+            "ord": ord,
+            "pow": pow,
+            "print": print,
+            "range": range,
+            "repr": repr,
+            "reversed": reversed,
+            "round": round,
+            "set": set,
+            "slice": slice,
+            "sorted": sorted,
+            "str": str,
+            "sum": sum,
+            "tuple": tuple,
+            "type": type,
+            "zip": zip,
         }
 
         try:
             # Script is already parsed/validated above; compile directly
-            compiled_code = compile(script, '<string>', 'exec')
+            compiled_code = compile(script, "<string>", "exec")
 
             # Execute in a restricted environment
-            restricted_globals = {'__builtins__': safe_builtins}
+            restricted_globals = {"__builtins__": safe_builtins}
 
             # pylint: disable=exec-used
             # Execute with local_vars as the locals mapping so user-provided
@@ -149,11 +179,13 @@ def scripting_tool(
     except Exception as e:  # pylint: disable=broad-exception-caught
         # Unexpected errors in the wrapping logic — return structured diagnostics
         tb = traceback.format_exc()
-        return json.dumps({
-            "error": e.__class__.__name__,
-            "message": str(e),
-            "traceback": tb,
-        })
+        return json.dumps(
+            {
+                "error": e.__class__.__name__,
+                "message": str(e),
+                "traceback": tb,
+            }
+        )
     finally:
         sys.stdout = old_stdout  # restore
 

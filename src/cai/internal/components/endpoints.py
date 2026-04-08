@@ -1,6 +1,7 @@
 """
 System endpoint configuration (telemetry disabled)
 """
+
 from typing import Optional
 
 

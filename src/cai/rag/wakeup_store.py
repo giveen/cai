@@ -4,6 +4,7 @@ Provides a simple `get_global_wakeup_index()` factory so different parts
 of the application can share a single WakeupIndex without tight
 coupling or circular imports.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -13,11 +14,15 @@ from cai.rag.wakeup_index import WakeupIndex
 _GLOBAL_WAKEUP: Optional[WakeupIndex] = None
 
 
-def get_global_wakeup_index(max_facts_per_session: int = 200, embeddings_provider: Optional[Any] = None) -> WakeupIndex:
+def get_global_wakeup_index(
+    max_facts_per_session: int = 200, embeddings_provider: Optional[Any] = None
+) -> WakeupIndex:
     """Return a singleton WakeupIndex, creating it on first use."""
     global _GLOBAL_WAKEUP
     if _GLOBAL_WAKEUP is None:
-        _GLOBAL_WAKEUP = WakeupIndex(max_facts_per_session=max_facts_per_session, embeddings_provider=embeddings_provider)
+        _GLOBAL_WAKEUP = WakeupIndex(
+            max_facts_per_session=max_facts_per_session, embeddings_provider=embeddings_provider
+        )
     return _GLOBAL_WAKEUP
 
 

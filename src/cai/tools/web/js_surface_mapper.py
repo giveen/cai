@@ -46,10 +46,28 @@ _PATH_ENDPOINT_RE = re.compile(
 _SOURCE_MAP_RE = re.compile(r"^\s*//#\s*sourceMappingURL\s*=\s*(\S+)\s*$", re.MULTILINE)
 
 _HIGH_VALUE_STRINGS = [
-    "admin", "entitlement", "featureflag", "feature_flag", "flag", "debug",
-    "internal", "staging", "preview", "billing", "invoice", "payment", "export",
-    "report", "impersonate", "impersonation", "role", "permission", "rbac",
-    "tenant", "organization", "workspace",
+    "admin",
+    "entitlement",
+    "featureflag",
+    "feature_flag",
+    "flag",
+    "debug",
+    "internal",
+    "staging",
+    "preview",
+    "billing",
+    "invoice",
+    "payment",
+    "export",
+    "report",
+    "impersonate",
+    "impersonation",
+    "role",
+    "permission",
+    "rbac",
+    "tenant",
+    "organization",
+    "workspace",
 ]
 
 
@@ -135,8 +153,12 @@ def _fetch_text(
     deadline = time.monotonic() + timeout
     try:
         resp = requests.get(
-            url, headers=headers, cookies=cookies,
-            timeout=timeout, verify=verify, stream=True,
+            url,
+            headers=headers,
+            cookies=cookies,
+            timeout=timeout,
+            verify=verify,
+            stream=True,
         )
         resp.raise_for_status()
         data = bytearray()
@@ -255,7 +277,9 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
     # Fetch entry HTML pages
     for path in entry_paths:
         entry_url = path if path.startswith("http") else urljoin(base_url + "/", path.lstrip("/"))
-        html, err = _fetch_text(entry_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
+        html, err = _fetch_text(
+            entry_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl
+        )
         if err:
             errors.append(err)
             continue
@@ -264,7 +288,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
 
         # Inline script content
         for idx, script in enumerate(parser.inline_scripts):
-            inline_sources.append((f"{entry_url}#inline{idx+1}", script))
+            inline_sources.append((f"{entry_url}#inline{idx + 1}", script))
 
         # External JS assets
         for src in parser.script_srcs + parser.link_hrefs:
@@ -293,7 +317,9 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
 
     # Fetch JS assets and extract
     for asset_url in dedup_assets:
-        js, err = _fetch_text(asset_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
+        js, err = _fetch_text(
+            asset_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl
+        )
         if err:
             errors.append(err)
             continue
@@ -314,21 +340,27 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
         if include_sourcemaps:
             for sm in _SOURCE_MAP_RE.findall(js):
                 sm_url = sm if sm.startswith("http") else urljoin(asset_url, sm)
-                sm_text, sm_err = _fetch_text(sm_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
+                sm_text, sm_err = _fetch_text(
+                    sm_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl
+                )
                 if sm_err:
                     errors.append(sm_err)
                     continue
                 try:
                     sm_json = json.loads(sm_text)
                     sources_content = sm_json.get("sourcesContent") or []
-                    sourcemaps_info.append({
-                        "url": sm_url,
-                        "sourcesContent": bool(sources_content),
-                        "source_count": len(sm_json.get("sources", []) or []),
-                    })
+                    sourcemaps_info.append(
+                        {
+                            "url": sm_url,
+                            "sourcesContent": bool(sources_content),
+                            "source_count": len(sm_json.get("sources", []) or []),
+                        }
+                    )
                     # Extract from sourcesContent (bounded)
                     for idx, src in enumerate(sources_content[:50]):
-                        res_map = _extract_from_text(src or "", f"{sm_url}#src{idx+1}", base_origin)
+                        res_map = _extract_from_text(
+                            src or "", f"{sm_url}#src{idx + 1}", base_origin
+                        )
                         _merge_result(extraction, res_map)
                         for ep in res_map.endpoints:
                             evidence.setdefault(ep, set()).add(sm_url)

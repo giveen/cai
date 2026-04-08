@@ -68,7 +68,7 @@ class TestCLIStreaming(unittest.TestCase):
         # Ensure we start with clean histories for each test
         for (name, instance_id), model_ref in list(ACTIVE_MODEL_INSTANCES.items()):
             model = model_ref() if model_ref else None
-            if model and hasattr(model, 'message_history'):
+            if model and hasattr(model, "message_history"):
                 model.message_history.clear()
 
     def tearDown(self):
@@ -608,7 +608,9 @@ class TestCLIStreaming(unittest.TestCase):
             print(f"  {i}: {msg.get('role')} - {msg}")
 
         # Assertions
-        self.assertEqual(len(messages), 3, f"Expected 3 messages, got {len(messages)}: {messages}")  # user + assistant + tool
+        self.assertEqual(
+            len(messages), 3, f"Expected 3 messages, got {len(messages)}: {messages}"
+        )  # user + assistant + tool
 
         # Check user message
         self.assertEqual(self.get_combined_message_history()[0]["role"], "user")

@@ -130,37 +130,46 @@ class OpenAIResponsesModel(Model):
 
                 # Print the agent message for CLI display
                 from cai.util import cli_print_agent_messages
+
                 try:
                     # Create a message-like object to display
-                    message_obj = type('ResponseWrapper', (), {
-                        'content': '\n'.join([
-                            str(item.get('content', '')) if hasattr(item, 'get')
-                            else str(getattr(item, 'text', ''))
-                            for item in response.output
-                            if hasattr(item, 'get') or hasattr(item, 'text')
-                        ]),
-                        'tool_calls': [
-                            type('ToolCallWrapper', (), {
-                                'name': item.name,
-                                'arguments': item.arguments
-                            })
-                            for item in response.output
-                            if hasattr(item, 'name') and hasattr(item, 'arguments')
-                        ]
-                    })
+                    message_obj = type(
+                        "ResponseWrapper",
+                        (),
+                        {
+                            "content": "\n".join(
+                                [
+                                    str(item.get("content", ""))
+                                    if hasattr(item, "get")
+                                    else str(getattr(item, "text", ""))
+                                    for item in response.output
+                                    if hasattr(item, "get") or hasattr(item, "text")
+                                ]
+                            ),
+                            "tool_calls": [
+                                type(
+                                    "ToolCallWrapper",
+                                    (),
+                                    {"name": item.name, "arguments": item.arguments},
+                                )
+                                for item in response.output
+                                if hasattr(item, "name") and hasattr(item, "arguments")
+                            ],
+                        },
+                    )
 
                     cli_print_agent_messages(
-                        agent_name=getattr(self, 'agent_name', 'Agent'),
+                        agent_name=getattr(self, "agent_name", "Agent"),
                         message=message_obj,
-                        counter=getattr(self, 'interaction_counter', 0),
+                        counter=getattr(self, "interaction_counter", 0),
                         model=str(self.model),
                         debug=False,
                         interaction_input_tokens=usage.input_tokens,
                         interaction_output_tokens=usage.output_tokens,
                         interaction_reasoning_tokens=0,  # Not available in Responses API
-                        total_input_tokens=getattr(self, 'total_input_tokens', 0),
-                        total_output_tokens=getattr(self, 'total_output_tokens', 0),
-                        total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                        total_input_tokens=getattr(self, "total_input_tokens", 0),
+                        total_output_tokens=getattr(self, "total_output_tokens", 0),
+                        total_reasoning_tokens=getattr(self, "total_reasoning_tokens", 0),
                         interaction_cost=None,
                         total_cost=None,
                     )
@@ -231,37 +240,46 @@ class OpenAIResponsesModel(Model):
 
                 # Print the agent message for CLI display
                 from cai.util import cli_print_agent_messages
+
                 try:
                     # Create a message-like object to display
-                    message_obj = type('ResponseWrapper', (), {
-                        'content': '\n'.join([
-                            str(item.get('content', '')) if hasattr(item, 'get')
-                            else str(getattr(item, 'text', ''))
-                            for item in final_response.output
-                            if hasattr(item, 'get') or hasattr(item, 'text')
-                        ]),
-                        'tool_calls': [
-                            type('ToolCallWrapper', (), {
-                                'name': item.name,
-                                'arguments': item.arguments
-                            })
-                            for item in final_response.output
-                            if hasattr(item, 'name') and hasattr(item, 'arguments')
-                        ]
-                    })
+                    message_obj = type(
+                        "ResponseWrapper",
+                        (),
+                        {
+                            "content": "\n".join(
+                                [
+                                    str(item.get("content", ""))
+                                    if hasattr(item, "get")
+                                    else str(getattr(item, "text", ""))
+                                    for item in final_response.output
+                                    if hasattr(item, "get") or hasattr(item, "text")
+                                ]
+                            ),
+                            "tool_calls": [
+                                type(
+                                    "ToolCallWrapper",
+                                    (),
+                                    {"name": item.name, "arguments": item.arguments},
+                                )
+                                for item in final_response.output
+                                if hasattr(item, "name") and hasattr(item, "arguments")
+                            ],
+                        },
+                    )
 
                     cli_print_agent_messages(
-                        agent_name=getattr(self, 'agent_name', 'Agent'),
+                        agent_name=getattr(self, "agent_name", "Agent"),
                         message=message_obj,
-                        counter=getattr(self, 'interaction_counter', 0),
+                        counter=getattr(self, "interaction_counter", 0),
                         model=str(self.model),
                         debug=False,
                         interaction_input_tokens=final_response.usage.input_tokens,
                         interaction_output_tokens=final_response.usage.output_tokens,
                         interaction_reasoning_tokens=0,  # Not available in Responses API
-                        total_input_tokens=getattr(self, 'total_input_tokens', 0),
-                        total_output_tokens=getattr(self, 'total_output_tokens', 0),
-                        total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                        total_input_tokens=getattr(self, "total_input_tokens", 0),
+                        total_output_tokens=getattr(self, "total_output_tokens", 0),
+                        total_reasoning_tokens=getattr(self, "total_reasoning_tokens", 0),
                         interaction_cost=None,
                         total_cost=None,
                     )

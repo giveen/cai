@@ -4,6 +4,7 @@ Provides a small `/resume last` command to resume the most recently interrupted
 stream for the active agent. This is a lightweight helper that delegates to
 `Runner.run_streamed` and prints streaming text deltas to the console.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,7 +68,9 @@ class ResumeCommand(Command):
                         if hasattr(ev, "data"):
                             raw = ev.data
                             # Try to extract a text delta field
-                            delta = getattr(raw, "delta", None) or (raw.get("delta") if isinstance(raw, dict) else None)
+                            delta = getattr(raw, "delta", None) or (
+                                raw.get("delta") if isinstance(raw, dict) else None
+                            )
                             if delta:
                                 # Print without newline so streaming looks natural
                                 print(delta, end="", flush=True)

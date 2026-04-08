@@ -3,6 +3,7 @@
 Provides `run_local` and `run_local_async` which mirror the original
 implementations from `cai.tools.common` but live in a dedicated module.
 """
+
 from __future__ import annotations
 
 import os
@@ -13,7 +14,16 @@ import uuid
 from wasabi import color
 
 
-async def run_local_async(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None, custom_args=None):
+async def run_local_async(
+    command,
+    stdout=False,
+    timeout=100,
+    stream=False,
+    call_id=None,
+    tool_name=None,
+    workspace_dir=None,
+    custom_args=None,
+):
     """Async version of local command execution (uses asyncio subprocess).
 
     This is a near-direct extraction of `_run_local_async` from `common.py`.
@@ -45,7 +55,7 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
 
         if stream:
             # Streamed execution using asyncio create_subprocess_shell
-            parts = command.strip().split(' ', 1)
+            parts = command.strip().split(" ", 1)
             cmd_var = parts[0] if parts else ""
             args_param_val = parts[1] if len(parts) > 1 else ""
 
@@ -75,7 +85,7 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=target_dir
+                cwd=target_dir,
             )
 
             output_buffer = []
@@ -91,11 +101,13 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
                 try:
                     line = await asyncio.wait_for(process.stdout.readline(), timeout=0.5)
                     if line:
-                        output_buffer.append(line.decode('utf-8', errors='replace'))
+                        output_buffer.append(line.decode("utf-8", errors="replace"))
                         buffer_size += 1
                         last_output = time.time()
                         if buffer_size >= update_interval:
-                            update_tool_streaming(tool_name, tool_args, ''.join(output_buffer), call_id, token_info)
+                            update_tool_streaming(
+                                tool_name, tool_args, "".join(output_buffer), call_id, token_info
+                            )
                             buffer_size = 0
                     else:
                         break
@@ -124,10 +136,10 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
 
             stderr_data = await process.stderr.read()
             if stderr_data:
-                stderr_str = stderr_data.decode('utf-8', errors='replace')
+                stderr_str = stderr_data.decode("utf-8", errors="replace")
                 output_buffer.append("\nERROR OUTPUT:\n" + stderr_str)
 
-            final_output = ''.join(output_buffer)
+            final_output = "".join(output_buffer)
             if return_code != 0:
                 final_output += f"\nCommand exited with code {return_code}"
 
@@ -139,7 +151,9 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
                 "tool_time": process_execution_time,
             }
 
-            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
+            finish_tool_streaming(
+                tool_name, tool_args, final_output, call_id, execution_info, token_info
+            )
             return final_output
 
         else:
@@ -148,7 +162,7 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=target_dir
+                cwd=target_dir,
             )
 
             stdout_chunks, stderr_chunks = [], []
@@ -165,7 +179,9 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
                 try:
                     out_task = asyncio.create_task(process.stdout.read(4096))
                     err_task = asyncio.create_task(process.stderr.read(4096))
-                    done, pending = await asyncio.wait([out_task, err_task], timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
+                    done, pending = await asyncio.wait(
+                        [out_task, err_task], timeout=0.5, return_when=asyncio.FIRST_COMPLETED
+                    )
                     for task in pending:
                         task.cancel()
                     for task in done:
@@ -189,7 +205,11 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
             stdout_data = b"".join(stdout_chunks)
             stderr_data = b"".join(stderr_chunks)
 
-            output = stdout_data.decode('utf-8', errors='replace') if stdout_data else (stderr_data.decode('utf-8', errors='replace') if stderr_data else "")
+            output = (
+                stdout_data.decode("utf-8", errors="replace")
+                if stdout_data
+                else (stderr_data.decode("utf-8", errors="replace") if stderr_data else "")
+            )
 
             process_execution_time = time.time() - process_start_time
 
@@ -198,14 +218,15 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
             is_parallel = False
             if token_info and token_info.get("agent_id"):
                 agent_id = token_info.get("agent_id")
-                if agent_id and agent_id.startswith('P') and agent_id[1:].isdigit():
+                if agent_id and agent_id.startswith("P") and agent_id[1:].isdigit():
                     if int(os.getenv("CAI_PARALLEL", "1")) > 1:
                         is_parallel = True
 
             streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
             if streaming_enabled and is_parallel:
                 from cai.util import cli_print_tool_output
-                parts = command.strip().split(' ', 1)
+
+                parts = command.strip().split(" ", 1)
                 if not call_id:
                     cmd_name = parts[0] if parts else "cmd"
                     call_id = f"{cmd_name}_{str(uuid.uuid4())[:8]}"
@@ -216,12 +237,16 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
                     "host": os.path.basename(target_dir),
                     "tool_time": process_execution_time,
                 }
-                display_args = custom_args if custom_args is not None else {
-                    "command": parts[0] if parts else command,
-                    "args": parts[1] if len(parts) > 1 else "",
-                    "full_command": command,
-                    "workspace": os.path.basename(target_dir),
-                }
+                display_args = (
+                    custom_args
+                    if custom_args is not None
+                    else {
+                        "command": parts[0] if parts else command,
+                        "args": parts[1] if len(parts) > 1 else "",
+                        "full_command": command,
+                        "workspace": os.path.basename(target_dir),
+                    }
+                )
                 cli_print_tool_output(
                     tool_name=tool_name or "generic_linux_command",
                     args=display_args,
@@ -237,11 +262,12 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
             return output.strip()
 
     except subprocess.TimeoutExpired as e:
-        error_output = e.stdout if hasattr(e, 'stdout') and e.stdout else str(e)
+        error_output = e.stdout if hasattr(e, "stdout") and e.stdout else str(e)
         error_msg = f"Command timed out after {timeout} seconds\n{error_output}"
         if stream and call_id:
             from cai.util import finish_tool_streaming
-            parts = command.strip().split(' ', 1)
+
+            parts = command.strip().split(" ", 1)
             cmd_var = parts[0] if parts else ""
             args_var = parts[1] if len(parts) > 1 else ""
             tool_args = {
@@ -249,11 +275,23 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
                 "args": args_var if args_var.strip() else "",
                 "full_command": command,
                 "environment": "Local",
-                "workspace": os.path.basename(target_dir)
+                "workspace": os.path.basename(target_dir),
             }
-            execution_info = {"status": "timeout", "error": str(e), "environment": "Local", "host": os.path.basename(target_dir)}
+            execution_info = {
+                "status": "timeout",
+                "error": str(e),
+                "environment": "Local",
+                "host": os.path.basename(target_dir),
+            }
             token_info = _get_agent_token_info()
-            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
+            finish_tool_streaming(
+                tool_name or f"{cmd_var}_command",
+                tool_args,
+                error_msg,
+                call_id,
+                execution_info,
+                token_info,
+            )
         if stdout:
             print("\033[32m" + error_msg + "\033[0m")
             return error_msg
@@ -262,7 +300,8 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
         error_msg = f"Error executing local command: {e}"
         if stream and call_id:
             from cai.util import finish_tool_streaming
-            parts = command.strip().split(' ', 1)
+
+            parts = command.strip().split(" ", 1)
             cmd_var = parts[0] if parts else ""
             args_var = parts[1] if len(parts) > 1 else ""
             tool_args = {
@@ -270,16 +309,37 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
                 "args": args_var if args_var.strip() else "",
                 "full_command": command,
                 "environment": "Local",
-                "workspace": os.path.basename(target_dir)
+                "workspace": os.path.basename(target_dir),
             }
-            execution_info = {"status": "error", "error": str(e), "environment": "Local", "host": os.path.basename(target_dir)}
+            execution_info = {
+                "status": "error",
+                "error": str(e),
+                "environment": "Local",
+                "host": os.path.basename(target_dir),
+            }
             token_info = _get_agent_token_info()
-            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
+            finish_tool_streaming(
+                tool_name or f"{cmd_var}_command",
+                tool_args,
+                error_msg,
+                call_id,
+                execution_info,
+                token_info,
+            )
         print(color(error_msg, fg="red"))
         return error_msg
 
 
-def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None, custom_args=None):
+def run_local(
+    command,
+    stdout=False,
+    timeout=100,
+    stream=False,
+    call_id=None,
+    tool_name=None,
+    workspace_dir=None,
+    custom_args=None,
+):
     """Synchronous local execution wrapper (extracted from common.py).
 
     Intentionally mirrors the original `_run_local` implementation.
@@ -301,7 +361,7 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
         if stream:
             from cai.util import finish_tool_streaming, start_tool_streaming, update_tool_streaming
 
-            parts = command.strip().split(' ', 1)
+            parts = command.strip().split(" ", 1)
             cmd_var = parts[0] if parts else ""
             args_param_val = parts[1] if len(parts) > 1 else ""
             if not tool_name:
@@ -332,7 +392,7 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                cwd=target_dir
+                cwd=target_dir,
             )
 
             output_buffer = []
@@ -341,13 +401,13 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
             if tool_name == "generic_linux_command":
                 update_interval = 3
 
-            for line in iter(process.stdout.readline, ''):
+            for line in iter(process.stdout.readline, ""):
                 if not line:
                     break
                 output_buffer.append(line)
                 buffer_size += 1
                 if buffer_size >= update_interval:
-                    current_output = ''.join(output_buffer)
+                    current_output = "".join(output_buffer)
                     update_tool_streaming(tool_name, tool_args, current_output, call_id, token_info)
                     buffer_size = 0
 
@@ -359,7 +419,7 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
             if stderr_data:
                 output_buffer.append("\nERROR OUTPUT:\n" + stderr_data)
 
-            final_output = ''.join(output_buffer)
+            final_output = "".join(output_buffer)
             if return_code != 0:
                 final_output += f"\nCommand exited with code {return_code}"
 
@@ -371,7 +431,9 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
                 "tool_time": process_execution_time,
             }
 
-            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
+            finish_tool_streaming(
+                tool_name, tool_args, final_output, call_id, execution_info, token_info
+            )
             return final_output
 
         else:
@@ -382,7 +444,7 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
                 text=True,
                 check=False,
                 timeout=timeout,
-                cwd=target_dir
+                cwd=target_dir,
             )
             output = result.stdout if result.stdout else result.stderr
 
@@ -390,15 +452,16 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
             is_parallel = False
             if token_info and token_info.get("agent_id"):
                 agent_id = token_info.get("agent_id")
-                if agent_id and agent_id.startswith('P') and agent_id[1:].isdigit():
+                if agent_id and agent_id.startswith("P") and agent_id[1:].isdigit():
                     if int(os.getenv("CAI_PARALLEL", "1")) > 1:
                         is_parallel = True
 
             streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
             if streaming_enabled and is_parallel:
                 from cai.util import cli_print_tool_output
+
                 execution_time = time.time() - process_start_time
-                parts = command.strip().split(' ', 1)
+                parts = command.strip().split(" ", 1)
                 if not call_id:
                     cmd_name = parts[0] if parts else "cmd"
                     call_id = f"{cmd_name}_{str(uuid.uuid4())[:8]}"
@@ -409,12 +472,16 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
                     "host": os.path.basename(target_dir),
                     "tool_time": execution_time,
                 }
-                display_args = custom_args if custom_args is not None else {
-                    "command": parts[0] if parts else command,
-                    "args": parts[1] if len(parts) > 1 else "",
-                    "full_command": command,
-                    "workspace": os.path.basename(target_dir)
-                }
+                display_args = (
+                    custom_args
+                    if custom_args is not None
+                    else {
+                        "command": parts[0] if parts else command,
+                        "args": parts[1] if len(parts) > 1 else "",
+                        "full_command": command,
+                        "workspace": os.path.basename(target_dir),
+                    }
+                )
                 cli_print_tool_output(
                     tool_name=tool_name or "generic_linux_command",
                     args=display_args,
@@ -422,16 +489,17 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
                     call_id=call_id,
                     execution_info=execution_info,
                     token_info=token_info,
-                    streaming=False
+                    streaming=False,
                 )
 
             return output.strip()
     except subprocess.TimeoutExpired as e:
-        error_output = e.stdout if hasattr(e, 'stdout') and e.stdout else str(e)
+        error_output = e.stdout if hasattr(e, "stdout") and e.stdout else str(e)
         error_msg = f"Command timed out after {timeout} seconds\n{error_output}"
         if stream and call_id:
             from cai.util import finish_tool_streaming
-            parts = command.strip().split(' ', 1)
+
+            parts = command.strip().split(" ", 1)
             cmd_var = parts[0] if parts else ""
             args_var = parts[1] if len(parts) > 1 else ""
             tool_args = {
@@ -439,11 +507,23 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
                 "args": args_var if args_var.strip() else "",
                 "full_command": command,
                 "environment": "Local",
-                "workspace": os.path.basename(target_dir)
+                "workspace": os.path.basename(target_dir),
             }
-            execution_info = {"status": "timeout", "error": str(e), "environment": "Local", "host": os.path.basename(target_dir)}
+            execution_info = {
+                "status": "timeout",
+                "error": str(e),
+                "environment": "Local",
+                "host": os.path.basename(target_dir),
+            }
             token_info = _get_agent_token_info()
-            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
+            finish_tool_streaming(
+                tool_name or f"{cmd_var}_command",
+                tool_args,
+                error_msg,
+                call_id,
+                execution_info,
+                token_info,
+            )
         if stdout:
             print("\033[32m" + error_msg + "\033[0m")
             return error_msg
@@ -452,7 +532,8 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
         error_msg = f"Error executing local command: {e}"
         if stream and call_id:
             from cai.util import finish_tool_streaming
-            parts = command.strip().split(' ', 1)
+
+            parts = command.strip().split(" ", 1)
             cmd_var = parts[0] if parts else ""
             args_var = parts[1] if len(parts) > 1 else ""
             tool_args = {
@@ -460,10 +541,22 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
                 "args": args_var if args_var.strip() else "",
                 "full_command": command,
                 "environment": "Local",
-                "workspace": os.path.basename(target_dir)
+                "workspace": os.path.basename(target_dir),
             }
-            execution_info = {"status": "error", "error": str(e), "environment": "Local", "host": os.path.basename(target_dir)}
+            execution_info = {
+                "status": "error",
+                "error": str(e),
+                "environment": "Local",
+                "host": os.path.basename(target_dir),
+            }
             token_info = _get_agent_token_info()
-            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
+            finish_tool_streaming(
+                tool_name or f"{cmd_var}_command",
+                tool_args,
+                error_msg,
+                call_id,
+                execution_info,
+                token_info,
+            )
         print(color(error_msg, fg="red"))
         return error_msg

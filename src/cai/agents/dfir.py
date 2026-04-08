@@ -11,6 +11,7 @@ and analyzing digital evidence. This agent specializes in:
 - Incident response: Coordinating investigation and remediation activities
 - Threat hunting: Proactively searching for indicators of compromise
 """
+
 import os
 
 try:
@@ -39,7 +40,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:
@@ -52,5 +53,4 @@ dfir_agent = Agent(
                    Expert in investigation and analysis of digital evidence.""",
     model=_model_inst,
     tools=tools,
-
 )

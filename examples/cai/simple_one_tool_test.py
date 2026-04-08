@@ -18,7 +18,7 @@ from cai.util import color, fix_litellm_transcription_annotations
 
 # Load environment variables
 load_dotenv()
-#set_tracing_disabled(True) #disable tracing or OPENAI_AGENTS_DISABLE_TRACING=1
+# set_tracing_disabled(True) #disable tracing or OPENAI_AGENTS_DISABLE_TRACING=1
 
 # NOTE: This is needed when using LiteLLM Proxy Server
 #
@@ -28,11 +28,17 @@ load_dotenv()
 # )
 # set_default_openai_client(external_client)
 
+
 async def main():
     # Apply litellm patch to fix the __annotations__ error
     patch_applied = fix_litellm_transcription_annotations()
     if not patch_applied:
-        print(color("Something went wrong patching LiteLLM fix_litellm_transcription_annotations", color="red"))
+        print(
+            color(
+                "Something went wrong patching LiteLLM fix_litellm_transcription_annotations",
+                color="red",
+            )
+        )
 
     # Force the use of OpenAIChatCompletionsModel instead of OpenAIResponsesModel
     set_use_responses_by_default(False)
@@ -51,6 +57,7 @@ async def main():
     print(result.final_output)
     print("-" * 40)
     print("\nTest completed successfully!")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

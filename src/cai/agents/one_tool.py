@@ -1,18 +1,21 @@
 """
 CTF Agent with one tool
 """
+
 import os
 
 try:
-  from dotenv import load_dotenv
+    from dotenv import load_dotenv
 except Exception:
-  def load_dotenv(*args, **kwargs):
-    return False
+
+    def load_dotenv(*args, **kwargs):
+        return False
+
 
 try:
-  from openai import AsyncOpenAI
+    from openai import AsyncOpenAI
 except Exception:
-  AsyncOpenAI = None
+    AsyncOpenAI = None
 
 from openai import AsyncOpenAI
 
@@ -22,7 +25,7 @@ from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
 from cai.util import create_system_prompt_renderer
 
 # Get model from environment or use default
-model_name = os.getenv('CAI_MODEL', "alias1")
+model_name = os.getenv("CAI_MODEL", "alias1")
 
 # NOTE: This is needed when using LiteLLM Proxy Server
 #
@@ -65,29 +68,29 @@ instructions = """You are a Cybersecurity expert Leader facing a CTF
 
                 """
 
-#Loaded in openaichatcompletion client
 # Loaded in openaichatcompletion client
-api_key = os.getenv('OPENAI_API_KEY', 'sk-placeholder-key-for-local-models')
+# Loaded in openaichatcompletion client
+api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
 
 # Get security guardrails for this high-risk agent
 input_guardrails, output_guardrails = get_security_guardrails()
 
 _openai_client = None
 if AsyncOpenAI is not None:
-  try:
-    _openai_client = AsyncOpenAI(api_key=api_key)
-  except Exception:
-    _openai_client = None
+    try:
+        _openai_client = AsyncOpenAI(api_key=api_key)
+    except Exception:
+        _openai_client = None
 
 _model_inst = None
 if _openai_client is not None:
-  try:
-    _model_inst = OpenAIChatCompletionsModel(
-      model=model_name,
-      openai_client=_openai_client,
-    )
-  except Exception:
-    _model_inst = None
+    try:
+        _model_inst = OpenAIChatCompletionsModel(
+            model=model_name,
+            openai_client=_openai_client,
+        )
+    except Exception:
+        _model_inst = None
 
 one_tool_agent = Agent(
     name="CTF agent",

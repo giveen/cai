@@ -29,7 +29,9 @@ def test_load_persisted_only(tmp_path):
     provider = LocalDeterministicEmbeddingsProvider({"vector_dim": 32})
     idx = WakeupIndex(max_facts_per_session=20, embeddings_provider=provider)
 
-    added = load_summaries_for_session("sess1", palace_texts=None, wakeup_index=idx, store_path=str(p))
+    added = load_summaries_for_session(
+        "sess1", palace_texts=None, wakeup_index=idx, store_path=str(p)
+    )
     # palace2 has two facts (L0 + L1)
     assert added == 2
 

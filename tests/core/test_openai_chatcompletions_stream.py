@@ -23,7 +23,8 @@ from cai.sdk.agents.models.interface import ModelTracing
 from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from cai.sdk.agents.models.openai_provider import OpenAIProvider
 
-cai_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+cai_model = os.getenv("CAI_MODEL", "qwen2.5:14b")
+
 
 @pytest.mark.allow_call_model_methods
 @pytest.mark.asyncio

@@ -7,7 +7,7 @@ continuously tell cybersecurity jokes without manual intervention.
 
 Usage:
     python examples/continue_mode_jokes.py
-    
+
 Or directly from command line:
     cai --continue --prompt "tell me a joke about security"
 """
@@ -31,7 +31,8 @@ def run_joke_session():
         sys.executable,
         "src/cai/cli.py",
         "--continue",
-        "--prompt", "tell me a joke about cybersecurity"
+        "--prompt",
+        "tell me a joke about cybersecurity",
     ]
 
     try:
@@ -42,7 +43,7 @@ def run_joke_session():
             stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE,
             text=True,
-            bufsize=1
+            bufsize=1,
         )
 
         # Close stdin to prevent hanging
@@ -50,7 +51,7 @@ def run_joke_session():
 
         # Read and display output
         for line in proc.stdout:
-            print(line, end='')
+            print(line, end="")
 
             # Highlight continuation messages
             if "Auto-continuing with:" in line:
@@ -67,6 +68,7 @@ def run_joke_session():
 
     print("\n" + "=" * 60)
     print("Thanks for using CAI joke mode! 🎉")
+
 
 if __name__ == "__main__":
     # Change to project root directory

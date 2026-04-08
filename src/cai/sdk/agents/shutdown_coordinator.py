@@ -4,6 +4,7 @@ Provides a small coordinator that can be used to perform VRAM-aware cleanup
 and optional process termination (e.g., for external router processes) on
 controlled shutdown (Ctrl+C) events.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -50,7 +51,7 @@ class ShutdownCoordinator:
                 for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                     try:
                         info = proc.info
-                        pname = (info.get("name") or "")
+                        pname = info.get("name") or ""
                         cmdline = info.get("cmdline") or []
                         if name in pname or any(name in str(c) for c in cmdline):
                             try:

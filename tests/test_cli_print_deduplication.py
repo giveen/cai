@@ -32,7 +32,7 @@ def test_deduplication_with_streaming_disabled(capsys):
         tool_name="generic_linux_command",
         args={"command": "ls -la"},
         output="test output",
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()
@@ -51,7 +51,7 @@ def test_deduplication_with_streaming_disabled(capsys):
         tool_name="generic_linux_command",
         args={"command": "ls -la"},
         output="test output",
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()
@@ -64,7 +64,7 @@ def test_deduplication_with_streaming_disabled(capsys):
         tool_name="generic_linux_command",
         args={"command": "ls -la"},
         output="test output 2",
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()
@@ -81,7 +81,7 @@ def test_deduplication_with_streaming_enabled(capsys):
         tool_name="generic_linux_command",
         args={"command": "pwd"},
         output="test output",
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()
@@ -92,7 +92,7 @@ def test_deduplication_with_streaming_enabled(capsys):
         tool_name="generic_linux_command",
         args={"command": "pwd"},
         output="test output",
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()
@@ -108,7 +108,7 @@ def test_different_commands_always_display(capsys):
         tool_name="generic_linux_command",
         args={"command": "ls"},
         output="output 1",
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()
@@ -119,7 +119,7 @@ def test_different_commands_always_display(capsys):
         tool_name="generic_linux_command",
         args={"command": "pwd"},
         output="output 2",
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()
@@ -131,10 +131,7 @@ def test_empty_output_always_suppressed(capsys):
     os.environ["CAI_STREAM"] = "false"
 
     cli_print_tool_output(
-        tool_name="generic_linux_command",
-        args={"command": "test"},
-        output="",
-        streaming=False
+        tool_name="generic_linux_command", args={"command": "test"}, output="", streaming=False
     )
 
     captured = capsys.readouterr()
@@ -146,17 +143,9 @@ def test_parallel_mode_deduplication(capsys):
     os.environ["CAI_STREAM"] = "false"
 
     # Simulate parallel agent execution with agent context
-    token_info_p1 = {
-        "agent_name": "TestAgent",
-        "agent_id": "P1",
-        "interaction_counter": 1
-    }
+    token_info_p1 = {"agent_name": "TestAgent", "agent_id": "P1", "interaction_counter": 1}
 
-    token_info_p2 = {
-        "agent_name": "TestAgent",
-        "agent_id": "P2",
-        "interaction_counter": 1
-    }
+    token_info_p2 = {"agent_name": "TestAgent", "agent_id": "P2", "interaction_counter": 1}
 
     # Same command from different parallel agents should both display
     cli_print_tool_output(
@@ -164,7 +153,7 @@ def test_parallel_mode_deduplication(capsys):
         args={"command": "ls"},
         output="output from P1",
         token_info=token_info_p1,
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()
@@ -175,7 +164,7 @@ def test_parallel_mode_deduplication(capsys):
         args={"command": "ls"},
         output="output from P2",
         token_info=token_info_p2,
-        streaming=False
+        streaming=False,
     )
 
     captured = capsys.readouterr()

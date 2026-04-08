@@ -31,8 +31,8 @@ class TestParallelInterruptHistory:
         PARALLEL_AGENT_INSTANCES.clear()
         PARALLEL_ISOLATION.clear_all_histories()
 
-    @patch('cai.cli.Runner')
-    @patch('cai.cli.get_agent_by_name')
+    @patch("cai.cli.Runner")
+    @patch("cai.cli.get_agent_by_name")
     def test_parallel_history_saved_on_interrupt(self, mock_get_agent, mock_runner):
         """Test that parallel agents' histories are saved when interrupted with Ctrl+C."""
 
@@ -71,7 +71,7 @@ class TestParallelInterruptHistory:
 
         # Mock get_agent_by_name to return our mocked agents
         def get_agent_side_effect(agent_type, **kwargs):
-            agent_id = kwargs.get('agent_id')
+            agent_id = kwargs.get("agent_id")
             if agent_id == "P1":
                 return agent1
             elif agent_id == "P2":
@@ -92,17 +92,25 @@ class TestParallelInterruptHistory:
         agent2.model.message_history = base_history.copy()
 
         # Simulate agents adding messages during execution
-        agent1.model.add_to_message_history({"role": "assistant", "content": "Response from agent 1"})
-        agent2.model.add_to_message_history({"role": "assistant", "content": "Response from agent 2"})
+        agent1.model.add_to_message_history(
+            {"role": "assistant", "content": "Response from agent 1"}
+        )
+        agent2.model.add_to_message_history(
+            {"role": "assistant", "content": "Response from agent 2"}
+        )
 
         # Simulate interruption by saving histories (this is what our fix does)
         for idx, config in enumerate(PARALLEL_CONFIGS, 1):
             instance_key = (config.agent_name, idx)
             if instance_key in PARALLEL_AGENT_INSTANCES:
                 instance_agent = PARALLEL_AGENT_INSTANCES[instance_key]
-                if hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
+                if hasattr(instance_agent, "model") and hasattr(
+                    instance_agent.model, "message_history"
+                ):
                     agent_id = config.id or f"P{idx}"
-                    PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
+                    PARALLEL_ISOLATION.replace_isolated_history(
+                        agent_id, instance_agent.model.message_history
+                    )
 
         # Verify histories were saved
         history1 = PARALLEL_ISOLATION.get_isolated_history("P1")
@@ -130,7 +138,7 @@ class TestParallelInterruptHistory:
         mock_agent.model = MagicMock()
         mock_agent.model.message_history = [
             {"role": "user", "content": "Test message"},
-            {"role": "assistant", "content": "Test response"}
+            {"role": "assistant", "content": "Test response"},
         ]
 
         # Enable parallel mode
@@ -143,8 +151,10 @@ class TestParallelInterruptHistory:
         except asyncio.CancelledError:
             # This is what our fix does in run_agent_instance
             if mock_agent and config.id:
-                if hasattr(mock_agent, 'model') and hasattr(mock_agent.model, 'message_history'):
-                    PARALLEL_ISOLATION.replace_isolated_history(config.id, mock_agent.model.message_history)
+                if hasattr(mock_agent, "model") and hasattr(mock_agent.model, "message_history"):
+                    PARALLEL_ISOLATION.replace_isolated_history(
+                        config.id, mock_agent.model.message_history
+                    )
 
         # Verify history was saved
         saved_history = PARALLEL_ISOLATION.get_isolated_history("P1")
@@ -170,11 +180,11 @@ class TestParallelInterruptHistory:
         # Add test histories
         history1 = [
             {"role": "user", "content": "Message to agent 1"},
-            {"role": "assistant", "content": "Response from agent 1"}
+            {"role": "assistant", "content": "Response from agent 1"},
         ]
         history2 = [
             {"role": "user", "content": "Message to agent 2"},
-            {"role": "assistant", "content": "Response from agent 2"}
+            {"role": "assistant", "content": "Response from agent 2"},
         ]
 
         PARALLEL_ISOLATION.replace_isolated_history("P1", history1)

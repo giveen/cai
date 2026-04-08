@@ -123,6 +123,7 @@ class FlushCommand(Command):
 
         # Also count parallel isolation histories
         from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
+
         if PARALLEL_ISOLATION.is_parallel_mode():
             for agent_id, history in PARALLEL_ISOLATION._isolated_histories.items():
                 if history:
@@ -138,7 +139,7 @@ class FlushCommand(Command):
         # Clear histories from all active model instances
         for key, model_ref in list(ACTIVE_MODEL_INSTANCES.items()):
             model = model_ref() if callable(model_ref) else model_ref
-            if model and hasattr(model, 'message_history'):
+            if model and hasattr(model, "message_history"):
                 model.message_history.clear()
 
         # Display information
@@ -204,7 +205,7 @@ class FlushCommand(Command):
             for key, model_ref in list(ACTIVE_MODEL_INSTANCES.items()):
                 if key[1] == agent_id:  # key is (agent_name, agent_id)
                     model = model_ref() if callable(model_ref) else model_ref
-                    if model and hasattr(model, 'message_history'):
+                    if model and hasattr(model, "message_history"):
                         model.message_history.clear()
 
             # Get agent name for display
@@ -228,7 +229,10 @@ class FlushCommand(Command):
                                     break
 
                         # Add instance number if there are duplicates
-                        if sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name) > 1:
+                        if (
+                            sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                            > 1
+                        ):
                             agent_name = f"{display_name} #{instance_num} [{agent_id}]"
                         else:
                             agent_name = f"{display_name} [{agent_id}]"
@@ -294,6 +298,7 @@ class FlushCommand(Command):
             agent_id = config.id or f"P{idx}"
             # Check if the agent name matches
             from cai.agents import get_available_agents
+
             available = get_available_agents()
             if config.agent_name in available:
                 agent_obj = available[config.agent_name]
@@ -324,7 +329,7 @@ class FlushCommand(Command):
                     for key, model_ref in list(ACTIVE_MODEL_INSTANCES.items()):
                         if key[1] == agent_id:  # key is (agent_name, agent_id)
                             model = model_ref() if callable(model_ref) else model_ref
-                            if model and hasattr(model, 'message_history'):
+                            if model and hasattr(model, "message_history"):
                                 model.message_history.clear()
                     break
 
@@ -377,16 +382,19 @@ class FlushCommand(Command):
 
         # Also get parallel isolation histories
         from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
+
         parallel_histories = {}
         if PARALLEL_ISOLATION.is_parallel_mode():
             for agent_id, history in PARALLEL_ISOLATION._isolated_histories.items():
                 if history:
                     # Try to get agent name from PARALLEL_CONFIGS
                     from cai.repl.commands.parallel import PARALLEL_CONFIGS
+
                     agent_name = f"Unknown Agent {agent_id}"
                     for config in PARALLEL_CONFIGS:
                         if config.id == agent_id:
                             from cai.agents import get_available_agents
+
                             available = get_available_agents()
                             if config.agent_name in available:
                                 agent_obj = available[config.agent_name]
@@ -398,7 +406,14 @@ class FlushCommand(Command):
                                         instance_num += 1
                                         if c.id == config.id:
                                             break
-                                if sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name) > 1:
+                                if (
+                                    sum(
+                                        1
+                                        for c in PARALLEL_CONFIGS
+                                        if c.agent_name == config.agent_name
+                                    )
+                                    > 1
+                                ):
                                     agent_name = f"{display_name} #{instance_num}"
                                 else:
                                     agent_name = display_name
@@ -429,7 +444,9 @@ class FlushCommand(Command):
                     display_name = getattr(agent, "name", config.agent_name)
 
                     # Count instances to get the right name
-                    total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                    total_count = sum(
+                        1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name
+                    )
                     instance_num = 0
                     for c in PARALLEL_CONFIGS:
                         if c.agent_name == config.agent_name:
@@ -463,7 +480,9 @@ class FlushCommand(Command):
 
             # Add agent to tree
             if msg_count > 0:
-                tree.add(f":robot: [bold green]{agent_name}{id_str}[/bold green] ({msg_count} messages)")
+                tree.add(
+                    f":robot: [bold green]{agent_name}{id_str}[/bold green] ({msg_count} messages)"
+                )
             else:
                 tree.add(f":robot: [dim]{agent_name}{id_str}[/dim] (no messages)")
 
@@ -482,7 +501,7 @@ class FlushCommand(Command):
             console.print("\n[dim]Examples for agents with spaces:[/dim]")
             for agent in agents_with_spaces[:2]:  # Show max 2 examples
                 id_str = f" (or /flush {agent_ids[agent]})" if agent in agent_ids else ""
-                console.print(f'[dim]  /flush {agent}{id_str}[/dim]')
+                console.print(f"[dim]  /flush {agent}{id_str}[/dim]")
 
         return True
 

@@ -5,6 +5,7 @@ should be prioritized ahead of longer-term retrieval results. Facts are
 stored with optional TTLs and priority scores; searches return the most
 relevant wake-up facts for a given session.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -112,7 +113,9 @@ class WakeupIndex:
         # Use timezone-aware ISO8601 timestamps for created/expires fields
         now_dt = _dt.datetime.now(_dt.timezone.utc)
         created_at = now_dt.isoformat()
-        expires_at = (now_dt + _dt.timedelta(seconds=float(ttl))).isoformat() if ttl is not None else None
+        expires_at = (
+            (now_dt + _dt.timedelta(seconds=float(ttl))).isoformat() if ttl is not None else None
+        )
 
         # Ensure provenance in metadata for auditing and deletion
         md = metadata or {}
@@ -147,7 +150,9 @@ class WakeupIndex:
         # enforce size limits: evict lowest priority then oldest
         if key not in entries and len(entries) + 1 > self.max_facts_per_session:
             # choose victim: lowest priority, then oldest created_at (ISO strings sort lexicographically)
-            victim = min(entries.values(), key=lambda e: (e.get("priority", 0.0), e.get("created_at", "")))
+            victim = min(
+                entries.values(), key=lambda e: (e.get("priority", 0.0), e.get("created_at", ""))
+            )
             victim_key = victim.get("key")
             if victim_key in entries:
                 del entries[victim_key]
@@ -212,14 +217,16 @@ class WakeupIndex:
         scored.sort(key=lambda s: s[0], reverse=True)
         out = []
         for score, entry in scored[:top_k]:
-            out.append({
-                "key": entry.get("key"),
-                "text": entry.get("text"),
-                "metadata": entry.get("metadata"),
-                "score": float(score),
-                "priority": float(entry.get("priority", 0.0)),
-                "expires_at": entry.get("expires_at"),
-            })
+            out.append(
+                {
+                    "key": entry.get("key"),
+                    "text": entry.get("text"),
+                    "metadata": entry.get("metadata"),
+                    "score": float(score),
+                    "priority": float(entry.get("priority", 0.0)),
+                    "expires_at": entry.get("expires_at"),
+                }
+            )
         return out
 
     def purge_session(self, session_id: str) -> bool:

@@ -1,11 +1,14 @@
 """Use Case Agent"""
+
 import os
 
 try:
     from dotenv import load_dotenv
 except Exception:
+
     def load_dotenv(*args, **kwargs):
         return False
+
 
 try:
     from openai import AsyncOpenAI
@@ -65,9 +68,9 @@ use_case_agent = Agent(
     model=_model_inst,
 )
 
+
 # Transfer function
 def transfer_to_use_case_agent(**kwargs):  # pylint: disable=W0613
     """Transfer to use case agent.
     Accepts any keyword arguments but ignores them."""
     return use_case_agent
-

@@ -11,8 +11,7 @@ from unittest.mock import Mock
 import pytest
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__),
-                                '..', '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cai.repl.commands.base import (
     COMMAND_ALIASES,
@@ -46,9 +45,7 @@ class TestCommand:
     def sample_command(self):
         """Create a sample command for testing."""
         return Command(
-            name="/test",
-            description="Test command for unit testing",
-            aliases=["/t", "/test-cmd"]
+            name="/test", description="Test command for unit testing", aliases=["/t", "/test-cmd"]
         )
 
     def test_command_initialization(self, sample_command):
@@ -68,14 +65,11 @@ class TestCommand:
 
     def test_add_subcommand(self, sample_command):
         """Test adding a subcommand to a command."""
+
         def test_handler(args):
             return True
 
-        sample_command.add_subcommand(
-            "test_sub",
-            "Test subcommand",
-            test_handler
-        )
+        sample_command.add_subcommand("test_sub", "Test subcommand", test_handler)
 
         assert "test_sub" in sample_command.subcommands
         assert sample_command.subcommands["test_sub"]["description"] == "Test subcommand"
@@ -83,8 +77,10 @@ class TestCommand:
 
     def test_get_subcommands(self, sample_command):
         """Test getting list of subcommand names."""
+
         def handler1(args):
             return True
+
         def handler2(args):
             return True
 
@@ -96,14 +92,11 @@ class TestCommand:
 
     def test_get_subcommand_description(self, sample_command):
         """Test getting subcommand description."""
+
         def test_handler(args):
             return True
 
-        sample_command.add_subcommand(
-            "test_sub",
-            "Test subcommand description",
-            test_handler
-        )
+        sample_command.add_subcommand("test_sub", "Test subcommand description", test_handler)
 
         description = sample_command.get_subcommand_description("test_sub")
         assert description == "Test subcommand description"
@@ -114,6 +107,7 @@ class TestCommand:
 
     def test_handle_with_subcommand(self, sample_command):
         """Test handling a command with a valid subcommand."""
+
         def test_handler(args):
             return True
 
@@ -124,6 +118,7 @@ class TestCommand:
 
     def test_handle_with_subcommand_and_args(self, sample_command):
         """Test handling a command with subcommand and additional arguments."""
+
         def test_handler(args):
             assert args == ["arg1", "arg2"]
             return True
@@ -424,6 +419,7 @@ class TestCommandIntegration:
 
     def test_complete_command_lifecycle(self):
         """Test the complete lifecycle of commands."""
+
         # Create multiple commands with various features
         class Command1(Command):
             def __init__(self):
@@ -529,5 +525,5 @@ class TestCommandIntegration:
         assert cmd.results["unknown"] == "unknown_sub"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__, "-v"])

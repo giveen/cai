@@ -36,33 +36,27 @@ class TestPatternType:
         with pytest.raises(ValueError):
             PatternType.from_string("invalid")
 
+
 class TestUnifiedPattern:
     """Test the unified Pattern class."""
 
     def test_pattern_creation_with_enum(self):
         """Test creating pattern with PatternType enum."""
-        pattern = Pattern(
-            name="test",
-            type=PatternType.PARALLEL,
-            description="Test pattern"
-        )
+        pattern = Pattern(name="test", type=PatternType.PARALLEL, description="Test pattern")
         assert pattern.name == "test"
         assert pattern.type == PatternType.PARALLEL
         assert pattern.description == "Test pattern"
 
     def test_pattern_creation_with_string(self):
         """Test creating pattern with string type."""
-        pattern = Pattern(
-            name="test",
-            type="swarm",
-            description="Test pattern"
-        )
+        pattern = Pattern(name="test", type="swarm", description="Test pattern")
         assert pattern.type == PatternType.SWARM
 
     def test_invalid_pattern_type(self):
         """Test creating pattern with invalid type."""
         with pytest.raises(ValueError):
             Pattern(name="test", type="invalid_type")
+
 
 class TestParallelPatternType:
     """Test Pattern class with PARALLEL type."""
@@ -109,6 +103,7 @@ class TestParallelPatternType:
         with pytest.raises(ValueError):
             pattern.set_root_agent("agent")
 
+
 class TestSwarmPatternType:
     """Test Pattern class with SWARM type."""
 
@@ -133,6 +128,7 @@ class TestSwarmPatternType:
 
         pattern.set_entry_agent("leader")
         assert pattern.validate()  # Has entry agent
+
 
 class TestHierarchicalPatternType:
     """Test Pattern class with HIERARCHICAL type."""
@@ -159,6 +155,7 @@ class TestHierarchicalPatternType:
         pattern.set_root_agent("root")
         assert pattern.validate()  # Has root agent and agents
 
+
 class TestSequentialPatternType:
     """Test Pattern class with SEQUENTIAL type."""
 
@@ -182,6 +179,7 @@ class TestSequentialPatternType:
 
         pattern.add_sequence_step("step1")
         assert pattern.validate()  # Has sequence
+
 
 class TestConditionalPatternType:
     """Test Pattern class with CONDITIONAL type."""
@@ -217,6 +215,7 @@ class TestConditionalPatternType:
 
         assert len(pattern.conditions) == 2
 
+
 class TestPatternConversion:
     """Test pattern conversion methods."""
 
@@ -241,29 +240,20 @@ class TestPatternConversion:
         assert result["entry_agent"] == "leader"
         assert "follower" in result["agents"]
 
+
 class TestFactoryFunctions:
     """Test pattern factory functions."""
 
     def test_parallel_pattern_factory(self):
         """Test parallel pattern factory."""
-        pattern = parallel_pattern(
-            "test",
-            "Test pattern",
-            agents=["a1", "a2"],
-            max_concurrent=2
-        )
+        pattern = parallel_pattern("test", "Test pattern", agents=["a1", "a2"], max_concurrent=2)
         assert pattern.type == PatternType.PARALLEL
         assert len(pattern.configs) == 2
         assert pattern.max_concurrent == 2
 
     def test_swarm_pattern_factory(self):
         """Test swarm pattern factory."""
-        pattern = swarm_pattern(
-            "test",
-            "leader",
-            "Test pattern",
-            agents=["follower1", "follower2"]
-        )
+        pattern = swarm_pattern("test", "leader", "Test pattern", agents=["follower1", "follower2"])
         assert pattern.type == PatternType.SWARM
         assert pattern.entry_agent == "leader"
         assert len(pattern.agents) == 3  # leader + 2 followers
@@ -271,10 +261,7 @@ class TestFactoryFunctions:
     def test_hierarchical_pattern_factory(self):
         """Test hierarchical pattern factory."""
         pattern = hierarchical_pattern(
-            "test",
-            "root",
-            "Test pattern",
-            children=["child1", "child2"]
+            "test", "root", "Test pattern", children=["child1", "child2"]
         )
         assert pattern.type == PatternType.HIERARCHICAL
         assert pattern.root_agent == "root"
@@ -282,23 +269,18 @@ class TestFactoryFunctions:
 
     def test_sequential_pattern_factory(self):
         """Test sequential pattern factory."""
-        pattern = sequential_pattern(
-            "test",
-            ["step1", "step2", "step3"],
-            "Test pattern"
-        )
+        pattern = sequential_pattern("test", ["step1", "step2", "step3"], "Test pattern")
         assert pattern.type == PatternType.SEQUENTIAL
         assert len(pattern.sequence) == 3
 
     def test_conditional_pattern_factory(self):
         """Test conditional pattern factory."""
         pattern = conditional_pattern(
-            "test",
-            {"cond1": "agent1", "cond2": "agent2"},
-            "Test pattern"
+            "test", {"cond1": "agent1", "cond2": "agent2"}, "Test pattern"
         )
         assert pattern.type == PatternType.CONDITIONAL
         assert len(pattern.conditions) == 2
+
 
 class TestPatternMetadata:
     """Test pattern metadata and additional features."""
@@ -306,9 +288,7 @@ class TestPatternMetadata:
     def test_pattern_with_metadata(self):
         """Test pattern with metadata."""
         pattern = Pattern(
-            "test",
-            type=PatternType.PARALLEL,
-            metadata={"version": "1.0", "author": "test"}
+            "test", type=PatternType.PARALLEL, metadata={"version": "1.0", "author": "test"}
         )
         assert pattern.metadata["version"] == "1.0"
         assert pattern.metadata["author"] == "test"

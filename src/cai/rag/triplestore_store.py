@@ -4,6 +4,7 @@ Provides a `get_global_triplestore()` factory so different parts of
 the application can share a single TripleStore without tight coupling
 or circular imports.
 """
+
 from __future__ import annotations
 
 import os
@@ -15,10 +16,14 @@ _GLOBAL_TRIPLESTORE: Optional[TripleStore] = None
 
 
 def _default_triplestore_path() -> str:
-    return os.environ.get("CAI_TRIPLESTORE_PATH") or os.path.join(os.getcwd(), ".cai", "triplestore.db")
+    return os.environ.get("CAI_TRIPLESTORE_PATH") or os.path.join(
+        os.getcwd(), ".cai", "triplestore.db"
+    )
 
 
-def get_global_triplestore(db_path: Optional[str] = None, pragmas: Optional[Dict[str, str]] = None) -> TripleStore:
+def get_global_triplestore(
+    db_path: Optional[str] = None, pragmas: Optional[Dict[str, str]] = None
+) -> TripleStore:
     """Return a singleton TripleStore, creating it on first use.
 
     If `db_path` is not provided the function will consult the

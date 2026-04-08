@@ -33,13 +33,16 @@ try:
 except Exception:
     AsyncOpenAI = None
 
+
 # Import get_compact_model function - imported later to avoid circular import
 def get_compact_model():
     try:
         from cai.repl.commands.compact import get_compact_model as _get_compact_model
+
         return _get_compact_model()
     except ImportError:
         return None
+
 
 console = Console()
 
@@ -65,9 +68,7 @@ class MemoryCommand(Command):
     def __init__(self):
         """Initialize the memory command."""
         super().__init__(
-            name="/memory",
-            description="Manage memory storage for agents",
-            aliases=["/mem"]
+            name="/memory", description="Manage memory storage for agents", aliases=["/mem"]
         )
 
         # Add subcommands
@@ -81,9 +82,11 @@ class MemoryCommand(Command):
         self.add_subcommand("compact", "Compact and save agent history", self.handle_compact)
         self.add_subcommand("remove", "Remove a specific memory from an agent", self.handle_remove)
         self.add_subcommand("clear", "Clear all memories from an agent", self.handle_clear)
-        self.add_subcommand("list-applied", "Show which memories are applied to an agent", self.handle_list_applied)
+        self.add_subcommand(
+            "list-applied", "Show which memories are applied to an agent", self.handle_list_applied
+        )
 
-# Remove local compact_model since we'll use the one from compact command
+        # Remove local compact_model since we'll use the one from compact command
 
         # Ensure memory directory exists
         self._ensure_memory_dir()
@@ -108,16 +111,26 @@ class MemoryCommand(Command):
         # Otherwise show help
         console.print("[yellow]Unknown subcommand. Available commands:[/yellow]")
         console.print("[dim]  • /memory list                - List all stored memories[/dim]")
-        console.print("[dim]  • /memory save                - Save current agent history as memory[/dim]")
+        console.print(
+            "[dim]  • /memory save                - Save current agent history as memory[/dim]"
+        )
         console.print("[dim]  • /memory apply               - Apply a memory to an agent[/dim]")
         console.print("[dim]  • /memory show                - Show memory content[/dim]")
         console.print("[dim]  • /memory delete              - Delete a stored memory[/dim]")
-        console.print("[dim]  • /memory merge               - Merge multiple memories into one[/dim]")
+        console.print(
+            "[dim]  • /memory merge               - Merge multiple memories into one[/dim]"
+        )
         console.print("[dim]  • /memory status              - Show memory status[/dim]")
         console.print("[dim]  • /memory compact             - Compact and save agent history[/dim]")
-        console.print("[dim]  • /memory remove              - Remove a specific memory from an agent[/dim]")
-        console.print("[dim]  • /memory clear               - Clear all memories from an agent[/dim]")
-        console.print("[dim]  • /memory list-applied        - Show which memories are applied to an agent[/dim]")
+        console.print(
+            "[dim]  • /memory remove              - Remove a specific memory from an agent[/dim]"
+        )
+        console.print(
+            "[dim]  • /memory clear               - Clear all memories from an agent[/dim]"
+        )
+        console.print(
+            "[dim]  • /memory list-applied        - Show which memories are applied to an agent[/dim]"
+        )
         return True
 
     def _ensure_memory_dir(self):
@@ -139,17 +152,17 @@ class MemoryCommand(Command):
     def _get_memory_path(self, name_or_id: str) -> Path:
         """Get the path for a memory file, resolving ID if necessary."""
         # Check if it's an ID (M001, M002, etc.)
-        if name_or_id.upper().startswith('M') and len(name_or_id) >= 4 and name_or_id[1:].isdigit():
+        if name_or_id.upper().startswith("M") and len(name_or_id) >= 4 and name_or_id[1:].isdigit():
             # Try to resolve ID to filename
             index = self._load_index()
-            if name_or_id.upper() in index.get('mappings', {}):
-                name = index['mappings'][name_or_id.upper()]
+            if name_or_id.upper() in index.get("mappings", {}):
+                name = index["mappings"][name_or_id.upper()]
             else:
                 raise ValueError(f"Memory ID '{name_or_id}' not found")
         else:
             name = name_or_id
-            if not name.endswith('.md'):
-                name += '.md'
+            if not name.endswith(".md"):
+                name += ".md"
         return MEMORY_DIR / name
 
     def _resolve_agent_name(self, identifier: str) -> Optional[str]:
@@ -161,6 +174,7 @@ class MemoryCommand(Command):
             # First check parallel configs if they exist - they are the authoritative source
             if PARALLEL_CONFIGS:
                 from cai.agents import get_available_agents
+
                 available_agents = get_available_agents()
 
                 for config in PARALLEL_CONFIGS:
@@ -169,13 +183,14 @@ class MemoryCommand(Command):
                         if config.agent_name.endswith("_pattern"):
                             # For patterns, we need to get the actual entry agent
                             from cai.agents.patterns import get_pattern
+
                             pattern = get_pattern(config.agent_name)
                             if pattern:
-                                if hasattr(pattern, 'entry_agent'):
+                                if hasattr(pattern, "entry_agent"):
                                     # For swarm patterns like red_team_pattern
                                     agent = pattern.entry_agent
                                     display_name = getattr(agent, "name", config.agent_name)
-                                elif hasattr(pattern, 'name'):
+                                elif hasattr(pattern, "name"):
                                     # For the pattern itself
                                     display_name = getattr(pattern, "name", config.agent_name)
                                 else:
@@ -189,7 +204,9 @@ class MemoryCommand(Command):
                             display_name = config.agent_name
 
                         # Count instances for proper naming
-                        total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                        total_count = sum(
+                            1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name
+                        )
                         if total_count > 1:
                             # Find instance number
                             instance_num = 0
@@ -212,10 +229,7 @@ class MemoryCommand(Command):
 
     def _initialize_index(self):
         """Initialize the memory index file with existing memories."""
-        index = {
-            "next_id": 1,
-            "mappings": {}
-        }
+        index = {"next_id": 1, "mappings": {}}
 
         # Scan existing memory files and assign IDs
         existing_files = sorted(MEMORY_DIR.glob("*.md"))
@@ -241,7 +255,7 @@ class MemoryCommand(Command):
     def _save_index(self, index: Dict[str, Any]):
         """Save the memory index to file."""
         try:
-            with open(MEMORY_INDEX_FILE, 'w') as f:
+            with open(MEMORY_INDEX_FILE, "w") as f:
                 json.dump(index, f, indent=2)
         except Exception as e:
             console.print(f"[red]Error saving index: {e}[/red]")
@@ -250,21 +264,21 @@ class MemoryCommand(Command):
         """Get the next available memory ID."""
         index = self._load_index()
         memory_id = f"M{index['next_id']:03d}"
-        index['next_id'] += 1
+        index["next_id"] += 1
         self._save_index(index)
         return memory_id
 
     def _register_memory(self, memory_id: str, filename: str):
         """Register a memory file with its ID in the index."""
         index = self._load_index()
-        index['mappings'][memory_id] = filename
+        index["mappings"][memory_id] = filename
         self._save_index(index)
 
     def _unregister_memory(self, memory_id: str):
         """Remove a memory ID from the index."""
         index = self._load_index()
-        if memory_id in index['mappings']:
-            del index['mappings'][memory_id]
+        if memory_id in index["mappings"]:
+            del index["mappings"][memory_id]
             self._save_index(index)
 
     def handle_control_panel(self) -> bool:
@@ -278,7 +292,7 @@ class MemoryCommand(Command):
 
             # Load index to get ID mappings
             index = self._load_index()
-            file_to_id = {v: k for k, v in index.get('mappings', {}).items()}
+            file_to_id = {v: k for k, v in index.get("mappings", {}).items()}
 
             table = Table(show_header=True, header_style="bold yellow")
             table.add_column("ID", style="bright_cyan", width=6)
@@ -294,7 +308,7 @@ class MemoryCommand(Command):
                 agent_name = "Unknown"
                 try:
                     content = memory_file.read_text()
-                    for line in content.split('\n'):
+                    for line in content.split("\n"):
                         if line.startswith("Agent: "):
                             agent_name = line[7:]
                             break
@@ -308,7 +322,7 @@ class MemoryCommand(Command):
                     memory_file.stem,
                     agent_name,
                     f"{size:,} bytes",
-                    modified.strftime("%Y-%m-%d %H:%M")
+                    modified.strftime("%Y-%m-%d %H:%M"),
                 )
 
             console.print(table)
@@ -335,11 +349,17 @@ class MemoryCommand(Command):
         console.print("[dim]  • /memory show <ID/name>      - View memory content[/dim]")
         console.print("[dim]  • /memory delete <ID/name>    - Delete a memory[/dim]")
         console.print("[dim]  • /memory merge <ID1> <ID2>   - Merge multiple memories[/dim]")
-        console.print("[dim]  • /memory compact <agent>     - Compact agent history to memory[/dim]")
-        console.print("[dim]  • /memory remove <ID> <agent> - Remove a specific memory from agent[/dim]")
+        console.print(
+            "[dim]  • /memory compact <agent>     - Compact agent history to memory[/dim]"
+        )
+        console.print(
+            "[dim]  • /memory remove <ID> <agent> - Remove a specific memory from agent[/dim]"
+        )
         console.print("[dim]  • /memory clear <agent>       - Clear all memories from agent[/dim]")
         console.print("[dim]  • /memory list-applied        - Show applied memories by agent[/dim]")
-        console.print("[dim]\nNote: You can use memory IDs (e.g., M001) instead of full names[/dim]")
+        console.print(
+            "[dim]\nNote: You can use memory IDs (e.g., M001) instead of full names[/dim]"
+        )
         console.print("[dim]      Agents now support multiple memories![/dim]")
 
         return True
@@ -355,7 +375,7 @@ class MemoryCommand(Command):
 
         # Load index to get ID mappings
         index = self._load_index()
-        id_to_file = index.get('mappings', {})
+        id_to_file = index.get("mappings", {})
         file_to_id = {v: k for k, v in id_to_file.items()}
 
         # Create a table showing all memories
@@ -376,7 +396,7 @@ class MemoryCommand(Command):
             created = "Unknown"
 
             # Parse metadata from memory file
-            for line in content.split('\n'):
+            for line in content.split("\n"):
                 if line.startswith("Agent: "):
                     agent_name = line[7:]
                 elif line.startswith("Generated: "):
@@ -385,13 +405,7 @@ class MemoryCommand(Command):
                     break
 
             size = memory_file.stat().st_size
-            table.add_row(
-                memory_id,
-                memory_file.stem,
-                agent_name,
-                f"{size:,} bytes",
-                created
-            )
+            table.add_row(memory_id, memory_file.stem, agent_name, f"{size:,} bytes", created)
 
         console.print(table)
         console.print("\n[dim]Commands:[/dim]")
@@ -400,7 +414,9 @@ class MemoryCommand(Command):
         console.print("[dim]  • /memory apply <ID/name> all - Apply to all active agents[/dim]")
         console.print("[dim]  • /memory delete <ID/name>  - Delete a memory[/dim]")
         console.print("[dim]  • /memory merge <ID1> <ID2> - Merge multiple memories[/dim]")
-        console.print("[dim]\nNote: You can use either the memory ID (e.g., M001) or the full name[/dim]")
+        console.print(
+            "[dim]\nNote: You can use either the memory ID (e.g., M001) or the full name[/dim]"
+        )
 
         return True
 
@@ -441,8 +457,8 @@ class MemoryCommand(Command):
             memory_id = self._get_next_memory_id()
 
             # Ensure memory_name has .md extension
-            if not memory_name.endswith('.md'):
-                memory_name += '.md'
+            if not memory_name.endswith(".md"):
+                memory_name += ".md"
 
             memory_path = MEMORY_DIR / memory_name
 
@@ -475,18 +491,22 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             # Clear existing memories and add new one (maintain single memory behavior for save)
             COMPACTED_SUMMARIES[agent_name] = [summary]
             APPLIED_MEMORY_IDS[agent_name] = [memory_id]
-            console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]")
-            os.environ['CAI_MEMORY'] = 'true'
+            console.print(
+                f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]"
+            )
+            os.environ["CAI_MEMORY"] = "true"
 
             # Reload the agent with the new memory
             self._reload_agent_with_memory(agent_name, preserve_history=preserve_history)
 
             # Show memory panel
-            console.print(Panel(
-                summary[:500] + "..." if len(summary) > 500 else summary,
-                title=f"[green]Memory: {memory_name} (ID: {memory_id})[/green]",
-                border_style="green"
-            ))
+            console.print(
+                Panel(
+                    summary[:500] + "..." if len(summary) > 500 else summary,
+                    title=f"[green]Memory: {memory_name} (ID: {memory_id})[/green]",
+                    border_style="green",
+                )
+            )
         else:
             console.print("[red]✗ Failed to save memory[/red]")
 
@@ -497,8 +517,12 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         if not args:
             console.print("[red]Error: Memory ID or name required[/red]")
             console.print("Usage: /memory apply <memory_id_or_name> [agent_name|all]")
-            console.print("       /memory apply <memory_id_or_name>        - Applies to P1 by default")
-            console.print("       /memory apply <memory_id_or_name> all    - Applies to all active agents")
+            console.print(
+                "       /memory apply <memory_id_or_name>        - Applies to P1 by default"
+            )
+            console.print(
+                "       /memory apply <memory_id_or_name> all    - Applies to all active agents"
+            )
             return False
 
         memory_identifier = args[0]
@@ -523,6 +547,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             if agent_identifier.lower() == "all":
                 # Get all active agents
                 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
                 active_agents = AGENT_MANAGER.get_active_agents()
 
                 if not active_agents:
@@ -550,7 +575,9 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             p1_agent_name = AGENT_MANAGER.get_agent_by_id("P1")
             if p1_agent_name:
                 target_agents.append(p1_agent_name)
-                console.print(f"[dim]No agent specified, applying to P1 ({p1_agent_name}) by default[/dim]")
+                console.print(
+                    f"[dim]No agent specified, applying to P1 ({p1_agent_name}) by default[/dim]"
+                )
             else:
                 # Fallback to current active agent
                 agent_name = self._get_current_agent_name()
@@ -558,7 +585,9 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                     target_agents.append(agent_name)
                 else:
                     console.print("[red]Error: No P1 agent found[/red]")
-                    console.print("[dim]Specify an agent name or use 'all' to apply to all agents[/dim]")
+                    console.print(
+                        "[dim]Specify an agent name or use 'all' to apply to all agents[/dim]"
+                    )
                     return False
 
         # Read memory content - just use the entire content without filtering
@@ -594,7 +623,9 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
 
                 # Check if memory already applied
                 if memory_id and memory_id in APPLIED_MEMORY_IDS[agent_name]:
-                    console.print(f"[yellow]Memory {memory_id} already applied to {agent_name}[/yellow]")
+                    console.print(
+                        f"[yellow]Memory {memory_id} already applied to {agent_name}[/yellow]"
+                    )
                     continue
 
                 # Append memory (supports multiple memories)
@@ -605,7 +636,9 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                     APPLIED_MEMORY_IDS[agent_name].append(memory_id)
                     console.print(f"[green]✓ Applied memory {memory_id} to {agent_name}[/green]")
                 else:
-                    console.print(f"[green]✓ Applied memory '{memory_identifier}' to {agent_name}[/green]")
+                    console.print(
+                        f"[green]✓ Applied memory '{memory_identifier}' to {agent_name}[/green]"
+                    )
 
                 # Reload the agent to apply the memory to system prompt
                 self._reload_agent_with_memory(agent_name)
@@ -615,19 +648,25 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 console.print(f"[red]Error applying memory to {agent_name}: {e}[/red]")
 
         if success_count > 0:
-            os.environ['CAI_MEMORY'] = 'true'
+            os.environ["CAI_MEMORY"] = "true"
             console.print("[dim]The memory will be included in the agents' system prompts[/dim]")
 
             # Show summary with ID if available (only once)
-            title_text = f"[green]Applied Memory{' (' + memory_id + ')' if memory_id else ''}[/green]"
-            console.print(Panel(
-                summary[:300] + "..." if len(summary) > 300 else summary,
-                title=title_text,
-                border_style="green"
-            ))
+            title_text = (
+                f"[green]Applied Memory{' (' + memory_id + ')' if memory_id else ''}[/green]"
+            )
+            console.print(
+                Panel(
+                    summary[:300] + "..." if len(summary) > 300 else summary,
+                    title=title_text,
+                    border_style="green",
+                )
+            )
 
             if len(target_agents) > 1:
-                console.print(f"\n[bold green]Successfully applied memory to {success_count}/{len(target_agents)} agents[/bold green]")
+                console.print(
+                    f"\n[bold green]Successfully applied memory to {success_count}/{len(target_agents)} agents[/bold green]"
+                )
         else:
             console.print("[red]Failed to apply memory to any agents[/red]")
 
@@ -657,7 +696,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
 
         # Extract ID from content if present
         memory_id = None
-        for line in content.split('\n'):
+        for line in content.split("\n"):
             if line.startswith("ID: "):
                 memory_id = line[4:]
                 break
@@ -667,11 +706,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             title += f" (ID: {memory_id})"
         title += "[/cyan]"
 
-        console.print(Panel(
-            content,
-            title=title,
-            border_style="cyan"
-        ))
+        console.print(Panel(content, title=title, border_style="cyan"))
 
         return True
 
@@ -697,7 +732,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         # Get the memory ID if we used a name
         index = self._load_index()
         memory_id = None
-        for mid, fname in index.get('mappings', {}).items():
+        for mid, fname in index.get("mappings", {}).items():
             if fname == memory_path.name:
                 memory_id = mid
                 break
@@ -705,7 +740,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         # Ask for confirmation
         display_name = f"{memory_path.stem}" + (f" (ID: {memory_id})" if memory_id else "")
         confirm = console.input(f"Delete memory '{display_name}'? (y/N): ")
-        if confirm.lower() == 'y':
+        if confirm.lower() == "y":
             memory_path.unlink()
 
             # Remove from index if it has an ID
@@ -765,7 +800,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 agent_name = None
                 msg_count = 0
 
-                for line in content.split('\n'):
+                for line in content.split("\n"):
                     if line.startswith("Agent: "):
                         agent_name = line[7:]
                         agent_names.add(agent_name)
@@ -787,7 +822,9 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                     summaries.append(f"### Memory: {identifier}\n{summary.strip()}")
                     console.print(f"[green]✓ Loaded memory '{identifier}'[/green]")
                 else:
-                    console.print(f"[yellow]Warning: No summary found in memory '{identifier}'[/yellow]")
+                    console.print(
+                        f"[yellow]Warning: No summary found in memory '{identifier}'[/yellow]"
+                    )
 
             except Exception as e:
                 console.print(f"[red]Error loading memory '{identifier}': {e}[/red]")
@@ -804,8 +841,8 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         memory_id = self._get_next_memory_id()
 
         # Ensure output_name has .md extension
-        if not output_name.endswith('.md'):
-            output_name += '.md'
+        if not output_name.endswith(".md"):
+            output_name += ".md"
 
         memory_path = MEMORY_DIR / output_name
 
@@ -822,7 +859,7 @@ Model: Merged from {len(memory_identifiers)} memories
 {combined_summary}
 
 ## Metadata
-- Source memories: {', '.join(memory_identifiers)}
+- Source memories: {", ".join(memory_identifiers)}
 - Total original messages: {total_messages}
 - Merge date: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 """
@@ -832,18 +869,22 @@ Model: Merged from {len(memory_identifiers)} memories
         # Register the memory in the index
         self._register_memory(memory_id, output_name)
 
-        console.print(f"\n[bold green]✓ Successfully merged {len(memory_identifiers)} memories into '{output_name}' (ID: {memory_id})[/bold green]")
+        console.print(
+            f"\n[bold green]✓ Successfully merged {len(memory_identifiers)} memories into '{output_name}' (ID: {memory_id})[/bold green]"
+        )
 
         # Show merged memory panel
-        console.print(Panel(
-            combined_summary[:500] + "..." if len(combined_summary) > 500 else combined_summary,
-            title=f"[green]Merged Memory: {output_name} (ID: {memory_id})[/green]",
-            border_style="green"
-        ))
+        console.print(
+            Panel(
+                combined_summary[:500] + "..." if len(combined_summary) > 500 else combined_summary,
+                title=f"[green]Merged Memory: {output_name} (ID: {memory_id})[/green]",
+                border_style="green",
+            )
+        )
 
         # Ask if user wants to apply the merged memory
         apply = console.input("\nApply merged memory to current agent? (y/N): ")
-        if apply.lower() == 'y':
+        if apply.lower() == "y":
             agent_name = self._get_current_agent_name()
             if agent_name:
                 # Initialize lists if not present
@@ -882,7 +923,9 @@ Model: Merged from {len(memory_identifiers)} memories
                 if isinstance(summaries, list):
                     total_chars = sum(len(s) for s in summaries)
                     ids_str = ", ".join(memory_ids) if memory_ids else "Unknown"
-                    console.print(f"  - {display_name}: {len(summaries)} memories, {total_chars} chars (IDs: {ids_str})")
+                    console.print(
+                        f"  - {display_name}: {len(summaries)} memories, {total_chars} chars (IDs: {ids_str})"
+                    )
                 else:
                     # Backward compatibility
                     memory_id = memory_ids if isinstance(memory_ids, str) else "Unknown"
@@ -900,7 +943,9 @@ Model: Merged from {len(memory_identifiers)} memories
                 total_chars = sum(len(str(msg.get("content", ""))) for msg in history)
                 estimated_tokens = total_chars // 4  # Rough estimate
                 total_tokens += estimated_tokens
-                console.print(f"  - {agent_name}: ~{estimated_tokens:,} tokens ({len(history)} messages)")
+                console.print(
+                    f"  - {agent_name}: ~{estimated_tokens:,} tokens ({len(history)} messages)"
+                )
 
         if total_tokens > 0:
             console.print(f"\n[bold]Total estimated tokens: ~{total_tokens:,}[/bold]")
@@ -930,9 +975,11 @@ Model: Merged from {len(memory_identifiers)} memories
             return True
 
         # Ask for confirmation
-        console.print("[yellow]This will compact all agent histories and save them as memories.[/yellow]")
+        console.print(
+            "[yellow]This will compact all agent histories and save them as memories.[/yellow]"
+        )
         confirm = console.input("Continue? (y/N): ")
-        if confirm.lower() != 'y':
+        if confirm.lower() != "y":
             console.print("[dim]Cancelled[/dim]")
             return True
 
@@ -970,7 +1017,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 # Register the memory in the index
                 self._register_memory(memory_id, memory_name)
 
-                os.environ['CAI_MEMORY'] = 'true'
+                os.environ["CAI_MEMORY"] = "true"
                 console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
 
                 # Automatically apply the memory to the agent's system prompt
@@ -981,7 +1028,9 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 # Clear existing memories and add new one (maintain single memory behavior for compact all)
                 COMPACTED_SUMMARIES[agent_name] = [summary]
                 APPLIED_MEMORY_IDS[agent_name] = [memory_id]
-                console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]")
+                console.print(
+                    f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]"
+                )
 
                 # Clear the agent's history after saving
                 self._clear_agent_history(agent_name)
@@ -1005,8 +1054,10 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 if not agent_name:
                     # Try to get from environment
                     import os
+
                     agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
                     from cai.agents import get_available_agents
+
                     agents = get_available_agents()
                     if agent_type in agents:
                         agent = agents[agent_type]
@@ -1028,7 +1079,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         for (name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
             if name == agent_name or (inst_id == "P1" and agent_identifier.upper() == "P1"):
                 model = model_ref() if model_ref else None
-                if model and hasattr(model, 'message_history'):
+                if model and hasattr(model, "message_history"):
                     history = list(model.message_history)
                     break
 
@@ -1075,7 +1126,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             self._register_memory(memory_id, memory_name)
 
             console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
-            os.environ['CAI_MEMORY'] = 'true'
+            os.environ["CAI_MEMORY"] = "true"
             # Automatically apply the memory to the agent's system prompt
             if agent_name not in COMPACTED_SUMMARIES:
                 COMPACTED_SUMMARIES[agent_name] = []
@@ -1084,11 +1135,13 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             # Clear existing memories and add new one (maintain single memory behavior for compact single)
             COMPACTED_SUMMARIES[agent_name] = [summary]
             APPLIED_MEMORY_IDS[agent_name] = [memory_id]
-            console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]")
+            console.print(
+                f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]"
+            )
 
             # Ask if user wants to clear history
             clear = console.input("\nClear agent history after compaction? (y/N): ")
-            preserve_history = clear.lower() != 'y'
+            preserve_history = clear.lower() != "y"
             if not preserve_history:
                 self._clear_agent_history(agent_name)
                 console.print(f"[green]✓ Cleared history for {agent_name}[/green]")
@@ -1097,11 +1150,13 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             self._reload_agent_with_memory(agent_name, preserve_history=preserve_history)
 
             # Show memory panel
-            console.print(Panel(
-                summary[:500] + "..." if len(summary) > 500 else summary,
-                title=f"[green]Compacted Memory: {memory_name} (ID: {memory_id})[/green]",
-                border_style="green"
-            ))
+            console.print(
+                Panel(
+                    summary[:500] + "..." if len(summary) > 500 else summary,
+                    title=f"[green]Compacted Memory: {memory_name} (ID: {memory_id})[/green]",
+                    border_style="green",
+                )
+            )
         else:
             console.print(f"[red]✗ Failed to compact {agent_name}[/red]")
 
@@ -1122,7 +1177,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             # Clear the model's message history
             model_instance.message_history.clear()
             # Reset context usage since we cleared the history
-            os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+            os.environ["CAI_CONTEXT_USAGE"] = "0.0"
 
         # Also clear persistent history
         if agent_name in PERSISTENT_MESSAGE_HISTORIES:
@@ -1252,8 +1307,8 @@ This session is being continued from a previous conversation that ran out of con
             model=OpenAIChatCompletionsModel(
                 model=model_name,
                 openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")),
-                agent_name="Summary Agent"
-            )
+                agent_name="Summary Agent",
+            ),
         )
 
         # Generate summary
@@ -1263,7 +1318,7 @@ This session is being continued from a previous conversation that ran out of con
             result = await Runner.run(
                 starting_agent=summary_agent,
                 input=f"Please summarize the following conversation:\n\n{conversation_text}",
-                max_turns=1
+                max_turns=1,
             )
 
             if result.final_output:
@@ -1300,8 +1355,8 @@ This session is being continued from a previous conversation that ran out of con
         - Include enough of each tool result to convey success/failure and key findings.
         - Avoid blowing out the summary model's context by capping large outputs.
         """
-        TOOL_OUTPUT_KEEP = 2000   # chars to preserve from each tool result
-        MAX_PARTS       = 200     # maximum formatted blocks to pass (covers ~100 turns)
+        TOOL_OUTPUT_KEEP = 2000  # chars to preserve from each tool result
+        MAX_PARTS = 200  # maximum formatted blocks to pass (covers ~100 turns)
 
         formatted_parts = []
 
@@ -1325,13 +1380,9 @@ This session is being continued from a previous conversation that ran out of con
                             args = fn.get("arguments", "")
                             tool_info.append(f"{name}({args})")
                         elif hasattr(tc, "function"):
-                            tool_info.append(
-                                f"{tc.function.name}({tc.function.arguments})"
-                            )
+                            tool_info.append(f"{tc.function.name}({tc.function.arguments})")
                     if tool_info:
-                        formatted_parts.append(
-                            f"ASSISTANT called tools: {', '.join(tool_info)}"
-                        )
+                        formatted_parts.append(f"ASSISTANT called tools: {', '.join(tool_info)}")
                 if content:
                     formatted_parts.append(f"ASSISTANT: {content}")
 
@@ -1352,12 +1403,14 @@ This session is being continued from a previous conversation that ran out of con
         # First check AGENT_MANAGER for the active agent
         active_agent = AGENT_MANAGER.get_active_agent()
         if active_agent:
-            agent_name = getattr(active_agent, 'name', None)
+            agent_name = getattr(active_agent, "name", None)
             if not agent_name:
                 # If agent doesn't have a name attribute, try to get from environment
                 import os
+
                 agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
                 from cai.agents import get_available_agents
+
                 agents = get_available_agents()
                 if agent_type in agents:
                     agent = agents[agent_type]
@@ -1365,7 +1418,7 @@ This session is being continued from a previous conversation that ran out of con
             return agent_name
 
         # Check if there's an active agent name in AGENT_MANAGER
-        if hasattr(AGENT_MANAGER, '_active_agent_name') and AGENT_MANAGER._active_agent_name:
+        if hasattr(AGENT_MANAGER, "_active_agent_name") and AGENT_MANAGER._active_agent_name:
             return AGENT_MANAGER._active_agent_name
 
         # Check registered agents
@@ -1381,8 +1434,10 @@ This session is being continued from a previous conversation that ran out of con
 
         # Try to get from environment and available agents
         import os
+
         agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
         from cai.agents import get_available_agents
+
         agents = get_available_agents()
         if agent_type in agents:
             agent = agents[agent_type]
@@ -1390,7 +1445,7 @@ This session is being continued from a previous conversation that ran out of con
 
         # Fallback to checking the model
         current_model = get_current_active_model()
-        if current_model and hasattr(current_model, 'agent_name'):
+        if current_model and hasattr(current_model, "agent_name"):
             return current_model.agent_name
 
         return None
@@ -1407,7 +1462,7 @@ This session is being continued from a previous conversation that ran out of con
 
     def _reload_agent_with_memory(self, agent_name: str, preserve_history: bool = True):
         """Reload an agent to apply memory changes.
-        
+
         Args:
             agent_name: Name of the agent to reload
             preserve_history: Whether to preserve message history (default True).
@@ -1421,14 +1476,16 @@ This session is being continued from a previous conversation that ran out of con
             # ALWAYS skip reload when in parallel mode
             # Parallel agents are already configured and reloading causes duplicate registrations
             if PARALLEL_CONFIGS:
-                console.print(f"[dim]Agent '{agent_name}' memory applied without reload (parallel mode)[/dim]")
+                console.print(
+                    f"[dim]Agent '{agent_name}' memory applied without reload (parallel mode)[/dim]"
+                )
                 return
 
             # Find the agent type from available agents
             agent_type = None
             available_agents = get_available_agents()
             for atype, agent in available_agents.items():
-                if hasattr(agent, 'name') and agent.name == agent_name:
+                if hasattr(agent, "name") and agent.name == agent_name:
                     agent_type = atype
                     break
 
@@ -1468,7 +1525,11 @@ This session is being continued from a previous conversation that ran out of con
                 AGENT_MANAGER.set_parallel_agent(agent_id, new_agent, agent_name)
 
             # Restore the message history to the new agent instance
-            if preserve_history and hasattr(new_agent, 'model') and hasattr(new_agent.model, 'message_history'):
+            if (
+                preserve_history
+                and hasattr(new_agent, "model")
+                and hasattr(new_agent.model, "message_history")
+            ):
                 # The switch_to_single_agent might have already transferred history
                 # Only restore if the new agent's history is empty or different
                 if not new_agent.model.message_history and history_backup:
@@ -1489,7 +1550,8 @@ This session is being continued from a previous conversation that ran out of con
                 # Import cli module to update the agent reference
                 try:
                     import cai.cli
-                    if hasattr(cai.cli, 'agent'):
+
+                    if hasattr(cai.cli, "agent"):
                         cai.cli.agent = new_agent
                 except Exception:
                     pass
@@ -1534,7 +1596,9 @@ This session is being continued from a previous conversation that ran out of con
                 self._reload_agent_with_memory(agent_name)
                 return True
             else:
-                console.print(f"[yellow]Memory {memory_id} not found for agent '{agent_name}'[/yellow]")
+                console.print(
+                    f"[yellow]Memory {memory_id} not found for agent '{agent_name}'[/yellow]"
+                )
                 return True
 
         # Handle list of memories
@@ -1583,7 +1647,7 @@ This session is being continued from a previous conversation that ran out of con
         count = len(memory_ids) if isinstance(memory_ids, list) else 1
         confirm = console.input(f"Clear {count} memory(ies) from '{agent_name}'? (y/N): ")
 
-        if confirm.lower() == 'y':
+        if confirm.lower() == "y":
             del APPLIED_MEMORY_IDS[agent_name]
             if agent_name in COMPACTED_SUMMARIES:
                 del COMPACTED_SUMMARIES[agent_name]
@@ -1611,12 +1675,12 @@ This session is being continued from a previous conversation that ran out of con
                     for i, memory_id in enumerate(memory_ids):
                         # Try to get memory details
                         index = self._load_index()
-                        memory_file = index.get('mappings', {}).get(memory_id, "Unknown")
-                        console.print(f"  {i+1}. {memory_id} - {memory_file}")
+                        memory_file = index.get("mappings", {}).get(memory_id, "Unknown")
+                        console.print(f"  {i + 1}. {memory_id} - {memory_file}")
                 else:
                     # Backward compatibility
                     index = self._load_index()
-                    memory_file = index.get('mappings', {}).get(memory_ids, "Unknown")
+                    memory_file = index.get("mappings", {}).get(memory_ids, "Unknown")
                     console.print(f"  1. {memory_ids} - {memory_file}")
 
                 console.print()
@@ -1642,21 +1706,23 @@ This session is being continued from a previous conversation that ran out of con
                 for i, memory_id in enumerate(memory_ids):
                     # Get memory details
                     index = self._load_index()
-                    memory_file = index.get('mappings', {}).get(memory_id, "Unknown")
+                    memory_file = index.get("mappings", {}).get(memory_id, "Unknown")
 
                     # Show summary preview
                     summary_preview = ""
                     if isinstance(summaries, list) and i < len(summaries):
-                        summary_preview = summaries[i][:100] + "..." if len(summaries[i]) > 100 else summaries[i]
+                        summary_preview = (
+                            summaries[i][:100] + "..." if len(summaries[i]) > 100 else summaries[i]
+                        )
 
-                    console.print(f"[green]{i+1}. {memory_id}[/green] - {memory_file}")
+                    console.print(f"[green]{i + 1}. {memory_id}[/green] - {memory_file}")
                     if summary_preview:
                         console.print(f"   [dim]{summary_preview}[/dim]")
                     console.print()
             else:
                 # Backward compatibility
                 index = self._load_index()
-                memory_file = index.get('mappings', {}).get(memory_ids, "Unknown")
+                memory_file = index.get("mappings", {}).get(memory_ids, "Unknown")
                 console.print(f"[green]1. {memory_ids}[/green] - {memory_file}")
                 if isinstance(summaries, str) and summaries:
                     summary_preview = summaries[:100] + "..." if len(summaries) > 100 else summaries
@@ -1674,13 +1740,13 @@ register_command(MEMORY_COMMAND_INSTANCE)
 
 def get_compacted_summary(agent_name: Optional[str] = None) -> Optional[str]:
     """Get compacted summary for injection into system prompt.
-    
+
     This retrieves any applied memory summaries for the agent.
     Now supports multiple memories per agent.
-    
+
     Args:
         agent_name: Specific agent name or None for global summary
-        
+
     Returns:
         Summary text if available, None otherwise
     """
@@ -1693,7 +1759,7 @@ def get_compacted_summary(agent_name: Optional[str] = None) -> Optional[str]:
             parts = []
             for i, summary in enumerate(summaries):
                 memory_id = memory_ids[i] if i < len(memory_ids) else "Unknown"
-                parts.append(f"Memory {i+1}/{len(summaries)} (ID: {memory_id}):\n{summary}")
+                parts.append(f"Memory {i + 1}/{len(summaries)} (ID: {memory_id}):\n{summary}")
             return "\n\n---\n\n".join(parts)
         elif isinstance(summaries, str):
             # Backward compatibility for single memory
@@ -1711,7 +1777,7 @@ def get_compacted_summary(agent_name: Optional[str] = None) -> Optional[str]:
                 parts = []
                 for i, summary in enumerate(summaries):
                     memory_id = memory_ids[i] if i < len(memory_ids) else "Unknown"
-                    parts.append(f"Memory {i+1}/{len(summaries)} (ID: {memory_id}):\n{summary}")
+                    parts.append(f"Memory {i + 1}/{len(summaries)} (ID: {memory_id}):\n{summary}")
                 return "\n\n---\n\n".join(parts)
             elif isinstance(summaries, str):
                 # Backward compatibility for single memory
@@ -1730,12 +1796,12 @@ def get_compacted_summary(agent_name: Optional[str] = None) -> Optional[str]:
 
 def get_applied_memory_id(agent_name: str) -> Optional[str]:
     """Get the ID of the memory currently applied to an agent.
-    
+
     For backward compatibility, returns first memory ID if multiple exist.
-    
+
     Args:
         agent_name: The agent name to check
-        
+
     Returns:
         Memory ID if applied, None otherwise
     """
@@ -1749,10 +1815,10 @@ def get_applied_memory_id(agent_name: str) -> Optional[str]:
 
 def get_applied_memory_ids(agent_name: str) -> List[str]:
     """Get all memory IDs currently applied to an agent.
-    
+
     Args:
         agent_name: The agent name to check
-        
+
     Returns:
         List of memory IDs if applied, empty list otherwise
     """

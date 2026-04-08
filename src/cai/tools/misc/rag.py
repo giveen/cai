@@ -2,6 +2,7 @@
 RAG (Retrieval Augmented Generation) utilities module for
 querying and adding data to vector databases.
 """
+
 import datetime as _dt
 import hashlib
 import logging
@@ -17,7 +18,7 @@ from cai.sdk.agents import function_tool
 logger = logging.getLogger(__name__)
 
 # CTF BASED MEMORY
-collection_name = os.getenv('CAI_MEMORY_COLLECTION', "default")
+collection_name = os.getenv("CAI_MEMORY_COLLECTION", "default")
 
 
 def _build_provenance(
@@ -85,7 +86,12 @@ def _format_search_results(results, top_k: int = 3) -> str:
         for idx, item in enumerate(results[:top_k]):
             if isinstance(item, dict):
                 # Common vector DB payload shapes
-                text = item.get("text") or item.get("payload") or item.get("document") or item.get("content")
+                text = (
+                    item.get("text")
+                    or item.get("payload")
+                    or item.get("document")
+                    or item.get("content")
+                )
                 metadata = item.get("metadata") or item.get("meta") or item.get("payload") or {}
                 provenance = None
                 if isinstance(metadata, dict):
@@ -105,6 +111,7 @@ def _format_search_results(results, top_k: int = 3) -> str:
 
     # Fallback
     return str(results)
+
 
 @function_tool
 def query_memory(query: str, top_k: int = 3) -> str:  # pylint: disable=line-too-long # noqa: E501
@@ -147,6 +154,7 @@ def query_memory(query: str, top_k: int = 3) -> str:  # pylint: disable=line-too
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return f"Error querying memory: {str(exc)}"
 
+
 @function_tool
 def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable=line-too-long # noqa: E501
     """
@@ -176,7 +184,11 @@ def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable
         chunks = chunk_text(texts, chunk_size=chunk_size, overlap=overlap)
         # If chunking produced no pieces (empty input), fall back to single-add
         if not chunks:
-            prov = _build_provenance("add_to_memory_episodic", original_text=texts, chunk_id=f"episodic-{step}-{uuid.uuid4()}")
+            prov = _build_provenance(
+                "add_to_memory_episodic",
+                original_text=texts,
+                chunk_id=f"episodic-{step}-{uuid.uuid4()}",
+            )
             try:
                 ing = get_ingestor(adapter)
                 ing.enqueue(collection_name, step, [texts], [{"CTF": True, "provenance": prov}])
@@ -213,7 +225,7 @@ def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable
         if hasattr(adapter, "export_collection"):
             try:
                 existing = adapter.export_collection(collection_name)
-                for d in (existing or []):
+                for d in existing or []:
                     meta = d.get("metadata") or {}
                     prov = None
                     if isinstance(meta, dict):
@@ -242,11 +254,20 @@ def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable
             fp = item.get("fingerprint")
 
             # Skip duplicates if fingerprint or hashes already present
-            if (fp and fp in existing_fingerprints) or (ch and ch in existing_content_hashes) or (ef and ef in existing_embed_hashes):
+            if (
+                (fp and fp in existing_fingerprints)
+                or (ch and ch in existing_content_hashes)
+                or (ef and ef in existing_embed_hashes)
+            ):
                 continue
 
             cid = f"episodic-{step}-{item.get('index')}"
-            prov = _build_provenance("add_to_memory_episodic", original_text=item.get("text"), chunk_id=cid, embed_fingerprint=ef)
+            prov = _build_provenance(
+                "add_to_memory_episodic",
+                original_text=item.get("text"),
+                chunk_id=cid,
+                embed_fingerprint=ef,
+            )
             meta = {"CTF": True, "provenance": prov}
             if fp:
                 meta["fingerprint"] = fp
@@ -260,13 +281,20 @@ def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable
 
         try:
             ing = get_ingestor(adapter)
-            ing.enqueue(collection_name, ids_to_add if len(ids_to_add) > 1 else ids_to_add[0], texts_to_add, metas_to_add)
+            ing.enqueue(
+                collection_name,
+                ids_to_add if len(ids_to_add) > 1 else ids_to_add[0],
+                texts_to_add,
+                metas_to_add,
+            )
             if os.getenv("CAI_RAG_INGEST_SYNC", "0") in ("1", "true", "True"):
                 try:
                     ing.flush_sync()
                 except Exception:
                     pass
-            return f"Queued {len(texts_to_add)} chunk(s) for ingestion to collection {collection_name}"
+            return (
+                f"Queued {len(texts_to_add)} chunk(s) for ingestion to collection {collection_name}"
+            )
         except Exception as e:  # fallback to direct add if ingestion manager fails
             try:
                 success = adapter.add_points(
@@ -284,6 +312,7 @@ def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("Error adding documents to vector database (episodic)")
         return f"Error adding documents to vector database: {e.__class__.__name__}: {str(e)}"
+
 
 @function_tool
 def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable=line-too-long # noqa: E501
@@ -317,10 +346,17 @@ def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable
 
         chunks = chunk_text(texts, chunk_size=chunk_size, overlap=overlap)
         if not chunks:
-            prov = _build_provenance("add_to_memory_semantic", original_text=texts, chunk_id=f"semantic-{doc_id}-0")
+            prov = _build_provenance(
+                "add_to_memory_semantic", original_text=texts, chunk_id=f"semantic-{doc_id}-0"
+            )
             try:
                 ing = get_ingestor(adapter)
-                ing.enqueue("_all_", doc_id, [texts], [{"CTF": collection_name, "step": step, "provenance": prov}])
+                ing.enqueue(
+                    "_all_",
+                    doc_id,
+                    [texts],
+                    [{"CTF": collection_name, "step": step, "provenance": prov}],
+                )
                 if os.getenv("CAI_RAG_INGEST_SYNC", "0") in ("1", "true", "True"):
                     try:
                         ing.flush_sync()
@@ -352,7 +388,7 @@ def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable
         if hasattr(adapter, "export_collection"):
             try:
                 existing = adapter.export_collection("_all_")
-                for d in (existing or []):
+                for d in existing or []:
                     meta = d.get("metadata") or {}
                     prov = None
                     if isinstance(meta, dict):
@@ -380,11 +416,20 @@ def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable
             ef = item.get("embed_fingerprint")
             fp = item.get("fingerprint")
 
-            if (fp and fp in existing_fingerprints) or (ch and ch in existing_content_hashes) or (ef and ef in existing_embed_hashes):
+            if (
+                (fp and fp in existing_fingerprints)
+                or (ch and ch in existing_content_hashes)
+                or (ef and ef in existing_embed_hashes)
+            ):
                 continue
 
             cid = f"semantic-{doc_id}-{item.get('index')}"
-            prov = _build_provenance("add_to_memory_semantic", original_text=item.get("text"), chunk_id=cid, embed_fingerprint=ef)
+            prov = _build_provenance(
+                "add_to_memory_semantic",
+                original_text=item.get("text"),
+                chunk_id=cid,
+                embed_fingerprint=ef,
+            )
             meta = {"CTF": collection_name, "step": step, "provenance": prov}
             if fp:
                 meta["fingerprint"] = fp
@@ -398,7 +443,12 @@ def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable
 
         try:
             ing = get_ingestor(adapter)
-            ing.enqueue("_all_", ids_to_add if len(ids_to_add) > 1 else ids_to_add[0], texts_to_add, metas_to_add)
+            ing.enqueue(
+                "_all_",
+                ids_to_add if len(ids_to_add) > 1 else ids_to_add[0],
+                texts_to_add,
+                metas_to_add,
+            )
             if os.getenv("CAI_RAG_INGEST_SYNC", "0") in ("1", "true", "True"):
                 try:
                     ing.flush_sync()

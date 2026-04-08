@@ -94,8 +94,9 @@ class HistoryCommand(Command):
                     # Resolve the correct agent name for this config
                     if config.agent_name.endswith("_pattern"):
                         from cai.agents.patterns import get_pattern
+
                         pattern = get_pattern(config.agent_name)
-                        if pattern and hasattr(pattern, 'entry_agent'):
+                        if pattern and hasattr(pattern, "entry_agent"):
                             correct_name = getattr(pattern.entry_agent, "name", config.agent_name)
                             id_to_correct_agent[config.id] = correct_name
                     else:
@@ -131,7 +132,9 @@ class HistoryCommand(Command):
                     display_name = getattr(agent, "name", config.agent_name)
 
                     # Count instances for numbering
-                    total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                    total_count = sum(
+                        1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name
+                    )
                     if total_count > 1:
                         # Find instance number
                         instance_num = 0
@@ -157,9 +160,9 @@ class HistoryCommand(Command):
         # First, add all registered agents from AGENT_MANAGER
         for display_name, history in all_histories.items():
             agents_to_show[display_name] = {
-                'history': history,
-                'source': 'manager',
-                'is_registered': True
+                "history": history,
+                "source": "manager",
+                "is_registered": True,
             }
             # Extract base name for tracking
             base_name = display_name.split(" [")[0] if "[" in display_name else display_name
@@ -200,11 +203,11 @@ class HistoryCommand(Command):
                         history = AGENT_MANAGER.get_message_history(base_name) or []
 
                         agents_to_show[display_name] = {
-                            'history': history,
-                            'source': 'parallel_config',
-                            'is_registered': base_name in registered_agents,
-                            'config': config,
-                            'agent_id': agent_id
+                            "history": history,
+                            "source": "parallel_config",
+                            "is_registered": base_name in registered_agents,
+                            "config": config,
+                            "agent_id": agent_id,
                         }
 
         # If in single agent mode, ensure the current agent is shown
@@ -212,16 +215,16 @@ class HistoryCommand(Command):
             # Check if we should show the current agent
             current_agent = AGENT_MANAGER.get_active_agent()
             if current_agent:
-                agent_name = getattr(current_agent, 'name', current_agent_type)
+                agent_name = getattr(current_agent, "name", current_agent_type)
                 agent_id = AGENT_MANAGER.get_agent_id()
                 display_name = f"{agent_name} [{agent_id}]"
 
                 if display_name not in agents_to_show:
                     history = AGENT_MANAGER.get_message_history(agent_name) or []
                     agents_to_show[display_name] = {
-                        'history': history,
-                        'source': 'active',
-                        'is_registered': True
+                        "history": history,
+                        "source": "active",
+                        "is_registered": True,
                     }
 
                     # Also ensure this agent is properly registered in AGENT_MANAGER
@@ -244,22 +247,24 @@ class HistoryCommand(Command):
             display_name = item[0]
             # Extract ID from display name
             if "[" in display_name and "]" in display_name:
-                agent_id = display_name[display_name.rindex("[")+1:display_name.rindex("]")]
+                agent_id = display_name[display_name.rindex("[") + 1 : display_name.rindex("]")]
                 # Sort P1, P2, etc. numerically
                 if agent_id.startswith("P") and agent_id[1:].isdigit():
                     return (0, int(agent_id[1:]))
             return (1, display_name)
 
         # Show agents with their histories
-        for display_name, agent_info in sorted(agents_to_show.items(), key=lambda x: get_sort_key(x)):
-            history = agent_info['history']
+        for display_name, agent_info in sorted(
+            agents_to_show.items(), key=lambda x: get_sort_key(x)
+        ):
+            history = agent_info["history"]
             msg_count = len(history)
             total_messages += msg_count
 
             # Extract agent ID from display name
             agent_id = None
             if "[" in display_name and "]" in display_name:
-                agent_id = display_name[display_name.rindex("[")+1:display_name.rindex("]")]
+                agent_id = display_name[display_name.rindex("[") + 1 : display_name.rindex("]")]
 
             # Determine status
             status_parts = []
@@ -281,16 +286,16 @@ class HistoryCommand(Command):
                     is_current = True
             else:
                 # In parallel mode, check if it's in the current parallel configs
-                if agent_info.get('source') == 'parallel_config':
+                if agent_info.get("source") == "parallel_config":
                     is_current = True
 
             if is_current:
                 status_parts.append("[green](active)[/green]")
-            elif agent_info.get('is_registered'):
+            elif agent_info.get("is_registered"):
                 status_parts.append("[blue](registered)[/blue]")
 
             # Check for model override in config
-            if 'config' in agent_info and agent_info['config'].model:
+            if "config" in agent_info and agent_info["config"].model:
                 status_parts.append(f"[blue](model: {agent_info['config'].model})[/blue]")
 
             status = " ".join(status_parts)
@@ -348,7 +353,9 @@ class HistoryCommand(Command):
 
         # Show usage hints
         console.print("\n[dim]Commands:[/dim]")
-        console.print("[dim]  • /history <ID>              - View specific agent by ID (e.g., P1)[/dim]")
+        console.print(
+            "[dim]  • /history <ID>              - View specific agent by ID (e.g., P1)[/dim]"
+        )
         console.print("[dim]  • /history agent <name>      - View by agent name[/dim]")
         console.print("[dim]  • /history search <term>     - Search across all agents[/dim]")
         console.print("[dim]  • /history index <ID> <num>  - View specific message by index[/dim]")
@@ -429,11 +436,18 @@ class HistoryCommand(Command):
         history = None
 
         # First try direct ID lookup (P1, P2, etc.)
-        if agent_identifier.upper().startswith("P") and len(agent_identifier) >= 2 and agent_identifier[1:].isdigit():
+        if (
+            agent_identifier.upper().startswith("P")
+            and len(agent_identifier) >= 2
+            and agent_identifier[1:].isdigit()
+        ):
             agent_id = agent_identifier.upper()
 
             # Check if we're in parallel mode and have isolated history
-            if PARALLEL_ISOLATION.is_parallel_mode() and PARALLEL_ISOLATION.has_isolated_histories():
+            if (
+                PARALLEL_ISOLATION.is_parallel_mode()
+                and PARALLEL_ISOLATION.has_isolated_histories()
+            ):
                 isolated_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
                 if isolated_history is not None:
                     # Find the agent name from PARALLEL_CONFIGS
@@ -441,12 +455,15 @@ class HistoryCommand(Command):
                         config_id = config.id or f"P{idx}"
                         if config_id == agent_id:
                             from cai.agents import get_available_agents
+
                             available_agents = get_available_agents()
                             if config.agent_name in available_agents:
                                 agent = available_agents[config.agent_name]
                                 agent_name = getattr(agent, "name", config.agent_name)
                                 # Add instance number if needed
-                                total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                                total_count = sum(
+                                    1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name
+                                )
                                 if total_count > 1:
                                     instance_num = 0
                                     for c in PARALLEL_CONFIGS:
@@ -469,7 +486,7 @@ class HistoryCommand(Command):
                     current_id = AGENT_MANAGER.get_agent_id()
                     if current_agent and current_id == agent_id:
                         # Get the agent name from the agent object
-                        agent_name = getattr(current_agent, 'name', 'Unknown')
+                        agent_name = getattr(current_agent, "name", "Unknown")
                         history = AGENT_MANAGER.get_message_history(agent_name)
                         # Make sure this agent is registered in AGENT_MANAGER
                         if not AGENT_MANAGER.get_agent_by_id(agent_id):
@@ -482,7 +499,7 @@ class HistoryCommand(Command):
                             current_agent = AGENT_MANAGER.get_active_agent()
                             if current_agent:
                                 # Get the agent name and register it properly
-                                agent_name = getattr(current_agent, 'name', 'Unknown')
+                                agent_name = getattr(current_agent, "name", "Unknown")
                                 # Force registration with P1 ID
                                 AGENT_MANAGER._agent_registry[agent_name] = "P1"
                                 AGENT_MANAGER._agent_id = "P1"
@@ -499,7 +516,9 @@ class HistoryCommand(Command):
                                         break
 
                                 if not history:
-                                    console.print(f"[yellow]No agent found with ID '{agent_id}'[/yellow]")
+                                    console.print(
+                                        f"[yellow]No agent found with ID '{agent_id}'[/yellow]"
+                                    )
                                     return True
                         else:
                             console.print(f"[yellow]No agent found with ID '{agent_id}'[/yellow]")
@@ -516,9 +535,11 @@ class HistoryCommand(Command):
                 # Try to find by name in display format
                 for display_name, history_data in all_histories.items():
                     # Extract agent name from display format "Agent Name [ID]"
-                    if '[' in display_name:
-                        name_part = display_name.split('[')[0].strip()
-                        id_part = display_name[display_name.rindex("[")+1:display_name.rindex("]")]
+                    if "[" in display_name:
+                        name_part = display_name.split("[")[0].strip()
+                        id_part = display_name[
+                            display_name.rindex("[") + 1 : display_name.rindex("]")
+                        ]
                     else:
                         name_part = display_name
                         id_part = None
@@ -545,11 +566,13 @@ class HistoryCommand(Command):
             if not agent_id:
                 agent_id = AGENT_MANAGER.get_id_by_name(agent_name) or "Unknown"
 
-            console.print(Panel(
-                "[yellow]No conversation history yet[/yellow]",
-                title=f"[cyan]{agent_name} [{agent_id}][/cyan]",
-                border_style="blue"
-            ))
+            console.print(
+                Panel(
+                    "[yellow]No conversation history yet[/yellow]",
+                    title=f"[cyan]{agent_name} [{agent_id}][/cyan]",
+                    border_style="blue",
+                )
+            )
             return True
 
         # Get the agent ID if we don't have it

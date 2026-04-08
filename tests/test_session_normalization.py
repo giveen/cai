@@ -37,11 +37,17 @@ def test_session_id_strip_quotes_uses_run_command(monkeypatch):
     async def fake_run_command_async(*args, **kwargs):
         raise AssertionError("run_command_async should not be called in this path")
 
+    def fake_list_shell_sessions():
+        # Return a session that matches the stripped session_id "abc"
+        return [{"session_id": "abc", "friendly_id": "abc", "command": "bash",
+                 "last_activity": "now", "running": True}]
+
     monkeypatch.setattr(glc, "run_command", fake_run_command)
     monkeypatch.setattr(glc, "run_command_async", fake_run_command_async)
+    monkeypatch.setattr(glc, "list_shell_sessions", fake_list_shell_sessions)
 
     payload = json.dumps({"command": "ls", "interactive": False, "session_id": "'abc'"})
     result = asyncio.run(glc.generic_linux_command.on_invoke_tool(None, payload))
 
     assert result == "run-result"
-    assert captured.get("session_id") == 'abc'
+    assert captured.get("session_id") == "abc"

@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PendingToolCall:
     """Represents a tool call waiting to be executed."""
+
     tool_call_id: str
     tool_name: str
     tool_function: Callable
@@ -37,7 +38,7 @@ class PendingToolCall:
 class ParallelToolExecutor:
     """
     Manages parallel tool execution across multiple agents.
-    
+
     This executor allows agents to submit tool calls that execute immediately
     in parallel, rather than waiting for the LLM response cycle to complete.
     """
@@ -79,11 +80,11 @@ class ParallelToolExecutor:
         arguments: Dict[str, Any],
         agent_name: str,
         context_wrapper: RunContextWrapper,
-        tool_call_id: Optional[str] = None
+        tool_call_id: Optional[str] = None,
     ) -> str:
         """
         Submit a tool call for parallel execution.
-        
+
         Returns the tool_call_id that can be used to retrieve the result.
         """
         if tool_call_id is None:
@@ -96,7 +97,7 @@ class ParallelToolExecutor:
                 tool_function=tool_function,
                 arguments=arguments,
                 agent_name=agent_name,
-                context_wrapper=context_wrapper
+                context_wrapper=context_wrapper,
             )
 
             self.pending_calls[tool_call_id] = pending_call
@@ -105,10 +106,12 @@ class ParallelToolExecutor:
         logger.debug(f"Submitted tool call {tool_call_id} for {tool_name} from {agent_name}")
         return tool_call_id
 
-    async def get_tool_result(self, tool_call_id: str, timeout: float = 300) -> Tuple[Any, Optional[Exception]]:
+    async def get_tool_result(
+        self, tool_call_id: str, timeout: float = 300
+    ) -> Tuple[Any, Optional[Exception]]:
         """
         Wait for and retrieve the result of a tool call.
-        
+
         Returns (result, error) tuple.
         """
         start_time = time.time()
@@ -128,10 +131,12 @@ class ParallelToolExecutor:
 
         raise asyncio.TimeoutError(f"Tool call {tool_call_id} timed out after {timeout} seconds")
 
-    async def get_agent_results(self, agent_name: str) -> List[Tuple[str, Any, Optional[Exception]]]:
+    async def get_agent_results(
+        self, agent_name: str
+    ) -> List[Tuple[str, Any, Optional[Exception]]]:
         """
         Get all completed results for a specific agent.
-        
+
         Returns list of (tool_call_id, result, error) tuples.
         """
         results = []
@@ -156,10 +161,14 @@ class ParallelToolExecutor:
                 # Get pending calls that need execution
                 async with self._lock:
                     pending = [
-                        call for call in self.pending_calls.values()
-                        if not call.completed and not any(
-                            task for task in self.active_tasks
-                            if hasattr(task, '_tool_call_id') and task._tool_call_id == call.tool_call_id
+                        call
+                        for call in self.pending_calls.values()
+                        if not call.completed
+                        and not any(
+                            task
+                            for task in self.active_tasks
+                            if hasattr(task, "_tool_call_id")
+                            and task._tool_call_id == call.tool_call_id
                         )
                     ]
 
@@ -191,7 +200,9 @@ class ParallelToolExecutor:
         """Execute a single tool call."""
         async with self._semaphore:
             try:
-                logger.debug(f"Executing tool {call.tool_name} (ID: {call.tool_call_id}) for {call.agent_name}")
+                logger.debug(
+                    f"Executing tool {call.tool_name} (ID: {call.tool_call_id}) for {call.agent_name}"
+                )
 
                 # Execute the tool function
                 result = await call.tool_function(call.context_wrapper, call.arguments)
@@ -233,7 +244,7 @@ async def ensure_executor_started():
 class ParallelToolMixin:
     """
     Mixin for agents to enable parallel tool execution.
-    
+
     This allows agents to submit tool calls that execute immediately
     rather than waiting for the full LLM response cycle.
     """
@@ -248,7 +259,7 @@ class ParallelToolMixin:
         tool_name: str,
         tool_function: Callable,
         arguments: Dict[str, Any],
-        context_wrapper: RunContextWrapper
+        context_wrapper: RunContextWrapper,
     ) -> str:
         """Submit a tool for parallel execution."""
         await ensure_executor_started()
@@ -257,8 +268,8 @@ class ParallelToolMixin:
             tool_name=tool_name,
             tool_function=tool_function,
             arguments=arguments,
-            agent_name=getattr(self, 'name', 'unknown'),
-            context_wrapper=context_wrapper
+            agent_name=getattr(self, "name", "unknown"),
+            context_wrapper=context_wrapper,
         )
 
         self._pending_parallel_calls.append(tool_call_id)
@@ -270,7 +281,9 @@ class ParallelToolMixin:
 
         for tool_call_id in self._pending_parallel_calls[:]:
             try:
-                result, error = await self._parallel_executor.get_tool_result(tool_call_id, timeout=1.0)
+                result, error = await self._parallel_executor.get_tool_result(
+                    tool_call_id, timeout=1.0
+                )
 
                 if error:
                     output = f"Error: {str(error)}"
@@ -279,17 +292,16 @@ class ParallelToolMixin:
 
                 # Create a mock tool call for the result
                 from openai.types.responses import ResponseFunctionToolCall
+
                 mock_tool_call = ResponseFunctionToolCall(
-                    id=tool_call_id,
-                    name="parallel_tool",
-                    arguments="{}"
+                    id=tool_call_id, name="parallel_tool", arguments="{}"
                 )
 
                 results.append(
                     ToolCallOutputItem(
                         output=output,
                         raw_item=ItemHelpers.tool_call_output_item(mock_tool_call, output),
-                        agent=self  # type: ignore
+                        agent=self,  # type: ignore
                     )
                 )
 

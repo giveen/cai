@@ -3,6 +3,7 @@
 Contains `format_time` and `display_session_report` so the CLI can
 delegate session-summary rendering to this focused module.
 """
+
 from __future__ import annotations
 
 import logging
@@ -50,7 +51,11 @@ def display_session_report(session_logger, console: Optional[Console] = None) ->
             "session_cost": f"${COST_TRACKER.session_total_cost:.6f}",
         }
 
-        logging_path = session_logger.filename if (session_logger and hasattr(session_logger, "filename")) else None
+        logging_path = (
+            session_logger.filename
+            if (session_logger and hasattr(session_logger, "filename"))
+            else None
+        )
 
         content = []
         content.append(f"Session Time: {metrics['session_time']}")
@@ -124,6 +129,7 @@ def handle_keyboard_interrupt(session_logger, console: Optional[Console] = None)
         logging.getLogger(__name__).debug("Error in handle_keyboard_interrupt", exc_info=True)
         return {}
 
+
 __all__.append("handle_keyboard_interrupt")
 
 
@@ -178,7 +184,11 @@ def finalize_session(session_logger, start_time: float, idle_time: float) -> dic
             "session_cost": f"${COST_TRACKER.session_total_cost:.6f}",
         }
 
-        logging_path = session_logger.filename if (session_logger and hasattr(session_logger, "filename")) else None
+        logging_path = (
+            session_logger.filename
+            if (session_logger and hasattr(session_logger, "filename"))
+            else None
+        )
 
         # Render using Rich to match previous CLI presentation
         try:
