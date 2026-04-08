@@ -512,9 +512,44 @@ def cli_print_tool_call(
             pass
 
 
-def cli_print_agent_messages(agent_name: str, messages: list, **_kwargs) -> None:
+def cli_print_agent_messages(agent_name: str, messages: list | None = None, *args, **_kwargs) -> None:
+    """Print agent messages for the CLI.
+
+    Backwards-compatible shim: callers sometimes pass a single ``message``
+    (keyword) or a ``messages`` list. Accept either and render message
+    contents to stdout. Additional kwargs are accepted for compatibility
+    (eg. ``suppress_empty``) and ignored here.
+    """
     try:
-        console.print(f"[agent]{agent_name}[/agent] {len(messages)} messages")
+        # Support both `message=` (single dict) and `messages=` (list)
+        if messages is None:
+            maybe_msg = _kwargs.get("message") if isinstance(_kwargs, dict) else None
+            if maybe_msg is not None:
+                msgs = [maybe_msg]
+            else:
+                msgs = []
+        else:
+            msgs = list(messages)
+
+        suppress = bool(_kwargs.get("suppress_empty", False)) if isinstance(_kwargs, dict) else False
+
+        if suppress and not msgs:
+            return
+
+        # Print a short header then each message content
+        console.print(f"[agent]{agent_name}[/agent] {len(msgs)} messages")
+        for m in msgs:
+            try:
+                # Support dicts with a 'content' field or plain strings
+                content = m.get("content") if isinstance(m, dict) else str(m)
+                if content is None:
+                    continue
+                console.print(content)
+            except Exception:
+                try:
+                    console.print(str(m))
+                except Exception:
+                    pass
     except Exception:
         pass
 
