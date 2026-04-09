@@ -22,6 +22,7 @@ import re
 import textwrap
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
+import hashlib
 
 from rich.console import Console
 from rich.theme import Theme
@@ -398,6 +399,52 @@ _AGENT_STREAMING_CONTEXTS: Dict[str, Dict[str, Any]] = {}
 # Backwards-compatible name used by older modules
 _LIVE_STREAMING_PANELS = _STREAMING_SESSIONS
 
+# Track RunItems/messages that were already rendered to the terminal during
+# streaming so we can avoid printing them again at final-render time.
+# Keys are namespaced by agent name: '<agent_name>:content:<md5>' or
+# '<agent_name>:callid:<call_id>'
+_RENDERED_RUNITEM_KEYS: set[str] = set()
+
+
+def _make_content_key(agent_name: str, content: str) -> str:
+    h = hashlib.md5((content or "").strip().encode("utf-8", errors="replace")).hexdigest()
+    return f"{agent_name}:content:{h}"
+
+
+def _make_callid_key(agent_name: str, call_id: str) -> str:
+    return f"{agent_name}:callid:{call_id}"
+
+
+def mark_runitem_rendered(agent_name: str, *, content: str | None = None, call_id: str | None = None) -> None:
+    try:
+        if content:
+            _RENDERED_RUNITEM_KEYS.add(_make_content_key(agent_name, content))
+        if call_id:
+            _RENDERED_RUNITEM_KEYS.add(_make_callid_key(agent_name, call_id))
+    except Exception:
+        pass
+
+
+def is_runitem_rendered(agent_name: str, *, content: str | None = None, call_id: str | None = None) -> bool:
+    try:
+        if call_id and _make_callid_key(agent_name, call_id) in _RENDERED_RUNITEM_KEYS:
+            return True
+        if content and _make_content_key(agent_name, content) in _RENDERED_RUNITEM_KEYS:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def clear_rendered_runitems_for_agent(agent_name: str) -> None:
+    try:
+        prefix = f"{agent_name}:"
+        for k in list(_RENDERED_RUNITEM_KEYS):
+            if k.startswith(prefix):
+                _RENDERED_RUNITEM_KEYS.discard(k)
+    except Exception:
+        pass
+
 
 def cli_print_tool_output(
     tool_name: str,
@@ -422,6 +469,13 @@ def cli_print_tool_output(
 
     streaming_enabled = os.getenv("CAI_STREAM", "true").lower() not in ("false", "0", "no")
 
+    # Skip printing if this tool output was already rendered during streaming
+    try:
+        if agent_name and is_runitem_rendered(agent_name, call_id=call_id, content=output):
+            return
+    except Exception:
+        pass
+
     if streaming_enabled:
         # Content-based deduplication: suppress exact duplicates
         seen = cli_print_tool_output._seen_calls  # type: ignore[attr-defined]
@@ -438,6 +492,7 @@ def cli_print_tool_output(
             return
         display_times[command_key] = time.time()
 
+    # Register streaming session metadata if call_id provided
     if call_id:
         _STREAMING_SESSIONS[call_id] = {
             "tool_name": tool_name,
@@ -445,67 +500,29 @@ def cli_print_tool_output(
             "agent_name": agent_name,
             "is_complete": True,
         }
-    # Sanitize output: strip ANSI escapes, normalize CR->LF, remove progress-meter
-    # noise (e.g., curl progress), wrap long lines, and truncate to a reasonable
-    # maximum length to avoid flooding the CLI.
+
+    # Render using centralized helper; fall back to simple printing on error
     try:
-        sanitized = str(output or "")
-        # normalize line endings
-        sanitized = sanitized.replace("\r\n", "\n").replace("\r", "\n")
+        from cai.repl.ui.logging import render_tool_output
 
-        # remove ANSI escape sequences
+        render_tool_output(tool_name or "tool", output, agent_name=agent_name, style="cyan")
+        # Mark as rendered for deduplication
         try:
-            sanitized = re.sub(r"\x1B[@-_][0-?]*[ -/]*[@-~]", "", sanitized)
+            if agent_name:
+                mark_runitem_rendered(agent_name, call_id=call_id, content=str(output or ""))
         except Exception:
-            sanitized = re.sub(r"\x1b\[[0-9;]*[mK]", "", sanitized)
-
-        # drop obvious progress meter header/lines (starts with "% ")
-        lines = []
-        for ln in sanitized.splitlines():
-            s = ln.strip()
-            if not s:
-                lines.append("")
-                continue
-            # skip curl-like progress lines that begin with a percent column
-            if s.startswith("% ") or s.startswith("%Total") or s.startswith("%\t"):
-                continue
-            # skip repeated carriage-like artifacts
-            if set(s) <= set("-=.#|<>*%0123456789 ") and len(s) < 120:
-                # likely a progress bar or separator line
-                continue
-            lines.append(ln)
-        sanitized = "\n".join(lines)
-
-        # collapse excessive blank lines
-        sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
-
-        # truncate very long outputs
-        max_chars = 4000
-        if len(sanitized) > max_chars:
-            sanitized = sanitized[:max_chars] + "…"
-
-        # wrap long lines to terminal width if available
-        try:
-            width = console.size.width or 120
-        except Exception:
-            width = 120
-        wrap_width = max(40, int(width) - 20)
-        wrapped = []
-        for ln in sanitized.splitlines():
-            if len(ln) > wrap_width:
-                wrapped.append(textwrap.fill(ln, width=wrap_width))
-            else:
-                wrapped.append(ln)
-        sanitized = "\n".join(wrapped)
-
-        from rich.markup import escape as _escape
-        console.print(f"{_escape(tool_name)} {sanitized}")
+            pass
     except Exception:
         try:
             # best-effort fallback
-            print(tool_name, str(output))
+            from rich.markup import escape as _escape
+
+            console.print(f"{_escape(tool_name)} {str(output)}")
         except Exception:
-            pass
+            try:
+                print(tool_name, str(output))
+            except Exception:
+                pass
 
 
 # Deduplication state attached to the function itself
@@ -552,12 +569,15 @@ def cli_print_tool_call(
             },
         }
     try:
+        # Use centralized renderer for consistent Panel styling
+        from cai.repl.ui.logging import render_tool_output
+
         if tool_output is None:
-            console.print(f"[tool][{tool_name}][/tool] (no output)")
+            render_tool_output(tool_name or "tool", "(no output)", agent_name=agent_name, style="cyan")
         else:
             out = str(tool_output)
             display = out if len(out) <= 500 else out[:500] + "…"
-            console.print(f"[tool][{tool_name}][/tool] {display}")
+            render_tool_output(tool_name or "tool", display, agent_name=agent_name, style="cyan")
         if debug:
             console.print(
                 f"[debug] tokens={total_input_tokens}+{total_output_tokens} model={model}"
@@ -594,14 +614,32 @@ def cli_print_agent_messages(agent_name: str, messages: list | None = None, *arg
         if suppress and not msgs:
             return
 
-        # Print a short header then each message content
-        console.print(f"[agent]{agent_name}[/agent] {len(msgs)} messages")
+        # Filter out messages that were already rendered during streaming
+        filtered = []
         for m in msgs:
             try:
-                # Support dicts with a 'content' field or plain strings
                 content = m.get("content") if isinstance(m, dict) else str(m)
-                if content is None:
+            except Exception:
+                try:
+                    content = str(m)
+                except Exception:
+                    content = None
+            if content is None:
+                continue
+            try:
+                if agent_name and is_runitem_rendered(agent_name, content=content):
                     continue
+            except Exception:
+                pass
+            filtered.append((m, content))
+
+        if not filtered:
+            return
+
+        # Print a short header then each message content
+        console.print(f"[agent]{agent_name}[/agent] {len(filtered)} messages")
+        for m, content in filtered:
+            try:
                 console.print(content)
             except Exception:
                 try:

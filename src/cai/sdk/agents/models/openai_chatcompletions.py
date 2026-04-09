@@ -2356,38 +2356,20 @@ class OpenAIChatCompletionsModel(Model):
                                             except Exception:
                                                 pass
 
-                                        # Create a message-like object for displaying the function call
-                                        tool_msg = type(
-                                            "ToolCallStreamDisplay",
-                                            (),
-                                            {
-                                                "content": None,
-                                                "tool_calls": [
-                                                    type(
-                                                        "ToolCallDetail",
-                                                        (),
-                                                        {
-                                                            "function": type(
-                                                                "FunctionDetail",
-                                                                (),
-                                                                {
-                                                                    "name": state.function_calls[
-                                                                        tc_index
-                                                                    ].name,
-                                                                    "arguments": state.function_calls[
-                                                                        tc_index
-                                                                    ].arguments,
-                                                                },
-                                                            ),
-                                                            "id": state.function_calls[
-                                                                tc_index
-                                                            ].call_id,
-                                                            "type": "function",
-                                                        },
-                                                    )
-                                                ],
-                                            },
-                                        )
+                                        # Create a message-like dict for displaying the function call
+                                        tool_msg = {
+                                            "content": None,
+                                            "tool_calls": [
+                                                {
+                                                    "function": {
+                                                        "name": state.function_calls[tc_index].name,
+                                                        "arguments": state.function_calls[tc_index].arguments,
+                                                    },
+                                                    "id": state.function_calls[tc_index].call_id,
+                                                    "type": "function",
+                                                }
+                                            ],
+                                        }
 
                                         # Display the tool call during streaming
                                         cli_print_agent_messages(
@@ -2506,32 +2488,17 @@ class OpenAIChatCompletionsModel(Model):
                                         except Exception:
                                             pass
 
-                                    # Create a message-like object to display the function call
-                                    tool_msg = type(
-                                        "ToolCallWrapper",
-                                        (),
-                                        {
-                                            "content": None,
-                                            "tool_calls": [
-                                                type(
-                                                    "ToolCallDetail",
-                                                    (),
-                                                    {
-                                                        "function": type(
-                                                            "FunctionDetail",
-                                                            (),
-                                                            {
-                                                                "name": parsed["name"],
-                                                                "arguments": arguments_str,
-                                                            },
-                                                        ),
-                                                        "id": tool_call_id[:40],
-                                                        "type": "function",
-                                                    },
-                                                )
-                                            ],
-                                        },
-                                    )
+                                    # Create a message-like dict to display the function call
+                                    tool_msg = {
+                                        "content": None,
+                                        "tool_calls": [
+                                            {
+                                                "function": {"name": parsed["name"], "arguments": arguments_str},
+                                                "id": tool_call_id[:40],
+                                                "type": "function",
+                                            }
+                                        ],
+                                    }
 
                                     # Print the tool call using the CLI utility
                                     cli_print_agent_messages(

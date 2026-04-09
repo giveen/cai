@@ -132,31 +132,24 @@ class OpenAIResponsesModel(Model):
                 from cai.util import cli_print_agent_messages
 
                 try:
-                    # Create a message-like object to display
-                    message_obj = type(
-                        "ResponseWrapper",
-                        (),
-                        {
-                            "content": "\n".join(
-                                [
-                                    str(item.get("content", ""))
-                                    if hasattr(item, "get")
-                                    else str(getattr(item, "text", ""))
-                                    for item in response.output
-                                    if hasattr(item, "get") or hasattr(item, "text")
-                                ]
-                            ),
-                            "tool_calls": [
-                                type(
-                                    "ToolCallWrapper",
-                                    (),
-                                    {"name": item.name, "arguments": item.arguments},
-                                )
+                    # Create a message-like dict to display (avoid constructing
+                    # a class object which prints as "<class '...'>")
+                    message_obj = {
+                        "content": "\n".join(
+                            [
+                                str(item.get("content", ""))
+                                if hasattr(item, "get")
+                                else str(getattr(item, "text", ""))
                                 for item in response.output
-                                if hasattr(item, "name") and hasattr(item, "arguments")
-                            ],
-                        },
-                    )
+                                if hasattr(item, "get") or hasattr(item, "text")
+                            ]
+                        ),
+                        "tool_calls": [
+                            {"name": item.name, "arguments": item.arguments}
+                            for item in response.output
+                            if hasattr(item, "name") and hasattr(item, "arguments")
+                        ],
+                    }
 
                     cli_print_agent_messages(
                         agent_name=getattr(self, "agent_name", "Agent"),
@@ -242,31 +235,24 @@ class OpenAIResponsesModel(Model):
                 from cai.util import cli_print_agent_messages
 
                 try:
-                    # Create a message-like object to display
-                    message_obj = type(
-                        "ResponseWrapper",
-                        (),
-                        {
-                            "content": "\n".join(
-                                [
-                                    str(item.get("content", ""))
-                                    if hasattr(item, "get")
-                                    else str(getattr(item, "text", ""))
-                                    for item in final_response.output
-                                    if hasattr(item, "get") or hasattr(item, "text")
-                                ]
-                            ),
-                            "tool_calls": [
-                                type(
-                                    "ToolCallWrapper",
-                                    (),
-                                    {"name": item.name, "arguments": item.arguments},
-                                )
+                    # Create a message-like dict to display (avoid constructing
+                    # a class object which prints as "<class '...'>")
+                    message_obj = {
+                        "content": "\n".join(
+                            [
+                                str(item.get("content", ""))
+                                if hasattr(item, "get")
+                                else str(getattr(item, "text", ""))
                                 for item in final_response.output
-                                if hasattr(item, "name") and hasattr(item, "arguments")
-                            ],
-                        },
-                    )
+                                if hasattr(item, "get") or hasattr(item, "text")
+                            ]
+                        ),
+                        "tool_calls": [
+                            {"name": item.name, "arguments": item.arguments}
+                            for item in final_response.output
+                            if hasattr(item, "name") and hasattr(item, "arguments")
+                        ],
+                    }
 
                     cli_print_agent_messages(
                         agent_name=getattr(self, "agent_name", "Agent"),

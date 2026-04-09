@@ -26,6 +26,9 @@ import sys
 import re
 import ast
 from typing import Any, Optional, Tuple
+import textwrap
+
+from rich.markup import escape as _escape
 
 from cai.repl.loop._event_loop import run_async
 from rich.panel import Panel
@@ -196,19 +199,41 @@ def run_single_response(
                                 try:
                                     for line in out_str.splitlines():
                                         ls = line.strip()
+                                        try:
+                                            width = console.size.width
+                                        except Exception:
+                                            width = 120
+                                        wrap_width = max(40, int(width) - 20)
+
+                                        # Wrap and escape the line to respect terminal width
+                                        try:
+                                            wrapped = textwrap.fill(line, width=wrap_width)
+                                        except Exception:
+                                            wrapped = line
+
                                         if ls.lower().startswith("thought"):
-                                            console.print(f"[yellow]{line}[/yellow]")
+                                            console.print(f"[yellow]{_escape(wrapped)}[/yellow]")
                                         elif ls.lower().startswith("reflection"):
-                                            console.print(f"[blue]{line}[/blue]")
+                                            console.print(f"[blue]{_escape(wrapped)}[/blue]")
                                         elif ls.lower().startswith("action"):
-                                            console.print(f"[green]{line}[/green]")
+                                            console.print(f"[green]{_escape(wrapped)}[/green]")
                                         else:
-                                            console.print(line)
+                                            console.print(_escape(wrapped))
                                 except Exception:
                                     try:
                                         print(out_str)
                                     except Exception:
                                         pass
+
+                                # Mark this message content as rendered so final-print
+                                # paths can skip duplicate output.
+                                try:
+                                    from cai.util import mark_runitem_rendered
+
+                                    agent_name = getattr(agent, "name", None) or getattr(getattr(agent, "model", None), "agent_name", None) or "Agent"
+                                    mark_runitem_rendered(agent_name, content=out_str)
+                                except Exception:
+                                    pass
 
                         # TOOL CALLED: announce quickly (non-blocking)
                         elif event.name == "tool_called":
@@ -233,9 +258,14 @@ def run_single_response(
                                     call_id = None
 
                                 try:
-                                    title = str(getattr(agent, "agent_name", getattr(agent, "name", "Agent")))
+                                    agent_name = str(getattr(agent, "agent_name", getattr(agent, "name", "Agent")))
                                     msg = f"🛠️  Running {fn_name}({fn_args_disp})..."
-                                    console.print(Panel(msg, title=title, style="yellow"))
+                                    try:
+                                        from cai.repl.ui.logging import render_tool_output
+
+                                        render_tool_output(fn_name or "tool", msg, agent_name=agent_name, style="yellow")
+                                    except Exception:
+                                        console.print(Panel(msg, title=agent_name, style="yellow"))
                                 except Exception:
                                     try:
                                         print(f"[tool] Running {fn_name}({fn_args_disp})...")
@@ -244,6 +274,14 @@ def run_single_response(
 
                                 if call_id:
                                     tool_calls_seen[call_id] = event.item
+                                    # Mark tool call as rendered (so we don't show it again)
+                                    try:
+                                        from cai.util import mark_runitem_rendered
+
+                                        agent_name = getattr(agent, "name", None) or getattr(getattr(agent, "model", None), "agent_name", None) or "Agent"
+                                        mark_runitem_rendered(agent_name, call_id=call_id)
+                                    except Exception:
+                                        pass
                             except Exception:
                                 if hasattr(event.item, "raw_item"):
                                     call_id = getattr(event.item.raw_item, "call_id", None)
@@ -254,16 +292,11 @@ def run_single_response(
                         elif event.name == "tool_output":
                             if isinstance(event.item, ToolCallOutputItem):
                                 try:
+                                    # Determine call_id if present
                                     raw_item = getattr(event.item, "raw_item", {}) or {}
-                                    if isinstance(raw_item, dict):
-                                        call_id = raw_item.get("call_id")
-                                    else:
-                                        call_id = getattr(raw_item, "call_id", None)
-                                except Exception:
-                                    call_id = None
+                                    call_id = raw_item.get("call_id") if isinstance(raw_item, dict) else getattr(raw_item, "call_id", None)
 
-                                # Render the tool output for the user
-                                try:
+                                    # Extract and normalise output to string
                                     output = event.item.output
                                     if isinstance(output, (bytes, bytearray)):
                                         out_str = output.decode("utf-8", errors="replace")
@@ -289,27 +322,43 @@ def run_single_response(
                                         except Exception:
                                             fn_name = None
 
-                                    title = f"{fn_name or 'tool'} output"
                                     try:
-                                        console.print(Panel(out_str, title=title, style="cyan"))
+                                        from cai.repl.ui.logging import render_tool_output
+
+                                        agent_name = getattr(agent, "agent_name", getattr(agent, "name", "Agent"))
+                                        render_tool_output(fn_name or "tool", out_str, agent_name=agent_name, style="cyan")
                                     except Exception:
                                         try:
-                                            print(out_str)
+                                            title = f"{fn_name or 'tool'} output"
+                                            console.print(Panel(out_str, title=title, style="cyan"))
                                         except Exception:
-                                            pass
-                                except Exception:
-                                    pass
+                                            try:
+                                                print(out_str)
+                                            except Exception:
+                                                pass
 
-                                # Store as historical tool output for later consumption
-                                try:
-                                    if call_id:
-                                        tool_results_seen.add(call_id)
-                                    agent.model.add_to_message_history({
-                                        "role": "tool",
-                                        "tool_call_id": call_id,
-                                        "content": event.item.output,
-                                    })
+                                    # Mark the tool output as rendered so final-print paths can skip duplicates
+                                    try:
+                                        from cai.util import mark_runitem_rendered
+
+                                        agent_name = getattr(agent, "name", None) or getattr(getattr(agent, "model", None), "agent_name", None) or "Agent"
+                                        mark_runitem_rendered(agent_name, call_id=call_id, content=out_str)
+                                    except Exception:
+                                        pass
+
+                                    # Store as historical tool output for later consumption
+                                    try:
+                                        if call_id:
+                                            tool_results_seen.add(call_id)
+                                        agent.model.add_to_message_history({
+                                            "role": "tool",
+                                            "tool_call_id": call_id,
+                                            "content": event.item.output,
+                                        })
+                                    except Exception:
+                                        pass
                                 except Exception:
+                                    # Best-effort: ignore any errors rendering tool output
                                     pass
                 return result
 
@@ -541,6 +590,16 @@ def run_single_response(
             start_time=start_time,
             idle_time=int(idle_time),
         )
+    except Exception:
+        pass
+
+    # Clear per-agent rendered-runitem markers for this turn so future turns
+    # don't incorrectly suppress output.
+    try:
+        from cai.util import clear_rendered_runitems_for_agent
+
+        agent_name = getattr(agent, "name", None) or getattr(getattr(agent, "model", None), "agent_name", None) or "Agent"
+        clear_rendered_runitems_for_agent(agent_name)
     except Exception:
         pass
 
