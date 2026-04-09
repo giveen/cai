@@ -2772,7 +2772,6 @@ class TerminalPanel(Widget):
                 _sys.stderr.flush()
             except Exception:
                 pass
-            log.write(RichText(f"  [error] {exc}", style="#ff4444"))
             # Mark any running tool calls as errored in the log.
             for call_id, meta in list(self._active_tool_calls.items()):
                 log.write(
@@ -2782,10 +2781,21 @@ class TerminalPanel(Widget):
                     )
                 )
             self._active_tool_calls.clear()
-            self._write_system_message("error", str(exc), style="#ff4444")
-            self._write_system_message(
-                "error", "use /retry to run the last prompt again", style="#ff6666"
-            )
+            # Render a single clean error panel — avoids printing the same
+            # exception message twice (once raw, once via _write_system_message).
+            try:
+                from rich.panel import Panel as _Panel
+                log.write(
+                    _Panel(
+                        f"[bold]{type(exc).__name__}[/bold]: {exc}",
+                        title="[bold red]Error[/bold red]",
+                        border_style="red",
+                        padding=(0, 1),
+                    )
+                )
+            except Exception:
+                log.write(RichText(f"  [error] {exc}", style="#ff4444"))
+            log.write(RichText("  hint: use /retry to run the last prompt again", style="#ff6666"))
         finally:
             self._busy = False
             self._run_worker = None
@@ -6609,4 +6619,12 @@ class CAIApp(App):
 # ---------------------------------------------------------------------------
 def run_tui(agent=None, initial_prompt: Optional[str] = None) -> None:
     """Launch the Matrix TUI (blocks until the user exits with ^q or /exit)."""
+    # Guarantee .env is loaded and LOCAL_* vars are propagated to OPENAI_* before
+    # the first agent request fires — even when the TUI is invoked directly without
+    # going through cli.py (which normally calls initialize_env() at import time).
+    try:
+        from cai.bootstrap import initialize_env
+        initialize_env()
+    except Exception:
+        pass
     CAIApp(agent=agent, initial_prompt=initial_prompt).run()
