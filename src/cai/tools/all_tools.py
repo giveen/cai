@@ -45,6 +45,7 @@ from cai.tools.reconnaissance.wget import wget
 from cai.tools.web.headers import web_request_framework
 from cai.tools.web.js_surface_mapper import js_surface_mapper
 from cai.tools.web.search_web import duckduckgo_web_search
+from cai.tools.web.sqlmap import sqlmap
 
 # ── Always-on tool list ───────────────────────────────────────────────────────
 ALL_TOOLS = [
@@ -77,6 +78,7 @@ ALL_TOOLS = [
     web_request_framework,
     js_surface_mapper,
     duckduckgo_web_search,
+    sqlmap,
     # Execution & scripting
     execute_python_code,
     scripting_tool,
