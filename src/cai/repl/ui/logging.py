@@ -10,6 +10,15 @@ from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.markup import escape as _escape
+from rich import box as _box
+
+# Map logical style names → (border colour, title markup colour)
+_STYLE_COLOURS = {
+    "yellow": ("bold yellow", "bold yellow"),
+    "cyan":   ("bold cyan",   "bold cyan"),
+    "green":  ("bold green",  "bold green"),
+    "red":    ("bold red",    "bold red"),
+}
 
 
 def render_tool_output(
@@ -73,11 +82,21 @@ def render_tool_output(
                 wrapped.append(ln)
         sanitized = "\n".join(wrapped)
 
-        # Render panel
-        c = Console()
+        border_style, title_colour = _STYLE_COLOURS.get(style, (f"bold {style}", f"bold {style}"))
         title = str(tool_name) if tool_name is not None else "tool"
         subtitle = str(agent_name) if agent_name is not None else ""
-        c.print(Panel(sanitized, title=title, subtitle=subtitle, style=style))
+        panel = Panel(
+            sanitized,
+            box=_box.HEAVY,
+            border_style=border_style,
+            title=f"[{title_colour}]{_escape(title)}[/{title_colour}]",
+            subtitle=f"[dim {style}]{_escape(subtitle)}[/dim {style}]" if subtitle else "",
+        )
+        try:
+            from cai.util import write_panel
+            write_panel(panel)
+        except Exception:
+            Console().print(panel)
     except Exception:
         try:
             print(output)

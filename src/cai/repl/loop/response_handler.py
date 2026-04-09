@@ -282,13 +282,29 @@ def run_single_response(
 
                                 try:
                                     agent_name = str(getattr(agent, "agent_name", getattr(agent, "name", "Agent")))
-                                    msg = f"🛠️  Running {fn_name}({fn_args_disp})..."
+                                    # Build a visually distinct tool-call announcement
+                                    fn_args_disp_safe = fn_args_disp.replace("[", "\\[")
+                                    body = (
+                                        f"[bold bright_yellow]⚡ {fn_name}[/bold bright_yellow]  "
+                                        f"[dim yellow]{fn_args_disp_safe}[/dim yellow]"
+                                    )
                                     try:
-                                        from cai.repl.ui.logging import render_tool_output
-
-                                        render_tool_output(fn_name or "tool", msg, agent_name=agent_name, style="yellow")
+                                        from rich.panel import Panel as _Panel
+                                        from rich import box as _box
+                                        from cai.util import write_panel
+                                        write_panel(_Panel(
+                                            body,
+                                            box=_box.HEAVY,
+                                            border_style="bold yellow",
+                                            title=f"[bold yellow]🛠  {agent_name}[/bold yellow]",
+                                            expand=False,
+                                        ))
                                     except Exception:
-                                        console.print(Panel(msg, title=agent_name, style="yellow"))
+                                        try:
+                                            from cai.repl.ui.logging import render_tool_output
+                                            render_tool_output(fn_name or "tool", f"🛠️  Running {fn_name}({fn_args_disp})...", agent_name=agent_name, style="yellow")
+                                        except Exception:
+                                            console.print(_Panel(f"🛠️  Running {fn_name}({fn_args_disp})...", title=agent_name, style="yellow"))
                                 except Exception:
                                     try:
                                         print(f"[tool] Running {fn_name}({fn_args_disp})...")
