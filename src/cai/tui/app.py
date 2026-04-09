@@ -2777,6 +2777,53 @@ class TerminalPanel(Widget):
             log.write(RichText("  [cancelled]", style="#ff6600"))
             self._write_system_message("progress", "run cancelled", style="#ffaa00")
         except Exception as exc:
+            # ContextCompactedError is a resumption signal, not a fatal error.
+            # The context window was auto-compacted; reload the agent and
+            # re-submit with a continuation prompt, exactly as the CLI does.
+            try:
+                from cai.sdk.agents.exceptions import ContextCompactedError as _CCE
+                _is_compact = isinstance(exc, _CCE)
+            except Exception:
+                _is_compact = "ContextCompactedError" in type(exc).__name__
+
+            if _is_compact:
+                try:
+                    run_status = "completed"
+                    self._write_system_message(
+                        "progress",
+                        "✓ Context window compacted — resuming task",
+                        style="#00cc88",
+                    )
+                    # Reload agent via AGENT_MANAGER in case it was refreshed.
+                    try:
+                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AM
+                        _reloaded = _AM.get_active_agent()
+                        if _reloaded is not None:
+                            self._agent = _reloaded
+                    except Exception:
+                        pass
+                    _continuation = (
+                        f"{self._last_prompt_text}\n\n"
+                        "IMPORTANT: Your context window was just compacted. "
+                        "Your session memory is already loaded above. "
+                        "Review the 'Exhausted Approaches' section in your memory and "
+                        "DO NOT repeat any technique, command, URL, port scan, or login "
+                        "attempt already listed there. "
+                        "Pick up exactly where you left off using only NEW approaches."
+                    )
+                    # Schedule a fresh run with the continuation prompt.
+                    self.call_after_refresh(
+                        lambda: self._run_worker.__class__  # keep linter happy
+                    )
+                    self._run_worker = self._run_agent(_continuation)
+                    return  # skip the error-state path below
+                except Exception as _retry_exc:
+                    # If the retry scheduling itself fails, fall through to
+                    # the generic error handler so the user is informed.
+                    import sys as _sys
+                    _sys.stderr.write(f"[cai-tui-debug] compact retry failed: {_retry_exc!r}\n")
+                    _sys.stderr.flush()
+
             run_status = "error"
             run_error = str(exc)
             try:
