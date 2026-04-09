@@ -20,6 +20,7 @@ from cai.tools.misc.rag_monitor import get_rag_status
 # ── Reasoning & memory ────────────────────────────────────────────────────────
 from cai.tools.misc.reasoning import read_key_findings, think, thought, write_key_findings
 from cai.tools.network.capture_traffic import capture_remote_traffic, remote_capture_session_tool
+from cai.tools.network.impacket import impacket_executor
 from cai.tools.others.scripting import scripting_tool
 from cai.tools.reconnaissance.blue_team_safe_command import blue_team_safe_command
 from cai.tools.reconnaissance.crypto_tools import decode64, decode_hex_bytes, strings_command
@@ -71,6 +72,7 @@ ALL_TOOLS = [
     run_ssh_command_with_credentials,
     capture_remote_traffic,
     remote_capture_session_tool,
+    impacket_executor,
     # Web
     web_request_framework,
     js_surface_mapper,
