@@ -38,6 +38,7 @@ dependencies = [
     "flask",
     "networkx",
     "PyPDF2",
+    "ddgs",
 ]
 classifiers = [
     "Typing :: Typed",
