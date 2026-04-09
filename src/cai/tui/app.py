@@ -1989,10 +1989,37 @@ class TerminalPanel(Widget):
         self._update_input_meta("")
 
     @on(TextArea.Changed)
-    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+    async def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if (event.text_area.id or "") != f"term-input-{self._term_id}":
             return
         text = str(getattr(event.text_area, "text", "") or "")
+
+        # ── Enter-key detection ───────────────────────────────────────────────
+        # In Textual 8+, TextArea._on_key intercepts ALL printable characters
+        # (including Enter) with event.stop() + event.prevent_default() so the
+        # key event NEVER bubbles to TerminalPanel.on_key.  For Enter it inserts
+        # '\n' into the document before stopping propagation.
+        #
+        # We detect the resulting document state: text ends with exactly one '\n'
+        # and has NO embedded '\n' (was single-line before the keypress) → that
+        # means a plain Enter was just pressed while in single-line mode → submit.
+        if (
+            not self._busy
+            and text.endswith("\n")
+            and "\n" not in text[:-1]       # no embedded newline → was single-line
+        ):
+            if text[:-1].strip():
+                # Non-empty content → submit via the normal path
+                # (_submit_from_input_widget strips the trailing \n via .strip())
+                await self._submit_from_input_widget()
+            else:
+                # Empty Enter press → discard the newline, keep input blank
+                self._set_input_text("")
+                self._resize_input_for_text("")
+                self._update_input_meta("")
+            return
+
+        # Normal change: resize the input to fit the content and update metadata
         self._resize_input_for_text(text)
         self._update_input_meta(text)
         try:
@@ -2037,16 +2064,11 @@ class TerminalPanel(Widget):
             return
 
         if key == "enter":
-            # Textual's TextArea binding fires action_handle_newline (inserts \n)
-            # BEFORE this on_key handler receives the event via bubbling.  That
-            # means `text` already has a trailing '\n' for single-line inputs.
-            # Strip trailing newlines before the single-line guard so the check
-            # still works: if the stripped text contains no embedded newline the
-            # user was in single-line mode and wants to submit.
+            # Safety net: in Textual 8+ this branch is unreachable because
+            # TextArea._on_key consumes Enter with event.stop() before it bubbles.
+            # Kept for forward-compatibility if Textual changes this behaviour.
             effective_text = text.rstrip("\n")
-            if "\n" not in effective_text:
-                # Undo the newline TextArea just inserted so the input widget
-                # is clean when _submit_from_input_widget reads it.
+            if "\n" not in effective_text and effective_text.strip():
                 if text != effective_text:
                     self._set_input_text(effective_text)
                 event.prevent_default()
