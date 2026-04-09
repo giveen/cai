@@ -636,16 +636,52 @@ def cli_print_agent_messages(agent_name: str, messages: list | None = None, *arg
         if not filtered:
             return
 
-        # Print a short header then each message content
-        console.print(f"[agent]{agent_name}[/agent] {len(filtered)} messages")
-        for m, content in filtered:
-            try:
-                console.print(content)
-            except Exception:
+        # Render messages. For single-message turns render the content in a
+        # dedicated analysis Panel; for multiple messages render each non-empty
+        # message in its own Panel. Skip empty contents (common when tools are
+        # used without accompanying assistant text).
+        try:
+            from cai.repl.ui.renderers import display_agent_analysis
+
+            if len(filtered) == 1:
+                m, content = filtered[0]
+                if content and str(content).strip():
+                    try:
+                        display_agent_analysis(content, agent_name)
+                    except Exception:
+                        console.print(content)
+                # if content empty, skip rendering entirely
+                return
+
+            # Multiple messages: print a small header then render each non-empty
+            # message as a Panel to maintain readability.
+            console.print(f"[agent]{agent_name}[/agent] {len(filtered)} messages")
+            for m, content in filtered:
                 try:
-                    console.print(str(m))
+                    if content and str(content).strip():
+                        try:
+                            display_agent_analysis(content, agent_name)
+                        except Exception:
+                            console.print(content)
+                    else:
+                        # Skip empty assistant/tool-only messages
+                        continue
                 except Exception:
-                    pass
+                    try:
+                        console.print(str(m))
+                    except Exception:
+                        pass
+        except Exception:
+            # Fallback: simple printing when the renderer isn't available
+            console.print(f"[agent]{agent_name}[/agent] {len(filtered)} messages")
+            for m, content in filtered:
+                try:
+                    console.print(content)
+                except Exception:
+                    try:
+                        console.print(str(m))
+                    except Exception:
+                        pass
     except Exception:
         pass
 

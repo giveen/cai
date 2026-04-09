@@ -301,9 +301,19 @@ def maybe_auto_compact(
             if _llm_call_count > 0:
                 _calls_until = max(0, _support_interval - _llm_call_count)
                 if _calls_until > 0:
-                    console.print(
-                        f"[dim cyan]  ↻ auto-compact in {_calls_until} LLM response(s) [{_llm_call_count}/{_support_interval}][/dim cyan]"
-                    )
+                    # Print compact metadata subtly (dim + italic) so it doesn't
+                    # compete with the agent's final response box.
+                    try:
+                        console.print(
+                            f"[dim italic cyan]  ↻ auto-compact in {_calls_until} LLM response(s) [{_llm_call_count}/{_support_interval}][/dim italic cyan]"
+                        )
+                    except Exception:
+                        try:
+                            console.print(
+                                f"↻ auto-compact in {_calls_until} LLM response(s) [{_llm_call_count}/{_support_interval}]"
+                            )
+                        except Exception:
+                            pass
                 if _llm_call_count >= _support_interval:
                     from cai.repl.commands.compact import COMPACT_COMMAND_INSTANCE
 
