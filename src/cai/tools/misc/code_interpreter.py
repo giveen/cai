@@ -29,20 +29,39 @@ def execute_python_code(code: str) -> str:
     def _safe_import(name, globals_=None, locals_=None, fromlist=(), level=0):
         """Restricted __import__ implementation allowing only approved modules."""
         allowed = {
-            "math",
-            "json",
-            "datetime",
-            "statistics",
-            "itertools",
-            "functools",
-            "random",
-            "re",
-            "textwrap",
-            "heapq",
-            "collections",
+            # Data / computation
+            "math", "statistics", "random", "decimal", "fractions",
+            # Text / encoding
+            "re", "textwrap", "string", "unicodedata",
+            "base64", "binascii", "quopri", "uu",
+            "hashlib", "hmac",
+            # Data structures / algorithms
+            "json", "csv", "io", "struct", "array",
+            "itertools", "functools", "operator",
+            "heapq", "bisect", "collections", "copy",
+            # Date / time
+            "datetime", "calendar", "time",
+            # File / path (read-only helpers, no open() in builtins)
+            "os.path", "pathlib", "fnmatch", "glob",
+            # Networking (agents often need urllib for CTF/recon tasks)
+            "urllib", "urllib.request", "urllib.parse", "urllib.error",
+            "http", "http.client", "http.cookiejar",
+            "socket", "ssl",
+            # System / subprocess
+            "os", "sys", "subprocess", "shlex", "shutil",
+            # Serialisation
+            "pickle", "shelve", "configparser",
+            "xml", "xml.etree", "xml.etree.ElementTree",
+            "html", "html.parser",
+            # Misc stdlib
+            "typing", "abc", "enum", "dataclasses",
+            "contextlib", "warnings", "logging",
+            "pprint", "traceback", "inspect",
+            # Crypto/security utils useful in pentesting
+            "secrets",
         }
         base = name.split(".")[0]
-        if base in allowed:
+        if base in allowed or name in allowed:
             return __import__(name, globals_ or globals(), locals_ or locals(), fromlist, level)
         raise ImportError(f"module {name} is not allowed in restricted execution environment")
 
@@ -51,30 +70,68 @@ def execute_python_code(code: str) -> str:
         "all": all,
         "any": any,
         "bool": bool,
+        "bytes": bytes,
+        "bytearray": bytearray,
         "chr": chr,
         "dict": dict,
+        "dir": dir,
         "enumerate": enumerate,
         "filter": filter,
         "float": float,
+        "format": format,
+        "frozenset": frozenset,
+        "getattr": getattr,
+        "hasattr": hasattr,
+        "hash": hash,
+        "hex": hex,
         "int": int,
+        "isinstance": isinstance,
+        "issubclass": issubclass,
+        "iter": iter,
         "len": len,
         "list": list,
         "map": map,
         "max": max,
+        "memoryview": memoryview,
         "min": min,
         "next": next,
+        "oct": oct,
+        "open": open,
+        "ord": ord,
         "pow": pow,
         "print": print,
+        "property": property,
         "range": range,
         "repr": repr,
+        "reversed": reversed,
         "round": round,
         "set": set,
+        "setattr": setattr,
         "slice": slice,
         "sorted": sorted,
+        "staticmethod": staticmethod,
         "str": str,
         "sum": sum,
+        "super": super,
         "tuple": tuple,
+        "type": type,
+        "vars": vars,
         "zip": zip,
+        "Exception": Exception,
+        "ValueError": ValueError,
+        "TypeError": TypeError,
+        "KeyError": KeyError,
+        "IndexError": IndexError,
+        "AttributeError": AttributeError,
+        "ImportError": ImportError,
+        "OSError": OSError,
+        "IOError": IOError,
+        "RuntimeError": RuntimeError,
+        "StopIteration": StopIteration,
+        "NotImplementedError": NotImplementedError,
+        "True": True,
+        "False": False,
+        "None": None,
     }
 
     # Provide a restricted __import__ so user code can `import` a small safe
