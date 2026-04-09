@@ -3241,12 +3241,13 @@ class OpenAIChatCompletionsModel(Model):
                 f"Using OLLAMA: {self.is_ollama}\n"
             )
 
-        # Default store to True if not explicitly set (tests expect store present)
-        store = (
-            True
-            if model_settings.store is None
-            else self._non_null_or_not_given(model_settings.store)
-        )
+        # Only include `store` when explicitly configured on the model settings.
+        # Previously we defaulted to True which caused local proxies to attempt
+        # DB writes (and fail if no DB was configured). To avoid surprising
+        # behavior, omit `store` by default and only send it when set.
+        store = None
+        if model_settings.store is not None:
+            store = self._non_null_or_not_given(model_settings.store)
 
         # Check if we should use the agent's model instead of self.model
         # This prioritizes the model from Agent when available
@@ -3270,9 +3271,12 @@ class OpenAIChatCompletionsModel(Model):
             "parallel_tool_calls": parallel_tool_calls,
             "stream": stream,
             "stream_options": {"include_usage": True} if stream else NOT_GIVEN,
-            "store": store,
             "extra_headers": _HEADERS,
         }
+
+        # Add store only when explicitly configured
+        if store is not None:
+            kwargs["store"] = store
 
         # Determine provider based on model string
         model_str = str(kwargs["model"]).lower()
