@@ -2585,6 +2585,20 @@ class TerminalPanel(Widget):
             except Exception:
                 pass
 
+            # Suppress CAI_STREAM and CAI_STREAM_DEBUG while the TUI worker
+            # runs so the underlying model driver doesn't try to render its
+            # own Rich streaming panel (which would bleed into the RichLog).
+            # The TUI renders the final message via message_output_created /
+            # _render_agent_message — it does not need nor want the raw delta
+            # debug lines that stream_debug produces.
+            _prev_cai_stream = os.environ.get("CAI_STREAM")
+            _prev_cai_stream_debug = os.environ.get("CAI_STREAM_DEBUG")
+            try:
+                os.environ["CAI_STREAM"] = "false"
+                os.environ["CAI_STREAM_DEBUG"] = "0"
+            except Exception:
+                pass
+
             result = Runner.run_streamed(self._agent, text)
             stream_iter = result.stream_events()
 
@@ -2596,19 +2610,9 @@ class TerminalPanel(Widget):
             except Exception:
                 pass
 
-            # Evaluate once outside the hot event loop.
-            try:
-                stream_debug = (
-                    os.getenv("CAI_STREAM_DEBUG", "").lower() in ("1", "true", "yes")
-                    or os.getenv("CAI_DEBUG", "") == "2"
-                )
-            except Exception:
-                stream_debug = False
-            # Line-buffered accumulator: RichLog.write() always appends a new
-            # row, so writing one token at a time produces one word per line.
-            # Accumulate deltas and only flush on newline boundaries so the
-            # live output looks like normal wrapped text instead of a vertical
-            # word-per-line column.
+            # stream_debug is always False in the TUI — the TUI renders the
+            # final agent reply via _render_agent_message (message_output_created).
+            stream_debug = False
             _stream_line_buf: str = ""
 
             async for event in stream_iter:
@@ -2808,7 +2812,19 @@ class TerminalPanel(Widget):
         finally:
             self._busy = False
             self._run_worker = None
-            # Flush any partial line left in the streaming buffer
+            # Restore CAI_STREAM / CAI_STREAM_DEBUG to their original values.
+            try:
+                if _prev_cai_stream is None:
+                    os.environ.pop("CAI_STREAM", None)
+                else:
+                    os.environ["CAI_STREAM"] = _prev_cai_stream
+                if _prev_cai_stream_debug is None:
+                    os.environ.pop("CAI_STREAM_DEBUG", None)
+                else:
+                    os.environ["CAI_STREAM_DEBUG"] = _prev_cai_stream_debug
+            except Exception:
+                pass
+            # Flush any partial line left in the streaming buffer (no-op when stream_debug=False)
             try:
                 if stream_debug and _stream_line_buf.strip():
                     log.write(RichText(
