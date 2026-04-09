@@ -663,7 +663,58 @@ def start_tool_streaming(*args, **_kwargs) -> None:
     }
 
 
-def update_tool_streaming(call_id: str, chunk: str) -> None:
+def update_tool_streaming(*args, **_kwargs) -> None:
+    """
+    Update a tool streaming session's current output.
+
+    Supports multiple calling conventions for backward compatibility:
+      - New: update_tool_streaming(call_id, chunk)
+      - Legacy: update_tool_streaming(tool_name, tool_args, content, call_id, token_info)
+      - Keyword: update_tool_streaming(call_id="...", chunk="...")
+    """
+    call_id = None
+    chunk = None
+
+    # Prefer explicit keyword argument for call_id
+    if "call_id" in _kwargs and isinstance(_kwargs["call_id"], str):
+        call_id = _kwargs["call_id"]
+        chunk = _kwargs.get("chunk") or _kwargs.get("content") or _kwargs.get("current_output")
+
+    # Positional handling
+    if call_id is None and args:
+        # Legacy positional form: tool_name, tool_args, content, call_id, token_info
+        if len(args) >= 4 and isinstance(args[3], str):
+            call_id = args[3]
+            # content is the 3rd positional arg
+            if len(args) >= 3:
+                chunk = args[2]
+        # New positional form: call_id, chunk [, ...]
+        elif len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
+            a0 = args[0]
+            a1 = args[1]
+            # Heuristic: if first arg looks like an id (contains '-' and is reasonably long)
+            if "-" in a0 and len(a0) > 8:
+                call_id = a0
+                chunk = a1
+            # If second arg looks like an id, swap
+            elif "-" in a1 and len(a1) > 8:
+                call_id = a1
+                chunk = a0
+            else:
+                # Default to (call_id, chunk)
+                call_id = a0
+                chunk = a1
+        # Single-argument form where only call_id is provided
+        elif len(args) == 1 and isinstance(args[0], str):
+            call_id = args[0]
+
+    if not call_id:
+        return
+
+    # Fallbacks for chunk if still None
+    if chunk is None:
+        chunk = _kwargs.get("content") or _kwargs.get("current_output") or _kwargs.get("chunk") or ""
+
     s = _STREAMING_SESSIONS.get(call_id)
     if s is not None:
         s["current_output"] = s.get("current_output", "") + str(chunk)
