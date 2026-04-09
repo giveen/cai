@@ -2596,6 +2596,21 @@ class TerminalPanel(Widget):
             except Exception:
                 pass
 
+            # Evaluate once outside the hot event loop.
+            try:
+                stream_debug = (
+                    os.getenv("CAI_STREAM_DEBUG", "").lower() in ("1", "true", "yes")
+                    or os.getenv("CAI_DEBUG", "") == "2"
+                )
+            except Exception:
+                stream_debug = False
+            # Line-buffered accumulator: RichLog.write() always appends a new
+            # row, so writing one token at a time produces one word per line.
+            # Accumulate deltas and only flush on newline boundaries so the
+            # live output looks like normal wrapped text instead of a vertical
+            # word-per-line column.
+            _stream_line_buf: str = ""
+
             async for event in stream_iter:
                 try:
                     logger.debug("received stream event type=%s", type(event).__name__)
@@ -2618,27 +2633,21 @@ class TerminalPanel(Widget):
                     if delta:
                         streamed_chars += len(delta)
                         self._set_status(f"T{self._term_id}> ⟳ Streaming… {streamed_chars} chars")
-                        # If debug streaming is enabled, also write deltas to the UI log so
-                        # users can see incremental model output while diagnosing streaming.
-                        try:
-                            stream_debug = (
-                                os.getenv("CAI_STREAM_DEBUG", "").lower() in ("1", "true", "yes")
-                                or os.getenv("CAI_DEBUG", "") == "2"
-                            )
-                        except Exception:
-                            stream_debug = False
-
                         if stream_debug:
-                            try:
-                                # Prefix to make debug deltas obvious in the log
-                                prefix = f"[stream:{self._term_id}] "
-                                # Write the raw delta as a RichText fragment to the terminal log
-                                try:
-                                    log.write(RichText(prefix + str(delta), style="#3399ff"))
-                                except Exception:
-                                    log.write(RichText(prefix + str(delta)))
-                            except Exception:
-                                pass
+                            # Accumulate into line buffer; flush only on newlines
+                            # so each log.write() renders a complete line of text
+                            # rather than a single token.
+                            _stream_line_buf += str(delta)
+                            while "\n" in _stream_line_buf:
+                                line, _stream_line_buf = _stream_line_buf.split("\n", 1)
+                                if line:  # skip blank splits
+                                    try:
+                                        log.write(RichText(
+                                            f"[stream:{self._term_id}] {line}",
+                                            style="#3399ff",
+                                        ))
+                                    except Exception:
+                                        pass
                     continue
 
                 if not isinstance(event, RunItemStreamEvent):
@@ -2799,6 +2808,15 @@ class TerminalPanel(Widget):
         finally:
             self._busy = False
             self._run_worker = None
+            # Flush any partial line left in the streaming buffer
+            try:
+                if stream_debug and _stream_line_buf.strip():
+                    log.write(RichText(
+                        f"[stream:{self._term_id}] {_stream_line_buf}",
+                        style="#3399ff",
+                    ))
+            except Exception:
+                pass
             if stream_iter is not None:
                 try:
                     await cast(Any, stream_iter).aclose()
