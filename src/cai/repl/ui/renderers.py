@@ -39,21 +39,23 @@ def display_agent_analysis(
 
     try:
         md = Markdown(text)
-        c = Console()
         subtitle = f"[dim cyan]{agent_name}[/dim cyan]" if agent_name else ""
         logger.debug(
             "display_agent_analysis: rendering panel agent_name=%r title=%r len=%d",
             agent_name, title, len(text),
         )
-        c.print(
-            Panel(
-                md,
-                box=box.ROUNDED,
-                border_style="bold cyan",
-                title=f"[bold cyan]{title}[/bold cyan]",
-                subtitle=subtitle,
-            )
+        panel = Panel(
+            md,
+            box=box.ROUNDED,
+            border_style="bold cyan",
+            title=f"[bold cyan]{title}[/bold cyan]",
+            subtitle=subtitle,
         )
+        try:
+            from cai.util import write_panel
+            write_panel(panel)
+        except Exception:
+            Console().print(panel)
     except Exception as _exc:
         logger.debug("display_agent_analysis: Panel render failed (%s), falling back to plain text", _exc)
         try:

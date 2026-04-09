@@ -38,6 +38,37 @@ console = Console(theme=theme)
 # of stdout.  When None, callers fall back to plain console.print().
 _progress_writer: Optional[Callable[[str, Optional[str]], None]] = None
 
+# The TUI sets this to a callable(renderable: Any) so that Rich Panels
+# (e.g. the "Intelligence Panel" from display_agent_analysis) are written
+# to the RichLog widget instead of stdout.  When None, callers fall back
+# to Console().print(renderable).
+_panel_writer: Optional[Callable[[Any], None]] = None
+
+
+def set_panel_writer(writer: Optional[Callable[[Any], None]]) -> None:
+    """Register (or clear) a global Rich-renderable panel writer.
+
+    The callable receives a single ``renderable`` argument (any Rich
+    ``RenderableType``).  Pass ``None`` to restore the default console output.
+    """
+    global _panel_writer
+    _panel_writer = writer
+
+
+def write_panel(renderable: Any) -> None:
+    """Write a Rich renderable via the registered panel writer or fallback console."""
+    global _panel_writer
+    if _panel_writer is not None:
+        try:
+            _panel_writer(renderable)
+        except Exception:
+            pass
+    else:
+        try:
+            console.print(renderable)
+        except Exception:
+            pass
+
 
 def set_progress_writer(writer: Optional[Callable[[str, Optional[str]], None]]) -> None:
     """Register (or clear) a global progress message writer.
@@ -1136,6 +1167,8 @@ __all__ = [
     "color",
     "set_progress_writer",
     "write_progress",
+    "set_panel_writer",
+    "write_panel",
     "COST_TRACKER",
     "calculate_model_cost",
     "start_active_timer",

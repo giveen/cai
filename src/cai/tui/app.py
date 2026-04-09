@@ -2622,6 +2622,21 @@ class TerminalPanel(Widget):
             except Exception:
                 pass
 
+            # Register a TUI-aware panel writer so that Rich Panels (e.g. the
+            # "Intelligence Panel" from display_agent_analysis) are written to
+            # the RichLog widget instead of stdout.
+            def _tui_panel_writer(renderable: Any) -> None:
+                try:
+                    log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+                    log.write(renderable)
+                except Exception:
+                    pass
+            try:
+                from cai.util import set_panel_writer
+                set_panel_writer(_tui_panel_writer)
+            except Exception:
+                pass
+
             try:
                 import sys as _sys
                 _sys.stderr.write(f"[cai-tui-debug] stream iterator obtained term={self._term_id}\n")
@@ -2916,6 +2931,12 @@ class TerminalPanel(Widget):
             try:
                 from cai.util import set_progress_writer
                 set_progress_writer(None)
+            except Exception:
+                pass
+            # Unregister the TUI panel writer so CLI mode gets its console back.
+            try:
+                from cai.util import set_panel_writer
+                set_panel_writer(None)
             except Exception:
                 pass
             # Restore CAI_STREAM / CAI_STREAM_DEBUG to their original values.
