@@ -12,6 +12,9 @@ from typing import Dict, List
 import requests
 from dotenv import load_dotenv
 
+from cai.agents.guardrails import sanitize_external_content
+from cai.sdk.agents import function_tool
+
 
 def google_search(query: str, num_results: int = 10) -> str:
     """
@@ -138,3 +141,24 @@ def _perform_search(
                 )
 
     return results
+
+
+@function_tool
+def make_google_search(query: str, dorks: bool = False) -> str:
+    """Search Google for information. Set dorks=True to use advanced Google dork operators.
+
+    Args:
+        query: The search query or dork expression.
+        dorks: Whether to use Google dork operators (site:, filetype:, inurl:, etc.).
+
+    Returns:
+        A formatted string of URLs, titles, and snippets.
+    """
+    if dorks:
+        result = google_dork_search(query)
+    else:
+        result = google_search(query)
+
+    if isinstance(result, str):
+        return sanitize_external_content(result)
+    return result

@@ -43,6 +43,7 @@ from cai.tools.reconnaissance.wget import wget
 # ── Web ───────────────────────────────────────────────────────────────────────
 from cai.tools.web.headers import web_request_framework
 from cai.tools.web.js_surface_mapper import js_surface_mapper
+from cai.tools.web.search_web import duckduckgo_web_search
 
 # ── Always-on tool list ───────────────────────────────────────────────────────
 ALL_TOOLS = [
@@ -73,6 +74,7 @@ ALL_TOOLS = [
     # Web
     web_request_framework,
     js_surface_mapper,
+    duckduckgo_web_search,
     # Execution & scripting
     execute_python_code,
     scripting_tool,
@@ -95,14 +97,6 @@ if os.getenv("SHODAN_API_KEY"):
     ALL_TOOLS.extend([shodan_search, shodan_host_info])
 
 if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_CX"):
-    from cai.tools.web.search_web import make_google_search  # noqa: E402
+    from cai.tools.web.google_search import make_google_search  # noqa: E402
 
     ALL_TOOLS.append(make_google_search)
-
-if os.getenv("PERPLEXITY_API_KEY"):
-    from cai.tools.web.search_web import (  # noqa: E402
-        make_web_search_with_explanation,
-        query_perplexity,
-    )
-
-    ALL_TOOLS.extend([make_web_search_with_explanation, query_perplexity])

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 from cai.agents.guardrails import sanitize_external_content
 from cai.sdk.agents import function_tool
