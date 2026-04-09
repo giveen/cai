@@ -9,6 +9,7 @@ and normal runs.
 from __future__ import annotations
 
 import logging
+import os
 
 try:
     from dotenv import load_dotenv
@@ -31,6 +32,27 @@ def initialize_env() -> None:
         except Exception:
             # Best-effort: don't fail startup if .env can't be loaded
             pass
+    # Propagate LOCAL_* environment variables to OPENAI_* when not explicitly set.
+    # This makes a developer-friendly default so a local LiteLLM/OpenAI-compatible
+    # proxy (configured via LOCAL_API_BASE / LOCAL_API_KEY) is used without
+    # requiring duplicates of those vars as OPENAI_API_BASE / OPENAI_API_KEY.
+    try:
+        local_api_base = os.getenv("LOCAL_API_BASE", "").strip()
+        local_api_key = os.getenv("LOCAL_API_KEY", "").strip()
+        if local_api_base and not os.getenv("OPENAI_API_BASE"):
+            os.environ["OPENAI_API_BASE"] = local_api_base
+            logging.getLogger(__name__).debug(
+                "Propagated LOCAL_API_BASE to OPENAI_API_BASE"
+            )
+        if local_api_key and not os.getenv("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = local_api_key
+            logging.getLogger(__name__).debug(
+                "Propagated LOCAL_API_KEY to OPENAI_API_KEY"
+            )
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "Failed to propagate LOCAL_* to OPENAI_*", exc_info=True
+        )
     # Delegate warnings and logging filter installation to their modules.
     try:
         install_warning_handler()
