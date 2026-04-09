@@ -744,7 +744,49 @@ __all__ = [
     "maybe_auto_compact",
     "start_cli_loop",
     "create_last_log_symlink",
+    "cleanup_screenshots",
 ]
+
+# Turn counter used to throttle screenshot GC (every N turns)
+_screenshot_gc_turn_counter: int = 0
+_SCREENSHOT_GC_EVERY_N_TURNS: int = 10
+
+
+def cleanup_screenshots(max_age_hours: int = 24, keep_last_n: int = 50) -> None:
+    """Remove old screenshots from ``logs/screenshots/``.
+
+    Keeps the newest ``keep_last_n`` files and deletes any that are older
+    than ``max_age_hours``.  Both limits are applied independently; a file
+    is deleted if *either* condition is satisfied.
+
+    The function is a no-op when the directory does not exist.
+    """
+    try:
+        import glob as _glob
+
+        max_age_hours = max(1, int(os.getenv("CAI_SCREENSHOT_MAX_AGE_HOURS", str(max_age_hours))))
+        keep_last_n = max(1, int(os.getenv("CAI_SCREENSHOT_KEEP_N", str(keep_last_n))))
+
+        screenshots_dir = os.path.join("logs", "screenshots")
+        if not os.path.isdir(screenshots_dir):
+            return
+
+        pattern = os.path.join(screenshots_dir, "*.png")
+        files = sorted(_glob.glob(pattern), key=os.path.getmtime)
+
+        cutoff = time.time() - max_age_hours * 3600
+        # Files to keep: the newest keep_last_n
+        keep_set = set(files[-keep_last_n:]) if keep_last_n < len(files) else set(files)
+
+        for fpath in files:
+            if fpath in keep_set and os.path.getmtime(fpath) >= cutoff:
+                continue
+            try:
+                os.remove(fpath)
+            except OSError:
+                pass
+    except Exception:
+        pass
 
 
 def handle_post_turn(
@@ -763,6 +805,8 @@ def handle_post_turn(
     This centralizes message-list sanitization and auto-compact handling.
     Returns a tuple: (agent, post_compact_input, skip_auto_compact_after_interrupt).
     """
+    global _screenshot_gc_turn_counter
+
     try:
         if hasattr(agent, "model") and hasattr(agent.model, "message_history"):
             try:
@@ -785,6 +829,14 @@ def handle_post_turn(
     except Exception:
         # Swallow to avoid breaking the main loop on orchestration errors
         pass
+
+    # Throttled screenshot GC — runs every _SCREENSHOT_GC_EVERY_N_TURNS turns
+    _screenshot_gc_turn_counter += 1
+    if _screenshot_gc_turn_counter % _SCREENSHOT_GC_EVERY_N_TURNS == 0:
+        try:
+            cleanup_screenshots()
+        except Exception:
+            pass
 
     return agent, post_compact_input, skip_auto_compact_after_interrupt
 

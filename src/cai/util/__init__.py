@@ -125,6 +125,33 @@ def write_progress(msg: str, style: Optional[str] = None) -> None:
             pass
 
 
+# -------------------- Screenshot writer (TUI BrowserPreview) --------------------
+# The TUI sets this to a callable(path: str) so that browser screenshots are
+# routed to the BrowserPreview widget instead of being silently ignored.
+# When None the notification is a no-op.
+_screenshot_writer: Optional[Callable[[str], None]] = None
+
+
+def set_screenshot_writer(writer: Optional[Callable[[str], None]]) -> None:
+    """Register (or clear) a global screenshot path notifier.
+
+    The callable receives the absolute path to the latest screenshot PNG.
+    Pass ``None`` to deregister.
+    """
+    global _screenshot_writer
+    _screenshot_writer = writer
+
+
+def notify_screenshot(path: str) -> None:
+    """Notify the registered screenshot writer of a new screenshot path."""
+    global _screenshot_writer
+    if _screenshot_writer is not None:
+        try:
+            _screenshot_writer(path)
+        except Exception:
+            pass
+
+
 # -------------------- Timers (active / idle) --------------------
 _active_timer_start: Optional[float] = None
 _active_time_total: float = 0.0
@@ -1198,6 +1225,8 @@ __all__ = [
     "write_panel",
     "set_tool_loading_writer",
     "notify_tool_loading",
+    "set_screenshot_writer",
+    "notify_screenshot",
     "COST_TRACKER",
     "calculate_model_cost",
     "start_active_timer",

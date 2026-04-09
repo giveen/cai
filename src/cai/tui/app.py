@@ -29,6 +29,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text as RichText
 from textual import events, on, work
+from textual.reactive import reactive
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
@@ -889,6 +890,29 @@ _CSS += """
     height: 3;
     layout: horizontal;
     border-top: solid #003300;
+    background: #000000;
+}
+"""
+
+# Browser preview panel CSS (appended separately for clarity)
+_CSS += """
+BrowserPreview {
+    height: 0;
+    display: none;
+    background: #000000;
+    border: bold magenta;
+    layout: vertical;
+    padding: 0 1;
+}
+
+BrowserPreview.-visible {
+    display: block;
+    height: 22;
+}
+
+#browser-preview-content {
+    height: 1fr;
+    color: #ff77ff;
     background: #000000;
 }
 """
@@ -3038,6 +3062,76 @@ class TerminalPanel(Widget):
 
 
 # ---------------------------------------------------------------------------
+# Browser preview widget
+# ---------------------------------------------------------------------------
+class BrowserPreview(Widget):
+    """Displays the most recent browser screenshot path and optional VLM sitrep.
+
+    Becomes visible (adds ``-visible`` CSS class) when a screenshot is
+    delivered via :func:`set_screenshot`.  Uses ``textual-image`` for inline
+    rendering when the library is available; falls back to a styled text panel.
+    """
+
+    screenshot_path: reactive[str] = reactive("")
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="browser-preview-content")
+
+    def watch_screenshot_path(self, path: str) -> None:
+        """React to a new screenshot path: update content and show the panel."""
+        if not path:
+            self.remove_class("-visible")
+            return
+
+        self.add_class("-visible")
+
+        try:
+            content_widget = self.query_one("#browser-preview-content", Static)
+        except Exception:
+            return
+
+        # Try textual-image first for rich inline display
+        try:
+            from textual_image.widget import Image as TerminalImage  # type: ignore
+
+            # Replace the Static placeholder with a TerminalImage on first use;
+            # subsequent calls update its path attribute.
+            existing = None
+            try:
+                existing = self.query_one("TerminalImage")
+            except Exception:
+                pass
+
+            if existing is None:
+                content_widget.display = False
+                self.mount(TerminalImage(path))
+            else:
+                try:
+                    existing.path = path  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            return
+        except ImportError:
+            pass
+
+        # Fallback: show the path + instruction in a styled Static
+        fname = path.split("/")[-1] if "/" in path else path
+        content_widget.update(
+            f"[bold magenta]Browser Screenshot[/bold magenta]\n"
+            f"[#ff77ff]{fname}[/#ff77ff]\n"
+            f"[dim #aa55aa]{path}[/dim #aa55aa]\n\n"
+            "[dim]Install textual-image for inline preview (pip install textual-image)[/dim]"
+        )
+
+    def set_screenshot(self, path: str) -> None:
+        """Thread-safe entry point called by the screenshot writer closure."""
+        self.app.call_from_thread(self._set_screenshot_path, path)
+
+    def _set_screenshot_path(self, path: str) -> None:
+        self.screenshot_path = path
+
+
+# ---------------------------------------------------------------------------
 # Custom header widget
 # ---------------------------------------------------------------------------
 class CaiHeader(Widget):
@@ -4343,6 +4437,7 @@ class CAIApp(App):
                     with Vertical(id="terminals"):
                         with Horizontal(id="term-row-top", classes="term-row"):
                             pass  # first panel added in on_mount
+                    yield BrowserPreview(id="browser-preview")
                 with TabPane("Agents", id="tab-agents"):
                     with Vertical(id="agents-pane"):
                         with ScrollableContainer(id="agents-scroll"):
@@ -4499,11 +4594,26 @@ class CAIApp(App):
         except Exception:
             pass
 
+        # Wire the global screenshot notifier to the BrowserPreview widget
+        try:
+            from cai.util import set_screenshot_writer
+            browser_preview = self.query_one("#browser-preview", BrowserPreview)
+            set_screenshot_writer(browser_preview.set_screenshot)
+        except Exception:
+            pass
+
         if self._initial_prompt:
             await first.dispatch(self._initial_prompt)
 
     def on_resize(self, event: events.Resize) -> None:
         self._apply_responsive_layout(int(event.size.width), int(event.size.height))
+
+    def on_unmount(self) -> None:
+        try:
+            from cai.util import set_screenshot_writer
+            set_screenshot_writer(None)
+        except Exception:
+            pass
 
     def _build_tool_registry(self) -> dict[str, dict]:
         """Build TUI tool registry from built-ins plus active terminal agent tools."""
