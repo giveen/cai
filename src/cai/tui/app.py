@@ -2554,6 +2554,27 @@ class TerminalPanel(Widget):
                     if delta:
                         streamed_chars += len(delta)
                         self._set_status(f"T{self._term_id}> ⟳ Streaming… {streamed_chars} chars")
+                        # If debug streaming is enabled, also write deltas to the UI log so
+                        # users can see incremental model output while diagnosing streaming.
+                        try:
+                            stream_debug = (
+                                os.getenv("CAI_STREAM_DEBUG", "").lower() in ("1", "true", "yes")
+                                or os.getenv("CAI_DEBUG", "") == "2"
+                            )
+                        except Exception:
+                            stream_debug = False
+
+                        if stream_debug:
+                            try:
+                                # Prefix to make debug deltas obvious in the log
+                                prefix = f"[stream:{self._term_id}] "
+                                # Write the raw delta as a RichText fragment to the terminal log
+                                try:
+                                    log.write(RichText(prefix + str(delta), style="#3399ff"))
+                                except Exception:
+                                    log.write(RichText(prefix + str(delta)))
+                            except Exception:
+                                pass
                     continue
 
                 if not isinstance(event, RunItemStreamEvent):
