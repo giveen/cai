@@ -3430,6 +3430,19 @@ class OpenAIChatCompletionsModel(Model):
                 if hasattr(model_settings, "reasoning_effort"):
                     kwargs["reasoning_effort"] = model_settings.reasoning_effort
 
+        # Fallback: if no api_base has been set yet and LOCAL_API_BASE is configured,
+        # use it so that a LiteLLM proxy serving any custom model name (e.g. "reasoner",
+        # "support") is reachable without requiring provider-prefix routing.
+        if "api_base" not in kwargs:
+            local_api_base = os.getenv("LOCAL_API_BASE", "").strip()
+            local_api_key = os.getenv("LOCAL_API_KEY", "").strip()
+            if local_api_base:
+                kwargs["api_base"] = local_api_base
+                kwargs["custom_llm_provider"] = "openai"
+                if local_api_key:
+                    kwargs["api_key"] = local_api_key
+                litellm.drop_params = True
+
         # Filter out NotGiven/None/empty-string values to avoid JSON serialization issues
         filtered_kwargs = {}
         for key, value in kwargs.items():

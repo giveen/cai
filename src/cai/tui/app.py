@@ -2506,6 +2506,13 @@ class TerminalPanel(Widget):
 
         # Temporary debug tracing for stream event diagnosis
         try:
+            import sys as _sys
+            _sys.stderr.write(
+                f"[cai-tui-debug] _run_agent start: term={self._term_id} "
+                f"agent={self._agent_name} model={self._model_name} "
+                f"text_len={len(str(text or ''))}\n"
+            )
+            _sys.stderr.flush()
             logger.debug(
                 "_run_agent start: term=%s agent=%s model=%s text_len=%d",
                 self._term_id,
@@ -2523,6 +2530,9 @@ class TerminalPanel(Widget):
             pass
         try:
             try:
+                import sys as _sys
+                _sys.stderr.write(f"[cai-tui-debug] calling Runner.run_streamed term={self._term_id}\n")
+                _sys.stderr.flush()
                 logger.debug("calling Runner.run_streamed for term=%s", self._term_id)
             except Exception:
                 pass
@@ -2531,6 +2541,9 @@ class TerminalPanel(Widget):
             stream_iter = result.stream_events()
 
             try:
+                import sys as _sys
+                _sys.stderr.write(f"[cai-tui-debug] stream iterator obtained term={self._term_id}\n")
+                _sys.stderr.flush()
                 logger.debug("stream iterator obtained for term=%s", self._term_id)
             except Exception:
                 pass
@@ -2544,6 +2557,9 @@ class TerminalPanel(Widget):
                 if isinstance(event, RawResponsesStreamEvent):
                     delta = self._extract_stream_text_delta(event.data)
                     try:
+                        import sys as _sys
+                        _sys.stderr.write(f"[cai-tui-debug] RAW_EVENT type={getattr(event.data,'type',type(event.data).__name__)} delta_len={len(delta or '')}\n")
+                        _sys.stderr.flush()
                         logger.debug(
                             "raw delta len=%d preview=%r",
                             len(delta or ""),
@@ -2702,6 +2718,12 @@ class TerminalPanel(Widget):
         except Exception as exc:
             run_status = "error"
             run_error = str(exc)
+            try:
+                import sys as _sys
+                _sys.stderr.write(f"[cai-tui-debug] EXCEPTION in _run_agent: {exc!r}\n")
+                _sys.stderr.flush()
+            except Exception:
+                pass
             log.write(RichText(f"  [error] {exc}", style="#ff4444"))
             # Mark any running tool calls as errored in the log.
             for call_id, meta in list(self._active_tool_calls.items()):

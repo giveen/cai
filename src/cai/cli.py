@@ -601,6 +601,11 @@ def main():
     if tui_flag:
         try:
             agent = get_agent_by_name(agent_type, agent_id="P1")
+            # Disable the CLI rich-streaming panel when running in TUI mode so
+            # update_agent_streaming_content doesn't write raw deltas to stdout
+            # (which would corrupt Textual's screen rendering).
+            if hasattr(agent, "model") and hasattr(agent.model, "disable_rich_streaming"):
+                agent.model.disable_rich_streaming = True
             try:
                 from cai.tui import run_tui
 
