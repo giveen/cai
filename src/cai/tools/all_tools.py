@@ -51,6 +51,13 @@ from cai.tools.web.session_pin import (
     set_session_cookie,
     unpin_session_cookie,
 )
+from cai.tools.web.cve_search import (
+    cve_search_browse,
+    cve_search_db_info,
+    cve_search_last,
+    cve_search_lookup,
+    cve_search_product,
+)
 from cai.tools.web.sqlmap import sqlmap
 
 # ── Always-on tool list ───────────────────────────────────────────────────────
@@ -86,6 +93,11 @@ ALL_TOOLS = [
     duckduckgo_web_search,
     sqlmap,
     cewl,
+    cve_search_lookup,
+    cve_search_product,
+    cve_search_last,
+    cve_search_browse,
+    cve_search_db_info,
     set_session_cookie,
     get_pinned_session_cookie,
     unpin_session_cookie,
