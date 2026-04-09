@@ -68,9 +68,21 @@ class OpenAIProvider(ModelProvider):
     # AsyncOpenAI() raises an error if you don't have an API key set.
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
+            # Resolve base URL: stored arg > LOCAL_API_BASE > OPENAI_API_BASE > OPENAI_BASE_URL.
+            # OPENAI_API_BASE is the LiteLLM convention; OPENAI_BASE_URL is the openai-python
+            # SDK convention. Checking both ensures proxy config is honoured regardless of
+            # which env var the caller set. bootstrap.py mirrors them, but we guard here too.
+            import os as _os
+            resolved_base_url = (
+                self._stored_base_url
+                or _os.getenv("LOCAL_API_BASE")
+                or _os.getenv("OPENAI_API_BASE")
+                or _os.getenv("OPENAI_BASE_URL")
+                or None
+            )
             self._client = _openai_shared.get_default_openai_client() or AsyncOpenAI(
                 api_key=self._stored_api_key or _openai_shared.get_default_openai_key(),
-                base_url=self._stored_base_url,
+                base_url=resolved_base_url,
                 organization=self._stored_organization,
                 project=self._stored_project,
                 http_client=shared_http_client(),

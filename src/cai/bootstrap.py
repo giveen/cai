@@ -36,6 +36,11 @@ def initialize_env() -> None:
     # This makes a developer-friendly default so a local LiteLLM/OpenAI-compatible
     # proxy (configured via LOCAL_API_BASE / LOCAL_API_KEY) is used without
     # requiring duplicates of those vars as OPENAI_API_BASE / OPENAI_API_KEY.
+    #
+    # Key naming conventions across libraries:
+    #   OPENAI_API_BASE  – used by LiteLLM
+    #   OPENAI_BASE_URL  – used by the native openai-python SDK (AsyncOpenAI)
+    # Both must be set so every code path (LiteLLM and direct AsyncOpenAI) reach the proxy.
     try:
         local_api_base = os.getenv("LOCAL_API_BASE", "").strip()
         local_api_key = os.getenv("LOCAL_API_KEY", "").strip()
@@ -48,6 +53,15 @@ def initialize_env() -> None:
             os.environ["OPENAI_API_KEY"] = local_api_key
             logging.getLogger(__name__).debug(
                 "Propagated LOCAL_API_KEY to OPENAI_API_KEY"
+            )
+        # Mirror OPENAI_API_BASE -> OPENAI_BASE_URL for the native openai-python SDK.
+        # AsyncOpenAI() reads OPENAI_BASE_URL (not OPENAI_API_BASE) when no base_url
+        # argument is supplied, so without this the native client bypasses the proxy.
+        effective_base = os.getenv("OPENAI_API_BASE", "").strip()
+        if effective_base and not os.getenv("OPENAI_BASE_URL"):
+            os.environ["OPENAI_BASE_URL"] = effective_base
+            logging.getLogger(__name__).debug(
+                "Mirrored OPENAI_API_BASE to OPENAI_BASE_URL"
             )
     except Exception:
         logging.getLogger(__name__).debug(
