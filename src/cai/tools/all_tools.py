@@ -42,6 +42,7 @@ from cai.tools.reconnaissance.smbclient_tool import (  # noqa: E501
 from cai.tools.reconnaissance.wget import wget
 
 # ── Web ───────────────────────────────────────────────────────────────────────
+from cai.tools.web.cewl import cewl
 from cai.tools.web.headers import web_request_framework
 from cai.tools.web.js_surface_mapper import js_surface_mapper
 from cai.tools.web.search_web import duckduckgo_web_search
@@ -79,6 +80,7 @@ ALL_TOOLS = [
     js_surface_mapper,
     duckduckgo_web_search,
     sqlmap,
+    cewl,
     # Execution & scripting
     execute_python_code,
     scripting_tool,
