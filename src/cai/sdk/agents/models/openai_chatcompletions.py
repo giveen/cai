@@ -3174,6 +3174,67 @@ class OpenAIChatCompletionsModel(Model):
                         # If retry also fails, raise the original error
                         raise e
 
+            except Exception as e:
+                # Some OpenAI client wrappers (for example the OpenAI-compatible
+                # client used to proxy requests to LiteLLM) raise their own
+                # BadRequestError types. Detect the specific thinking/reasoning
+                # compatibility messages and retry using the same mitigation as
+                # above (remove reasoning-related kwargs and assistant prefill).
+                msg = str(e)
+                if (
+                    "Expected `thinking` or `redacted_thinking`, but found `text`" in msg
+                    or "When `thinking` is enabled, a final `assistant` message must start with a thinking block"
+                    in msg
+                    or "incompatible with enable_thinking" in msg
+                    or "Assistant response prefill is incompatible" in msg
+                ):
+                    retry_kwargs = kwargs.copy()
+                    retry_kwargs.pop("reasoning_effort", None)
+                    try:
+                        msgs = retry_kwargs.get("messages")
+                        if isinstance(msgs, list):
+                            filtered = []
+                            for m in msgs:
+                                try:
+                                    role = m.get("role") if isinstance(m, dict) else None
+                                except Exception:
+                                    role = None
+                                if role != "assistant":
+                                    filtered.append(m)
+                                else:
+                                    if isinstance(m, dict) and m.get("tool_calls"):
+                                        filtered.append(m)
+                            retry_kwargs["messages"] = filtered
+                    except Exception:
+                        pass
+
+                    try:
+                        if stream:
+                            response = Response(
+                                id=FAKE_RESPONSES_ID,
+                                created_at=time.time(),
+                                model=self.model,
+                                object="response",
+                                output=[],
+                                tool_choice=_sanitize_tool_choice_value(tool_choice),
+                                top_p=model_settings.top_p,
+                                temperature=model_settings.temperature,
+                                tools=[],
+                                parallel_tool_calls=parallel_tool_calls or False,
+                            )
+                            # Prefer litellm.acompletion for the retry as it understands
+                            # reasoning-related parameters better than some OpenAI clients.
+                            stream_obj = await litellm.acompletion(**retry_kwargs)
+                            return response, stream_obj
+                        else:
+                            ret = await litellm.acompletion(**retry_kwargs)
+                            return ret
+                    except Exception:
+                        # If retry fails fall back to raising the original exception
+                        raise e
+                # Not a reasoning-related error; re-raise
+                raise
+
                 # print(color("BadRequestError encountered: " + str(e), fg="yellow"))
                 if "LLM Provider NOT provided" in str(e):
                     model_str = str(self.model).lower()
