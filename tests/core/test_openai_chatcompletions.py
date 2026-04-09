@@ -226,7 +226,9 @@ async def test_fetch_response_non_stream(monkeypatch) -> None:
     # Ensure expected args were passed through to OpenAI client.
     kwargs = completions.kwargs
     assert kwargs["stream"] is False
-    assert kwargs["store"] is True
+    # `store` is omitted by default to avoid triggering remote proxy DB writes;
+    # only include it when explicitly configured on ModelSettings.
+    assert "store" not in kwargs
     assert kwargs["model"] == cai_model
     assert kwargs["messages"][0]["role"] == "system"
     assert kwargs["messages"][0]["content"] == "sys"
@@ -280,7 +282,9 @@ async def test_fetch_response_stream(monkeypatch) -> None:
         )
     # Check OpenAI client was called for streaming
     assert completions.kwargs["stream"] is True
-    assert completions.kwargs["store"] is True
+    # `store` is omitted by default; proxy DB writes should only occur when
+    # ModelSettings.store is explicitly set.
+    assert "store" not in completions.kwargs
     assert completions.kwargs["stream_options"] == {"include_usage": True}
     # Response is a proper openai Response
     assert isinstance(response, Response)
