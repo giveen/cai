@@ -8,6 +8,7 @@ from typing import List
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
 from cai.tools.common import run_command  # pylint: disable=E0401
+from cai.tools.validation import contains_shell_metacharacters  # pylint: disable=import-error
 
 # Dangerous flags that enable RCE, file writes, or file deletion
 DANGEROUS_FIND_FLAGS = {
@@ -36,6 +37,8 @@ def list_dir(path: str, args: str = "", ctf=None) -> str:
     Returns:
         str: The output of running the ls command
     """
+    if contains_shell_metacharacters(path):
+        return f"Invalid path '{path}': shell metacharacters are not allowed."
     command = f"ls {path} {args}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
@@ -55,7 +58,9 @@ def cat_file(file_path: str, args: str = "", ctf=None) -> str:
     Returns:
         str: The output of running the cat command
     """
-    command = f"cat {args} {file_path} "
+    if contains_shell_metacharacters(file_path):
+        return f"Invalid file_path '{file_path}': shell metacharacters are not allowed."
+    command = f"cat {args} {file_path}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
@@ -101,6 +106,9 @@ def find_file(file_path: str, args: str = "", ctf=None) -> str:
     for flag in DANGEROUS_FIND_FLAGS:
         if flag in args_tokens:
             return f"Error: DANGEROUS flag '{flag}' is not allowed"
+
+    if contains_shell_metacharacters(file_path):
+        return f"Invalid file_path '{file_path}': shell metacharacters are not allowed."
 
     command = f"find {file_path} {args}"
     guard_err = validation.validate_command_guardrails(command)

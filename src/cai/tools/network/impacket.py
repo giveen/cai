@@ -289,7 +289,7 @@ async def impacket_executor(
 
     # ── 5. Sanitize (prompt-injection guard) then distil ──────────────────
     sanitized = _sanitize(raw_output)
-    distilled_md, _ = _distil_output(raw_output)
+    distilled_md, _ = _distil_output(sanitized)
 
     cmd_display = " ".join(shlex.quote(a) for a in cmd)
     header = (

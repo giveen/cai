@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import shutil
 import socket
 import sys
@@ -11,6 +12,13 @@ from contextlib import contextmanager
 import paramiko
 
 from cai.sdk.agents import function_tool
+
+# Network interface names: letters, digits, hyphens, dots, and colon for VLANs
+# e.g. eth0, ens3, wlan0, bond0.1, eth0:0
+_INTERFACE_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9@.\-:]{0,15}$")
+
+# tcpdump BPF filter: allow only printable ASCII, no shell metacharacters
+_FILTER_METACHAR_RE = re.compile(r"[;&|`$<>()\{\}\[\]\n\r\\]")
 
 # Stores (tmp_dir, pipe_thread) for active captures, keyed by fifo_path
 _CAPTURE_STATE: dict = {}
@@ -43,6 +51,18 @@ def capture_remote_traffic(
         ConnectionError: If the SSH connection fails.
         RuntimeError: If traffic capture cannot be started.
     """
+    # Validate interface name to prevent remote shell injection
+    if not interface or not _INTERFACE_RE.match(interface):
+        raise ValueError(
+            f"Invalid interface name '{interface}': only alphanumeric, hyphens, "
+            "dots, and colons are allowed (e.g. eth0, ens3, bond0.1)."
+        )
+    # Validate BPF filter expression — no shell metacharacters
+    if capture_filter and _FILTER_METACHAR_RE.search(capture_filter):
+        raise ValueError(
+            f"Invalid capture_filter '{capture_filter}': shell metacharacters are not allowed."
+        )
+
     client = None
     tmp_dir = None
     fifo_path = None
@@ -54,7 +74,7 @@ def capture_remote_traffic(
         print(f"Connecting to {ip}:{port} as {username}...")
         client.connect(ip, port=port, username=username, password=password, timeout=timeout)
 
-        # Verify interface exists
+        # Verify interface exists — interface name already validated above
         _, stdout, stderr = client.exec_command(f"ip link show {interface}")
         if stdout.channel.recv_exit_status() != 0:
             error = stderr.read().decode().strip()

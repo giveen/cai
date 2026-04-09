@@ -65,6 +65,13 @@ def scripting_tool(
 
     _BLOCKED_MODULES = {"os", "sys", "subprocess", "shutil"}
 
+    def _restricted_import(name, globals_=None, locals_=None, fromlist=(), level=0):
+        """Allow imports of any module not in _BLOCKED_MODULES."""
+        base = name.split(".")[0]
+        if base in _BLOCKED_MODULES:
+            raise ImportError(f"module '{name}' is not allowed in restricted execution environment")
+        return __import__(name, globals_ or {}, locals_ or {}, fromlist, level)
+
     try:
         tree = ast.parse(script)
         for node in ast.walk(tree):
@@ -149,6 +156,7 @@ def scripting_tool(
             "tuple": tuple,
             "type": type,
             "zip": zip,
+            "__import__": _restricted_import,
         }
 
         try:
