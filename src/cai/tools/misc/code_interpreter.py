@@ -26,6 +26,26 @@ def execute_python_code(code: str) -> str:
     captured = io.StringIO()
 
     # Minimal safe builtins: only allow harmless functions
+    def _safe_import(name, globals_=None, locals_=None, fromlist=(), level=0):
+        """Restricted __import__ implementation allowing only approved modules."""
+        allowed = {
+            "math",
+            "json",
+            "datetime",
+            "statistics",
+            "itertools",
+            "functools",
+            "random",
+            "re",
+            "textwrap",
+            "heapq",
+            "collections",
+        }
+        base = name.split(".")[0]
+        if base in allowed:
+            return __import__(name, globals_ or globals(), locals_ or locals(), fromlist, level)
+        raise ImportError(f"module {name} is not allowed in restricted execution environment")
+
     safe_builtins = {
         "abs": abs,
         "all": all,
@@ -56,6 +76,11 @@ def execute_python_code(code: str) -> str:
         "tuple": tuple,
         "zip": zip,
     }
+
+    # Provide a restricted __import__ so user code can `import` a small safe
+    # set of standard-library modules. This avoids ImportError: __import__ not found
+    # while preventing arbitrary imports.
+    safe_builtins["__import__"] = _safe_import
 
     try:
         local_vars = {}

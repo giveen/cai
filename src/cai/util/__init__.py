@@ -612,7 +612,49 @@ def cli_print_agent_messages(agent_name: str, messages: list | None = None, *arg
         pass
 
 
-def start_tool_streaming(call_id: str, tool_name: str, agent_name: Optional[str] = None) -> None:
+def start_tool_streaming(*args, **_kwargs) -> None:
+    """
+    Start a tool streaming session.
+
+    Supports multiple calling conventions for backwards compatibility:
+      - New: start_tool_streaming(call_id, tool_name, agent_name=None)
+      - Legacy: start_tool_streaming(tool_name, tool_args, call_id, token_info)
+      - Keyword: start_tool_streaming(call_id="...", tool_name="...", agent_name="...")
+    """
+    call_id = None
+    tool_name = None
+    agent_name = None
+
+    # Prefer explicit keyword form
+    if "call_id" in _kwargs and isinstance(_kwargs["call_id"], str):
+        call_id = _kwargs["call_id"]
+        tool_name = _kwargs.get("tool_name")
+        agent_name = _kwargs.get("agent_name")
+    else:
+        # Legacy positional: call_id as 4th arg
+        if len(args) >= 4 and isinstance(args[3], str):
+            tool_name = args[0] if isinstance(args[0], str) else None
+            call_id = args[3]
+        # New positional: call_id, tool_name, (agent_name)
+        elif len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
+            a0 = args[0]
+            # Heuristic: treat a UUID-like first arg (contains '-') as call_id
+            if "-" in a0 and len(a0) > 8:
+                call_id = a0
+                tool_name = args[1]
+                if len(args) >= 3 and isinstance(args[2], str):
+                    agent_name = args[2]
+            else:
+                # Fallback to legacy-ish: tool_name, tool_args, call_id
+                tool_name = args[0]
+                if len(args) >= 3 and isinstance(args[2], str):
+                    call_id = args[2]
+        elif len(args) == 1 and isinstance(args[0], str):
+            call_id = args[0]
+
+    if not call_id:
+        return
+
     _STREAMING_SESSIONS[call_id] = {
         "tool_name": tool_name,
         "current_output": "",
