@@ -3673,10 +3673,36 @@ class OpenAIChatCompletionsModel(Model):
                     "Expected `thinking` or `redacted_thinking`, but found `text`" in error_msg
                     or "When `thinking` is enabled, a final `assistant` message must start with a thinking block"
                     in error_msg
+                    or "incompatible with enable_thinking" in error_msg
+                    or "Assistant response prefill is incompatible" in error_msg
                 ):
                     # Retry without reasoning_effort
                     retry_kwargs = kwargs.copy()
                     retry_kwargs.pop("reasoning_effort", None)
+
+                    # Also remove any assistant-message prefill content which can
+                    # be incompatible with thinking-enabled models. Keep assistant
+                    # messages only if they contain tool_calls so we don't lose
+                    # important tool invocations.
+                    try:
+                        msgs = retry_kwargs.get("messages")
+                        if isinstance(msgs, list):
+                            filtered = []
+                            for m in msgs:
+                                try:
+                                    role = m.get("role") if isinstance(m, dict) else None
+                                except Exception:
+                                    role = None
+                                if role != "assistant":
+                                    filtered.append(m)
+                                else:
+                                    # Preserve assistant messages that include tool_calls
+                                    if isinstance(m, dict) and m.get("tool_calls"):
+                                        filtered.append(m)
+                            retry_kwargs["messages"] = filtered
+                    except Exception:
+                        # Best-effort only; fall back to retrying without reasoning_effort
+                        pass
 
                     try:
                         if stream:
