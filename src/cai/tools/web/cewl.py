@@ -107,7 +107,12 @@ def cewl(
 
     if auth_type and auth_type.strip().lower() not in ("basic", "digest"):
         return "auth_type must be 'basic' or 'digest'."
-
+    # Merge pinned session cookie (caller-supplied value takes precedence).
+    try:
+        from cai.util.orchestration import merge_pinned_cookie
+        cookie = merge_pinned_cookie(cookie)
+    except Exception:
+        pass
     # ── Build command ───────────────────────────────────────────────────────
     parts = ["cewl"]
 

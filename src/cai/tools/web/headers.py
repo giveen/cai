@@ -83,6 +83,26 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
             for key, value in data.items():
                 analysis.append(f"- {key}: {value}")
 
+        # Merge pinned session cookie (if any) with caller-supplied cookies.
+        # Caller-supplied values take precedence.
+        try:
+            from cai.util.orchestration import get_pinned_cookie
+            _pinned = get_pinned_cookie()
+            if _pinned:
+                pinned_dict = {}
+                for pair in _pinned.split(";"):
+                    pair = pair.strip()
+                    if "=" in pair:
+                        k, _, v = pair.partition("=")
+                        pinned_dict[k.strip()] = v.strip()
+                if cookies:
+                    merged = {**pinned_dict, **cookies}  # caller wins
+                else:
+                    merged = pinned_dict
+                cookies = merged
+        except Exception:
+            pass
+
         # Make the request and analyze response
         response = requests.request(
             method=method,

@@ -739,6 +739,16 @@ def run_command(
     # Normalize command into exec list, name, args and display string
     exec_cmd, cmd_name, cmd_args, full_command = _normalize_command(command)
 
+    # Auto-inject pinned session cookie into HTTP tool commands.
+    try:
+        from cai.util.orchestration import inject_pinned_cookie_into_command
+        _injected = inject_pinned_cookie_into_command(full_command)
+        if _injected != full_command:
+            command = _injected
+            exec_cmd, cmd_name, cmd_args, full_command = _normalize_command(command)
+    except Exception:
+        pass
+
     # Generate a call_id if we're streaming and one wasn't provided
     # Use a more specific format that includes the command name for easier tracking
     if not call_id and stream:

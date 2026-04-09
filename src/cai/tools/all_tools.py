@@ -46,6 +46,11 @@ from cai.tools.web.cewl import cewl
 from cai.tools.web.headers import web_request_framework
 from cai.tools.web.js_surface_mapper import js_surface_mapper
 from cai.tools.web.search_web import duckduckgo_web_search
+from cai.tools.web.session_pin import (
+    get_pinned_session_cookie,
+    set_session_cookie,
+    unpin_session_cookie,
+)
 from cai.tools.web.sqlmap import sqlmap
 
 # ── Always-on tool list ───────────────────────────────────────────────────────
@@ -81,6 +86,9 @@ ALL_TOOLS = [
     duckduckgo_web_search,
     sqlmap,
     cewl,
+    set_session_cookie,
+    get_pinned_session_cookie,
+    unpin_session_cookie,
     # Execution & scripting
     execute_python_code,
     scripting_tool,

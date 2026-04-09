@@ -104,6 +104,13 @@ def sqlmap(
     if err:
         return err
 
+    # Merge pinned session cookie (caller-supplied value takes precedence).
+    try:
+        from cai.util.orchestration import merge_pinned_cookie
+        cookie = merge_pinned_cookie(cookie)
+    except Exception:
+        pass
+
     parts = ["sqlmap", "--batch", "--flush-session", f"-u {shlex.quote(url.strip())}"]
 
     if data:

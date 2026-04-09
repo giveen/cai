@@ -4,18 +4,130 @@ Contains support for auto-compaction (CAI_SUPPORT_INTERVAL), the
 ``fix_message_list`` sanitizer, and a single entrypoint ``start_cli_loop``
 which implements the previous CLI loop.  Keeping this functionality in a
 separate module keeps ``cli.py`` small and allows targeted unit testing.
+
+Also owns the **session-cookie pinning** state: a single dict that network
+tools reference to automatically attach a discovered cookie to every request.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
+import threading
 import time
 from typing import Optional
 
 from rich.console import Console
 
 from cai.repl.ui.metrics import display_session_report
+
+
+# ---------------------------------------------------------------------------
+# Session-cookie pinning
+# ---------------------------------------------------------------------------
+
+_pin_lock = threading.Lock()
+
+# Stores {name: value} for each pinned cookie.  All network tools read this.
+_PINNED_SESSION: dict[str, str] = {}
+
+
+def pin_session_cookie(cookie_string: str) -> str:
+    """Pin one or more cookies so they are auto-injected into every network call.
+
+    ``cookie_string`` accepts the standard ``name=value; name2=value2`` format.
+    Returns a human-readable confirmation listing all currently pinned cookies.
+    """
+    if not cookie_string or not cookie_string.strip():
+        return "No cookie string provided."
+    with _pin_lock:
+        for pair in cookie_string.split(";"):
+            pair = pair.strip()
+            if "=" in pair:
+                name, _, value = pair.partition("=")
+                _PINNED_SESSION[name.strip()] = value.strip()
+        pinned = "; ".join(f"{k}={v}" for k, v in _PINNED_SESSION.items())
+    return f"Pinned: {pinned}"
+
+
+def get_pinned_cookie() -> str | None:
+    """Return the current pinned cookie string, or None if nothing is pinned."""
+    with _pin_lock:
+        if not _PINNED_SESSION:
+            return None
+        return "; ".join(f"{k}={v}" for k, v in _PINNED_SESSION.items())
+
+
+def clear_pinned_session() -> str:
+    """Remove all pinned cookies."""
+    with _pin_lock:
+        count = len(_PINNED_SESSION)
+        _PINNED_SESSION.clear()
+    return f"Cleared {count} pinned cookie(s)."
+
+
+def merge_pinned_cookie(existing_cookie: str) -> str:
+    """Merge the pinned cookies into an existing cookie string.
+
+    Values in *existing_cookie* take precedence over pinned ones so callers
+    can always override on a per-call basis.
+    """
+    pinned = get_pinned_cookie()
+    if not pinned:
+        return existing_cookie
+    if not existing_cookie or not existing_cookie.strip():
+        return pinned
+    # Build a merged dict: start from pinned (lower priority), overlay caller's
+    merged: dict[str, str] = {}
+    for pair in pinned.split(";"):
+        pair = pair.strip()
+        if "=" in pair:
+            k, _, v = pair.partition("=")
+            merged[k.strip()] = v.strip()
+    for pair in existing_cookie.split(";"):
+        pair = pair.strip()
+        if "=" in pair:
+            k, _, v = pair.partition("=")
+            merged[k.strip()] = v.strip()
+    return "; ".join(f"{k}={v}" for k, v in merged.items())
+
+
+# Regex matching CLI tools that accept a --cookie / -b flag
+_COOKIE_TOOLS = re.compile(
+    r"^\s*(?:curl|wget|sqlmap|cewl|httpie|http|wfuzz|gobuster|ffuf)\b"
+)
+# Already has a cookie arg? (don't double-inject)
+_HAS_COOKIE_ARG = re.compile(
+    r"(?:^|\s)(?:--cookie[= ]|-b\s|--header[= ]['\"]?Cookie:)",
+    re.I,
+)
+
+
+def inject_pinned_cookie_into_command(command: str) -> str:
+    """Append a ``--cookie`` argument to CLI commands when a cookie is pinned.
+
+    Does nothing if:
+    - no cookie is pinned, or
+    - the command doesn't look like an HTTP tool, or
+    - the command already contains a cookie argument.
+    """
+    pinned = get_pinned_cookie()
+    if not pinned:
+        return command
+    if not _COOKIE_TOOLS.search(command):
+        return command
+    if _HAS_COOKIE_ARG.search(command):
+        return command
+
+    import shlex
+
+    # curl / wget / httpie use -b / --cookie; sqlmap/cewl/wfuzz/etc. use --cookie
+    if re.search(r"^\s*(?:curl)\b", command):
+        return command + f" -b {shlex.quote(pinned)}"
+    if re.search(r"^\s*(?:wget)\b", command):
+        return command + f' --header={shlex.quote("Cookie: " + pinned)}'
+    return command + f" --cookie={shlex.quote(pinned)}"
 
 
 def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
