@@ -1322,14 +1322,15 @@ class OpenAIChatCompletionsModel(Model):
                                         should_display_message = True
                         break
 
-            # Additional check: Always show messages that have text content
-            # This ensures agent explanations are not suppressed
+            # Additional check: Show messages that have text content,
+            # but respect suppress_final_output (streaming already rendered it)
             if (
-                hasattr(response.choices[0].message, "content")
+                not self.suppress_final_output
+                and hasattr(response.choices[0].message, "content")
                 and response.choices[0].message.content
                 and str(response.choices[0].message.content).strip()
             ):
-                # If the message has actual text content, always show it
+                # If the message has actual text content (and not already rendered), show it
                 should_display_message = True
 
             # Display the agent message (this will show the command for async sessions)

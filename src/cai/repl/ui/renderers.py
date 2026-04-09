@@ -16,7 +16,7 @@ from rich import box
 def display_agent_analysis(
     content: str,
     agent_name: Optional[str] = None,
-    title: str = "Vulnerability Analysis",
+    title: str = "Analysis",
 ) -> None:
     """Render agent analysis/content as a Markdown-backed Panel.
 
@@ -37,7 +37,7 @@ def display_agent_analysis(
     try:
         md = Markdown(text)
         c = Console()
-        subtitle = str(agent_name) if agent_name is not None else ""
+        subtitle = f"[dim cyan]{agent_name}[/dim cyan]" if agent_name else ""
         c.print(
             Panel(
                 md,
