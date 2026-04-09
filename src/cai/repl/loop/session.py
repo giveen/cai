@@ -155,6 +155,14 @@ def initialize_session(
     print("\n")
     display_quick_guide(console)
 
+    # One-time: show log file path in dim yellow so it's visible but not noisy.
+    try:
+        _log_filename = getattr(session_logger, "filename", None)
+        if _log_filename:
+            console.print(f"[dim yellow]Log file: {_log_filename}[/dim yellow]")
+    except Exception:
+        pass
+
     # -------------------------------------- notify auto-compact status if set
     _sc_model = os.getenv("CAI_SUPPORT_MODEL")
     _sc_interval = os.getenv("CAI_SUPPORT_INTERVAL")

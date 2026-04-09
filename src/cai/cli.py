@@ -408,13 +408,6 @@ def _run_cai_cli_impl(
                 if command not in ("/shell", "/s"):
                     console.print(f"[red]Command failed or unknown: {command}[/red]")
                 continue
-            from rich.text import Text
-
-            log_text = Text(
-                f"Log file: {getattr(session_logger, 'filename', '<unknown>')}",
-                style="yellow on black",
-            )
-            console.print(log_text)
 
             from cai.repl.loop.response_handler import build_conversation_input
             conversation_input = build_conversation_input(agent, user_input, messages_ctf)

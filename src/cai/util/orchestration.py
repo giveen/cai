@@ -300,20 +300,15 @@ def maybe_auto_compact(
             )
             if _llm_call_count > 0:
                 _calls_until = max(0, _support_interval - _llm_call_count)
-                if _calls_until > 0:
-                    # Print compact metadata subtly (dim + italic) so it doesn't
-                    # compete with the agent's final response box.
+                # Only print the countdown when approaching compaction (≤5 turns
+                # away) to avoid cluttering every turn with metadata noise.
+                if 0 < _calls_until <= 5:
                     try:
                         console.print(
                             f"[dim italic cyan]  ↻ auto-compact in {_calls_until} LLM response(s) [{_llm_call_count}/{_support_interval}][/dim italic cyan]"
                         )
                     except Exception:
-                        try:
-                            console.print(
-                                f"↻ auto-compact in {_calls_until} LLM response(s) [{_llm_call_count}/{_support_interval}]"
-                            )
-                        except Exception:
-                            pass
+                        pass
                 if _llm_call_count >= _support_interval:
                     from cai.repl.commands.compact import COMPACT_COMMAND_INSTANCE
 

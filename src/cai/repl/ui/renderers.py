@@ -13,12 +13,17 @@ from rich.panel import Panel
 from rich import box
 
 
-def display_agent_analysis(content: str, agent_name: Optional[str] = None) -> None:
+def display_agent_analysis(
+    content: str,
+    agent_name: Optional[str] = None,
+    title: str = "Vulnerability Analysis",
+) -> None:
     """Render agent analysis/content as a Markdown-backed Panel.
 
     - Renders *content* as `rich.markdown.Markdown` so markdown is respected.
-    - Places the Markdown inside a `rich.panel.Panel` with a rounded box and
-      a bold cyan border. The panel subtitle is set to `agent_name`.
+    - Places the Markdown inside a `rich.panel.Panel` with a rounded box,
+      bold cyan border, the given *title* at the top, and *agent_name* as
+      the subtitle at the bottom.
 
     This function prints directly to the Console.
     """
@@ -34,7 +39,13 @@ def display_agent_analysis(content: str, agent_name: Optional[str] = None) -> No
         c = Console()
         subtitle = str(agent_name) if agent_name is not None else ""
         c.print(
-            Panel(md, box=box.ROUNDED, border_style="bold cyan", subtitle=subtitle)
+            Panel(
+                md,
+                box=box.ROUNDED,
+                border_style="bold cyan",
+                title=f"[bold cyan]{title}[/bold cyan]",
+                subtitle=subtitle,
+            )
         )
     except Exception:
         try:
