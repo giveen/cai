@@ -5372,6 +5372,7 @@ class _Converter:
                         call_id=call_id,
                         execution_info=execution_info,
                         token_info=token_info,
+                        agent_name=token_info.get("agent_name") if isinstance(token_info, dict) else None,
                     )
 
                 # Continue with normal processing

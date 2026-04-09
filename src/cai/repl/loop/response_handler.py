@@ -347,9 +347,13 @@ def run_single_response(
 
                                     try:
                                         from cai.repl.ui.logging import render_tool_output
+                                        from cai.util import is_runitem_rendered
 
                                         agent_name = getattr(agent, "agent_name", getattr(agent, "name", "Agent"))
-                                        render_tool_output(fn_name or "tool", out_str, agent_name=agent_name, style="cyan")
+                                        # Skip if already rendered by cli_print_tool_output
+                                        # (which fires synchronously during tool execution)
+                                        if not is_runitem_rendered(agent_name, call_id=call_id, content=out_str):
+                                            render_tool_output(fn_name or "tool", out_str, agent_name=agent_name, style="cyan")
                                     except Exception:
                                         try:
                                             title = f"{fn_name or 'tool'} output"
