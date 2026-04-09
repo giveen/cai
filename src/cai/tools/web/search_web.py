@@ -1,105 +1,156 @@
-import os
+"""
+DuckDuckGo-backed web search tools for CAI.
 
-from dotenv import load_dotenv
-from openai import OpenAI
+This module provides a small, robust wrapper around the community
+`ddgs` / `duckduckgo_search` libraries. It performs lazy imports so the
+package is optional at import-time; callers will receive a clear error
+message if the dependency is missing and the function is invoked.
+
+Usage:
+  - Install the preferred package: `pip install ddgs` (the package was
+    previously named `duckduckgo_search`).
+
+Functions exposed as agent tools:
+  - `duckduckgo_search_text(query, max_results=5)` — returns a plain-text
+     summary of the top results (suitable for agent consumption).
+  - `duckduckgo_search_raw(query, max_results=10)` — returns the raw list
+     of result dicts when available.
+
+The implementations try a few compatible import patterns so they work with
+either the new `ddgs` package or the older `duckduckgo_search` package.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List, Optional
 
 from cai.agents.guardrails import sanitize_external_content
 from cai.sdk.agents import function_tool
-from cai.tools.web.google_search import google_dork_search, google_search
+
+logger = logging.getLogger(__name__)
 
 
-@function_tool
-def query_perplexity(query: str = "", context: str = "") -> str:
+def _query_duckduckgo(query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+    """Perform a DuckDuckGo search using available libraries.
+
+    Tries in this order:
+      1. `ddgs.DDGS` (preferred, new package)
+      2. `duckduckgo_search.DDGS` (older API)
+      3. `duckduckgo_search.ddg` convenience function
+
+    The import is lazy and any ImportError is deferred until this function
+    is called. The returned list contains dictionaries; keys vary by
+    provider but commonly include `title`, `href`/`url`, and `body`/`snippet`.
     """
-    Query the Perplexity AI API with a user prompt.
+    # Try the new `ddgs` package first
+    try:
+        try:
+            from ddgs import DDGS  # type: ignore
 
-    Args:
-        query (str): The question to search for.
-        context (str): The full context of current CTF challenge.
+            with DDGS() as ddgs_client:
+                results: List[Dict[str, Any]] = []
+                # prefer `text` or `search` iterator helpers if available
+                func = getattr(ddgs_client, "text", None) or getattr(ddgs_client, "search", None)
+                if func is None:
+                    raise RuntimeError("DDGS client missing expected interface")
+                for i, item in enumerate(func(query)):
+                    if i >= max_results:
+                        break
+                    if isinstance(item, dict):
+                        results.append(item)
+                    else:
+                        results.append({"raw": str(item)})
+                return results
+        except Exception as exc:
+            logger.debug("ddgs.DDGS attempt failed: %s", exc)
 
-    Returns:
-        str: The response from Perplexity AI.
-    """
-    load_dotenv()
-    api_key = os.getenv("PERPLEXITY_API_KEY")
+        # Fallback to duckduckgo_search.DDGS if available
+        try:
+            from duckduckgo_search import DDGS as DuckDDGS  # type: ignore
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an expert cybersecurity researcher specializing in CTF "
-                "competitions. Your role is to search for and provide precise, "
-                "actionable intelligence to your pentesting team. Focus on "
-                "delivering technical details, exploitation techniques, and "
-                "vulnerability information relevant to the search query. Include "
-                "specific commands, payloads, or tools that would help the team "
-                "progress in their CTF challenge. Prioritize accuracy and depth "
-                "over general explanations. Your team relies on your research to "
-                "identify attack vectors, bypass security controls, and capture "
-                "flags. Always suggest concrete next steps based on your findings."
-                "Put the necessary code in each iteration"
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"You should search the following terms: {query} and the full "
-                f"context of current CTF challenge: {context}"
-            ),
-        },
-    ]
+            with DuckDDGS() as ddgs_client:
+                results = []
+                func = getattr(ddgs_client, "text", None) or getattr(ddgs_client, "search", None)
+                if func is None:
+                    raise RuntimeError("duckduckgo_search DDGS missing expected interface")
+                for i, item in enumerate(func(query)):
+                    if i >= max_results:
+                        break
+                    if isinstance(item, dict):
+                        results.append(item)
+                    else:
+                        results.append({"raw": str(item)})
+                return results
+        except Exception as exc:
+            logger.debug("duckduckgo_search.DDGS attempt failed: %s", exc)
 
-    client = OpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
+        # Final fallback to duckduckgo_search.ddg convenience function
+        try:
+            from duckduckgo_search import ddg  # type: ignore
 
-    response = client.chat.completions.create(
-        model="sonar-pro",
-        messages=messages,
+            res = ddg(query, max_results=max_results)
+            return list(res or [])
+        except Exception as exc:
+            logger.debug("duckduckgo_search.ddg attempt failed: %s", exc)
+    except Exception:
+        # top-level safety: fall through to error below
+        pass
+
+    raise RuntimeError(
+        "No DuckDuckGo search backend available. Install the 'ddgs' package (pip install ddgs)"
     )
 
-    # Sanitize the response as it comes from external source
-    content = response.choices[0].message.content
-    return sanitize_external_content(content)
+
+def _format_results_text(results: List[Dict[str, Any]], max_results: int = 5) -> str:
+    """Coerce a list of result dicts into a plain-text summary.
+
+    The formatting is intentionally lightweight so the agent can read it
+    and extract key information: rank, title, url, and a short snippet.
+    """
+    out_lines: List[str] = []
+    for i, r in enumerate(results[:max_results]):
+        title = r.get("title") or r.get("heading") or r.get("text") or "(no title)"
+        url = r.get("href") or r.get("url") or r.get("link") or r.get("source") or ""
+        snippet = r.get("body") or r.get("snippet") or r.get("excerpt") or r.get("text") or ""
+        snippet = " ".join(str(snippet).split())[:600]
+        block = f"{i+1}. {title}\n{url}\n{snippet}"
+        out_lines.append(block)
+    return "\n\n".join(out_lines)
 
 
 @function_tool
-def make_web_search_with_explanation(context: str = "", query: str = "") -> str:
+def duckduckgo_search_text(query: str, max_results: int = 5) -> str:
+    """Search DuckDuckGo and return a sanitized plain-text summary.
+
+    This function is suitable as an agent tool because it returns a
+    concise text blob. If the DuckDuckGo client library is not installed
+    a helpful error message is returned instead.
     """
-    Executes an intelligent web search via the AI service for relevant
-    cybersecurity and CTF-related information. This function sends the
-    provided query to the internet search engine and returns the response.
-    It also uses the full context of the current CTF challenge.
+    if not query or not str(query).strip():
+        return ""
+    try:
+        results = _query_duckduckgo(query, max_results=max_results)
+    except Exception as exc:
+        logger.exception("DuckDuckGo search failed: %s", exc)
+        return sanitize_external_content(str(exc))
 
-    CONTEXT ALWAYS IS NEEDED
-    Args:
-      context (str): The full context of the current CTF challenge.
-        query (str): The question or keywords to search for.
-
-
-    Returns:
-        str: Search result.
-    """
-    return query_perplexity(query, context)
+    text = _format_results_text(results, max_results=max_results)
+    return sanitize_external_content(text)
 
 
 @function_tool
-def make_google_search(query: str, dorks=False) -> str:
+def duckduckgo_search_raw(query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+    """Return the raw result dictionaries from the DuckDuckGo backend.
+
+    Useful for tools that want structured output (urls, titles, snippets).
+    If the backend is unavailable this raises a RuntimeError.
     """
-    Search Google for information.
-
-    Args:
-        query: The search query to look up on Google.
-        dorks: Whether to use Google dorks for advanced searching.
-            Default is False.
-
-    Returns:
-        A list of search results. Each result contains URL, title, and snippet.
-    """
-    if dorks:
-        result = google_dork_search(query)
-    else:
-        result = google_search(query)
-
-    # Sanitize search results as they come from external sources
-    if isinstance(result, str):
-        return sanitize_external_content(result)
-    return result
+    if not query or not str(query).strip():
+        return []
+    results = _query_duckduckgo(query, max_results=max_results)
+    # Sanitize textual fields to avoid injecting unsafe markup
+    for r in results:
+        for k, v in list(r.items()):
+            if isinstance(v, str):
+                r[k] = sanitize_external_content(v)
+    return results
