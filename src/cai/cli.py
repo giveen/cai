@@ -412,6 +412,17 @@ def _run_cai_cli_impl(
             from cai.repl.loop.response_handler import build_conversation_input
             conversation_input = build_conversation_input(agent, user_input, messages_ctf)
 
+            # Debug trace: confirm the runner is being invoked.
+            # Visible in the terminal even when the TUI is active because it
+            # goes to stderr, which bypasses the Rich/prompt_toolkit buffer.
+            if os.getenv("CAI_DEBUG", "1") == "2":
+                import sys as _sys
+                _sys.stderr.write(
+                    f"[CAI DEBUG] runner invoked: agent={getattr(agent, 'name', '?')!r} "
+                    f"input_len={len(str(conversation_input))}\n"
+                )
+                _sys.stderr.flush()
+
             # Process the conversation with the agent - with parallel execution if enabled
             if parallel_count > 1:
                 from cai.repl.loop.parallel_exec import run_simple_parallel
@@ -506,7 +517,13 @@ def _run_cai_cli_impl(
             import sys
             import traceback
 
-            # Only show detailed errors in debug mode
+            # Always surface runner errors to stderr so they are visible even
+            # when the TUI is active and the Rich console may be paused.
+            _tb = traceback.format_exc()
+            sys.stderr.write(f"[CAI ERROR] main loop exception: {e}\n{_tb}\n")
+            sys.stderr.flush()
+
+            # Also show inline when debug mode is active
             if os.getenv("CAI_DEBUG", "1") == "2":
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 tb_info = traceback.extract_tb(exc_traceback)
@@ -514,7 +531,7 @@ def _run_cai_cli_impl(
                 console.print(f"[bold red]Error: {str(e)}[/bold red]")
                 console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
             else:
-                # In normal mode, just log the error
+                # In normal mode, also log so it ends up in the .jsonl
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error in main loop: {str(e)}", exc_info=True)
 

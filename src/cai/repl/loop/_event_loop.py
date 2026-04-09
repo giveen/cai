@@ -36,5 +36,28 @@ def run_async(coro: Any) -> Any:
     Drop-in replacement for ``asyncio.run()`` that reuses the same loop so
     that async resources (httpx clients, etc.) can clean up without hitting
     a closed loop.
+
+    If the loop happens to already be running (nested async context, e.g.
+    inside an `asyncio.run()` that imported us), fall back to creating a
+    fresh loop rather than raising ``RuntimeError: This event loop is already
+    running``.
     """
-    return get_repl_loop().run_until_complete(coro)
+    loop = get_repl_loop()
+    if loop.is_running():
+        # Cannot call run_until_complete on a running loop.  Create a fresh
+        # dedicated loop for this call so the caller doesn't crash silently.
+        import sys
+        sys.stderr.write(
+            "[CAI WARNING] run_async: event loop already running — "
+            "spinning a fresh loop for this call.\n"
+        )
+        sys.stderr.flush()
+        _tmp = asyncio.new_event_loop()
+        try:
+            return _tmp.run_until_complete(coro)
+        finally:
+            try:
+                _tmp.close()
+            except Exception:
+                pass
+    return loop.run_until_complete(coro)

@@ -470,7 +470,9 @@ def run_single_response(
                     import traceback
                     tb = traceback.format_exc()
                     print(f"\n[Error occurred during streaming: {exc}]\nLocation: {tb}")
-                return None
+                # Re-raise so the outer cli.py handler can surface this to
+                # stderr and the user sees why the runner stopped.
+                raise
 
         try:
             run_async(process_streamed_response(agent, conversation_input))
