@@ -195,42 +195,65 @@ def run_single_response(
                                 except Exception:
                                     pass
 
-                                # Print with colorized labels for scannability
-                                try:
-                                    for line in out_str.splitlines():
-                                        ls = line.strip()
-                                        try:
-                                            width = console.size.width
-                                        except Exception:
-                                            width = 120
-                                        wrap_width = max(40, int(width) - 20)
+                                agent_name = (
+                                    getattr(agent, "name", None)
+                                    or getattr(getattr(agent, "model", None), "agent_name", None)
+                                    or "Agent"
+                                )
 
-                                        # Wrap and escape the line to respect terminal width
-                                        try:
-                                            wrapped = textwrap.fill(line, width=wrap_width)
-                                        except Exception:
-                                            wrapped = line
-
-                                        if ls.lower().startswith("thought"):
-                                            console.print(f"[yellow]{_escape(wrapped)}[/yellow]")
-                                        elif ls.lower().startswith("reflection"):
-                                            console.print(f"[blue]{_escape(wrapped)}[/blue]")
-                                        elif ls.lower().startswith("action"):
-                                            console.print(f"[green]{_escape(wrapped)}[/green]")
-                                        else:
-                                            console.print(_escape(wrapped))
-                                except Exception:
+                                if event.name == "message_output_created":
+                                    # Final response → Intelligence Panel
+                                    # Print a blank line first to visually separate from
+                                    # any streaming tokens that were written to stdout.
                                     try:
-                                        print(out_str)
+                                        import sys as _sys
+                                        _sys.stdout.write("\n")
+                                        _sys.stdout.flush()
                                     except Exception:
                                         pass
+                                    try:
+                                        from cai.repl.ui.renderers import display_agent_analysis
+                                        display_agent_analysis(out_str, agent_name)
+                                    except Exception:
+                                        try:
+                                            console.print(out_str)
+                                        except Exception:
+                                            try:
+                                                print(out_str)
+                                            except Exception:
+                                                pass
+                                else:
+                                    # reasoning_item_created → colorized intermediate thinking
+                                    try:
+                                        for line in out_str.splitlines():
+                                            ls = line.strip()
+                                            try:
+                                                width = console.size.width
+                                            except Exception:
+                                                width = 120
+                                            wrap_width = max(40, int(width) - 20)
+                                            try:
+                                                wrapped = textwrap.fill(line, width=wrap_width)
+                                            except Exception:
+                                                wrapped = line
+                                            if ls.lower().startswith("thought"):
+                                                console.print(f"[yellow]{_escape(wrapped)}[/yellow]")
+                                            elif ls.lower().startswith("reflection"):
+                                                console.print(f"[blue]{_escape(wrapped)}[/blue]")
+                                            elif ls.lower().startswith("action"):
+                                                console.print(f"[green]{_escape(wrapped)}[/green]")
+                                            else:
+                                                console.print(_escape(wrapped))
+                                    except Exception:
+                                        try:
+                                            print(out_str)
+                                        except Exception:
+                                            pass
 
                                 # Mark this message content as rendered so final-print
                                 # paths can skip duplicate output.
                                 try:
                                     from cai.util import mark_runitem_rendered
-
-                                    agent_name = getattr(agent, "name", None) or getattr(getattr(agent, "model", None), "agent_name", None) or "Agent"
                                     mark_runitem_rendered(agent_name, content=out_str)
                                 except Exception:
                                     pass

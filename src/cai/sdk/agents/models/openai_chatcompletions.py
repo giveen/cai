@@ -1338,28 +1338,28 @@ class OpenAIChatCompletionsModel(Model):
                 # Ensure we're in non-streaming mode for proper markdown parsing
                 previous_stream_setting = os.environ.get("CAI_STREAM", "false")
                 os.environ["CAI_STREAM"] = "false"  # Force non-streaming mode for markdown parsing
-
-                # Print the agent message for CLI display
-                cli_print_agent_messages(
-                    agent_name=getattr(self, "agent_name", "Agent"),
-                    message=response.choices[0].message,
-                    counter=getattr(self, "interaction_counter", 0),
-                    model=str(self.model),
-                    debug=False,
-                    interaction_input_tokens=input_tokens,
-                    interaction_output_tokens=output_tokens,
-                    interaction_reasoning_tokens=reasoning_tokens,
-                    total_input_tokens=getattr(self, "total_input_tokens", 0),
-                    total_output_tokens=getattr(self, "total_output_tokens", 0),
-                    total_reasoning_tokens=getattr(self, "total_reasoning_tokens", 0),
-                    interaction_cost=interaction_cost,
-                    total_cost=total_cost,
-                    tool_output=tool_output,  # Pass tool_output only when needed
-                    suppress_empty=True,  # Keep suppress_empty=True as requested
-                )
-
-                # Restore previous streaming setting
-                os.environ["CAI_STREAM"] = previous_stream_setting
+                try:
+                    # Print the agent message for CLI display
+                    cli_print_agent_messages(
+                        agent_name=getattr(self, "agent_name", "Agent"),
+                        message=response.choices[0].message,
+                        counter=getattr(self, "interaction_counter", 0),
+                        model=str(self.model),
+                        debug=False,
+                        interaction_input_tokens=input_tokens,
+                        interaction_output_tokens=output_tokens,
+                        interaction_reasoning_tokens=reasoning_tokens,
+                        total_input_tokens=getattr(self, "total_input_tokens", 0),
+                        total_output_tokens=getattr(self, "total_output_tokens", 0),
+                        total_reasoning_tokens=getattr(self, "total_reasoning_tokens", 0),
+                        interaction_cost=interaction_cost,
+                        total_cost=total_cost,
+                        tool_output=tool_output,  # Pass tool_output only when needed
+                        suppress_empty=True,  # Keep suppress_empty=True as requested
+                    )
+                finally:
+                    # Always restore CAI_STREAM even if cli_print_agent_messages throws
+                    os.environ["CAI_STREAM"] = previous_stream_setting
 
             # --- DEFERRED: Tool calls are no longer added immediately ---
             # Tool calls will be added atomically with their responses
@@ -2881,7 +2881,7 @@ class OpenAIChatCompletionsModel(Model):
                     # Log the assistant message
                     self.logger.log_assistant_message(state.text_content_index_and_output[1].text)
 
-                # Reset the suppress flag for future requests
+                # Reset the suppress flag for future requests (success path)
                 self.suppress_final_output = False
 
                 # Log the complete response
@@ -2956,6 +2956,10 @@ class OpenAIChatCompletionsModel(Model):
         finally:
             # Always clean up resources
             # This block executes whether the try block succeeds, fails, or is interrupted
+
+            # Ensure suppress flag is always reset so a subsequent turn is never silently
+            # blocked when an exception fires after a tool-call during streaming.
+            self.suppress_final_output = False
 
             # Clean up streaming context
             if streaming_context:
