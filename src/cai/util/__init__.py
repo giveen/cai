@@ -971,6 +971,33 @@ def finish_claude_thinking_display(agent_name_or_ctx) -> None:
     _AGENT_STREAMING_CONTEXTS.pop(agent_name_or_ctx, None)
 
 
+def detect_claude_thinking_in_stream(model: str) -> bool:
+    """Return True if *model* is known to emit reasoning/thinking content.
+
+    Used by the streaming loop to decide whether to render the
+    ``print_claude_reasoning_simple`` fallback when no rich thinking
+    context is available (e.g. in the TUI).
+    """
+    m = (model or "").lower()
+    return "claude" in m or "deepseek" in m
+
+
+def print_claude_reasoning_simple(
+    reasoning_content: str,
+    agent_name: str = "",
+    model: str = "",
+) -> None:
+    """Print reasoning/thinking content to stdout in a minimal plain-text form.
+
+    This is the non-rich fallback used when the rich streaming context is
+    unavailable (e.g. inside the TUI's worker coroutine).
+    """
+    if not reasoning_content:
+        return
+    prefix = f"[{agent_name}] " if agent_name else ""
+    print(f"{prefix}<thinking> {reasoning_content.strip()} </thinking>")
+
+
 # -------------------- Prompt/template helpers --------------------
 def load_prompt_template(template_path: str) -> str:
     try:
@@ -1098,6 +1125,8 @@ __all__ = [
     "start_claude_thinking_if_applicable",
     "update_claude_thinking_content",
     "finish_claude_thinking_display",
+    "detect_claude_thinking_in_stream",
+    "print_claude_reasoning_simple",
     "load_prompt_template",
     "create_system_prompt_renderer",
     "append_instructions",
