@@ -4087,6 +4087,12 @@ class OpenAIChatCompletionsModel(Model):
             # Prefer raw_kwargs for direct client calls when available
             if use_direct_client and raw_kwargs is not None:
                 client_kwargs = raw_kwargs
+            # Strip LiteLLM-only params that the OpenAI AsyncClient doesn't accept
+            if use_direct_client:
+                _litellm_only = {"api_base", "api_key", "custom_llm_provider",
+                                 "extra_headers", "store"}
+                client_kwargs = {k: v for k, v in client_kwargs.items()
+                                 if k not in _litellm_only}
 
         except Exception:
             use_direct_client = False
@@ -4204,6 +4210,12 @@ class OpenAIChatCompletionsModel(Model):
                         if (use_direct_client and raw_kwargs is not None)
                         else kwargs_retry
                     )
+
+                    if use_direct_client:
+                        _litellm_only = {"api_base", "api_key", "custom_llm_provider",
+                                         "extra_headers", "store"}
+                        client_kwargs_retry = {k: v for k, v in client_kwargs_retry.items()
+                                               if k not in _litellm_only}
 
                     try:
                         if stream:
