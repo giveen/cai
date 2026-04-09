@@ -1355,7 +1355,8 @@ This session is being continued from a previous conversation that ran out of con
         )
 
         # Generate summary
-        console.print(f"[yellow]Generating summary for {target} using {model_name}...[/yellow]")
+        from cai.util import write_progress
+        write_progress(f"Generating summary for {target} using {model_name}...", "yellow")
 
         try:
             result = await Runner.run(
@@ -1370,7 +1371,7 @@ This session is being continued from a previous conversation that ran out of con
                 return None
 
         except Exception as e:
-            console.print(f"[red]Error generating summary: {e}[/red]")
+            write_progress(f"Error generating summary: {e}", "red")
             return None
         finally:
             # Best-effort: explicitly cleanup the temporary summary/support model

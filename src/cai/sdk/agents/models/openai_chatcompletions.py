@@ -4449,13 +4449,13 @@ class OpenAIChatCompletionsModel(Model):
                         if isinstance(m, dict) and m.get("role") == "assistant"
                     )
                     if _asst_count >= _support_interval:
-                        from rich.console import Console as _Console
+                        from cai.util import write_progress
 
-                        _console = _Console()
-                        _console.print(
-                            f"\n[bold yellow]⟳ Auto-compact: {_asst_count} LLM responses "
+                        write_progress(
+                            f"⟳ Auto-compact: {_asst_count} LLM responses "
                             f"(threshold {_support_interval}) — summarising with "
-                            f"{_support_model}[/bold yellow]"
+                            f"{_support_model}",
+                            "bold yellow",
                         )
                         _did_compact = False
                         try:
@@ -4518,13 +4518,14 @@ class OpenAIChatCompletionsModel(Model):
                                     }
                                 )
                                 os.environ["CAI_CONTEXT_USAGE"] = "0.0"
-                                _console.print(
-                                    "[bold green]✓ Memory summary applied — "
-                                    "context window reset — restarting task[/bold green]\n"
+                                write_progress(
+                                    "✓ Memory summary applied — "
+                                    "context window reset — restarting task",
+                                    "bold green",
                                 )
                                 _did_compact = True
                         except Exception as _ce:
-                            _console.print(f"[red]Auto-compact error: {_ce}[/red]")
+                            write_progress(f"Auto-compact error: {_ce}", "red")
 
                         # Only abort the current runner invocation if compaction
                         # actually succeeded; otherwise continue normally to avoid
@@ -4535,8 +4536,9 @@ class OpenAIChatCompletionsModel(Model):
                                 f"(threshold {_support_interval})"
                             )
                         else:
-                            _console.print(
-                                "[yellow]Auto-compact did not produce a summary — continuing without compaction.[/yellow]"
+                            write_progress(
+                                "Auto-compact did not produce a summary — continuing without compaction.",
+                                "yellow",
                             )
             except ContextCompactedError:
                 raise  # propagate to the outer runner / CLI loop

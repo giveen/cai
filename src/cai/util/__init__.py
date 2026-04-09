@@ -32,6 +32,41 @@ from wasabi.util import color
 theme = Theme({"dim": "#9E9E9E"})
 console = Console(theme=theme)
 
+# -------------------- Progress writer (TUI / CLI) --------------------
+# The TUI sets this to a callable(msg: str, style: str | None) so that
+# auto-compact progress messages are routed to the RichLog widget instead
+# of stdout.  When None, callers fall back to plain console.print().
+_progress_writer: Optional[Callable[[str, Optional[str]], None]] = None
+
+
+def set_progress_writer(writer: Optional[Callable[[str, Optional[str]], None]]) -> None:
+    """Register (or clear) a global progress message writer.
+
+    The callable receives ``(msg, style)`` where *style* is an optional Rich
+    markup colour string.  Pass ``None`` to restore the default console output.
+    """
+    global _progress_writer
+    _progress_writer = writer
+
+
+def write_progress(msg: str, style: Optional[str] = None) -> None:
+    """Write a progress message via the registered writer or fallback console."""
+    global _progress_writer
+    if _progress_writer is not None:
+        try:
+            _progress_writer(msg, style)
+        except Exception:
+            pass
+    else:
+        try:
+            if style:
+                console.print(f"[{style}]{msg}[/{style}]")
+            else:
+                console.print(msg)
+        except Exception:
+            pass
+
+
 # -------------------- Timers (active / idle) --------------------
 _active_timer_start: Optional[float] = None
 _active_time_total: float = 0.0
@@ -1099,6 +1134,8 @@ def get_model_input_tokens(model: str) -> Optional[int]:
 __all__ = [
     "console",
     "color",
+    "set_progress_writer",
+    "write_progress",
     "COST_TRACKER",
     "calculate_model_cost",
     "start_active_timer",

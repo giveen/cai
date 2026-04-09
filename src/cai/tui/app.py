@@ -2602,6 +2602,26 @@ class TerminalPanel(Widget):
             result = Runner.run_streamed(self._agent, text)
             stream_iter = result.stream_events()
 
+            # Register a TUI-aware progress writer so that auto-compact
+            # status messages (e.g. "Generating summary…") appear in the
+            # RichLog instead of stdout.
+            def _tui_progress_writer(msg: str, style: str | None = None) -> None:
+                try:
+                    from rich.markup import escape as _re
+                    plain = _re(str(msg))
+                    colour = style or "bold yellow"
+                    self._write_system_message("compact", plain, style=colour)
+                    # Keep the status bar updated during long summarisation calls
+                    short = plain if len(plain) <= 72 else plain[:71] + "…"
+                    self._set_status(f"T{self._term_id}> {short}")
+                except Exception:
+                    pass
+            try:
+                from cai.util import set_progress_writer
+                set_progress_writer(_tui_progress_writer)
+            except Exception:
+                pass
+
             try:
                 import sys as _sys
                 _sys.stderr.write(f"[cai-tui-debug] stream iterator obtained term={self._term_id}\n")
@@ -2892,6 +2912,12 @@ class TerminalPanel(Widget):
         finally:
             self._busy = False
             self._run_worker = None
+            # Unregister the TUI progress writer so CLI mode gets its console back.
+            try:
+                from cai.util import set_progress_writer
+                set_progress_writer(None)
+            except Exception:
+                pass
             # Restore CAI_STREAM / CAI_STREAM_DEBUG to their original values.
             try:
                 if _prev_cai_stream is None:
