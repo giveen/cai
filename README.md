@@ -361,6 +361,25 @@ pip install cai-framework
 
 Always create a new virtual environment to ensure proper dependency installation when updating CAI.
 
+Optional: browser automation
+----------------------------
+
+To enable the browser automation features (used by the `browser_navigate` tool), install the optional `browser` extras and install Chromium for Playwright:
+
+```bash
+# from a fresh virtualenv
+pip install 'cai-framework[browser]'
+# then install the browser binaries Playwright uses
+python -m playwright install chromium
+```
+
+If you prefer to install Playwright manually instead of using extras, run:
+
+```bash
+pip install playwright playwright-chromium
+python -m playwright install chromium
+```
+
 The following subsections provide a more detailed walkthrough on selected popular Operating Systems. Refer to the [Development](#development) section for developer-related install instructions.
 For API Keys env syntax  check litellm Documentation. [LiteLLM Documentation](https://docs.litellm.ai/docs/tutorials/installation)
 
