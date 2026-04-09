@@ -12,6 +12,11 @@ import sys
 import warnings
 from typing import Any
 
+# Preserve the original warnings.showwarning so our custom handler can invoke
+# the real implementation instead of recursing when we replace
+# `warnings.showwarning` in `install_warning_handler()`.
+_original_showwarning = warnings.showwarning
+
 
 def custom_warning_handler(
     message: Any, category: Any, filename: str, lineno: int, file=None, line=None
@@ -22,7 +27,13 @@ def custom_warning_handler(
     output during normal operation.
     """
     if os.getenv("CAI_DEBUG", "1") == "2":
-        warnings.showwarning(message, category, filename, lineno, file, line)
+        # Call the preserved original to avoid recursion (warnings.showwarning
+        # may have been replaced by this function in install_warning_handler).
+        try:
+            _original_showwarning(message, category, filename, lineno, file, line)
+        except Exception:
+            # Fall back to the default behaviour if invoking the original fails
+            pass
 
 
 def install_warning_handler() -> None:
