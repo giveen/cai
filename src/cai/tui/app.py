@@ -42,6 +42,7 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
+    LoadingIndicator,
     RichLog,
     Static,
     TabbedContent,
@@ -601,6 +602,13 @@ TerminalPanel.-error-panel {
     background: #001a00;
     color: #00aa00;
     padding: 0 1;
+}
+
+.term-loading {
+    height: 1;
+    display: none;
+    background: #001a00;
+    color: #00cc66;
 }
 
 TerminalPanel.-busy-panel .term-status {
@@ -2246,6 +2254,10 @@ class TerminalPanel(Widget):
             wrap=True,
         )
         yield Static("", id=f"term-status-{self._term_id}", classes="term-status")
+        yield LoadingIndicator(
+            id=f"term-loading-{self._term_id}",
+            classes="term-loading",
+        )
         with Horizontal(classes="term-input-row"):
             yield Static("CAI>", classes="term-input-prefix")
             with Vertical(classes="term-input-column"):
@@ -2637,6 +2649,22 @@ class TerminalPanel(Widget):
             except Exception:
                 pass
 
+            # Register a loading-state writer so that long-running tools
+            # (e.g. cewl wordlist generation) can show/hide the LoadingIndicator.
+            def _tui_loading_writer(visible: bool) -> None:
+                try:
+                    indicator = self.query_one(
+                        f"#term-loading-{self._term_id}", LoadingIndicator
+                    )
+                    indicator.display = visible
+                except Exception:
+                    pass
+            try:
+                from cai.util import set_tool_loading_writer
+                set_tool_loading_writer(_tui_loading_writer)
+            except Exception:
+                pass
+
             try:
                 import sys as _sys
                 _sys.stderr.write(f"[cai-tui-debug] stream iterator obtained term={self._term_id}\n")
@@ -2937,6 +2965,19 @@ class TerminalPanel(Widget):
             try:
                 from cai.util import set_panel_writer
                 set_panel_writer(None)
+            except Exception:
+                pass
+            # Unregister the loading writer and ensure the indicator is hidden.
+            try:
+                from cai.util import set_tool_loading_writer
+                set_tool_loading_writer(None)
+            except Exception:
+                pass
+            try:
+                indicator = self.query_one(
+                    f"#term-loading-{self._term_id}", LoadingIndicator
+                )
+                indicator.display = False
             except Exception:
                 pass
             # Restore CAI_STREAM / CAI_STREAM_DEBUG to their original values.

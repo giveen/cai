@@ -34,6 +34,7 @@ highlighting NTLM hashes, successful logins, and service errors.
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import shlex
 import shutil
@@ -152,7 +153,7 @@ def _distil_output(raw: str) -> tuple[str, list[str]]:
 
 
 @function_tool
-def impacket_executor(
+async def impacket_executor(
     tool_name: str,
     target: str,
     credentials: str = "",
@@ -254,16 +255,18 @@ def impacket_executor(
         except ValueError as exc:
             return f"[ERROR] Could not parse options: {exc}"
 
-    # ── 4. Execute (non-interactive, 5-minute hard timeout) ────────────────
-    try:
-        result = subprocess.run(
+    # ── 4. Execute in a thread so the Textual event loop stays responsive ──
+    def _do_run() -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+        return subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=300,
-            # Explicitly no shell — arguments are tokenised above.
-            shell=False,
+            shell=False,  # args already tokenised — no shell needed
         )
+
+    try:
+        result = await asyncio.to_thread(_do_run)
         raw_output = result.stdout
         if result.stderr:
             raw_output += f"\n[stderr]\n{result.stderr}"

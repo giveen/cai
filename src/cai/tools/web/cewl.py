@@ -6,6 +6,7 @@ words for use in password attacks.  All inputs are validated to prevent
 shell-injection from agent-supplied arguments.
 """
 
+import asyncio
 import shlex
 
 from cai.sdk.agents import function_tool
@@ -15,7 +16,7 @@ from cai.tools.validation import is_url_safe, validate_args_no_injection
 
 
 @function_tool
-def cewl(
+async def cewl(
     url: str,
     depth: int = 2,
     min_word_length: int = 3,
@@ -162,7 +163,20 @@ def cewl(
     if guard_err:
         return guard_err
 
-    result = run_command(command, timeout=timeout)
+    try:
+        from cai.util import notify_tool_loading, write_progress
+        write_progress("Generating wordlist with CeWL…", "bold yellow")
+        notify_tool_loading(True)
+    except Exception:
+        pass
+    try:
+        result = await asyncio.to_thread(run_command, command, timeout=timeout)
+    finally:
+        try:
+            from cai.util import notify_tool_loading
+            notify_tool_loading(False)
+        except Exception:
+            pass
     if isinstance(result, str):
         result = validation.sanitize_tool_output(command, result)
     return result

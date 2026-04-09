@@ -70,6 +70,33 @@ def write_panel(renderable: Any) -> None:
             pass
 
 
+# The TUI sets this to a callable(visible: bool) so that long-running
+# tool calls (e.g. cewl wordlist generation) can display a LoadingIndicator
+# in the active terminal widget.  When None the callback is silently skipped.
+_tool_loading_writer: Optional[Callable[[bool], None]] = None
+
+
+def set_tool_loading_writer(writer: Optional[Callable[[bool], None]]) -> None:
+    """Register (or clear) a global tool-loading state notifier.
+
+    The callable receives a single ``visible: bool`` argument — ``True`` to
+    show the loading indicator, ``False`` to hide it.
+    Pass ``None`` to clear the registration.
+    """
+    global _tool_loading_writer
+    _tool_loading_writer = writer
+
+
+def notify_tool_loading(visible: bool) -> None:
+    """Notify the registered loading writer to show or hide the indicator."""
+    global _tool_loading_writer
+    if _tool_loading_writer is not None:
+        try:
+            _tool_loading_writer(visible)
+        except Exception:
+            pass
+
+
 def set_progress_writer(writer: Optional[Callable[[str, Optional[str]], None]]) -> None:
     """Register (or clear) a global progress message writer.
 
@@ -1169,6 +1196,8 @@ __all__ = [
     "write_progress",
     "set_panel_writer",
     "write_panel",
+    "set_tool_loading_writer",
+    "notify_tool_loading",
     "COST_TRACKER",
     "calculate_model_cost",
     "start_active_timer",
