@@ -2037,7 +2037,18 @@ class TerminalPanel(Widget):
             return
 
         if key == "enter":
-            if "\n" not in text:
+            # Textual's TextArea binding fires action_handle_newline (inserts \n)
+            # BEFORE this on_key handler receives the event via bubbling.  That
+            # means `text` already has a trailing '\n' for single-line inputs.
+            # Strip trailing newlines before the single-line guard so the check
+            # still works: if the stripped text contains no embedded newline the
+            # user was in single-line mode and wants to submit.
+            effective_text = text.rstrip("\n")
+            if "\n" not in effective_text:
+                # Undo the newline TextArea just inserted so the input widget
+                # is clean when _submit_from_input_widget reads it.
+                if text != effective_text:
+                    self._set_input_text(effective_text)
                 event.prevent_default()
                 event.stop()
                 await self._submit_from_input_widget()
@@ -2178,6 +2189,21 @@ class TerminalPanel(Widget):
         self._busy = True
         self._set_visual_state("busy")
         self._set_status(f"T{self._term_id}> [{ts}] ⟳ Working… (Ctrl+C to cancel)")
+        # Mandatory handoff trace — visible on stderr even when Textual occupies
+        # the terminal.  Confirms input crossed the UI→Runner boundary.
+        try:
+            import sys as _sys
+            _sys.stderr.write(
+                f"[CAI-TUI] handoff: T{self._term_id} agent={self._agent_name!r} "
+                f"text_len={len(text)} preview={text[:80]!r}\n"
+            )
+            _sys.stderr.flush()
+            logger.info(
+                "[TUI-handoff] term=%d agent=%r text_len=%d",
+                self._term_id, self._agent_name, len(text),
+            )
+        except Exception:
+            pass
         self._run_worker = self._run_agent(text)
 
     @work(exclusive=True)
