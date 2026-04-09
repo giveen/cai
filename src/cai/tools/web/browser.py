@@ -30,7 +30,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from cai.sdk.agents import function_tool
 
@@ -246,6 +246,92 @@ async def _run_playwright(
             await page.screenshot(path=final_spath, full_page=False)
             screenshot_paths.append(final_spath)
 
+            # Attempt to build a simplified interactive (ARIA) map of the page.
+            # This returns a list of interactive elements with role, accessible
+            # name, id/classes, a best-effort unique selector, and bounding rect.
+            interactive_map = []
+            try:
+                interactive_map = await page.evaluate(r'''() => {
+                    const uniqueSelector = (el) => {
+                        if (!el || el.nodeType !== 1) return "";
+                        if (el.id) return `#${el.id}`;
+                        const parts = [];
+                        while (el && el.nodeType === 1) {
+                            const tag = el.tagName.toLowerCase();
+                            let nth = 1;
+                            let sib = el;
+                            while ((sib = sib.previousElementSibling) != null) {
+                                if (sib.tagName === el.tagName) nth++;
+                            }
+                            parts.unshift(`${tag}:nth-of-type(${nth})`);
+                            el = el.parentElement;
+                        }
+                        return parts.join(' > ');
+                    };
+
+                    const getName = (el) => {
+                        if (!el) return '';
+                        try {
+                            const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+                            if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
+                            const labelledby = el.getAttribute && el.getAttribute('aria-labelledby');
+                            if (labelledby) {
+                                const ids = labelledby.split(/\s+/);
+                                let txt = '';
+                                for (const id of ids) {
+                                    const ref = document.getElementById(id);
+                                    if (ref) txt += ' ' + (ref.innerText || ref.textContent || '');
+                                }
+                                if (txt.trim()) return txt.trim();
+                            }
+                            if (el.value) return String(el.value);
+                            const text = (el.innerText || el.textContent || '').trim();
+                            if (text) return text;
+                        } catch (e) {
+                            // ignore
+                        }
+                        return '';
+                    };
+
+                    const interactiveRoles = new Set([
+                        'button','link','textbox','checkbox','combobox','menuitem','option',
+                        'tab','switch','slider','searchbox','radio','menuitemcheckbox','menuitemradio'
+                    ]);
+
+                    const isInteractive = (el) => {
+                        if (!el || el.nodeType !== 1) return false;
+                        const tag = el.tagName.toLowerCase();
+                        if (['a','button','input','select','textarea'].includes(tag)) return true;
+                        try {
+                            const role = (el.getAttribute && el.getAttribute('role')) || '';
+                            if (role && interactiveRoles.has(role.toLowerCase())) return true;
+                            if (el.getAttribute && (el.getAttribute('onclick') || el.hasAttribute('contenteditable'))) return true;
+                        } catch (e) {
+                            // ignore
+                        }
+                        return false;
+                    };
+
+                    const all = Array.from(document.querySelectorAll('*'));
+                    const els = all.filter(isInteractive).slice(0, 200);
+                    return els.map(el => {
+                        let rect = null;
+                        try {
+                            const r = el.getBoundingClientRect();
+                            rect = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+                        } catch (e) {
+                            rect = null;
+                        }
+                        const role = (el.getAttribute && el.getAttribute('role')) || el.tagName.toLowerCase();
+                        const name = getName(el) || '';
+                        const id = el.id || '';
+                        const classes = el.className || '';
+                        return { role, name: (name||'').replace(/\s+/g,' ').slice(0,200), id, classes, tag: el.tagName.toLowerCase(), selector: uniqueSelector(el), rect };
+                    });
+                }''')
+            except Exception:
+                interactive_map = []
+
             page_title = await page.title()
             final_url = page.url
 
@@ -258,6 +344,7 @@ async def _run_playwright(
         "url": final_url,
         "screenshots": screenshot_paths,
         "evaluate_results": evaluate_results,
+        "interactive_map": interactive_map,
         "error": None,
     }
 
@@ -292,7 +379,8 @@ async def browser_navigate(
 
     Returns:
         JSON string with keys: title, url, screenshots (list of paths),
-        evaluate_results, sitrep (VLM visual description if available), error.
+        evaluate_results, interactive_map (list of actionable ARIA elements),
+        sitrep (VLM visual description if available), error.
     """
     # ── Input validation ──────────────────────────────────────────────────
     if not _URL_RE.match(url):
@@ -360,11 +448,34 @@ async def browser_navigate(
         title_safe = str(result.get("title", ""))[:200]
         url_safe = str(result.get("url", ""))[:300]
 
+    # Sanitize interactive map entries when possible
+    interactive_map = result.get("interactive_map", []) or []
+    try:
+        from cai.agents.guardrails import sanitize_external_content as _sanitize
+        sanitized_map: list[dict] = []
+        for node in interactive_map:
+            if not isinstance(node, dict):
+                continue
+            sanitized_map.append(
+                {
+                    "role": _sanitize(node.get("role", "")) if node.get("role") else "",
+                    "name": _sanitize(node.get("name", "")) if node.get("name") else "",
+                    "id": _sanitize(node.get("id", "")) if node.get("id") else "",
+                    "classes": _sanitize(node.get("classes", "")) if node.get("classes") else "",
+                    "tag": _sanitize(node.get("tag", "")) if node.get("tag") else "",
+                    "selector": _sanitize(node.get("selector", "")) if node.get("selector") else "",
+                    "rect": node.get("rect"),
+                }
+            )
+    except Exception:
+        sanitized_map = interactive_map
+
     out = {
         "title": title_safe,
         "url": url_safe,
         "screenshots": screenshots,
         "evaluate_results": result.get("evaluate_results", []),
+        "interactive_map": sanitized_map,
         "sitrep": result.get("sitrep"),
         "error": None,
     }
