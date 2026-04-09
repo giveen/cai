@@ -59,6 +59,7 @@ from cai.tools.web.cve_search import (
     cve_search_product,
 )
 from cai.tools.web.sqlmap import sqlmap
+from cai.tools.exploitation.exploit_search import github_poc_search
 
 # ── Always-on tool list ───────────────────────────────────────────────────────
 ALL_TOOLS = [
@@ -98,6 +99,8 @@ ALL_TOOLS = [
     cve_search_last,
     cve_search_browse,
     cve_search_db_info,
+    # Exploit intelligence
+    github_poc_search,
     set_session_cookie,
     get_pinned_session_cookie,
     unpin_session_cookie,
