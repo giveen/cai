@@ -326,6 +326,43 @@ class ItemHelpers:
         return text
 
     @classmethod
+    def text_reasoning_output(cls, reasoning: ReasoningItem) -> str:
+        """Extracts displayable text from a reasoning item."""
+        raw_item = getattr(reasoning, "raw_item", {}) or {}
+
+        try:
+            if hasattr(raw_item, "model_dump"):
+                data = raw_item.model_dump(exclude_unset=True)  # type: ignore[attr-defined]
+            elif isinstance(raw_item, dict):
+                data = raw_item
+            else:
+                data = {}
+        except Exception:
+            data = raw_item if isinstance(raw_item, dict) else {}
+
+        summary = data.get("summary", []) if isinstance(data, dict) else []
+        text = ""
+
+        for item in summary:
+            if isinstance(item, dict):
+                text += str(item.get("text", ""))
+            elif hasattr(item, "text"):
+                text += str(item.text)
+
+        if text:
+            return text
+
+        if isinstance(data, dict):
+            content = data.get("content", [])
+            for item in content:
+                if isinstance(item, dict):
+                    text += str(item.get("text", ""))
+                elif hasattr(item, "text"):
+                    text += str(item.text)
+
+        return text
+
+    @classmethod
     def tool_call_output_item(
         cls, tool_call: ResponseFunctionToolCall, output: str
     ) -> FunctionCallOutput:

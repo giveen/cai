@@ -18,7 +18,9 @@ from cai.sdk.agents import (
     ModelBehaviorError,
     ModelResponse,
     ReasoningItem,
+    RunConfig,
     RunContextWrapper,
+    RunHooks,
     Runner,
     ToolCallItem,
     Usage,
@@ -344,6 +346,42 @@ async def test_reasoning_item_parsed_correctly():
     assert any(
         isinstance(item, ReasoningItem) and item.raw_item is reasoning for item in result.new_items
     )
+
+
+@pytest.mark.asyncio
+async def test_reasoning_text_used_as_final_output_when_message_missing():
+    agent = Agent(name="test")
+    reasoning = ResponseReasoningItem(
+        id="r1",
+        type="reasoning",
+        summary=[Summary(text="Successfully accessed natas4", type="summary_text")],
+    )
+    response = ModelResponse(
+        output=[reasoning],
+        usage=Usage(),
+        referenceable_id=None,
+    )
+    processed = RunImpl.process_model_response(
+        agent=agent,
+        response=response,
+        output_schema=None,
+        handoffs=[],
+        all_tools=await agent.get_all_tools(),
+    )
+
+    result = await RunImpl.execute_tools_and_side_effects(
+        agent=agent,
+        original_input="test",
+        pre_step_items=[],
+        new_response=response,
+        processed_response=processed,
+        output_schema=None,
+        hooks=RunHooks(),
+        context_wrapper=RunContextWrapper(None),
+        run_config=RunConfig(),
+    )
+
+    assert result.next_step.output == "Successfully accessed natas4"
 
 
 class DummyComputer(Computer):

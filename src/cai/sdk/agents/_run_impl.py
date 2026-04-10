@@ -357,10 +357,16 @@ class RunImpl:
 
         # Now we can check if the model also produced a final output
         message_items = [item for item in new_step_items if isinstance(item, MessageOutputItem)]
+        reasoning_items = [item for item in new_step_items if isinstance(item, ReasoningItem)]
 
         # We'll use the last content output as the final output
         potential_final_output_text = (
             ItemHelpers.extract_last_text(message_items[-1].raw_item) if message_items else None
+        )
+        potential_reasoning_output_text = (
+            ItemHelpers.text_reasoning_output(reasoning_items[-1]).strip()
+            if reasoning_items
+            else ""
         )
 
         # There are two possibilities that lead to a final output:
@@ -387,7 +393,7 @@ class RunImpl:
                 new_response=new_response,
                 pre_step_items=pre_step_items,
                 new_step_items=new_step_items,
-                final_output=potential_final_output_text or "",
+                final_output=potential_final_output_text or potential_reasoning_output_text,
                 hooks=hooks,
                 context_wrapper=context_wrapper,
             )
