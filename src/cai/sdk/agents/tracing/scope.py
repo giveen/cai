@@ -28,7 +28,14 @@ class Scope:
 
     @classmethod
     def reset_current_span(cls, token: "contextvars.Token[Span[Any] | None]") -> None:
-        _current_span.reset(token)
+        try:
+            _current_span.reset(token)
+        except ValueError:
+            # The token was created in a different Context and cannot be
+            # reset in this one (happens during shutdown or when spans are
+            # moved across tasks). Log and silently ignore to avoid raising
+            # during cleanup.
+            logger.debug("reset_current_span: token from different Context; skipping reset")
 
     @classmethod
     def get_current_trace(cls) -> "Trace | None":
@@ -42,4 +49,7 @@ class Scope:
     @classmethod
     def reset_current_trace(cls, token: "contextvars.Token[Trace | None]") -> None:
         logger.debug("Resetting current trace")
-        _current_trace.reset(token)
+        try:
+            _current_trace.reset(token)
+        except ValueError:
+            logger.debug("reset_current_trace: token from different Context; skipping reset")
