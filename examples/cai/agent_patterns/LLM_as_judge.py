@@ -36,9 +36,7 @@ if os.getenv("CAI_MODEL", "qwen2.5:14b").startswith("qwen"):
 # Modify OpenAIChatCompletionsModel._fetch_response_litellm_ollama to debug output
 import cai.sdk.agents.models.openai_chatcompletions
 
-original_fetch_response_litellm_ollama = (
-    cai.sdk.agents.models.openai_chatcompletions.OpenAIChatCompletionsModel._fetch_response_litellm_ollama
-)
+original_fetch_response_litellm_ollama = cai.sdk.agents.models.openai_chatcompletions.OpenAIChatCompletionsModel._fetch_response_litellm_ollama
 
 
 async def debug_fetch_response_litellm_ollama(
@@ -83,9 +81,7 @@ async def debug_fetch_response_litellm_ollama(
 
 
 # Patch the function
-cai.sdk.agents.models.openai_chatcompletions.OpenAIChatCompletionsModel._fetch_response_litellm_ollama = (
-    debug_fetch_response_litellm_ollama
-)
+cai.sdk.agents.models.openai_chatcompletions.OpenAIChatCompletionsModel._fetch_response_litellm_ollama = debug_fetch_response_litellm_ollama
 
 # CTF task planner agent (performs planning)
 ctf_task_planner = Agent(

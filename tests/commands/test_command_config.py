@@ -258,9 +258,9 @@ class TestConfigCommand:
                 if default is not None:
                     # Accept boolean strings or numeric values (for debug levels)
                     valid_values = ["true", "false", "0", "1", "2"]
-                    assert (
-                        default.lower() in valid_values
-                    ), f"{var_name} should have boolean-like or numeric default"
+                    assert default.lower() in valid_values, (
+                        f"{var_name} should have boolean-like or numeric default"
+                    )
 
             # Numeric variables should have numeric defaults
             if any(keyword in var_name.lower() for keyword in ["turns", "limit", "interval"]):

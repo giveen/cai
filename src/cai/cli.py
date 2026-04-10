@@ -591,6 +591,17 @@ def main():
         # If tracing API isn't available for some reason, ignore.
         pass
 
+    # Ensure CLI startup reflects central config defaults so older codepaths
+    # that read environment variables directly still see consistent values.
+    try:
+        from cai.config import CAI_CTX_LIMIT, CAI_AUTO_COMPACT_THRESHOLD
+
+        os.environ.setdefault("CAI_CTX_LIMIT", str(CAI_CTX_LIMIT))
+        os.environ.setdefault("CAI_AUTO_COMPACT_THRESHOLD", str(CAI_AUTO_COMPACT_THRESHOLD))
+    except Exception:
+        # Best-effort: continue even if config isn't available at runtime
+        pass
+
     # Check for command-line arguments to use as initial prompt.
     # --tui flag triggers the Textual TUI and is consumed here.
     initial_prompt = None
@@ -677,7 +688,17 @@ def main():
     # below so that callers (including the code above) use the refactored
     # implementation in `cai.util.orchestration` while preserving the
     # original public API `run_cai_cli`.
-    run_cai_cli(agent, initial_prompt=initial_prompt)
+    try:
+        from cai.config import CAI_CTX_LIMIT, CAI_AUTO_COMPACT_THRESHOLD
+
+        ctx_vars = {
+            "CAI_CTX_LIMIT": int(CAI_CTX_LIMIT),
+            "CAI_AUTO_COMPACT_THRESHOLD": int(CAI_AUTO_COMPACT_THRESHOLD),
+        }
+    except Exception:
+        ctx_vars = {}
+
+    run_cai_cli(agent, context_variables=ctx_vars, initial_prompt=initial_prompt)
 
 
 def run_cai_cli(

@@ -875,6 +875,8 @@ For using private models, you are given a [`.env.example`](.env.example) file. C
 | CAI_WORKSPACE | Defines the name of the workspace |
 | CAI_WORKSPACE_DIR | Specifies the directory path where the workspace is located |
 | CAI_GUARDRAILS | Enable/disable guardrails for prompt injection protection (default: true) |
+| CAI_CTX_LIMIT | Maximum total context tokens allowed for models (absolute integer). Defaults to 393216; override via environment variable. |
+| CAI_AUTO_COMPACT_THRESHOLD | Token threshold to trigger automatic compaction. Accepts either a fraction (0.0-1.0) relative to `CAI_CTX_LIMIT`, or an absolute token count. Defaults to 90% of `CAI_CTX_LIMIT`. |
 
 </details>
 

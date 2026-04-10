@@ -23,6 +23,7 @@ Dependencies (install via `pip install -e ".[vault]"`):
 Return value (when imported and main() called):
     int — number of new chunks added during this run.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,6 +66,7 @@ _MetadataRow = dict[str, Union[str, int, float, bool]]
 def _import_or_abort(pkg: str) -> Any:
     try:
         import importlib
+
         return importlib.import_module(pkg)
     except ModuleNotFoundError:
         print(f"[ERROR] Missing package: {pkg}. Run: pip install {pkg}")
@@ -140,8 +142,12 @@ class _SentenceTransformerEmbeddingFn:
     def __init__(self, model_name: str = EMBED_MODEL) -> None:
         import chromadb  # type: ignore  # noqa: F401 — ensure chromadb is importable
         from sentence_transformers import SentenceTransformer  # type: ignore
-        print(f"  Loading embedding model '{model_name}' (first run will download ~80 MB) …",
-              end="", flush=True)
+
+        print(
+            f"  Loading embedding model '{model_name}' (first run will download ~80 MB) …",
+            end="",
+            flush=True,
+        )
         self._model = SentenceTransformer(model_name)
         print(" done")
 
@@ -176,10 +182,14 @@ def main() -> int:
         description=textwrap.dedent(__doc__ or ""),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--force", action="store_true",
-                        help="Delete existing collection and re-index from scratch.")
-    parser.add_argument("--update", action="store_true",
-                        help="Only process files newer than the last successful index run.")
+    parser.add_argument(
+        "--force", action="store_true", help="Delete existing collection and re-index from scratch."
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Only process files newer than the last successful index run.",
+    )
     args = parser.parse_args()
 
     # ── 1. Verify imports ────────────────────────────────────────────────────
@@ -208,6 +218,7 @@ def main() -> int:
         since_ts = _read_last_indexed_time()
         if since_ts > 0:
             import datetime
+
             since_dt = datetime.datetime.fromtimestamp(since_ts).strftime("%Y-%m-%d %H:%M:%S")
             print(f"  --update mode: only processing files modified after {since_dt}")
         else:
@@ -271,8 +282,10 @@ def main() -> int:
     if ids_buf:
         collection.upsert(ids=ids_buf, documents=docs_buf, metadatas=metas_buf)  # type: ignore[arg-type]
 
-    print(f"  Indexed {total_chunks} chunks from {total_docs - skipped} files "
-          f"({skipped} skipped). New/updated chunks this run: {new_chunks}.")
+    print(
+        f"  Indexed {total_chunks} chunks from {total_docs - skipped} files "
+        f"({skipped} skipped). New/updated chunks this run: {new_chunks}."
+    )
 
     # ── 5. Persist last-indexed timestamp ─────────────────────────────────────
     _write_last_indexed_time()
@@ -288,8 +301,7 @@ def main() -> int:
         snippet = doc[:120].replace("\n", " ")
         print(f"  [{i}] {src}: {snippet!r} …")
 
-    print("\n✓ Cyber-Vault ready. Collection size:",
-          collection.count(), "chunks.")
+    print("\n✓ Cyber-Vault ready. Collection size:", collection.count(), "chunks.")
     print(f"  DB path: {_CHROMA_DIR}")
     return new_chunks
 

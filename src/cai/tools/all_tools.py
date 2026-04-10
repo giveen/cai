@@ -25,6 +25,7 @@ from cai.tools.network.capture_traffic import capture_remote_traffic, remote_cap
 from cai.tools.network.impacket import impacket_executor
 from cai.tools.network.ligolo import ligolo_executor
 from cai.tools.network.netexec import netexec_executor
+from cai.tools.pw.hashcat import hashcat_executor
 from cai.tools.others.scripting import scripting_tool
 from cai.tools.reconnaissance.blue_team_safe_command import blue_team_safe_command
 from cai.tools.reconnaissance.crypto_tools import decode64, decode_hex_bytes, strings_command
@@ -95,6 +96,7 @@ ALL_TOOLS = [
     impacket_executor,
     netexec_executor,
     ligolo_executor,
+    hashcat_executor,
     # Web
     web_request_framework,
     js_surface_mapper,

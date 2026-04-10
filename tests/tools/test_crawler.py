@@ -7,6 +7,7 @@ end-to-end in pure Python.
 `asyncio_mode = "auto"` in pyproject.toml means every async def test is
 awaited automatically by pytest-asyncio — no extra mark needed.
 """
+
 from __future__ import annotations
 
 import sys
@@ -45,6 +46,7 @@ def _mock_requests_get(html: str = _SAMPLE_HTML):
 
 def _fake_path_cls(written: dict):
     """Factory for a Path-stub that records write_text calls."""
+
     class _FakePath:
         def __init__(self, *args):
             pass
@@ -66,9 +68,11 @@ def _fake_path_cls(written: dict):
 # local_crawler tests  (sync implementation via @function_tool async wrapper)
 # ---------------------------------------------------------------------------
 
+
 class TestLocalCrawler:
     async def test_empty_url_returns_error(self):
         from cai.tools.web.crawler import local_crawler
+
         result = await local_crawler("")
         assert "[ERROR]" in result
 
@@ -137,19 +141,24 @@ class TestLocalCrawler:
 # deep_crawl tests
 # ---------------------------------------------------------------------------
 
+
 class TestDeepCrawl:
     async def test_empty_url_returns_error(self):
         from cai.tools.web.crawler import deep_crawl
+
         result = await deep_crawl("")
         assert "[ERROR]" in result
 
     async def test_fallback_returns_markdown(self):
         from cai.tools.web.crawler import deep_crawl
+
         written: dict = {}
 
-        with patch.dict(sys.modules, {"crawl4ai": None}), \
-             patch("cai.tools.web.crawler.requests") as mock_req, \
-             patch("cai.tools.web.crawler.Path", _fake_path_cls(written)):
+        with (
+            patch.dict(sys.modules, {"crawl4ai": None}),
+            patch("cai.tools.web.crawler.requests") as mock_req,
+            patch("cai.tools.web.crawler.Path", _fake_path_cls(written)),
+        ):
             mock_req.get = _mock_requests_get()
             result = await deep_crawl("http://example.com", depth=1, max_pages=5)
 
@@ -159,11 +168,14 @@ class TestDeepCrawl:
 
     async def test_site_map_contains_crawled_url(self):
         from cai.tools.web.crawler import deep_crawl
+
         written: dict = {}
 
-        with patch.dict(sys.modules, {"crawl4ai": None}), \
-             patch("cai.tools.web.crawler.requests") as mock_req, \
-             patch("cai.tools.web.crawler.Path", _fake_path_cls(written)):
+        with (
+            patch.dict(sys.modules, {"crawl4ai": None}),
+            patch("cai.tools.web.crawler.requests") as mock_req,
+            patch("cai.tools.web.crawler.Path", _fake_path_cls(written)),
+        ):
             mock_req.get = _mock_requests_get()
             result = await deep_crawl("http://example.com", depth=1, max_pages=5)
 
@@ -171,11 +183,14 @@ class TestDeepCrawl:
 
     async def test_cms_detection_wordpress(self):
         from cai.tools.web.crawler import deep_crawl
+
         written: dict = {}
 
-        with patch.dict(sys.modules, {"crawl4ai": None}), \
-             patch("cai.tools.web.crawler.requests") as mock_req, \
-             patch("cai.tools.web.crawler.Path", _fake_path_cls(written)):
+        with (
+            patch.dict(sys.modules, {"crawl4ai": None}),
+            patch("cai.tools.web.crawler.requests") as mock_req,
+            patch("cai.tools.web.crawler.Path", _fake_path_cls(written)),
+        ):
             mock_req.get = _mock_requests_get(_SAMPLE_WP_HTML)
             result = await deep_crawl("http://wpsite.example.com", depth=1, max_pages=3)
 
@@ -184,11 +199,14 @@ class TestDeepCrawl:
     async def test_no_crawl4ai_falls_back(self):
         """deep_crawl must work when crawl4ai is not installed."""
         from cai.tools.web.crawler import deep_crawl
+
         written: dict = {}
 
-        with patch.dict(sys.modules, {"crawl4ai": None}), \
-             patch("cai.tools.web.crawler.requests") as mock_req, \
-             patch("cai.tools.web.crawler.Path", _fake_path_cls(written)):
+        with (
+            patch.dict(sys.modules, {"crawl4ai": None}),
+            patch("cai.tools.web.crawler.requests") as mock_req,
+            patch("cai.tools.web.crawler.Path", _fake_path_cls(written)),
+        ):
             mock_req.get = _mock_requests_get()
             result = await deep_crawl("http://example.com", depth=1, max_pages=3)
 
@@ -197,6 +215,7 @@ class TestDeepCrawl:
     async def test_max_pages_respected(self):
         """Crawler must stop after max_pages unique fetches."""
         from cai.tools.web.crawler import deep_crawl
+
         written: dict = {}
         fetch_count = {"n": 0}
 
@@ -204,9 +223,11 @@ class TestDeepCrawl:
             fetch_count["n"] += 1
             return _mock_requests_get()()
 
-        with patch.dict(sys.modules, {"crawl4ai": None}), \
-             patch("cai.tools.web.crawler.requests") as mock_req, \
-             patch("cai.tools.web.crawler.Path", _fake_path_cls(written)):
+        with (
+            patch.dict(sys.modules, {"crawl4ai": None}),
+            patch("cai.tools.web.crawler.requests") as mock_req,
+            patch("cai.tools.web.crawler.Path", _fake_path_cls(written)),
+        ):
             mock_req.get.side_effect = _counting_get
             await deep_crawl("http://example.com", depth=3, max_pages=2)
 
@@ -215,11 +236,14 @@ class TestDeepCrawl:
     async def test_report_saved_to_file(self):
         """write_text must be called with the returned content."""
         from cai.tools.web.crawler import deep_crawl
+
         written: dict = {}
 
-        with patch.dict(sys.modules, {"crawl4ai": None}), \
-             patch("cai.tools.web.crawler.requests") as mock_req, \
-             patch("cai.tools.web.crawler.Path", _fake_path_cls(written)):
+        with (
+            patch.dict(sys.modules, {"crawl4ai": None}),
+            patch("cai.tools.web.crawler.requests") as mock_req,
+            patch("cai.tools.web.crawler.Path", _fake_path_cls(written)),
+        ):
             mock_req.get = _mock_requests_get()
             result = await deep_crawl("http://example.com", depth=1, max_pages=3)
 
@@ -230,9 +254,11 @@ class TestDeepCrawl:
 # Pure-Python helper unit tests (no async needed)
 # ---------------------------------------------------------------------------
 
+
 class TestInternalHelpers:
     def test_origin(self):
         from cai.tools.web.crawler import _origin
+
         assert _origin("http://example.com/path?q=1") == "http://example.com"
         assert _origin("https://sub.example.com") == "https://sub.example.com"
         assert _origin("not-a-url") == ""
@@ -240,15 +266,18 @@ class TestInternalHelpers:
 
     def test_heuristic_detect_cms_wordpress(self):
         from cai.tools.web.crawler import _heuristic_detect_cms
+
         html = '<link rel="stylesheet" href="/wp-content/themes/main.css">'
         assert "WordPress" in _heuristic_detect_cms(html)
 
     def test_heuristic_detect_cms_none(self):
         from cai.tools.web.crawler import _heuristic_detect_cms
+
         assert _heuristic_detect_cms("<html><body>hello</body></html>") == []
 
     def test_extract_links_splits_internal_external(self):
         from cai.tools.web.crawler import _extract_links_from_html
+
         html = """<html><body>
         <a href="http://example.com/internal/page">int</a>
         <a href="https://other.example.com/ext">ext</a>
@@ -259,6 +288,7 @@ class TestInternalHelpers:
 
     def test_clean_html_strips_script_style(self):
         from cai.tools.web.crawler import _clean_html_to_markdown
+
         html = "<html><body><script>alert(1)</script><p>Content</p></body></html>"
         md = _clean_html_to_markdown(html, "http://x.com")
         assert "alert" not in md
@@ -268,8 +298,9 @@ class TestInternalHelpers:
         """Regression test: the injection regex must compile and match correctly."""
         # Import netexec to verify the module-level regex compiles
         from cai.tools.network.netexec import _INJECTION_RE, _check_injection
-        assert _INJECTION_RE.search("$(cmd)")       # shell command substitution
-        assert _INJECTION_RE.search("; rm -rf /")   # semicolon
+
+        assert _INJECTION_RE.search("$(cmd)")  # shell command substitution
+        assert _INJECTION_RE.search("; rm -rf /")  # semicolon
         assert _INJECTION_RE.search("cmd | tee /tmp/x")  # pipe
         assert not _INJECTION_RE.search("10.0.0.1")  # safe IP
         assert not _INJECTION_RE.search("smb 445 Windows")  # safe token

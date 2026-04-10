@@ -13,6 +13,7 @@ conversational queries, and prioritizes results from known high-signal
 domains or those containing technical indicators (CVE-, exploit, GitHub,
 default credentials, etc.).
 """
+
 from __future__ import annotations
 
 import logging
@@ -162,7 +163,7 @@ def _format_results_text(results: list[dict[str, Any]], max_results: int = 5) ->
         url = r.get("href") or r.get("url") or r.get("link") or r.get("source") or ""
         snippet = r.get("body") or r.get("snippet") or r.get("excerpt") or r.get("text") or ""
         snippet = " ".join(str(snippet).split())[:600]
-        block = f"{out_rank+1}. {title}\n{url}\n{snippet}"
+        block = f"{out_rank + 1}. {title}\n{url}\n{snippet}"
         out_lines.append(block)
 
     return "\n\n".join(out_lines)

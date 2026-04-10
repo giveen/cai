@@ -85,16 +85,16 @@ class TestToolChoiceReset:
         # First run should work correctly and preserve tool_choice
         result1 = await Runner.run(agent, "first run")
         assert result1.final_output == "First run response"
-        assert (
-            fake_model.last_turn_args["model_settings"].tool_choice == "required"
-        ), "tool_choice should stay required"
+        assert fake_model.last_turn_args["model_settings"].tool_choice == "required", (
+            "tool_choice should stay required"
+        )
 
         # Second run should also work correctly with tool_choice still required
         result2 = await Runner.run(agent, "second run")
         assert result2.final_output == "Second run response"
-        assert (
-            fake_model.last_turn_args["model_settings"].tool_choice == "required"
-        ), "tool_choice should stay required"
+        assert fake_model.last_turn_args["model_settings"].tool_choice == "required", (
+            "tool_choice should stay required"
+        )
 
     @pytest.mark.asyncio
     async def test_required_with_stop_at_tool_name(self):

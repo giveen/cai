@@ -139,9 +139,7 @@ def get_available_agents() -> dict[str, Agent]:  # pylint: disable=R0912  # noqa
 
     # Also check the patterns subdirectory
     patterns_path = os.path.join(os.path.dirname(__file__), "patterns")
-    if os.path.exists(patterns_path) and os.path.isdir(
-        patterns_path
-    ):  # pylint: disable=R1702  # noqa
+    if os.path.exists(patterns_path) and os.path.isdir(patterns_path):  # pylint: disable=R1702  # noqa
         for _, name, _ in pkgutil.iter_modules([patterns_path], __name__ + ".patterns."):
             try:
                 module = importlib.import_module(name)

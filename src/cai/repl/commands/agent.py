@@ -137,9 +137,7 @@ class AgentCommand(Command):
         # If not a subcommand, try to select an agent by name
         return self.handle_select(args)
 
-    def handle_list(
-        self, args: list[str] | None = None
-    ) -> bool:  # pylint: disable=unused-argument # noqa: E501
+    def handle_list(self, args: list[str] | None = None) -> bool:  # pylint: disable=unused-argument # noqa: E501
         """Handle /agent list command.
 
         Args:
@@ -265,9 +263,7 @@ class AgentCommand(Command):
 
         return True
 
-    def handle_select(
-        self, args: list[str] | None = None
-    ) -> bool:  # pylint: disable=too-many-branches,line-too-long # noqa: E501
+    def handle_select(self, args: list[str] | None = None) -> bool:  # pylint: disable=too-many-branches,line-too-long # noqa: E501
         """Handle /agent select command.
 
         Args:

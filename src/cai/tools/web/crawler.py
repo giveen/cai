@@ -5,6 +5,7 @@ Returns LLM-ready Markdown for a site starting at `url`. For `depth` > 1
 the crawler follows same-origin links up to the requested depth and
 returns a consolidated report. Includes a `### Site Map` section.
 """
+
 from __future__ import annotations
 
 import json
@@ -595,7 +596,7 @@ def deep_crawl(
             md_parts.append(_sanitize(p.get("content") or ""))
             md_parts.append("")
             md_parts.append(f"[Source]({_sanitize(p.get('url') or '')})")
-            md_parts.append('\n---\n')
+            md_parts.append("\n---\n")
 
         markdown_result = "\n\n".join(md_parts)
 

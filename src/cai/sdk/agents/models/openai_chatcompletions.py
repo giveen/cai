@@ -3072,8 +3072,7 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: Literal[True],
-    ) -> tuple[Response, AsyncStream[ChatCompletionChunk]]:
-        ...
+    ) -> tuple[Response, AsyncStream[ChatCompletionChunk]]: ...
 
     @overload
     async def _fetch_response(
@@ -3087,8 +3086,7 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: Literal[False],
-    ) -> ChatCompletion:
-        ...
+    ) -> ChatCompletion: ...
 
     async def _fetch_response(
         self,
@@ -3344,9 +3342,9 @@ class OpenAIChatCompletionsModel(Model):
                     is_compatible = _check_reasoning_compatibility(messages)
 
                     if is_compatible:
-                        kwargs[
-                            "reasoning_effort"
-                        ] = "low"  # Use reasoning_effort instead of thinking
+                        kwargs["reasoning_effort"] = (
+                            "low"  # Use reasoning_effort instead of thinking
+                        )
             elif provider == "gemini":
                 kwargs.pop("parallel_tool_calls", None)
                 # Add any specific gemini settings if needed
@@ -3386,9 +3384,9 @@ class OpenAIChatCompletionsModel(Model):
                     is_compatible = _check_reasoning_compatibility(messages)
 
                     if is_compatible:
-                        kwargs[
-                            "reasoning_effort"
-                        ] = "low"  # Use reasoning_effort instead of thinking
+                        kwargs["reasoning_effort"] = (
+                            "low"  # Use reasoning_effort instead of thinking
+                        )
             elif "gemini" in model_str:
                 kwargs.pop("parallel_tool_calls", None)
             elif "qwen" in model_str or ":" in model_str:
@@ -3667,9 +3665,7 @@ class OpenAIChatCompletionsModel(Model):
                     raise
                 import random
 
-                retry_delay = min(300, 2**retry_count) + random.uniform(
-                    0, 0.1 * (2**retry_count)
-                )
+                retry_delay = min(300, 2**retry_count) + random.uniform(0, 0.1 * (2**retry_count))
                 logger.debug(
                     f"Network error during model call, retrying in {retry_delay:.1f}s: {e}"
                 )
@@ -3874,9 +3870,9 @@ class OpenAIChatCompletionsModel(Model):
                                 hasattr(model_settings, "reasoning_effort")
                                 and model_settings.reasoning_effort
                             ):
-                                provider_kwargs[
-                                    "reasoning_effort"
-                                ] = model_settings.reasoning_effort
+                                provider_kwargs["reasoning_effort"] = (
+                                    model_settings.reasoning_effort
+                                )
                             else:
                                 # Default to "low" reasoning effort
                                 provider_kwargs["reasoning_effort"] = "low"
@@ -3914,9 +3910,9 @@ class OpenAIChatCompletionsModel(Model):
                                 is_compatible = _check_reasoning_compatibility(messages)
 
                                 if is_compatible:
-                                    provider_kwargs[
-                                        "reasoning_effort"
-                                    ] = "low"  # Use reasoning_effort instead of thinking
+                                    provider_kwargs["reasoning_effort"] = (
+                                        "low"  # Use reasoning_effort instead of thinking
+                                    )
                         elif provider == "gemini":
                             provider_kwargs["custom_llm_provider"] = "gemini"
                             provider_kwargs.pop(
@@ -4068,9 +4064,7 @@ class OpenAIChatCompletionsModel(Model):
                 # Handle Anthropic error for empty text content blocks
                 if "text content blocks must be non-empty" in str(
                     e
-                ) or "cache_control cannot be set for empty text blocks" in str(
-                    e
-                ):  # noqa
+                ) or "cache_control cannot be set for empty text blocks" in str(e):  # noqa
                     # Print the error message only once
                     print(
                         "⚠️  Empty text blocks detected - Adding placeholder content"
@@ -4459,16 +4453,28 @@ class OpenAIChatCompletionsModel(Model):
         try:
             import pathlib
 
+            from cai.config import CAI_CTX_LIMIT
+
             pricing_path = pathlib.Path("pricing.json")
             if pricing_path.exists():
                 with open(pricing_path, encoding="utf-8") as f:
                     pricing_data = json.load(f)
                     model_info = pricing_data.get(model_name, {})
-                    return model_info.get("max_input_tokens", 200000)
+                    return int(model_info.get("max_input_tokens", CAI_CTX_LIMIT))
         except Exception:
             pass
-        # Default to 200k if not found
-        return 200000
+        # Default to CAI_CTX_LIMIT if not found
+        try:
+            from cai.config import CAI_CTX_LIMIT
+
+            return int(CAI_CTX_LIMIT)
+        except Exception:
+            try:
+                import cai.config as _c
+
+                return int(_c.CAI_CTX_LIMIT)
+            except Exception:
+                return 393216
 
     async def _auto_compact_if_needed(
         self,
@@ -4581,7 +4587,9 @@ class OpenAIChatCompletionsModel(Model):
                                             pass
                                         try:
                                             if self.agent_name in PERSISTENT_MESSAGE_HISTORIES:
-                                                PERSISTENT_MESSAGE_HISTORIES[self.agent_name].clear()
+                                                PERSISTENT_MESSAGE_HISTORIES[
+                                                    self.agent_name
+                                                ].clear()
                                         except Exception:
                                             pass
                                 except Exception:
@@ -4616,8 +4624,28 @@ class OpenAIChatCompletionsModel(Model):
                 pass  # malformed interval — ignore silently
 
         max_tokens = self._get_model_max_tokens(str(self.model))
-        threshold_percent = float(os.getenv("CAI_AUTO_COMPACT_THRESHOLD", "0.8"))
-        threshold = max_tokens * threshold_percent
+        # Determine the auto-compact threshold.
+        # Priority: runtime `CAI_AUTO_COMPACT_THRESHOLD` env var (supports 0.x fraction or absolute int),
+        # then `cai.config.CAI_AUTO_COMPACT_THRESHOLD` (set at import-time), then a safe default (80%).
+        _env_threshold = os.getenv("CAI_AUTO_COMPACT_THRESHOLD", "")
+        if _env_threshold:
+            try:
+                _f = float(_env_threshold)
+                if 0.0 < _f <= 1.0:
+                    threshold = int(max_tokens * _f)
+                else:
+                    threshold = int(_f)
+            except Exception:
+                threshold = int(max_tokens * 0.8)
+        else:
+            try:
+                from cai.config import CAI_AUTO_COMPACT_THRESHOLD
+
+                # Cap threshold to the model's max_tokens where sensible.
+                threshold = min(int(max_tokens), int(CAI_AUTO_COMPACT_THRESHOLD))
+            except Exception:
+                # Fallback to historical fractional behaviour (80%).
+                threshold = int(max_tokens * 0.8)
 
         if estimated_tokens <= threshold:
             # Context dropped below threshold — clear any previous failure record so we
@@ -5100,9 +5128,9 @@ class _Converter:
                     # Ensure content is not None if tool_calls are absent and content is also None
                     # Some models like Anthropic require some content, even if it's just a placeholder.
                     if current_assistant_msg.get("content") is None:
-                        current_assistant_msg[
-                            "content"
-                        ] = "(No text content in this assistant message)"  # Or just an empty string if preferred
+                        current_assistant_msg["content"] = (
+                            "(No text content in this assistant message)"  # Or just an empty string if preferred
+                        )
                     current_assistant_msg.pop(
                         "tool_calls", None
                     )  # Use pop with default to avoid KeyError

@@ -154,6 +154,19 @@ def notify_screenshot(path: str, interactive_map: object | None = None) -> None:
             _screenshot_writer(path, interactive_map)
         except Exception:
             pass
+    else:
+        # CLI fallback: log the screenshot path so users can inspect it later.
+        try:
+            msg = f"Screenshot saved: {path}"
+            if interactive_map:
+                try:
+                    n = len(interactive_map)
+                    msg += f" (interactive map: {n} nodes)"
+                except Exception:
+                    pass
+            console.print(f"[dim]{msg}[/dim]")
+        except Exception:
+            pass
 
 
 # -------------------- Timers (active / idle) --------------------

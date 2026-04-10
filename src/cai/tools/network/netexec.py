@@ -12,6 +12,7 @@ The parser heuristically detects table headers (pipe-delimited or multi-space
 columns), strips ANSI color codes, and aggregates hosts, discovered services,
 and captured credentials into a JSON-friendly structure.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -58,8 +59,10 @@ def _find_header(lines: List[str]) -> Optional[int]:
         # Heuristic: header must have at least 3 columns and contain one of
         # the canonical tokens we expect (IP, PORT, SERVICE, USER, PASS)
         tokens = {c.lower() for c in cols}
-        if len(cols) >= 3 and ("ip" in tokens or "host" in tokens or "address" in tokens) and (
-            "port" in tokens or "service" in tokens or "user" in tokens or "pass" in tokens
+        if (
+            len(cols) >= 3
+            and ("ip" in tokens or "host" in tokens or "address" in tokens)
+            and ("port" in tokens or "service" in tokens or "user" in tokens or "pass" in tokens)
         ):
             return idx
     return None
@@ -157,7 +160,9 @@ def _parse_netexec_table(raw: str) -> Dict[str, Any]:
 
         if user or passwd:
             creds_count += 1
-            hosts_map[key]["credentials"].append({"username": user, "password": passwd, "service": service, "port": port})
+            hosts_map[key]["credentials"].append(
+                {"username": user, "password": passwd, "service": service, "port": port}
+            )
 
         if status:
             hosts_map[key]["status"] = status
@@ -204,9 +209,9 @@ async def netexec_executor(
     else:
         binary = shutil.which("netexec")
         if binary is None:
-            return json.dumps({
-                "error": "netexec binary not found in PATH. Provide `output` or install NetExec."
-            })
+            return json.dumps(
+                {"error": "netexec binary not found in PATH. Provide `output` or install NetExec."}
+            )
 
         cmd = [binary]
         if run_args:
@@ -226,7 +231,9 @@ async def netexec_executor(
 
         try:
             result = await asyncio.to_thread(_do_run)
-            raw_output = (result.stdout or "") + ("\n[stderr]\n" + (result.stderr or "") if getattr(result, "stderr", None) else "")
+            raw_output = (result.stdout or "") + (
+                "\n[stderr]\n" + (result.stderr or "") if getattr(result, "stderr", None) else ""
+            )
         except subprocess.TimeoutExpired:
             return json.dumps({"error": f"netexec timed out after {timeout}s"})
         except FileNotFoundError:
@@ -243,6 +250,7 @@ async def netexec_executor(
 
     # Sanitize values to avoid prompt-injection when sending back to agent
     try:
+
         def _san(x):
             if isinstance(x, str):
                 return _sanitize(x)[:1024]

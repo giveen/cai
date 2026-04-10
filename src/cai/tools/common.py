@@ -247,9 +247,7 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         error_output = e.stdout if e.stdout else str(e)
         timeout_msg = f"Timeout executing SSH command: {error_output}"
         if stdout and not stream:
-            print(
-                f"\033[33m{context_msg} $ {original_cmd_for_msg}\nTIMEOUT\n{error_output}\033[0m"
-            )  # noqa E501
+            print(f"\033[33m{context_msg} $ {original_cmd_for_msg}\nTIMEOUT\n{error_output}\033[0m")  # noqa E501
         return timeout_msg
     except FileNotFoundError:
         # Handle case where ssh or sshpass isn't installed
@@ -257,9 +255,7 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         print(color(error_msg, fg="red"))
         return error_msg
     except Exception as e:  # pylint: disable=broad-except
-        error_msg = (
-            f"Error executing SSH command '{original_cmd_for_msg}' on {ssh_host}: {e}"  # noqa E501
-        )
+        error_msg = f"Error executing SSH command '{original_cmd_for_msg}' on {ssh_host}: {e}"  # noqa E501
         print(color(error_msg, fg="red"))
         return error_msg
 
@@ -892,9 +888,7 @@ def run_command(
             # Handle Async Session Creation in Container
             if async_mode and not session_id:
                 # Create a session specifically for the container environment
-                new_session_id = create_shell_session(
-                    command, container_id=container_id
-                )  # noqa E501
+                new_session_id = create_shell_session(command, container_id=container_id)  # noqa E501
                 if "Failed" in new_session_id:  # Check if session creation failed
                     # Switch back to idle mode before returning error
                     stop_active_timer()

@@ -15,6 +15,7 @@ The tool calls ``notify_tool_loading(True)`` at start and ``False`` on exit so
 the Textual TUI can show a ``LoadingIndicator`` labelled "Searching Cyber-Vault…"
 while the embedding + query runs.
 """
+
 from __future__ import annotations
 
 import re

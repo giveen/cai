@@ -1028,7 +1028,9 @@ class VirtualizationCommand(Command):
             else "[dim]Available[/dim]"
         )
         display_host = (
-            "💻 [bold green]Host System ⭐ ACTIVE[/bold green]" if is_host_active else "💻 Host System"
+            "💻 [bold green]Host System ⭐ ACTIVE[/bold green]"
+            if is_host_active
+            else "💻 Host System"
         )
 
         image_table.add_row(

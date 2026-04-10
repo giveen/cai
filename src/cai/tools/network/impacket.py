@@ -32,6 +32,7 @@ The tool automatically prefixes ``impacket-`` to ``tool_name``, resolves
 the binary via PATH, and returns a distilled, Markdown-formatted output
 highlighting NTLM hashes, successful logins, and service errors.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -212,8 +213,7 @@ def _distil_output(raw: str) -> tuple[str, list[str]]:
     if highlights:
         highlight_block = "\n".join(f"- {h}" for h in highlights)
         distilled_md = (
-            f"### High-Signal Findings\n\n{highlight_block}\n\n"
-            f"### Full Output\n\n{distilled_md}"
+            f"### High-Signal Findings\n\n{highlight_block}\n\n### Full Output\n\n{distilled_md}"
         )
 
     return distilled_md, highlights

@@ -156,9 +156,7 @@ def query_memory(query: str, top_k: int = 3) -> str:  # pylint: disable=line-too
 
 
 @function_tool
-def add_to_memory_episodic(
-    texts: str, step: int = 0
-) -> str:  # pylint: disable=line-too-long # noqa: E501
+def add_to_memory_episodic(texts: str, step: int = 0) -> str:  # pylint: disable=line-too-long # noqa: E501
     """
     This is a persistent memory to add relevant context to our memory.
     Use this function to add relevant context to the memory.
@@ -317,9 +315,7 @@ def add_to_memory_episodic(
 
 
 @function_tool
-def add_to_memory_semantic(
-    texts: str, step: int = 0
-) -> str:  # pylint: disable=line-too-long # noqa: E501
+def add_to_memory_semantic(texts: str, step: int = 0) -> str:  # pylint: disable=line-too-long # noqa: E501
     """
     This is a persistent memory to add relevant context to our memory.
     Use this function to add relevant context to the memory.

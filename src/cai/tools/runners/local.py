@@ -410,6 +410,7 @@ def run_local(
             call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
 
             import shlex
+
             try:
                 exec_list = shlex.split(command)
                 process = subprocess.Popen(

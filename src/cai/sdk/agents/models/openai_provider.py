@@ -48,9 +48,9 @@ class OpenAIProvider(ModelProvider):
             use_responses: Whether to use the OpenAI responses API.
         """
         if openai_client is not None:
-            assert (
-                api_key is None and base_url is None
-            ), "Don't provide api_key or base_url if you provide openai_client"
+            assert api_key is None and base_url is None, (
+                "Don't provide api_key or base_url if you provide openai_client"
+            )
             self._client: AsyncOpenAI | None = openai_client
         else:
             self._client = None

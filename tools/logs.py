@@ -723,7 +723,9 @@ def create_pypi_plot():
             # Calculate percentage of both system total and overall total
             system_percentage = (system_totals[col] / system_totals.sum()) * 100
             website_percentage = (system_totals[col] / without_mirrors_total) * 100
-            labels2.append(f"{col} ({int(system_totals[col]):,} total, {system_percentage:.1f}%)")
+            labels2.append(
+                f"{col} ({int(system_totals[col]):,} total, {system_percentage:.1f}% sys, {website_percentage:.1f}% excl-mirrors)"
+            )
 
     # Create legend with updated colors
     ax1.legend(

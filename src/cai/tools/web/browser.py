@@ -22,6 +22,7 @@ Command schema (``commands`` argument):
     * ``{"action": "screenshot"}``                        force a capture
     * ``{"action": "evaluate", "script": "document.title"}``
 """
+
 from __future__ import annotations
 
 import json

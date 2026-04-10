@@ -6,6 +6,7 @@ the heavy ML dependencies being installed and without a real database on disk.
 ``asyncio_mode = "auto"`` in pyproject.toml means every ``async def`` test is
 awaited automatically by pytest-asyncio — no extra mark needed.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,6 +15,7 @@ from unittest.mock import MagicMock, patch
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_chroma_collection(docs, metas, distances):
     """Return a fake ChromaDB collection whose .query() returns fixed data."""
@@ -59,17 +61,19 @@ def _patch_st():
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestQueryKnowledgeBase:
 
+class TestQueryKnowledgeBase:
     def _reset_singletons(self):
         """Force vault module to re-initialise singletons between tests."""
         import cai.tools.knowledge.vault as vault_mod
+
         vault_mod._client = None
         vault_mod._collection = None
         vault_mod._embed_fn = None
 
     async def test_empty_query_returns_error(self):
         from cai.tools.knowledge.vault import query_knowledge_base
+
         result = await query_knowledge_base("")
         assert "[CYBER-VAULT]" in result
 
@@ -78,6 +82,7 @@ class TestQueryKnowledgeBase:
         self._reset_singletons()
         with patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/nonexistent/path/chroma_db")):
             from cai.tools.knowledge.vault import query_knowledge_base
+
             result = await query_knowledge_base("SQL injection")
         assert "ingest_vault.py" in result or "not found" in result.lower()
 
@@ -89,10 +94,14 @@ class TestQueryKnowledgeBase:
         distances = [0.12]
         col = _make_chroma_collection(docs, metas, distances)
 
-        with _patch_chroma(col), _patch_st(), \
-                patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")), \
-                patch("pathlib.Path.exists", return_value=True):
+        with (
+            _patch_chroma(col),
+            _patch_st(),
+            patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
             from cai.tools.knowledge.vault import query_knowledge_base
+
             result = await query_knowledge_base("SQL injection attacks")
 
         assert "[LOCAL KNOWLEDGE - OFFLINE VAULT]" in result
@@ -105,10 +114,14 @@ class TestQueryKnowledgeBase:
         distances = [0.08]
         col = _make_chroma_collection(docs, metas, distances)
 
-        with _patch_chroma(col), _patch_st(), \
-                patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")), \
-                patch("pathlib.Path.exists", return_value=True):
+        with (
+            _patch_chroma(col),
+            _patch_st(),
+            patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
             from cai.tools.knowledge.vault import query_knowledge_base
+
             result = await query_knowledge_base("reverse shell one-liner")
 
         assert "PayloadsAllTheThings/Reverse_Shell.md" in result
@@ -118,10 +131,14 @@ class TestQueryKnowledgeBase:
         self._reset_singletons()
         col = _make_chroma_collection([], [], [])
 
-        with _patch_chroma(col), _patch_st(), \
-                patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")), \
-                patch("pathlib.Path.exists", return_value=True):
+        with (
+            _patch_chroma(col),
+            _patch_st(),
+            patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
             from cai.tools.knowledge.vault import query_knowledge_base
+
             result = await query_knowledge_base("obscure protocol exploit")
 
         assert "No results" in result
@@ -134,10 +151,14 @@ class TestQueryKnowledgeBase:
         distances = [0.1, 0.2]
         col = _make_chroma_collection(docs, metas, distances)
 
-        with _patch_chroma(col), _patch_st(), \
-                patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")), \
-                patch("pathlib.Path.exists", return_value=True):
+        with (
+            _patch_chroma(col),
+            _patch_st(),
+            patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
             from cai.tools.knowledge.vault import query_knowledge_base
+
             # Extremely large value should not raise
             await query_knowledge_base("SUID escalation", top_k=999)
             # n_results should have been clamped to 10
@@ -149,6 +170,7 @@ class TestQueryKnowledgeBase:
         """Missing chromadb package returns an install message, not a traceback."""
         self._reset_singletons()
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -156,10 +178,13 @@ class TestQueryKnowledgeBase:
                 raise ModuleNotFoundError("No module named 'chromadb'")
             return real_import(name, *args, **kwargs)
 
-        with patch("builtins.__import__", side_effect=mock_import), \
-                patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")), \
-                patch("pathlib.Path.exists", return_value=True):
+        with (
+            patch("builtins.__import__", side_effect=mock_import),
+            patch("cai.tools.knowledge.vault._CHROMA_DIR", Path("/fake/chroma_db")),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
             from cai.tools.knowledge.vault import query_knowledge_base
+
             result = await query_knowledge_base("SSRF exploit")
 
         assert (
