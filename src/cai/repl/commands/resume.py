@@ -8,7 +8,6 @@ stream for the active agent. This is a lightweight helper that delegates to
 from __future__ import annotations
 
 import asyncio
-from typing import List, Optional
 
 from rich.console import Console
 
@@ -25,7 +24,7 @@ class ResumeCommand(Command):
             aliases=["/r"],
         )
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         if not args or args[0] == "last":
             return self.handle_resume_last()
 

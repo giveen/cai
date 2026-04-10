@@ -11,7 +11,6 @@ import socket
 import urllib.request
 import uuid  # Add uuid import
 from datetime import datetime
-from typing import Dict, List
 from urllib.error import URLError
 
 import pytz  # pylint: disable=import-error
@@ -99,17 +98,17 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
                     "https://api.ipify.org", timeout=2
                 ) as response:
                     public_ip = response.read().decode("utf-8")
-            except (URLError, socket.timeout):
+            except (URLError, TimeoutError):
                 # Fallback to another service if the first one fails
                 try:
                     with urllib.request.urlopen(  # nosec: B310
                         "https://ifconfig.me", timeout=2
                     ) as response:
                         public_ip = response.read().decode("utf-8")
-                except (URLError, socket.timeout):
+                except (URLError, TimeoutError):
                     # If both services fail, keep the default value
                     pass
-        except (OSError, socket.timeout, socket.gaierror):
+        except (OSError, TimeoutError, socket.gaierror):
             # No internet connection, keep the default value
             pass
 
@@ -230,7 +229,9 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
                 {
                     "role": m.role,
                     "content": m.content,
-                    "tool_calls": [t.model_dump() for t in (m.tool_calls or [])],  # pylint: disable=line-too-long  # noqa: E501
+                    "tool_calls": [
+                        t.model_dump() for t in (m.tool_calls or [])
+                    ],  # pylint: disable=line-too-long  # noqa: E501
                 }
                 for m in msg.messages
             ]
@@ -349,15 +350,13 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
                     if (active_time + idle_time) > 0
                     else 0.0,
                 },
-                "cost": {
-                    "total_cost": session_cost  # Use the global session cost
-                },
+                "cost": {"total_cost": session_cost},  # Use the global session cost
             }
             json.dump(session_end, f)
             f.write("\n")
 
 
-def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> List[Dict]:
+def load_history_from_jsonl(file_path: str, system_prompt: bool = False) -> list[dict]:
     """
     Load conversation history from JSONL using only model and completion records.
 

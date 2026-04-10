@@ -6,7 +6,7 @@ of the main agent by providing structured analysis without making tool calls.
 """
 
 import os
-from typing import Callable, Optional, Union
+from collections.abc import Callable
 
 from cai.sdk.agents import Agent  # pylint: disable=import-error
 from cai.util import create_system_prompt_renderer, load_prompt_template
@@ -14,8 +14,8 @@ from cai.util import create_system_prompt_renderer, load_prompt_template
 
 def create_reasoner_agent(
     name: str = "Reasoner",
-    model: Optional[str] = None,
-    instructions: Optional[Union[str, Callable[[], str]]] = None,
+    model: str | None = None,
+    instructions: str | Callable[[], str] | None = None,
 ) -> Agent:
     """
     Create a Reasoner Agent for autonomous pentesting.

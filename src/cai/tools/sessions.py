@@ -16,7 +16,6 @@ import subprocess  # nosec B404
 import threading
 import time
 import uuid
-from typing import Dict, Optional
 
 from wasabi import color  # pylint: disable=import-error
 
@@ -24,11 +23,11 @@ from cai.tools.workspace import _get_container_workspace_path, _get_workspace_di
 
 # Session registry and helpers (protected by SESSIONS_LOCK)
 SESSIONS_LOCK = threading.Lock()
-ACTIVE_SESSIONS: Dict[str, ShellSession] = {}
-FRIENDLY_SESSION_MAP: Dict[str, str] = {}
-REVERSE_SESSION_MAP: Dict[str, str] = {}
+ACTIVE_SESSIONS: dict[str, ShellSession] = {}
+FRIENDLY_SESSION_MAP: dict[str, str] = {}
+REVERSE_SESSION_MAP: dict[str, str] = {}
 SESSION_COUNTER = 0
-SESSION_OUTPUT_COUNTER: Dict[str, int] = {}
+SESSION_OUTPUT_COUNTER: dict[str, int] = {}
 
 
 class ShellSession:  # pylint: disable=too-many-instance-attributes
@@ -346,7 +345,7 @@ def list_shell_sessions():
     return result
 
 
-def _resolve_session_id(session_identifier: Optional[str]) -> Optional[str]:
+def _resolve_session_id(session_identifier: str | None) -> str | None:
     """Resolve a session identifier (friendly alias, numeric, 'last') to real ID."""
     if not session_identifier:
         return None

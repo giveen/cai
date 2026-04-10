@@ -9,23 +9,23 @@ time, and normalizes the returned string.
 from __future__ import annotations
 
 import time
-from typing import Any, Optional, Tuple
+from typing import Any
 
 
 def get_next_input(
     force_until_flag: bool,
     ctf_init: int,
     use_initial_prompt: bool,
-    initial_prompt: Optional[str],
-    _post_compact_input: Optional[str],
+    initial_prompt: str | None,
+    _post_compact_input: str | None,
     command_completer: Any,
     kb: Any,
-    history_file: Optional[str],
+    history_file: str | None,
     current_text: list,
     messages_ctf: str,
     idle_time: float,
     idle_start_time: float,
-) -> Tuple[str, bool, Optional[str], int, float]:
+) -> tuple[str, bool, str | None, int, float]:
     """Determine the next user input and return updated state.
 
     Priority (when not in CTF-force mode):
@@ -50,7 +50,7 @@ def get_next_input(
 
     if not force_until_flag and ctf_init != 0:
         if use_initial_prompt:
-            user_input: Optional[str] = initial_prompt
+            user_input: str | None = initial_prompt
             use_initial_prompt = False  # Only use it once
         elif _post_compact_input is not None:
             # Auto-compact just ran — replay the last task so the agent

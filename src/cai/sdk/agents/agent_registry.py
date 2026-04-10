@@ -8,7 +8,6 @@ their IDs, and their display names throughout the CAI system.
 import weakref
 from dataclasses import dataclass
 from threading import Lock
-from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -22,30 +21,30 @@ class AgentInstanceInfo:
     model_name: str  # The model being used
     is_parallel: bool = False  # Whether this is a parallel instance
     is_pattern: bool = False  # Whether this is part of a pattern
-    pattern_name: Optional[str] = None  # Name of the pattern if applicable
+    pattern_name: str | None = None  # Name of the pattern if applicable
 
 
 class AgentRegistry:
     """Centralized registry for managing agent instances."""
 
     def __init__(self):
-        self._instances: Dict[str, weakref.ref] = {}  # agent_id -> weak ref to model
-        self._instance_info: Dict[str, AgentInstanceInfo] = {}  # agent_id -> info
+        self._instances: dict[str, weakref.ref] = {}  # agent_id -> weak ref to model
+        self._instance_info: dict[str, AgentInstanceInfo] = {}  # agent_id -> info
         self._next_id: int = 1
         self._lock = Lock()
 
         # Track instance counts per agent type for numbering
-        self._type_counters: Dict[str, int] = {}
+        self._type_counters: dict[str, int] = {}
 
     def register_agent(
         self,
         model_instance,
         agent_type: str,
         display_name: str,
-        agent_id: Optional[str] = None,
+        agent_id: str | None = None,
         is_parallel: bool = False,
         is_pattern: bool = False,
-        pattern_name: Optional[str] = None,
+        pattern_name: str | None = None,
     ) -> str:
         """
         Register a new agent instance.
@@ -91,7 +90,7 @@ class AgentRegistry:
 
             return agent_id
 
-    def get_agent_by_id(self, agent_id: str) -> Optional[Tuple[object, AgentInstanceInfo]]:
+    def get_agent_by_id(self, agent_id: str) -> tuple[object, AgentInstanceInfo] | None:
         """
         Get agent model and info by ID.
 
@@ -113,7 +112,7 @@ class AgentRegistry:
 
             return (model, self._instance_info[agent_id])
 
-    def get_agent_by_name(self, name: str) -> Optional[Tuple[object, AgentInstanceInfo]]:
+    def get_agent_by_name(self, name: str) -> tuple[object, AgentInstanceInfo] | None:
         """
         Get agent by display name or type name.
 
@@ -136,7 +135,7 @@ class AgentRegistry:
 
             return None
 
-    def get_all_agents(self) -> List[Tuple[str, AgentInstanceInfo]]:
+    def get_all_agents(self) -> list[tuple[str, AgentInstanceInfo]]:
         """
         Get all registered agents.
 

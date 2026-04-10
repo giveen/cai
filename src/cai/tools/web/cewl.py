@@ -111,6 +111,7 @@ async def cewl(
     # Merge pinned session cookie (caller-supplied value takes precedence).
     try:
         from cai.util.orchestration import merge_pinned_cookie
+
         cookie = merge_pinned_cookie(cookie)
     except Exception:
         pass
@@ -165,6 +166,7 @@ async def cewl(
 
     try:
         from cai.util import notify_tool_loading, write_progress
+
         write_progress("Generating wordlist with CeWL…", "bold yellow")
         notify_tool_loading(True)
     except Exception:
@@ -174,6 +176,7 @@ async def cewl(
     finally:
         try:
             from cai.util import notify_tool_loading
+
             notify_tool_loading(False)
         except Exception:
             pass

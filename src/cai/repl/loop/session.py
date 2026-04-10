@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional, Tuple
+from typing import Any
 
 
 def get_agent_short_name(agent: Any) -> str:
@@ -28,7 +28,7 @@ def initialize_session(
     starting_agent: Any,
     console: Any,
     last_agent_type: str,
-) -> Tuple[Any, list, Any, Optional[str], Any]:
+) -> tuple[Any, list, Any, str | None, Any]:
     """Run one-time session startup and return five UI/session objects.
 
     Side-effects
@@ -50,6 +50,7 @@ def initialize_session(
     # turn, even when this module is imported without going through cli.py.
     try:
         from cai.bootstrap import initialize_env
+
         initialize_env()
     except Exception:
         pass
@@ -59,6 +60,7 @@ def initialize_session(
     # endpoint.  Subsequent refreshes happen in sync_model() each iteration.
     try:
         from cai.repl.loop.agent_sync import _refresh_agent_client, resolve_api_base
+
         _local_api_base = resolve_api_base()
         if _local_api_base:
             _refresh_agent_client(starting_agent)
@@ -137,9 +139,7 @@ def initialize_session(
             contradictions = ts.detect_contradictions(window_seconds=window_sec)
             n = len(contradictions)
             if os.getenv("CAI_DEBUG", "1") == "2":
-                print(
-                    f"TripleStore: detected {n} contradictions in last {window_sec} seconds"
-                )
+                print(f"TripleStore: detected {n} contradictions in last {window_sec} seconds")
             logging.getLogger(__name__).info("TripleStore startup contradictions=%d", n)
         except Exception:
             # Best-effort: do not fail startup for triple-store checks

@@ -8,11 +8,10 @@ or circular imports.
 from __future__ import annotations
 
 import os
-from typing import Dict, Optional
 
 from cai.rag.triplestore import TripleStore
 
-_GLOBAL_TRIPLESTORE: Optional[TripleStore] = None
+_GLOBAL_TRIPLESTORE: TripleStore | None = None
 
 
 def _default_triplestore_path() -> str:
@@ -22,7 +21,7 @@ def _default_triplestore_path() -> str:
 
 
 def get_global_triplestore(
-    db_path: Optional[str] = None, pragmas: Optional[Dict[str, str]] = None
+    db_path: str | None = None, pragmas: dict[str, str] | None = None
 ) -> TripleStore:
     """Return a singleton TripleStore, creating it on first use.
 

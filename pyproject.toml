@@ -68,6 +68,20 @@ browser = [
     "playwright-chromium>=1.50.0,<2",
 ]
 
+# Optional crawler dependencies (Crawl4AI + HTML parsing)
+crawler = [
+    "crawl4ai",
+    "beautifulsoup4>=4.12,<5",
+    "lxml",
+]
+
+# Optional offline knowledge-vault dependencies (local RAG with ChromaDB)
+vault = [
+    "chromadb>=1.0",
+    "sentence-transformers>=2.7",
+    "gitpython>=3.1",
+]
+
 [dependency-groups]
 dev = [
     "mypy",
@@ -89,6 +103,8 @@ dev = [
     "litellm<1.83,>=1.68.0",
     "prisma",
     "graphviz",
+    "beautifulsoup4>=4.12,<5",
+    "lxml",
 ]
 
 [tool.uv.workspace]

@@ -10,10 +10,6 @@ import os
 import threading
 import time
 from functools import lru_cache
-from typing import (
-    List,
-    Optional,
-)
 
 # Third-party imports
 import requests  # pylint: disable=import-error,unused-import,line-too-long # noqa: E501
@@ -138,7 +134,9 @@ class FuzzyCommandCompleter(Completer):
         except Exception:  # pylint: disable=broad-except
             pass
 
-    def fetch_all_models(self):  # pylint: disable=too-many-branches,too-many-statements,inconsistent-return-statements,line-too-long # noqa: E501
+    def fetch_all_models(
+        self,
+    ):  # pylint: disable=too-many-branches,too-many-statements,inconsistent-return-statements,line-too-long # noqa: E501
         """Fetch all available models (predefined + LiteLLM + Ollama) to match /model command."""
         # Only fetch every 60 seconds to avoid excessive API calls
         now = datetime.datetime.now()
@@ -272,7 +270,7 @@ class FuzzyCommandCompleter(Completer):
     _command_suggestions_last_update = 0
     _command_suggestions_update_interval = 1.0  # Update every second
 
-    def get_command_suggestions(self, current_word: str) -> List[Completion]:
+    def get_command_suggestions(self, current_word: str) -> list[Completion]:
         """Get command suggestions with fuzzy matching.
 
         Args:
@@ -365,7 +363,7 @@ class FuzzyCommandCompleter(Completer):
     _command_shadow_update_interval = 0.2  # Update every 200ms
 
     @lru_cache(maxsize=100)
-    def _get_command_shadow_cached(self, text: str) -> Optional[str]:
+    def _get_command_shadow_cached(self, text: str) -> str | None:
         """Cached version of command shadow lookup."""
         if not text or not text.startswith("/"):
             return None
@@ -385,7 +383,7 @@ class FuzzyCommandCompleter(Completer):
 
         return None
 
-    def get_command_shadow(self, text: str) -> Optional[str]:
+    def get_command_shadow(self, text: str) -> str | None:
         """Get a command shadow suggestion based on command history.
 
         This method returns a suggestion for command shadowing based on
@@ -421,7 +419,7 @@ class FuzzyCommandCompleter(Completer):
     _subcommand_suggestions_last_update = 0
     _subcommand_suggestions_update_interval = 1.0  # Update every second
 
-    def get_subcommand_suggestions(self, cmd: str, current_word: str) -> List[Completion]:
+    def get_subcommand_suggestions(self, cmd: str, current_word: str) -> list[Completion]:
         """Get subcommand suggestions with fuzzy matching.
 
         Args:
@@ -486,7 +484,7 @@ class FuzzyCommandCompleter(Completer):
 
         return suggestions
 
-    def get_model_suggestions(self, current_word: str) -> List[Completion]:
+    def get_model_suggestions(self, current_word: str) -> list[Completion]:
         """Get model suggestions for the /model command.
 
         Args:
@@ -535,7 +533,7 @@ class FuzzyCommandCompleter(Completer):
 
         return suggestions
 
-    def get_agent_suggestions(self, current_word: str) -> List[Completion]:
+    def get_agent_suggestions(self, current_word: str) -> list[Completion]:
         """Get agent suggestions for the /agent command."""
         suggestions = []
 
@@ -591,7 +589,7 @@ class FuzzyCommandCompleter(Completer):
 
         return suggestions
 
-    def get_mcp_server_suggestions(self, current_word: str) -> List[Completion]:
+    def get_mcp_server_suggestions(self, current_word: str) -> list[Completion]:
         """Get MCP server name suggestions.
 
         Args:
@@ -645,7 +643,7 @@ class FuzzyCommandCompleter(Completer):
 
         return suggestions
 
-    def get_mcp_suggestions(self, words: List[str], current_word: str) -> List[Completion]:
+    def get_mcp_suggestions(self, words: list[str], current_word: str) -> list[Completion]:
         """Get context-aware MCP command completions.
 
         Args:

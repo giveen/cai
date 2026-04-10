@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Import fcntl only on Unix-like systems
 if platform.system() != "Windows":
@@ -67,7 +67,7 @@ class GlobalUsageTracker:
         # Register cleanup on exit
         atexit.register(self._save_usage_data)
 
-    def _load_usage_data(self) -> Dict[str, Any]:
+    def _load_usage_data(self) -> dict[str, Any]:
         """Load existing usage data from file with file locking"""
         if self.usage_file.exists():
             max_retries = 5
@@ -227,7 +227,7 @@ class GlobalUsageTracker:
             # Silently ignore other errors to not disrupt the main program
             pass
 
-    def start_session(self, session_id: str, agent_name: Optional[str] = None):
+    def start_session(self, session_id: str, agent_name: str | None = None):
         """Start tracking a new session"""
         if not self.enabled:
             return
@@ -278,7 +278,7 @@ class GlobalUsageTracker:
         input_tokens: int,
         output_tokens: int,
         cost: float,
-        agent_name: Optional[str] = None,
+        agent_name: str | None = None,
     ):
         """Track usage for a single model interaction with proper synchronization"""
         if not self.enabled:
@@ -380,7 +380,7 @@ class GlobalUsageTracker:
                 traceback.print_exc()
             pass
 
-    def end_session(self, final_cost: Optional[float] = None):
+    def end_session(self, final_cost: float | None = None):
         """End the current session"""
         if not self.enabled:
             return
@@ -413,7 +413,7 @@ class GlobalUsageTracker:
             # Silently continue if tracking fails
             pass
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get a summary of usage statistics"""
         with self._lock:
             return {

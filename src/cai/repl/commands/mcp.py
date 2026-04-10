@@ -58,7 +58,6 @@ import atexit
 import functools
 import logging
 import warnings
-from typing import Dict, List, Optional
 
 # Third-party imports
 from rich.console import Console
@@ -81,14 +80,14 @@ from cai.sdk.agents.tool import FunctionTool
 console = Console()
 
 # Global registry for persistent MCP connections
-_GLOBAL_MCP_SERVERS: Dict[str, MCPServer] = {}
+_GLOBAL_MCP_SERVERS: dict[str, MCPServer] = {}
 
 # Per-server locks to serialize tool invocations for persistent connections
-_SERVER_INVOCATION_LOCKS: Dict[str, asyncio.Lock] = {}
+_SERVER_INVOCATION_LOCKS: dict[str, asyncio.Lock] = {}
 
 # Global registry for agent-MCP associations
 # Maps agent name to list of MCP server names
-_AGENT_MCP_ASSOCIATIONS: Dict[str, List[str]] = {}
+_AGENT_MCP_ASSOCIATIONS: dict[str, list[str]] = {}
 
 
 # Custom MCPUtil that uses global registry
@@ -411,7 +410,7 @@ class MCPCommand(Command):
             "help": "Show MCP command usage",
         }
 
-    def get_subcommands(self) -> List[str]:
+    def get_subcommands(self) -> list[str]:
         """Get list of subcommand names.
 
         Returns:
@@ -430,7 +429,7 @@ class MCPCommand(Command):
         """
         return self._subcommands.get(subcommand, "")
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the MCP command.
 
         Args:
@@ -548,7 +547,7 @@ Example: `/mcp add burp 13`
 """
         console.print(Markdown(usage_text))
 
-    def handle_help(self, args: Optional[List[str]] = None) -> bool:
+    def handle_help(self, args: list[str] | None = None) -> bool:
         """Handle /mcp help command.
 
         Args:
@@ -608,7 +607,7 @@ Example: `/mcp add burp 13`
             finally:
                 sys.stderr = original_stderr
 
-    def handle_load(self, args: Optional[List[str]] = None) -> bool:
+    def handle_load(self, args: list[str] | None = None) -> bool:
         """Handle /mcp load command.
 
         Usage:
@@ -673,9 +672,7 @@ Example: `/mcp add burp 13`
 
             return self._load_sse_server(url, name, headers if headers else None)
 
-    def _load_sse_server(
-        self, url: str, name: str, headers: Optional[Dict[str, str]] = None
-    ) -> bool:
+    def _load_sse_server(self, url: str, name: str, headers: dict[str, str] | None = None) -> bool:
         """Load an SSE MCP server.
 
         Args:
@@ -771,7 +768,7 @@ Example: `/mcp add burp 13`
                 del _GLOBAL_MCP_SERVERS[name]
             return False
 
-    def _load_stdio_server(self, name: str, command: str, cmd_args: List[str]) -> bool:
+    def _load_stdio_server(self, name: str, command: str, cmd_args: list[str]) -> bool:
         """Load a stdio MCP server.
 
         Args:
@@ -828,7 +825,7 @@ Example: `/mcp add burp 13`
                 del _GLOBAL_MCP_SERVERS[name]
             return False
 
-    def handle_list(self, args: Optional[List[str]] = None) -> bool:
+    def handle_list(self, args: list[str] | None = None) -> bool:
         """Handle /mcp list command.
 
         Args:
@@ -877,7 +874,7 @@ Example: `/mcp add burp 13`
         console.print(table)
         return True
 
-    def handle_add(self, args: Optional[List[str]] = None) -> bool:
+    def handle_add(self, args: list[str] | None = None) -> bool:
         """Handle /mcp add command.
 
         Usage: /mcp add <server_name> <agent_name>
@@ -1049,7 +1046,7 @@ Example: `/mcp add burp 13`
             console.print(f"[red]Error adding tools: {e}[/red]")
             return False
 
-    def handle_remove(self, args: Optional[List[str]] = None) -> bool:
+    def handle_remove(self, args: list[str] | None = None) -> bool:
         """Handle /mcp remove command.
 
         Args:
@@ -1089,7 +1086,7 @@ Example: `/mcp add burp 13`
                 del _GLOBAL_MCP_SERVERS[server_name]
             return False
 
-    def handle_status(self, args: Optional[List[str]] = None) -> bool:
+    def handle_status(self, args: list[str] | None = None) -> bool:
         """Handle /mcp status command.
 
         Args:
@@ -1169,7 +1166,7 @@ Example: `/mcp add burp 13`
 
         return True
 
-    def handle_tools(self, args: Optional[List[str]] = None) -> bool:
+    def handle_tools(self, args: list[str] | None = None) -> bool:
         """Handle /mcp tools command.
 
         Args:
@@ -1220,7 +1217,7 @@ Example: `/mcp add burp 13`
             console.print(f"[red]Error listing tools: {e}[/red]")
             return False
 
-    def handle_associations(self, args: Optional[List[str]] = None) -> bool:
+    def handle_associations(self, args: list[str] | None = None) -> bool:
         """Handle /mcp associations command to show agent-MCP associations.
 
         Args:
@@ -1262,7 +1259,7 @@ Example: `/mcp add burp 13`
         console.print(table)
         return True
 
-    def handle_test(self, args: Optional[List[str]] = None) -> bool:
+    def handle_test(self, args: list[str] | None = None) -> bool:
         """Handle /mcp test command to test server connectivity.
 
         Args:
@@ -1333,7 +1330,7 @@ Example: `/mcp add burp 13`
             return False
 
 
-def get_mcp_servers_for_agent(agent_name: str) -> List[str]:
+def get_mcp_servers_for_agent(agent_name: str) -> list[str]:
     """Get list of MCP server names associated with an agent.
 
     Args:
@@ -1373,7 +1370,7 @@ def remove_mcp_server_from_agent(agent_name: str, server_name: str):
             _AGENT_MCP_ASSOCIATIONS[agent_name_lower].remove(server_name)
 
 
-def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
+def get_mcp_tools_for_agent(agent_name: str) -> list[FunctionTool]:
     """Get all MCP tools for an agent based on associations.
 
     Args:

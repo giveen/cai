@@ -14,12 +14,12 @@ import logging
 import math
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from cai.rag.vector_db_adapter import VectorDBAdapter
 
 
-def _tokenize(text: str) -> List[str]:
+def _tokenize(text: str) -> list[str]:
     return [t for t in re.findall(r"\w+", (text or "").lower())]
 
 
@@ -28,7 +28,7 @@ class DenseRetriever:
         self.adapter = adapter
         self.collection_name = collection_name
 
-    def retrieve(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
         # Delegate to adapter.search which may use embeddings internally
         res = self.adapter.search(
             collection_name=self.collection_name, query_text=query, limit=top_k
@@ -42,7 +42,7 @@ class DenseRetriever:
 
 
 class SimpleBM25:
-    def __init__(self, docs: List[Dict[str, Any]]):
+    def __init__(self, docs: list[dict[str, Any]]):
         # docs: list of {id,text,metadata}
         self.docs = docs
         self.corpus_tokens = [_tokenize(d.get("text", "")) for d in docs]
@@ -51,10 +51,10 @@ class SimpleBM25:
         self.k1 = 1.5
         self.b = 0.75
         # DF and term frequencies
-        self.df: Dict[str, int] = {}
-        self.tf: List[Dict[str, int]] = []
+        self.df: dict[str, int] = {}
+        self.tf: list[dict[str, int]] = []
         for toks in self.corpus_tokens:
-            freqs: Dict[str, int] = {}
+            freqs: dict[str, int] = {}
             for t in toks:
                 freqs[t] = freqs.get(t, 0) + 1
             self.tf.append(freqs)
@@ -80,7 +80,7 @@ class SimpleBM25:
             score += idf * (f * (self.k1 + 1)) / denom
         return float(score)
 
-    def retrieve(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
         if self.N == 0:
             return []
         scores = []
@@ -106,10 +106,10 @@ class RetrieverCombiner:
     def __init__(self, rrf_k: int = 60):
         self.rrf_k = rrf_k
 
-    def combine(self, lists: List[List[Dict[str, Any]]], top_k: int = 10) -> List[Dict[str, Any]]:
+    def combine(self, lists: list[list[dict[str, Any]]], top_k: int = 10) -> list[dict[str, Any]]:
         # Reciprocal Rank Fusion
-        scores: Dict[Any, float] = {}
-        items: Dict[Any, Dict[str, Any]] = {}
+        scores: dict[Any, float] = {}
+        items: dict[Any, dict[str, Any]] = {}
         for lst in lists:
             for rank, item in enumerate(lst, start=1):
                 key = item.get("id") or item.get("text")
@@ -129,12 +129,12 @@ class RetrieverCombiner:
 
 
 class Reranker:
-    def __init__(self, embeddings_provider: Optional[Any] = None):
+    def __init__(self, embeddings_provider: Any | None = None):
         self.embeddings_provider = embeddings_provider
 
     def rerank(
-        self, query: str, candidates: List[Dict[str, Any]], top_k: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, query: str, candidates: list[dict[str, Any]], top_k: int | None = None
+    ) -> list[dict[str, Any]]:
         if not candidates:
             return []
         top_k = top_k or len(candidates)
@@ -188,8 +188,8 @@ class CrossEncoderReranker(Reranker):
 
     def __init__(
         self,
-        model_name: Optional[str] = None,
-        embeddings_provider: Optional[Any] = None,
+        model_name: str | None = None,
+        embeddings_provider: Any | None = None,
         device: str = "cpu",
     ):
         super().__init__(embeddings_provider=embeddings_provider)
@@ -208,8 +208,8 @@ class CrossEncoderReranker(Reranker):
             self._ce_model = None
 
     def rerank(
-        self, query: str, candidates: List[Dict[str, Any]], top_k: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, query: str, candidates: list[dict[str, Any]], top_k: int | None = None
+    ) -> list[dict[str, Any]]:
         if not candidates:
             return []
         top_k = top_k or len(candidates)
@@ -257,11 +257,11 @@ class CrossEncoderReranker(Reranker):
 class RetrieverPipeline:
     def __init__(
         self,
-        dense: Optional[DenseRetriever] = None,
-        sparse: Optional[SimpleBM25] = None,
-        combiner: Optional[RetrieverCombiner] = None,
-        reranker: Optional[Reranker] = None,
-        wakeup_index: Optional[Any] = None,
+        dense: DenseRetriever | None = None,
+        sparse: SimpleBM25 | None = None,
+        combiner: RetrieverCombiner | None = None,
+        reranker: Reranker | None = None,
+        wakeup_index: Any | None = None,
         wakeup_k: int = 3,
         wakeup_boost: float = 10.0,
     ):
@@ -277,9 +277,9 @@ class RetrieverPipeline:
         self,
         query: str,
         top_k: int = 10,
-        rerank_top_k: Optional[int] = None,
-        session_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        rerank_top_k: int | None = None,
+        session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         lists = []
         if self.dense:
             lists.append(self.dense.retrieve(query, top_k=top_k * 2))
@@ -299,9 +299,9 @@ class RetrieverPipeline:
 
             if wakeup_hits:
                 # build a map of existing candidates by unique key
-                candidate_map: Dict[str, Dict[str, Any]] = {}
+                candidate_map: dict[str, dict[str, Any]] = {}
 
-                def unique_key(item: Dict[str, Any]) -> str:
+                def unique_key(item: dict[str, Any]) -> str:
                     return str(item.get("id") or item.get("key") or item.get("text") or "")
 
                 for item in combined:

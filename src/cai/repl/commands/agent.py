@@ -6,7 +6,6 @@ Provides commands for managing and switching between agents.
 
 # Standard library imports
 import os
-from typing import List, Optional
 
 # Third-party imports
 from rich.console import Console  # pylint: disable=import-error
@@ -98,7 +97,7 @@ class AgentCommand(Command):
 
         return agent.model
 
-    def get_subcommands(self) -> List[str]:
+    def get_subcommands(self) -> list[str]:
         """Get list of subcommand names.
 
         Returns:
@@ -117,7 +116,7 @@ class AgentCommand(Command):
         """
         return self._subcommands.get(subcommand, "")
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the agent command.
 
         Args:
@@ -138,7 +137,9 @@ class AgentCommand(Command):
         # If not a subcommand, try to select an agent by name
         return self.handle_select(args)
 
-    def handle_list(self, args: Optional[List[str]] = None) -> bool:  # pylint: disable=unused-argument # noqa: E501
+    def handle_list(
+        self, args: list[str] | None = None
+    ) -> bool:  # pylint: disable=unused-argument # noqa: E501
         """Handle /agent list command.
 
         Args:
@@ -264,7 +265,9 @@ class AgentCommand(Command):
 
         return True
 
-    def handle_select(self, args: Optional[List[str]] = None) -> bool:  # pylint: disable=too-many-branches,line-too-long # noqa: E501
+    def handle_select(
+        self, args: list[str] | None = None
+    ) -> bool:  # pylint: disable=too-many-branches,line-too-long # noqa: E501
         """Handle /agent select command.
 
         Args:
@@ -739,7 +742,7 @@ class AgentCommand(Command):
 
         return True
 
-    def handle_info(self, args: Optional[List[str]] = None) -> bool:
+    def handle_info(self, args: list[str] | None = None) -> bool:
         """Handle /agent info command.
 
         Args:
@@ -822,7 +825,7 @@ class AgentCommand(Command):
         console.print(Markdown(markdown_content))
         return True
 
-    def handle_current(self, args: Optional[List[str]] = None) -> bool:
+    def handle_current(self, args: list[str] | None = None) -> bool:
         """Handle /agent current command - show current agent configuration.
 
         Args:

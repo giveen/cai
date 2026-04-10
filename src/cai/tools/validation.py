@@ -9,7 +9,6 @@ import base64
 import os
 import re
 import unicodedata
-from typing import Optional, Tuple
 
 # Broad shell metacharacter detector used to catch obvious injection
 # attempts when constructing shell commands.
@@ -51,37 +50,37 @@ DISALLOWED_ARG_FLAGS = re.compile(r"(^|\s)-(?:e|c|l)($|\s)")
 FILENAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
-def contains_shell_metacharacters(s: Optional[str]) -> bool:
+def contains_shell_metacharacters(s: str | None) -> bool:
     return bool(s and SHELL_METACHAR_RE.search(s))
 
 
-def contains_cmd_injection(s: Optional[str]) -> bool:
+def contains_cmd_injection(s: str | None) -> bool:
     return bool(s and CMD_INJECT_RE.search(s))
 
 
-def is_url_safe(s: Optional[str]) -> bool:
+def is_url_safe(s: str | None) -> bool:
     return bool(s and URL_SAFE_RE.match(s.strip()))
 
 
-def is_valid_target(s: Optional[str]) -> bool:
+def is_valid_target(s: str | None) -> bool:
     return bool(s and TARGET_RE.match(s.strip()))
 
 
-def is_valid_host(s: Optional[str]) -> bool:
+def is_valid_host(s: str | None) -> bool:
     return bool(s and HOST_RE.match(s.strip()))
 
 
-def has_disallowed_nc_flags(s: Optional[str]) -> bool:
+def has_disallowed_nc_flags(s: str | None) -> bool:
     return bool(s and DISALLOWED_ARG_FLAGS.search(s))
 
 
-def is_valid_filename(s: Optional[str]) -> bool:
+def is_valid_filename(s: str | None) -> bool:
     return bool(s and FILENAME_RE.match(s))
 
 
 def validate_args_no_injection(
-    args: Optional[str], name: str = "args", max_length: Optional[int] = None
-) -> Optional[str]:
+    args: str | None, name: str = "args", max_length: int | None = None
+) -> str | None:
     """Return an error string if `args` contains injection sequences or is too long."""
     if not args:
         return None
@@ -92,7 +91,7 @@ def validate_args_no_injection(
     return None
 
 
-def detect_unicode_homographs(text: str) -> Tuple[bool, str]:
+def detect_unicode_homographs(text: str) -> tuple[bool, str]:
     """
     Detect and normalize Unicode homograph characters used to bypass security checks.
     Returns (has_homographs, normalized_text)
@@ -129,7 +128,7 @@ def detect_unicode_homographs(text: str) -> Tuple[bool, str]:
     return (has_homographs, normalized)
 
 
-def validate_command_guardrails(command: str) -> Optional[str]:
+def validate_command_guardrails(command: str) -> str | None:
     """Run pre-execution guardrails on `command`.
 
     Returns an error string when the command should be blocked, or None when allowed.

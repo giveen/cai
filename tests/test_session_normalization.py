@@ -39,8 +39,15 @@ def test_session_id_strip_quotes_uses_run_command(monkeypatch):
 
     def fake_list_shell_sessions():
         # Return a session that matches the stripped session_id "abc"
-        return [{"session_id": "abc", "friendly_id": "abc", "command": "bash",
-                 "last_activity": "now", "running": True}]
+        return [
+            {
+                "session_id": "abc",
+                "friendly_id": "abc",
+                "command": "bash",
+                "last_activity": "now",
+                "running": True,
+            }
+        ]
 
     monkeypatch.setattr(glc, "run_command", fake_run_command)
     monkeypatch.setattr(glc, "run_command_async", fake_run_command_async)

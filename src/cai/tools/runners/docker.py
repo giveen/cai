@@ -471,7 +471,7 @@ def run_docker(
         return output
 
     except subprocess.TimeoutExpired:
-        timeout_msg = "Timeout executing command in container."
+        _timeout_msg = "Timeout executing command in container."
         if stdout:
             print(f"\033[33m{context_msg} $ {command}\nTIMEOUT\033[0m")
             print(color("Attempting execution on host instead.", fg="yellow"))

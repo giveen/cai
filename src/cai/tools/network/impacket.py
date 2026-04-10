@@ -39,7 +39,6 @@ import re
 import shlex
 import shutil
 import subprocess
-from typing import Optional
 
 from cai.agents.guardrails import sanitize_external_content as _sanitize
 from cai.sdk.agents import function_tool
@@ -48,18 +47,65 @@ from cai.sdk.agents import function_tool
 # Known scripts (from /usr/bin/impacket-*) used when suggesting alternatives.
 # ---------------------------------------------------------------------------
 _KNOWN_SCRIPTS = [
-    "addcomputer", "atexec", "changepasswd", "dacledit", "dcomexec",
-    "describeTicket", "dpapi", "DumpNTLMInfo", "esentutl", "exchanger",
-    "findDelegation", "GetADComputers", "getArch", "GetADUsers",
-    "Get-GPPPassword", "GetLAPSPassword", "GetNPUsers", "getPac",
-    "getST", "getTGT", "GetUserSPNs", "goldenPac", "karmaSMB",
-    "keylistattack", "lookupsid", "machine_role", "mimikatz",
-    "mssqlclient", "mssqlinstance", "net", "netview", "ntfs-read",
-    "ntlmrelayx", "owneredit", "ping", "ping6", "psexec", "raiseChild",
-    "rbcd", "rdp_check", "reg", "registry-read", "rpcdump", "rpcmap",
-    "sambaPipe", "samrdump", "secretsdump", "services", "smbclient",
-    "smbexec", "smbserver", "sniff", "sniffer", "split",
-    "ticketConverter", "ticketer", "wmiexec", "wmipersist", "wmiquery",
+    "addcomputer",
+    "atexec",
+    "changepasswd",
+    "dacledit",
+    "dcomexec",
+    "describeTicket",
+    "dpapi",
+    "DumpNTLMInfo",
+    "esentutl",
+    "exchanger",
+    "findDelegation",
+    "GetADComputers",
+    "getArch",
+    "GetADUsers",
+    "Get-GPPPassword",
+    "GetLAPSPassword",
+    "GetNPUsers",
+    "getPac",
+    "getST",
+    "getTGT",
+    "GetUserSPNs",
+    "goldenPac",
+    "karmaSMB",
+    "keylistattack",
+    "lookupsid",
+    "machine_role",
+    "mimikatz",
+    "mssqlclient",
+    "mssqlinstance",
+    "net",
+    "netview",
+    "ntfs-read",
+    "ntlmrelayx",
+    "owneredit",
+    "ping",
+    "ping6",
+    "psexec",
+    "raiseChild",
+    "rbcd",
+    "rdp_check",
+    "reg",
+    "registry-read",
+    "rpcdump",
+    "rpcmap",
+    "sambaPipe",
+    "samrdump",
+    "secretsdump",
+    "services",
+    "smbclient",
+    "smbexec",
+    "smbserver",
+    "sniff",
+    "sniffer",
+    "split",
+    "ticketConverter",
+    "ticketer",
+    "wmiexec",
+    "wmipersist",
+    "wmiquery",
 ]
 
 # ---------------------------------------------------------------------------
@@ -67,41 +113,62 @@ _KNOWN_SCRIPTS = [
 # ---------------------------------------------------------------------------
 _DISTIL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # NTLM hash lines from secretsdump: Username:RID:LMhash:NThash:::
-    ("NTLM HASH", re.compile(
-        r"^(?P<account>[^:]+:\d+:[A-Fa-f0-9]{32}:[A-Fa-f0-9]{32}:::.*?)$",
-        re.MULTILINE,
-    )),
+    (
+        "NTLM HASH",
+        re.compile(
+            r"^(?P<account>[^:]+:\d+:[A-Fa-f0-9]{32}:[A-Fa-f0-9]{32}:::.*?)$",
+            re.MULTILINE,
+        ),
+    ),
     # NetNTLMv1/v2 challenge capture
-    ("NET-NTLM", re.compile(
-        r"^(?P<account>\S+::\S+:[A-Fa-f0-9]+:[A-Fa-f0-9]+:[A-Fa-f0-9]+)$",
-        re.MULTILINE,
-    )),
+    (
+        "NET-NTLM",
+        re.compile(
+            r"^(?P<account>\S+::\S+:[A-Fa-f0-9]+:[A-Fa-f0-9]+:[A-Fa-f0-9]+)$",
+            re.MULTILINE,
+        ),
+    ),
     # Cleartext / LSA secret recovery
-    ("LSA SECRET", re.compile(
-        r"(?i)\$MACHINE\.ACC.*?(?P<secret>\S+)",
-        re.MULTILINE,
-    )),
-    ("CLEARTEXT", re.compile(
-        r"(?i)(?:cleartext|plaintext|password\s*=|pwd\s*=)\s*(?P<secret>\S+)",
-        re.MULTILINE,
-    )),
+    (
+        "LSA SECRET",
+        re.compile(
+            r"(?i)\$MACHINE\.ACC.*?(?P<secret>\S+)",
+            re.MULTILINE,
+        ),
+    ),
+    (
+        "CLEARTEXT",
+        re.compile(
+            r"(?i)(?:cleartext|plaintext|password\s*=|pwd\s*=)\s*(?P<secret>\S+)",
+            re.MULTILINE,
+        ),
+    ),
     # Successful authentication / shell spawn
-    ("AUTH OK", re.compile(
-        r"(?i)(?:authenticated|logon successful|service installed|"
-        r"binding ok|smb connection established)",
-        re.MULTILINE,
-    )),
+    (
+        "AUTH OK",
+        re.compile(
+            r"(?i)(?:authenticated|logon successful|service installed|"
+            r"binding ok|smb connection established)",
+            re.MULTILINE,
+        ),
+    ),
     # Kerberos TGT / ticket saved
-    ("TICKET", re.compile(
-        r"(?i)(?:saved\s+ticket|AS-REQ|TGT|\.ccache|saved\s+as\s+\S+\.ccache)",
-        re.MULTILINE,
-    )),
+    (
+        "TICKET",
+        re.compile(
+            r"(?i)(?:saved\s+ticket|AS-REQ|TGT|\.ccache|saved\s+as\s+\S+\.ccache)",
+            re.MULTILINE,
+        ),
+    ),
     # Error / access denied indicators
-    ("ERROR", re.compile(
-        r"(?i)(?:access denied|status_logon_failure|status_access_denied|"
-        r"connection refused|nt_status_|error:)",
-        re.MULTILINE,
-    )),
+    (
+        "ERROR",
+        re.compile(
+            r"(?i)(?:access denied|status_logon_failure|status_access_denied|"
+            r"connection refused|nt_status_|error:)",
+            re.MULTILINE,
+        ),
+    ),
 ]
 
 # Shell metacharacters that MUST NOT appear in any user-controlled parameter.
@@ -110,7 +177,7 @@ _DISTIL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 _INJECTION_RE = re.compile(r"[;&|`$]|\$\(|>\s*\S")
 
 
-def _check_injection(value: str, param_name: str) -> Optional[str]:
+def _check_injection(value: str, param_name: str) -> str | None:
     """Return an error string if *value* contains shell-injection characters."""
     if _INJECTION_RE.search(value):
         return (
@@ -120,7 +187,7 @@ def _check_injection(value: str, param_name: str) -> Optional[str]:
     return None
 
 
-def _resolve_binary(tool_name: str) -> Optional[str]:
+def _resolve_binary(tool_name: str) -> str | None:
     """Return the absolute path to ``impacket-<tool_name>`` or None."""
     return shutil.which(f"impacket-{tool_name}")
 
@@ -222,12 +289,8 @@ async def impacket_executor(
     # ── 2. Binary resolution ───────────────────────────────────────────────
     binary = _resolve_binary(tool_name)
     if binary is None:
-        suggestions = ", ".join(
-            f"`{s}`" for s in _KNOWN_SCRIPTS if tool_name.lower() in s.lower()
-        )
-        suggestion_block = (
-            f"\nClosest matches: {suggestions}" if suggestions else ""
-        )
+        suggestions = ", ".join(f"`{s}`" for s in _KNOWN_SCRIPTS if tool_name.lower() in s.lower())
+        suggestion_block = f"\nClosest matches: {suggestions}" if suggestions else ""
         available = ", ".join(f"`{s}`" for s in _KNOWN_SCRIPTS)
         return (
             f"[ERROR] `impacket-{tool_name}` not found in PATH.\n"
@@ -291,7 +354,7 @@ async def impacket_executor(
     sanitized = _sanitize(raw_output)
     distilled_md, _ = _distil_output(sanitized)
 
-    cmd_display = " ".join(shlex.quote(a) for a in cmd)
+    cmd_display = shlex.join(cmd)
     header = (
         f"**Command:** `{cmd_display}`  \n"
         f"**Exit code:** `{result.returncode}`\n\n"

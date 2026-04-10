@@ -46,27 +46,19 @@ def initialize_env() -> None:
         local_api_key = os.getenv("LOCAL_API_KEY", "").strip()
         if local_api_base and not os.getenv("OPENAI_API_BASE"):
             os.environ["OPENAI_API_BASE"] = local_api_base
-            logging.getLogger(__name__).debug(
-                "Propagated LOCAL_API_BASE to OPENAI_API_BASE"
-            )
+            logging.getLogger(__name__).debug("Propagated LOCAL_API_BASE to OPENAI_API_BASE")
         if local_api_key and not os.getenv("OPENAI_API_KEY"):
             os.environ["OPENAI_API_KEY"] = local_api_key
-            logging.getLogger(__name__).debug(
-                "Propagated LOCAL_API_KEY to OPENAI_API_KEY"
-            )
+            logging.getLogger(__name__).debug("Propagated LOCAL_API_KEY to OPENAI_API_KEY")
         # Mirror OPENAI_API_BASE -> OPENAI_BASE_URL for the native openai-python SDK.
         # AsyncOpenAI() reads OPENAI_BASE_URL (not OPENAI_API_BASE) when no base_url
         # argument is supplied, so without this the native client bypasses the proxy.
         effective_base = os.getenv("OPENAI_API_BASE", "").strip()
         if effective_base and not os.getenv("OPENAI_BASE_URL"):
             os.environ["OPENAI_BASE_URL"] = effective_base
-            logging.getLogger(__name__).debug(
-                "Mirrored OPENAI_API_BASE to OPENAI_BASE_URL"
-            )
+            logging.getLogger(__name__).debug("Mirrored OPENAI_API_BASE to OPENAI_BASE_URL")
     except Exception:
-        logging.getLogger(__name__).debug(
-            "Failed to propagate LOCAL_* to OPENAI_*", exc_info=True
-        )
+        logging.getLogger(__name__).debug("Failed to propagate LOCAL_* to OPENAI_*", exc_info=True)
     # Delegate warnings and logging filter installation to their modules.
     try:
         install_warning_handler()

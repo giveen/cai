@@ -252,7 +252,7 @@ def load_dataset(dataset_file, eval_type):
     elif eval_type == "cti_bench":
         with open(dataset_file) as f:
             reader = csv.reader(f, delimiter="\t")
-            header = next(reader, None)
+            _ = next(reader, None)
             for row in reader:
                 # Handle three possible formats:
                 # Format 1: [URL, Question, Option A, Option B, Option C, Option D, Prompt, GT] (8 columns)
@@ -326,7 +326,7 @@ def run_evaluation_pii(
     if new_column not in fieldnames:
         fieldnames.append(new_column)
 
-    start_time = datetime.datetime.now()
+    _ = datetime.datetime.now()
     print("\nStarting PII Anonymization Benchmark")
     print(f"Model: {model}")
     print(f"Dataset: {dataset_file}")

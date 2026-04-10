@@ -30,7 +30,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from cai.sdk.agents import function_tool
 
@@ -71,8 +71,14 @@ def _validate_commands(commands: Any) -> tuple[list, str | None]:
         return [], "commands must be a JSON array"
 
     allowed_actions = {
-        "goto", "click", "fill", "type", "wait",
-        "scroll", "screenshot", "evaluate",
+        "goto",
+        "click",
+        "fill",
+        "type",
+        "wait",
+        "scroll",
+        "screenshot",
+        "evaluate",
     }
 
     validated: list[dict] = []
@@ -111,6 +117,7 @@ def _validate_commands(commands: Any) -> tuple[list, str | None]:
 # ---------------------------------------------------------------------------
 # Vision sitrep
 # ---------------------------------------------------------------------------
+
 
 def _get_visual_sitrep(screenshot_path: str) -> str | None:
     """Call the configured vision model and return a text description.
@@ -154,7 +161,17 @@ def _get_visual_sitrep(screenshot_path: str) -> str | None:
             ],
             max_tokens=200,
         )
-        return resp.choices[0].message.content or None
+        try:
+            choices = getattr(resp, "choices", None)
+            if choices and len(choices) > 0:
+                first = choices[0]
+                msg = getattr(first, "message", None)
+                if msg is not None:
+                    return getattr(msg, "content", None) or None
+                return getattr(first, "content", None) or None
+        except Exception:
+            return None
+        return None
     except Exception as exc:
         logger.debug("VLM sitrep failed (%s): %s", model, exc)
         return None
@@ -164,12 +181,13 @@ def _get_visual_sitrep(screenshot_path: str) -> str | None:
 # Core Playwright runner
 # ---------------------------------------------------------------------------
 
+
 async def _run_playwright(
     url: str,
     commands: list[dict],
     headless: bool,
     timeout_ms: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute commands using Playwright and return a result dict."""
     try:
         from playwright.async_api import async_playwright  # type: ignore
@@ -202,56 +220,13 @@ async def _run_playwright(
             # Always navigate to the initial URL first
             await page.goto(url, wait_until="domcontentloaded")
 
-            for cmd in commands:
-                action = cmd["action"]
-
-                if action == "goto":
-                    await page.goto(cmd["url"], wait_until="domcontentloaded")
-
-                elif action == "click":
-                    await page.click(cmd["selector"])
-
-                elif action == "fill":
-                    await page.fill(cmd["selector"], cmd.get("value", ""))
-
-                elif action == "type":
-                    await page.type(cmd["selector"], cmd.get("text", ""))
-
-                elif action == "wait":
-                    if "selector" in cmd:
-                        await page.wait_for_selector(cmd["selector"])
-                    elif "timeout" in cmd:
-                        # cap at 30s to prevent tool hanging
-                        ms = min(int(cmd["timeout"]), 30_000)
-                        await page.wait_for_timeout(ms)
-
-                elif action == "scroll":
-                    direction = cmd.get("direction", "down")
-                    amount = int(cmd.get("amount", 300))
-                    if direction == "up":
-                        amount = -amount
-                    await page.evaluate(f"window.scrollBy(0, {amount})")
-
-                elif action == "screenshot":
-                    spath = str(_new_screenshot_path())
-                    await page.screenshot(path=spath, full_page=False)
-                    screenshot_paths.append(spath)
-
-                elif action == "evaluate":
-                    result = await page.evaluate(cmd["script"])
-                    evaluate_results.append(result)
-
-            # Always take a final screenshot
-            final_spath = str(_new_screenshot_path())
-            await page.screenshot(path=final_spath, full_page=False)
-            screenshot_paths.append(final_spath)
-
-            # Attempt to build a simplified interactive (ARIA) map of the page.
-            # This returns a list of interactive elements with role, accessible
-            # name, id/classes, a best-effort unique selector, and bounding rect.
+            # Build an initial interactive map for the loaded page so numeric
+            # selectors (e.g. "click 5") can be resolved against the current
+            # page state during subsequent commands.
             interactive_map = []
             try:
-                interactive_map = await page.evaluate(r'''() => {
+                interactive_map = await page.evaluate(
+                    r"""() => {
                     const uniqueSelector = (el) => {
                         if (!el || el.nodeType !== 1) return "";
                         if (el.id) return `#${el.id}`;
@@ -312,9 +287,23 @@ async def _run_playwright(
                         return false;
                     };
 
-                    const all = Array.from(document.querySelectorAll('*'));
+                    const collectAll = (root) => {
+                        const out = [];
+                        const stack = [root];
+                        while (stack.length) {
+                            const node = stack.shift();
+                            if (!node) continue;
+                            if (node.nodeType === 1) {
+                                out.push(node);
+                                try { if (node.shadowRoot) stack.unshift(...Array.from(node.shadowRoot.children)); } catch(e) {}
+                                stack.unshift(...Array.from(node.children || []));
+                            }
+                        }
+                        return out;
+                    };
+                    const all = collectAll(document);
                     const els = all.filter(isInteractive).slice(0, 200);
-                    return els.map(el => {
+                    return els.map((el, idx) => {
                         let rect = null;
                         try {
                             const r = el.getBoundingClientRect();
@@ -326,9 +315,441 @@ async def _run_playwright(
                         const name = getName(el) || '';
                         const id = el.id || '';
                         const classes = el.className || '';
-                        return { role, name: (name||'').replace(/\s+/g,' ').slice(0,200), id, classes, tag: el.tagName.toLowerCase(), selector: uniqueSelector(el), rect };
+                        return { map_index: idx+1, role, name: (name||'').replace(/\s+/g,' ').slice(0,200), id, classes, tag: el.tagName.toLowerCase(), selector: uniqueSelector(el), rect };
                     });
-                }''')
+                }"""
+                )
+            except Exception:
+                interactive_map = []
+
+            for cmd in commands:
+                action = cmd["action"]
+
+                if action == "goto":
+                    await page.goto(cmd["url"], wait_until="domcontentloaded")
+                    # Rebuild interactive map for the newly loaded page
+                    try:
+                        interactive_map = await page.evaluate(
+                            r"""() => {
+                            const uniqueSelector = (el) => {
+                                if (!el || el.nodeType !== 1) return "";
+                                if (el.id) return `#${el.id}`;
+                                const parts = [];
+                                while (el && el.nodeType === 1) {
+                                    const tag = el.tagName.toLowerCase();
+                                    let nth = 1;
+                                    let sib = el;
+                                    while ((sib = sib.previousElementSibling) != null) {
+                                        if (sib.tagName === el.tagName) nth++;
+                                    }
+                                    parts.unshift(`${tag}:nth-of-type(${nth})`);
+                                    el = el.parentElement;
+                                }
+                                return parts.join(' > ');
+                            };
+
+                            const getName = (el) => {
+                                if (!el) return '';
+                                try {
+                                    const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+                                    if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
+                                    const labelledby = el.getAttribute && el.getAttribute('aria-labelledby');
+                                    if (labelledby) {
+                                        const ids = labelledby.split(/\s+/);
+                                        let txt = '';
+                                        for (const id of ids) {
+                                            const ref = document.getElementById(id);
+                                            if (ref) txt += ' ' + (ref.innerText || ref.textContent || '');
+                                        }
+                                        if (txt.trim()) return txt.trim();
+                                    }
+                                    if (el.value) return String(el.value);
+                                    const text = (el.innerText || el.textContent || '').trim();
+                                    if (text) return text;
+                                } catch (e) {
+                                    // ignore
+                                }
+                                return '';
+                            };
+
+                            const interactiveRoles = new Set([
+                                'button','link','textbox','checkbox','combobox','menuitem','option',
+                                'tab','switch','slider','searchbox','radio','menuitemcheckbox','menuitemradio'
+                            ]);
+
+                            const isInteractive = (el) => {
+                                if (!el || el.nodeType !== 1) return false;
+                                const tag = el.tagName.toLowerCase();
+                                if (['a','button','input','select','textarea'].includes(tag)) return true;
+                                try {
+                                    const role = (el.getAttribute && el.getAttribute('role')) || '';
+                                    if (role && interactiveRoles.has(role.toLowerCase())) return true;
+                                    if (el.getAttribute && (el.getAttribute('onclick') || el.hasAttribute('contenteditable'))) return true;
+                                } catch (e) {
+                                    // ignore
+                                }
+                                return false;
+                            };
+
+                            const collectAll = (root) => {
+                                const out = [];
+                                const stack = [root];
+                                while (stack.length) {
+                                    const node = stack.shift();
+                                    if (!node) continue;
+                                    if (node.nodeType === 1) {
+                                        out.push(node);
+                                        try { if (node.shadowRoot) stack.unshift(...Array.from(node.shadowRoot.children)); } catch(e) {}
+                                        stack.unshift(...Array.from(node.children || []));
+                                    }
+                                }
+                                return out;
+                            };
+                            const all = collectAll(document);
+                            const els = all.filter(isInteractive).slice(0, 200);
+                            return els.map((el, idx) => {
+                                let rect = null;
+                                try {
+                                    const r = el.getBoundingClientRect();
+                                    rect = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+                                } catch (e) {
+                                    rect = null;
+                                }
+                                const role = (el.getAttribute && el.getAttribute('role')) || el.tagName.toLowerCase();
+                                const name = getName(el) || '';
+                                const id = el.id || '';
+                                const classes = el.className || '';
+                                return { map_index: idx+1, role, name: (name||'').replace(/\s+/g,' ').slice(0,200), id, classes, tag: el.tagName.toLowerCase(), selector: uniqueSelector(el), rect };
+                            });
+                        }"""
+                        )
+                    except Exception:
+                        interactive_map = []
+
+                elif action == "click":
+                    selector_to_use = cmd.get("selector")
+                    # If a numeric selector is provided, prefer resolving as a map index
+                    if isinstance(selector_to_use, (int,)) or (
+                        isinstance(selector_to_use, str) and str(selector_to_use).isdigit()
+                    ):
+                        id_str = str(selector_to_use)
+                        idx0 = int(id_str)
+                        tried = False
+                        # Try zero-based first, then 1-based
+                        for candidate in (idx0, idx0 - 1):
+                            if 0 <= candidate < len(interactive_map):
+                                tried = True
+                                try:
+                                    js = r"""(i) => {
+                                        const collectAll = (root) => {
+                                            const out = [];
+                                            const stack = [root];
+                                            while (stack.length) {
+                                                const node = stack.shift();
+                                                if (!node) continue;
+                                                if (node.nodeType === 1) {
+                                                    out.push(node);
+                                                    try { if (node.shadowRoot) stack.unshift(...Array.from(node.shadowRoot.children)); } catch(e) {}
+                                                    stack.unshift(...Array.from(node.children || []));
+                                                }
+                                            }
+                                            return out;
+                                        };
+                                        const interactiveRoles = new Set(['button','link','textbox','checkbox','combobox','menuitem','option','tab','switch','slider','searchbox','radio','menuitemcheckbox','menuitemradio']);
+                                        const els = collectAll(document).filter(el => {
+                                            try {
+                                                if (!el) return false;
+                                                const tag = el.tagName.toLowerCase();
+                                                if (['a','button','input','select','textarea'].includes(tag)) return true;
+                                                const role = (el.getAttribute && el.getAttribute('role')) || '';
+                                                if (role && interactiveRoles.has(role.toLowerCase())) return true;
+                                                if (el.getAttribute && (el.getAttribute('onclick') || el.hasAttribute('contenteditable'))) return true;
+                                            } catch(e) {}
+                                            return false;
+                                        });
+                                        const el = els[i];
+                                        if (!el) return false;
+                                        try { el.scrollIntoView({behavior:'auto', block:'center'}); } catch(e) {}
+                                        try { el.click(); return true; } catch (e) { try { const ev = document.createEvent('MouseEvents'); ev.initEvent('click', true, true); el.dispatchEvent(ev); return true; } catch (e2) { return false; } }
+                                    }"""
+                                    ok = await page.evaluate(js, candidate)
+                                    if not ok:
+                                        # Fallback to CSS selector if evaluate didn't work
+                                        sel = interactive_map[candidate].get("selector") or (
+                                            "#" + (interactive_map[candidate].get("id") or "")
+                                        )
+                                        if sel:
+                                            await page.click(sel)
+                                    break
+                                except Exception:
+                                    continue
+                        if not tried:
+                            raise ValueError(
+                                f"interactive map index out of range: {selector_to_use}"
+                            )
+                    else:
+                        await page.click(selector_to_use)
+
+                elif action == "fill":
+                    selector_to_use = cmd.get("selector")
+                    value = cmd.get("value", "")
+                    if isinstance(selector_to_use, (int,)) or (
+                        isinstance(selector_to_use, str) and str(selector_to_use).isdigit()
+                    ):
+                        id_str = str(selector_to_use)
+                        idx0 = int(id_str)
+                        tried = False
+                        for candidate in (idx0, idx0 - 1):
+                            if 0 <= candidate < len(interactive_map):
+                                tried = True
+                                try:
+                                    js = r"""(i, v) => {
+                                        const collectAll = (root) => {
+                                            const out = [];
+                                            const stack = [root];
+                                            while (stack.length) {
+                                                const node = stack.shift();
+                                                if (!node) continue;
+                                                if (node.nodeType === 1) {
+                                                    out.push(node);
+                                                    try { if (node.shadowRoot) stack.unshift(...Array.from(node.shadowRoot.children)); } catch(e) {}
+                                                    stack.unshift(...Array.from(node.children || []));
+                                                }
+                                            }
+                                            return out;
+                                        };
+                                        const els = collectAll(document).filter(el => el && el.nodeType === 1);
+                                        const el = els[i];
+                                        if (!el) return false;
+                                        try { el.focus(); } catch(e) {}
+                                        try { el.value = v; } catch(e) {}
+                                        try { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
+                                        return true;
+                                    }"""
+                                    await page.evaluate(js, candidate, value)
+                                    break
+                                except Exception:
+                                    continue
+                        if not tried:
+                            raise ValueError(
+                                f"interactive map index out of range: {selector_to_use}"
+                            )
+                    else:
+                        await page.fill(selector_to_use, value)
+
+                elif action == "type":
+                    selector_to_use = cmd.get("selector")
+                    text_val = cmd.get("text", "")
+                    if isinstance(selector_to_use, (int,)) or (
+                        isinstance(selector_to_use, str) and str(selector_to_use).isdigit()
+                    ):
+                        id_str = str(selector_to_use)
+                        idx0 = int(id_str)
+                        tried = False
+                        for candidate in (idx0, idx0 - 1):
+                            if 0 <= candidate < len(interactive_map):
+                                tried = True
+                                try:
+                                    js = r"""(i, v) => {
+                                        const collectAll = (root) => {
+                                            const out = [];
+                                            const stack = [root];
+                                            while (stack.length) {
+                                                const node = stack.shift();
+                                                if (!node) continue;
+                                                if (node.nodeType === 1) {
+                                                    out.push(node);
+                                                    try { if (node.shadowRoot) stack.unshift(...Array.from(node.shadowRoot.children)); } catch(e) {}
+                                                    stack.unshift(...Array.from(node.children || []));
+                                                }
+                                            }
+                                            return out;
+                                        };
+                                        const els = collectAll(document).filter(el => el && el.nodeType === 1);
+                                        const el = els[i];
+                                        if (!el) return false;
+                                        try { el.focus(); } catch(e) {}
+                                        try { el.value = (el.value || '') + v; } catch(e) {}
+                                        try { el.dispatchEvent(new Event('input', {bubbles:true})); } catch(e) {}
+                                        return true;
+                                    }"""
+                                    await page.evaluate(js, candidate, text_val)
+                                    break
+                                except Exception:
+                                    continue
+                        if not tried:
+                            raise ValueError(
+                                f"interactive map index out of range: {selector_to_use}"
+                            )
+                    else:
+                        await page.type(selector_to_use, text_val)
+
+                elif action == "wait":
+                    if "selector" in cmd:
+                        selector_to_use = cmd.get("selector")
+                        if isinstance(selector_to_use, (int,)) or (
+                            isinstance(selector_to_use, str) and str(selector_to_use).isdigit()
+                        ):
+                            id_str = str(selector_to_use)
+                            idx0 = int(id_str)
+                            tried = False
+                            for candidate in (idx0, idx0 - 1):
+                                if 0 <= candidate < len(interactive_map):
+                                    tried = True
+                                    try:
+                                        fn = r"""(i) => {
+                                            const collectAll = (root) => {
+                                                const out = [];
+                                                const stack = [root];
+                                                while (stack.length) {
+                                                    const node = stack.shift();
+                                                    if (!node) continue;
+                                                    if (node.nodeType === 1) {
+                                                        out.push(node);
+                                                        try { if (node.shadowRoot) stack.unshift(...Array.from(node.shadowRoot.children)); } catch(e) {}
+                                                        stack.unshift(...Array.from(node.children || []));
+                                                    }
+                                                }
+                                                return out;
+                                            };
+                                            const els = collectAll(document).filter(el => el && el.nodeType === 1);
+                                            return !!els[i];
+                                        }"""
+                                        await page.wait_for_function(fn, candidate)
+                                        break
+                                    except Exception:
+                                        continue
+                            if not tried:
+                                raise ValueError(
+                                    f"interactive map index out of range: {selector_to_use}"
+                                )
+                        else:
+                            await page.wait_for_selector(selector_to_use)
+                    elif "timeout" in cmd:
+                        # cap at 30s to prevent tool hanging
+                        ms = min(int(cmd["timeout"]), 30_000)
+                        await page.wait_for_timeout(ms)
+
+                elif action == "scroll":
+                    direction = cmd.get("direction", "down")
+                    amount = int(cmd.get("amount", 300))
+                    if direction == "up":
+                        amount = -amount
+                    await page.evaluate(f"window.scrollBy(0, {amount})")
+
+                elif action == "screenshot":
+                    spath = str(_new_screenshot_path())
+                    await page.screenshot(path=spath, full_page=False)
+                    screenshot_paths.append(spath)
+
+                elif action == "evaluate":
+                    result = await page.evaluate(cmd["script"])
+                    evaluate_results.append(result)
+
+            # Always take a final screenshot
+            final_spath = str(_new_screenshot_path())
+            await page.screenshot(path=final_spath, full_page=False)
+            screenshot_paths.append(final_spath)
+
+            # Attempt to build a simplified interactive (ARIA) map of the page.
+            # This returns a list of interactive elements with role, accessible
+            # name, id/classes, a best-effort unique selector, and bounding rect.
+            interactive_map = []
+            try:
+                interactive_map = await page.evaluate(
+                    r"""() => {
+                    const uniqueSelector = (el) => {
+                        if (!el || el.nodeType !== 1) return "";
+                        if (el.id) return `#${el.id}`;
+                        const parts = [];
+                        while (el && el.nodeType === 1) {
+                            const tag = el.tagName.toLowerCase();
+                            let nth = 1;
+                            let sib = el;
+                            while ((sib = sib.previousElementSibling) != null) {
+                                if (sib.tagName === el.tagName) nth++;
+                            }
+                            parts.unshift(`${tag}:nth-of-type(${nth})`);
+                            el = el.parentElement;
+                        }
+                        return parts.join(' > ');
+                    };
+
+                    const getName = (el) => {
+                        if (!el) return '';
+                        try {
+                            const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+                            if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
+                            const labelledby = el.getAttribute && el.getAttribute('aria-labelledby');
+                            if (labelledby) {
+                                const ids = labelledby.split(/\s+/);
+                                let txt = '';
+                                for (const id of ids) {
+                                    const ref = document.getElementById(id);
+                                    if (ref) txt += ' ' + (ref.innerText || ref.textContent || '');
+                                }
+                                if (txt.trim()) return txt.trim();
+                            }
+                            if (el.value) return String(el.value);
+                            const text = (el.innerText || el.textContent || '').trim();
+                            if (text) return text;
+                        } catch (e) {
+                            // ignore
+                        }
+                        return '';
+                    };
+
+                    const interactiveRoles = new Set([
+                        'button','link','textbox','checkbox','combobox','menuitem','option',
+                        'tab','switch','slider','searchbox','radio','menuitemcheckbox','menuitemradio'
+                    ]);
+
+                    const isInteractive = (el) => {
+                        if (!el || el.nodeType !== 1) return false;
+                        const tag = el.tagName.toLowerCase();
+                        if (['a','button','input','select','textarea'].includes(tag)) return true;
+                        try {
+                            const role = (el.getAttribute && el.getAttribute('role')) || '';
+                            if (role && interactiveRoles.has(role.toLowerCase())) return true;
+                            if (el.getAttribute && (el.getAttribute('onclick') || el.hasAttribute('contenteditable'))) return true;
+                        } catch (e) {
+                            // ignore
+                        }
+                        return false;
+                    };
+
+                    const collectAll = (root) => {
+                        const out = [];
+                        const stack = [root];
+                        while (stack.length) {
+                            const node = stack.shift();
+                            if (!node) continue;
+                            if (node.nodeType === 1) {
+                                out.push(node);
+                                try { if (node.shadowRoot) stack.unshift(...Array.from(node.shadowRoot.children)); } catch(e) {}
+                                stack.unshift(...Array.from(node.children || []));
+                            }
+                        }
+                        return out;
+                    };
+                    const all = collectAll(document);
+                    const els = all.filter(isInteractive).slice(0, 200);
+                    return els.map((el, idx) => {
+                        let rect = null;
+                        try {
+                            const r = el.getBoundingClientRect();
+                            rect = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+                        } catch (e) {
+                            rect = null;
+                        }
+                        const role = (el.getAttribute && el.getAttribute('role')) || el.tagName.toLowerCase();
+                        const name = getName(el) || '';
+                        const id = el.id || '';
+                        const classes = el.className || '';
+                        return { map_index: idx+1, index: idx, role, name: (name||'').replace(/\s+/g,' ').slice(0,200), id, classes, tag: el.tagName.toLowerCase(), selector: uniqueSelector(el), rect };
+                    });
+                }"""
+                )
             except Exception:
                 interactive_map = []
 
@@ -352,6 +773,7 @@ async def _run_playwright(
 # ---------------------------------------------------------------------------
 # Exported tool
 # ---------------------------------------------------------------------------
+
 
 @function_tool
 async def browser_navigate(
@@ -386,6 +808,41 @@ async def browser_navigate(
     if not _URL_RE.match(url):
         return json.dumps({"error": "url must be a valid http/https URL"})
 
+    # Support a compact shorthand like "click 5" or "goto https://..."
+    if isinstance(commands, str) and commands.strip() and not commands.strip().startswith("["):
+        m = re.match(r"^(?P<action>\w+)\s*(?P<arg>.*)$", commands.strip())
+        if m:
+            action = m.group("action").lower()
+            arg = m.group("arg").strip()
+            if action in {
+                "click",
+                "fill",
+                "type",
+                "wait",
+                "goto",
+                "screenshot",
+                "evaluate",
+                "scroll",
+            }:
+                if action == "screenshot":
+                    commands = json.dumps([{"action": "screenshot"}])
+                elif action == "goto":
+                    commands = json.dumps([{"action": "goto", "url": arg}])
+                elif action in {"click", "wait"}:
+                    commands = json.dumps([{"action": action, "selector": arg}])
+                elif action == "fill":
+                    parts = arg.split(None, 1)
+                    sel = parts[0] if parts else ""
+                    val = parts[1] if len(parts) > 1 else ""
+                    commands = json.dumps([{"action": "fill", "selector": sel, "value": val}])
+                elif action == "type":
+                    parts = arg.split(None, 1)
+                    sel = parts[0] if parts else ""
+                    txt = parts[1] if len(parts) > 1 else ""
+                    commands = json.dumps([{"action": "type", "selector": sel, "text": txt}])
+                elif action == "evaluate":
+                    commands = json.dumps([{"action": "evaluate", "script": arg}])
+
     cmds, err = _validate_commands(commands)
     if err:
         return json.dumps({"error": err})
@@ -396,11 +853,12 @@ async def browser_navigate(
     # ── Notify TUI: browser is working ───────────────────────────────────
     try:
         from cai.util import notify_tool_loading
+
         notify_tool_loading(True)
     except Exception:
         pass
 
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     try:
         import asyncio as _asyncio
 
@@ -415,6 +873,7 @@ async def browser_navigate(
     finally:
         try:
             from cai.util import notify_tool_loading
+
             notify_tool_loading(False)
         except Exception:
             pass
@@ -424,24 +883,10 @@ async def browser_navigate(
 
     screenshots = result.get("screenshots", [])
 
-    # ── Notify TUI screenshot writer ──────────────────────────────────────
-    if screenshots:
-        last_shot = screenshots[-1]
-        try:
-            from cai.util import notify_screenshot
-            notify_screenshot(last_shot)
-        except Exception:
-            pass
-
-        # ── VLM visual sitrep ─────────────────────────────────────────────
-        sitrep = _get_visual_sitrep(last_shot)
-        result["sitrep"] = sitrep
-    else:
-        result["sitrep"] = None
-
     # Sanitize external content before returning to avoid prompt injection
     try:
         from cai.agents.guardrails import sanitize_external_content as _sanitize
+
         title_safe = _sanitize(result.get("title", ""))
         url_safe = _sanitize(result.get("url", ""))
     except Exception:
@@ -452,12 +897,15 @@ async def browser_navigate(
     interactive_map = result.get("interactive_map", []) or []
     try:
         from cai.agents.guardrails import sanitize_external_content as _sanitize
+
         sanitized_map: list[dict] = []
         for node in interactive_map:
             if not isinstance(node, dict):
                 continue
             sanitized_map.append(
                 {
+                    "map_index": node.get("map_index") if node.get("map_index") else None,
+                    "index": node.get("index") if node.get("index") is not None else None,
                     "role": _sanitize(node.get("role", "")) if node.get("role") else "",
                     "name": _sanitize(node.get("name", "")) if node.get("name") else "",
                     "id": _sanitize(node.get("id", "")) if node.get("id") else "",
@@ -469,6 +917,22 @@ async def browser_navigate(
             )
     except Exception:
         sanitized_map = interactive_map
+
+    # ── Notify TUI screenshot writer (include sanitized map) ────────────
+    if screenshots:
+        last_shot = screenshots[-1]
+        try:
+            from cai.util import notify_screenshot
+
+            notify_screenshot(last_shot, sanitized_map)
+        except Exception:
+            pass
+
+        # ── VLM visual sitrep ─────────────────────────────────────────────
+        sitrep = _get_visual_sitrep(last_shot)
+        result["sitrep"] = sitrep
+    else:
+        result["sitrep"] = None
 
     out = {
         "title": title_safe,

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional
 
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
@@ -21,7 +20,7 @@ from cai.tools.common import run_command_async
 
 
 async def _blue_team_safe_command_impl(
-    command: str = "", interactive: bool = False, session_id: Optional[str] = None
+    command: str = "", interactive: bool = False, session_id: str | None = None
 ) -> str:
     """Execute a blue-team-friendly version of a requested command.
 

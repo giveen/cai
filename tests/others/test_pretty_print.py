@@ -19,7 +19,8 @@ async def test_pretty_result():
     agent = Agent(name="test_agent", model=model)
     result = await Runner.run(agent, input="Hello")
 
-    assert pretty_print_result(result) == snapshot("""\
+    assert pretty_print_result(result) == snapshot(
+        """\
 RunResult:
 - Last agent: Agent(name="test_agent", ...)
 - Final output (str):
@@ -29,7 +30,8 @@ RunResult:
 - 0 input guardrail result(s)
 - 0 output guardrail result(s)
 (See `RunResult` for more details)\
-""")
+"""
+    )
 
 
 @pytest.mark.asyncio
@@ -42,7 +44,8 @@ async def test_pretty_run_result_streaming():
     async for _ in result.stream_events():
         pass
 
-    assert pretty_print_run_result_streaming(result) == snapshot("""\
+    assert pretty_print_run_result_streaming(result) == snapshot(
+        """\
 RunResultStreaming:
 - Current agent: Agent(name="test_agent", ...)
 - Current turn: 1
@@ -55,7 +58,8 @@ RunResultStreaming:
 - 0 input guardrail result(s)
 - 0 output guardrail result(s)
 (See `RunResultStreaming` for more details)\
-""")
+"""
+    )
 
 
 class Foo(BaseModel):
@@ -75,7 +79,8 @@ async def test_pretty_run_result_structured_output():
     agent = Agent(name="test_agent", model=model, output_type=Foo)
     result = await Runner.run(agent, input="Hello")
 
-    assert pretty_print_result(result) == snapshot("""\
+    assert pretty_print_result(result) == snapshot(
+        """\
 RunResult:
 - Last agent: Agent(name="test_agent", ...)
 - Final output (Foo):
@@ -87,7 +92,8 @@ RunResult:
 - 0 input guardrail result(s)
 - 0 output guardrail result(s)
 (See `RunResult` for more details)\
-""")
+"""
+    )
 
 
 @pytest.mark.asyncio
@@ -106,7 +112,8 @@ async def test_pretty_run_result_streaming_structured_output():
     async for _ in result.stream_events():
         pass
 
-    assert pretty_print_run_result_streaming(result) == snapshot("""\
+    assert pretty_print_run_result_streaming(result) == snapshot(
+        """\
 RunResultStreaming:
 - Current agent: Agent(name="test_agent", ...)
 - Current turn: 1
@@ -121,7 +128,8 @@ RunResultStreaming:
 - 0 input guardrail result(s)
 - 0 output guardrail result(s)
 (See `RunResultStreaming` for more details)\
-""")
+"""
+    )
 
 
 @pytest.mark.asyncio
@@ -146,7 +154,8 @@ async def test_pretty_run_result_list_structured_output():
     agent = Agent(name="test_agent", model=model, output_type=list[Foo])
     result = await Runner.run(agent, input="Hello")
 
-    assert pretty_print_result(result) == snapshot("""\
+    assert pretty_print_result(result) == snapshot(
+        """\
 RunResult:
 - Last agent: Agent(name="test_agent", ...)
 - Final output (list):
@@ -156,7 +165,8 @@ RunResult:
 - 0 input guardrail result(s)
 - 0 output guardrail result(s)
 (See `RunResult` for more details)\
-""")
+"""
+    )
 
 
 @pytest.mark.asyncio
@@ -184,7 +194,8 @@ async def test_pretty_run_result_streaming_list_structured_output():
     async for _ in result.stream_events():
         pass
 
-    assert pretty_print_run_result_streaming(result) == snapshot("""\
+    assert pretty_print_run_result_streaming(result) == snapshot(
+        """\
 RunResultStreaming:
 - Current agent: Agent(name="test_agent", ...)
 - Current turn: 1
@@ -197,4 +208,5 @@ RunResultStreaming:
 - 0 input guardrail result(s)
 - 0 output guardrail result(s)
 (See `RunResultStreaming` for more details)\
-""")
+"""
+    )

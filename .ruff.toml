@@ -1,0 +1,7 @@
+# Ruff configuration for this repository
+line-length = 100
+# Temporarily ignore long-line violations (E501) for this branch sweep.
+extend-ignore = ["E501"]
+
+# You can later tighten this by removing E501 from extend-ignore and
+# addressing remaining long lines in focused PRs.

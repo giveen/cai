@@ -6,19 +6,18 @@ Provides helpers to render final agent analysis responses consistently.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
+from rich import box
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich import box
 
 logger = logging.getLogger(__name__)
 
 
 def display_agent_analysis(
     content: str,
-    agent_name: Optional[str] = None,
+    agent_name: str | None = None,
     title: str = "Analysis",
 ) -> None:
     """Render agent analysis/content as a Markdown-backed Panel.
@@ -42,7 +41,9 @@ def display_agent_analysis(
         subtitle = f"[dim cyan]{agent_name}[/dim cyan]" if agent_name else ""
         logger.debug(
             "display_agent_analysis: rendering panel agent_name=%r title=%r len=%d",
-            agent_name, title, len(text),
+            agent_name,
+            title,
+            len(text),
         )
         panel = Panel(
             md,
@@ -53,11 +54,14 @@ def display_agent_analysis(
         )
         try:
             from cai.util import write_panel
+
             write_panel(panel)
         except Exception:
             Console().print(panel)
     except Exception as _exc:
-        logger.debug("display_agent_analysis: Panel render failed (%s), falling back to plain text", _exc)
+        logger.debug(
+            "display_agent_analysis: Panel render failed (%s), falling back to plain text", _exc
+        )
         try:
             # Best-effort fallback
             Console().print(text)

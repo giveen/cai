@@ -22,7 +22,6 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -46,7 +45,7 @@ load_dotenv()
 console = Console()
 
 
-def extract_php_code(text: str) -> Optional[str]:
+def extract_php_code(text: str) -> str | None:
     """Extract PHP code from markdown code blocks."""
     if not text:
         return None
@@ -63,7 +62,7 @@ def extract_php_code(text: str) -> Optional[str]:
     return None
 
 
-async def generate_case_study(jsonl_file: str, output_php_file: str) -> Optional[str]:
+async def generate_case_study(jsonl_file: str, output_php_file: str) -> str | None:
     """
     Generate a PHP case study from a JSONL file using streaming output.
 

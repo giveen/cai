@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Tuple
+from typing import Any
 
 
 def resolve_api_base() -> str | None:
@@ -80,7 +80,7 @@ def sync_model(
     last_model: str,
     last_agent_type: str,
     _last_api_base: str | None = None,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Resolve the active model and API base URL from env-vars, sync onto *agent*.
 
     Parameters
@@ -144,11 +144,7 @@ def _refresh_agent_client(agent: Any) -> None:
     except ImportError:
         return
     try:
-        api_key = (
-            os.getenv("ALIAS_API_KEY")
-            or os.getenv("OPENAI_API_KEY")
-            or "sk-placeholder"
-        )
+        api_key = os.getenv("ALIAS_API_KEY") or os.getenv("OPENAI_API_KEY") or "sk-placeholder"
         base_url = resolve_api_base()
         client_kwargs: dict = {"api_key": api_key}
         if base_url:
@@ -164,7 +160,7 @@ def switch_agent_if_needed(
     last_agent_type: str,
     current_model: str,
     console: Any,
-) -> Tuple[Any, str, str, bool]:
+) -> tuple[Any, str, str, bool]:
     """Recreate the agent when ``CAI_AGENT_TYPE`` has changed.
 
     Parameters

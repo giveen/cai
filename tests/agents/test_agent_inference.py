@@ -27,9 +27,9 @@ async def test_bug_bounter_agent_inference():
     result = await Runner.run(get_agent_by_name("bug_bounter_agent"), prompt)
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"
-    assert "sample.com" in final_output.lower(), (
-        f"Expected 'sample.com' in output, got: {final_output}"
-    )
+    assert (
+        "sample.com" in final_output.lower()
+    ), f"Expected 'sample.com' in output, got: {final_output}"
 
 
 @pytest.mark.allow_call_model_methods
@@ -55,9 +55,9 @@ async def test_one_tool_agent_inference():
     result = await Runner.run(get_agent_by_name("one_tool_agent"), prompt)
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"
-    assert "generic_linux_command" in final_output.lower(), (
-        f"Expected 'generic_linux_command' in output, got: {final_output}"
-    )
+    assert (
+        "generic_linux_command" in final_output.lower()
+    ), f"Expected 'generic_linux_command' in output, got: {final_output}"
     assert "nmap" in final_output.lower(), f"Expected 'nmap' in output, got: {final_output}"
 
 
@@ -71,9 +71,9 @@ async def test_red_team_agent_inference():
     result = await Runner.run(get_agent_by_name("redteam_agent"), prompt)
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"
-    assert "example.com" in final_output.lower(), (
-        f"Expected 'example.com' in output, got: {final_output}"
-    )
+    assert (
+        "example.com" in final_output.lower()
+    ), f"Expected 'example.com' in output, got: {final_output}"
 
 
 @pytest.mark.allow_call_model_methods
@@ -86,9 +86,9 @@ async def test_flag_discriminator_inference():
     result = await Runner.run(get_agent_by_name("flag_discriminator"), prompt)
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"
-    assert "flag{1234}" in final_output.lower(), (
-        f"Expected 'flag{1234}' in output, got: {final_output}"
-    )
+    assert (
+        "flag{1234}" in final_output.lower()
+    ), f"Expected 'flag{1234}' in output, got: {final_output}"
 
 
 @pytest.mark.allow_call_model_methods
@@ -104,6 +104,6 @@ async def test_thought_agent_inference():
     result = await Runner.run(get_agent_by_name("thought_agent"), prompt)
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"
-    assert "reconnaissance" in final_output.lower(), (
-        f"Expected 'reconnaissance' in output, got: {final_output}"
-    )
+    assert (
+        "reconnaissance" in final_output.lower()
+    ), f"Expected 'reconnaissance' in output, got: {final_output}"

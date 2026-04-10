@@ -76,15 +76,3 @@ def skip_integration_agent_tests(request):
             pytest.skip(
                 "Skipping integration tests that call real model/methods by default. Set RUN_AGENT_INTEGRATION_TESTS=1 to run them."
             )
-
-
-@pytest.fixture(autouse=True)
-def ensure_guardrails_enabled(monkeypatch):
-    """Override CAI_GUARDRAILS to 'true' for every test.
-
-    The ambient shell environment may have CAI_GUARDRAILS=false for development
-    purposes.  Tests that specifically need it disabled call
-    monkeypatch.setenv("CAI_GUARDRAILS", "false") themselves, which overrides
-    this fixture's setting for that single test.
-    """
-    monkeypatch.setenv("CAI_GUARDRAILS", "true")

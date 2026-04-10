@@ -4,7 +4,7 @@ Generic agent factory module for creating agent instances dynamically.
 
 import importlib
 import os
-from typing import Callable, Dict
+from collections.abc import Callable
 
 try:
     from openai import AsyncOpenAI
@@ -109,7 +109,7 @@ def create_generic_agent_factory(
     return factory
 
 
-def discover_agent_factories() -> Dict[str, Callable[[], Agent]]:
+def discover_agent_factories() -> dict[str, Callable[[], Agent]]:
     """
     Dynamically discover all agents and create factories for them.
 

@@ -6,7 +6,6 @@ This module provides commands for executing shell commands.
 import os
 import signal
 import subprocess  # nosec B404
-from typing import List, Optional
 
 from rich.console import Console  # pylint: disable=import-error
 
@@ -27,7 +26,7 @@ class ShellCommand(Command):
             aliases=["/s", "$"],
         )
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the shell command.
 
         Args:
@@ -42,7 +41,7 @@ class ShellCommand(Command):
 
         return self.handle_shell_command(args)
 
-    def handle_shell_command(self, command_args: List[str]) -> bool:
+    def handle_shell_command(self, command_args: list[str]) -> bool:
         if not command_args:
             console.print("[red]Error: No command specified[/red]")
             return False

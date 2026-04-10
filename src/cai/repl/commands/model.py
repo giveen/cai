@@ -7,7 +7,7 @@ import datetime
 import os
 
 # Standard library imports
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Third-party imports
 import requests  # pylint: disable=import-error
@@ -29,7 +29,7 @@ _GLOBAL_MODEL_CACHE = []
 _GLOBAL_MODEL_NUMBERS = {}
 
 
-def get_predefined_model_categories() -> Dict[str, List[Dict[str, str]]]:
+def get_predefined_model_categories() -> dict[str, list[dict[str, str]]]:
     """Get the predefined model categories as the single source of truth.
 
     This function serves as the authoritative source for all available models
@@ -88,7 +88,7 @@ def get_predefined_model_categories() -> Dict[str, List[Dict[str, str]]]:
     }
 
 
-def get_all_predefined_models() -> List[Dict[str, Any]]:
+def get_all_predefined_models() -> list[dict[str, Any]]:
     """Get all predefined models as a flat list with enriched data.
 
     Returns:
@@ -138,7 +138,7 @@ def get_all_predefined_models() -> List[Dict[str, Any]]:
     return all_models
 
 
-def get_predefined_model_names() -> List[str]:
+def get_predefined_model_names() -> list[str]:
     """Get a simple list of all predefined model names.
 
     This is useful for autocompletion and simple model name lists.
@@ -149,7 +149,7 @@ def get_predefined_model_names() -> List[str]:
     return [model["name"] for model in get_all_predefined_models()]
 
 
-def load_all_available_models() -> tuple[List[str], List[Dict[str, Any]]]:
+def load_all_available_models() -> tuple[list[str], list[dict[str, Any]]]:
     """Load all available models (predefined + LiteLLM + Ollama) in consistent order.
 
     This ensures /model and /model-show use the same numbering.
@@ -216,7 +216,7 @@ class ModelCommand(Command):
         self.cached_model_numbers = {}
         self.last_model_fetch = datetime.datetime.now() - datetime.timedelta(minutes=10)
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the model command.
 
         Args:
@@ -228,7 +228,7 @@ class ModelCommand(Command):
         return self.handle_model_command(args)
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-    def handle_model_command(self, args: List[str]) -> bool:
+    def handle_model_command(self, args: list[str]) -> bool:
         """Change the model used by CAI.
 
         Args:
@@ -410,7 +410,11 @@ class ModelShowCommand(Command):
             aliases=["/mod-show"],
         )
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:  # pylint: disable=too-many-locals,too-many-branches,too-many-statements,line-too-long # noqa: E501
+    def handle(
+        self, args: list[str] | None = None
+    ) -> (
+        bool
+    ):  # pylint: disable=too-many-locals,too-many-branches,too-many-statements,line-too-long # noqa: E501
         """Handle the model-show command.
 
         Args:

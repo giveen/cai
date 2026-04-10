@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import random
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -18,7 +18,7 @@ async def post_file_with_retries(
     endpoint: str,
     file_path: str,
     field_name: str = "log",
-    data: Optional[Dict[str, Any]] = None,
+    data: dict[str, Any] | None = None,
     timeout: float = 15.0,
     max_retries: int = 5,
     base_delay: float = 1.0,

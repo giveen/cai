@@ -206,20 +206,20 @@ class CustomResponseUsage(ResponseUsage):
         return self.output_tokens
 
 
-from .. import _debug
-from ..agent_output import AgentOutputSchema
-from ..exceptions import AgentsException, UserError
-from ..handoffs import Handoff
-from ..items import ModelResponse, TResponseInputItem, TResponseOutputItem, TResponseStreamEvent
-from ..logger import logger
-from ..tool import FunctionTool, Tool
-from ..tracing import generation_span
-from ..tracing.span_data import GenerationSpanData
-from ..tracing.spans import Span
-from ..usage import Usage
-from ..version import __version__
-from .fake_id import FAKE_RESPONSES_ID
-from .interface import Model, ModelTracing
+from .. import _debug  # noqa: E402
+from ..agent_output import AgentOutputSchema  # noqa: E402
+from ..exceptions import AgentsException, UserError  # noqa: E402
+from ..handoffs import Handoff  # noqa: E402
+from ..items import ModelResponse, TResponseInputItem, TResponseOutputItem, TResponseStreamEvent  # noqa: E402
+from ..logger import logger  # noqa: E402
+from ..tool import FunctionTool, Tool  # noqa: E402
+from ..tracing import generation_span  # noqa: E402
+from ..tracing.span_data import GenerationSpanData  # noqa: E402
+from ..tracing.spans import Span  # noqa: E402
+from ..usage import Usage  # noqa: E402
+from ..version import __version__  # noqa: E402
+from .fake_id import FAKE_RESPONSES_ID  # noqa: E402
+from .interface import Model, ModelTracing  # noqa: E402
 
 if TYPE_CHECKING:
     from ..model_settings import ModelSettings
@@ -2328,7 +2328,7 @@ class OpenAIChatCompletionsModel(Model):
                                         # Accept any valid JSON (object/array/string/number) but
                                         # we prefer objects for tool arguments. If parsing fails,
                                         # treat as not ready yet.
-                                        parsed_args = json.loads(tool_args)
+                                        _ = json.loads(tool_args)
                                         args_are_valid_json = True
                                     except Exception:
                                         args_are_valid_json = False
@@ -2364,7 +2364,9 @@ class OpenAIChatCompletionsModel(Model):
                                                 {
                                                     "function": {
                                                         "name": state.function_calls[tc_index].name,
-                                                        "arguments": state.function_calls[tc_index].arguments,
+                                                        "arguments": state.function_calls[
+                                                            tc_index
+                                                        ].arguments,
                                                     },
                                                     "id": state.function_calls[tc_index].call_id,
                                                     "type": "function",
@@ -2494,7 +2496,10 @@ class OpenAIChatCompletionsModel(Model):
                                         "content": None,
                                         "tool_calls": [
                                             {
-                                                "function": {"name": parsed["name"], "arguments": arguments_str},
+                                                "function": {
+                                                    "name": parsed["name"],
+                                                    "arguments": arguments_str,
+                                                },
                                                 "id": tool_call_id[:40],
                                                 "type": "function",
                                             }
@@ -3067,7 +3072,8 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: Literal[True],
-    ) -> tuple[Response, AsyncStream[ChatCompletionChunk]]: ...
+    ) -> tuple[Response, AsyncStream[ChatCompletionChunk]]:
+        ...
 
     @overload
     async def _fetch_response(
@@ -3081,7 +3087,8 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: Literal[False],
-    ) -> ChatCompletion: ...
+    ) -> ChatCompletion:
+        ...
 
     async def _fetch_response(
         self,
@@ -3337,9 +3344,9 @@ class OpenAIChatCompletionsModel(Model):
                     is_compatible = _check_reasoning_compatibility(messages)
 
                     if is_compatible:
-                        kwargs["reasoning_effort"] = (
-                            "low"  # Use reasoning_effort instead of thinking
-                        )
+                        kwargs[
+                            "reasoning_effort"
+                        ] = "low"  # Use reasoning_effort instead of thinking
             elif provider == "gemini":
                 kwargs.pop("parallel_tool_calls", None)
                 # Add any specific gemini settings if needed
@@ -3379,9 +3386,9 @@ class OpenAIChatCompletionsModel(Model):
                     is_compatible = _check_reasoning_compatibility(messages)
 
                     if is_compatible:
-                        kwargs["reasoning_effort"] = (
-                            "low"  # Use reasoning_effort instead of thinking
-                        )
+                        kwargs[
+                            "reasoning_effort"
+                        ] = "low"  # Use reasoning_effort instead of thinking
             elif "gemini" in model_str:
                 kwargs.pop("parallel_tool_calls", None)
             elif "qwen" in model_str or ":" in model_str:
@@ -3630,7 +3637,9 @@ class OpenAIChatCompletionsModel(Model):
                     raise
                 import random
 
-                retry_delay = min(300, 2**retry_count) + random.uniform(0, 0.1 * (2**retry_count))
+                retry_delay = min(300, 2**retry_count) + random.uniform(
+                    0, 0.1 * (2**retry_count)
+                )
                 logger.debug(
                     f"Network error during model call, retrying in {retry_delay:.1f}s: {e}"
                 )
@@ -3835,9 +3844,9 @@ class OpenAIChatCompletionsModel(Model):
                                 hasattr(model_settings, "reasoning_effort")
                                 and model_settings.reasoning_effort
                             ):
-                                provider_kwargs["reasoning_effort"] = (
-                                    model_settings.reasoning_effort
-                                )
+                                provider_kwargs[
+                                    "reasoning_effort"
+                                ] = model_settings.reasoning_effort
                             else:
                                 # Default to "low" reasoning effort
                                 provider_kwargs["reasoning_effort"] = "low"
@@ -3875,9 +3884,9 @@ class OpenAIChatCompletionsModel(Model):
                                 is_compatible = _check_reasoning_compatibility(messages)
 
                                 if is_compatible:
-                                    provider_kwargs["reasoning_effort"] = (
-                                        "low"  # Use reasoning_effort instead of thinking
-                                    )
+                                    provider_kwargs[
+                                        "reasoning_effort"
+                                    ] = "low"  # Use reasoning_effort instead of thinking
                         elif provider == "gemini":
                             provider_kwargs["custom_llm_provider"] = "gemini"
                             provider_kwargs.pop(
@@ -4029,7 +4038,9 @@ class OpenAIChatCompletionsModel(Model):
                 # Handle Anthropic error for empty text content blocks
                 if "text content blocks must be non-empty" in str(
                     e
-                ) or "cache_control cannot be set for empty text blocks" in str(e):  # noqa
+                ) or "cache_control cannot be set for empty text blocks" in str(
+                    e
+                ):  # noqa
                     # Print the error message only once
                     print(
                         "⚠️  Empty text blocks detected - Adding placeholder content"
@@ -4152,10 +4163,14 @@ class OpenAIChatCompletionsModel(Model):
                 client_kwargs = raw_kwargs
             # Strip LiteLLM-only params that the OpenAI AsyncClient doesn't accept
             if use_direct_client:
-                _litellm_only = {"api_base", "api_key", "custom_llm_provider",
-                                 "extra_headers", "store"}
-                client_kwargs = {k: v for k, v in client_kwargs.items()
-                                 if k not in _litellm_only}
+                _litellm_only = {
+                    "api_base",
+                    "api_key",
+                    "custom_llm_provider",
+                    "extra_headers",
+                    "store",
+                }
+                client_kwargs = {k: v for k, v in client_kwargs.items() if k not in _litellm_only}
 
         except Exception:
             use_direct_client = False
@@ -4275,10 +4290,16 @@ class OpenAIChatCompletionsModel(Model):
                     )
 
                     if use_direct_client:
-                        _litellm_only = {"api_base", "api_key", "custom_llm_provider",
-                                         "extra_headers", "store"}
-                        client_kwargs_retry = {k: v for k, v in client_kwargs_retry.items()
-                                               if k not in _litellm_only}
+                        _litellm_only = {
+                            "api_base",
+                            "api_key",
+                            "custom_llm_provider",
+                            "extra_headers",
+                            "store",
+                        }
+                        client_kwargs_retry = {
+                            k: v for k, v in client_kwargs_retry.items() if k not in _litellm_only
+                        }
 
                     try:
                         if stream:
@@ -5013,9 +5034,9 @@ class _Converter:
                     # Ensure content is not None if tool_calls are absent and content is also None
                     # Some models like Anthropic require some content, even if it's just a placeholder.
                     if current_assistant_msg.get("content") is None:
-                        current_assistant_msg["content"] = (
-                            "(No text content in this assistant message)"  # Or just an empty string if preferred
-                        )
+                        current_assistant_msg[
+                            "content"
+                        ] = "(No text content in this assistant message)"  # Or just an empty string if preferred
                     current_assistant_msg.pop(
                         "tool_calls", None
                     )  # Use pop with default to avoid KeyError
@@ -5374,7 +5395,9 @@ class _Converter:
                         call_id=call_id,
                         execution_info=execution_info,
                         token_info=token_info,
-                        agent_name=token_info.get("agent_name") if isinstance(token_info, dict) else None,
+                        agent_name=token_info.get("agent_name")
+                        if isinstance(token_info, dict)
+                        else None,
                     )
 
                 # Continue with normal processing

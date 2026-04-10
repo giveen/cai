@@ -15,13 +15,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 from cai.repl.loop._event_loop import run_async
 
 # ---------------------------------------------------------------------------
 # PARALLEL_CONFIGS path
 # ---------------------------------------------------------------------------
+
 
 def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
     """Run all PARALLEL_CONFIGS agents for one user turn.
@@ -54,9 +55,7 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
     from cai.sdk.agents.shutdown_coordinator import SHUTDOWN_COORDINATOR
 
     # ---------------------------------------------------------------- IDs
-    agent_ids = [
-        config.id or f"P{idx}" for idx, config in enumerate(PARALLEL_CONFIGS, 1)
-    ]
+    agent_ids = [config.id or f"P{idx}" for idx, config in enumerate(PARALLEL_CONFIGS, 1)]
 
     # ------------------------------------------- transfer/check histories
     already_has_histories = False
@@ -87,9 +86,7 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
             PARALLEL_ISOLATION._parallel_mode = True
             if current_history and agent_ids:
                 PARALLEL_ISOLATION.clear_all_histories()
-                PARALLEL_ISOLATION.replace_isolated_history(
-                    agent_ids[0], current_history.copy()
-                )
+                PARALLEL_ISOLATION.replace_isolated_history(agent_ids[0], current_history.copy())
                 for aid in agent_ids[1:]:
                     PARALLEL_ISOLATION.replace_isolated_history(aid, [])
     else:
@@ -118,7 +115,7 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
     async def run_agent_instance(config: ParallelConfig, input_text: str):
         """Run a single agent instance with its own configuration."""
         instance_agent: Any = None
-        agent_id: Optional[str] = None
+        agent_id: str | None = None
         try:
             instance_number = PARALLEL_CONFIGS.index(config) + 1
             agent_id = config.id or f"P{instance_number}"
@@ -134,14 +131,10 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
                 if config.agent_name.endswith("_pattern"):
                     pattern = get_pattern(config.agent_name)
                     if pattern and hasattr(pattern, "entry_agent"):
-                        agent_display_name = getattr(
-                            pattern.entry_agent, "name", config.agent_name
-                        )
+                        agent_display_name = getattr(pattern.entry_agent, "name", config.agent_name)
                 else:
                     base_agent = get_available_agents().get(config.agent_name.lower())
-                    agent_display_name = (
-                        base_agent.name if base_agent else config.agent_name
-                    )
+                    agent_display_name = base_agent.name if base_agent else config.agent_name
 
                 if not config.agent_name.endswith("_pattern"):
                     custom_name = f"{str(agent_display_name)} #{instance_number}"
@@ -155,9 +148,7 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
                 model_to_use = config.model or os.getenv("CAI_MODEL", "alias1")
                 instance_agent = get_agent_by_name(
                     actual_agent_name,
-                    custom_name=str(custom_name)
-                    if custom_name is not None
-                    else config.agent_name,
+                    custom_name=str(custom_name) if custom_name is not None else config.agent_name,
                     model_override=model_to_use,
                     agent_id=(config.id or ""),
                 )
@@ -181,9 +172,7 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
                 from cai.util import cli_print_tool_output, finish_tool_streaming
 
                 agent_display_name = getattr(instance_agent, "name", config.agent_name)
-                streaming_sessions = getattr(
-                    cli_print_tool_output, "_streaming_sessions", {}
-                )
+                streaming_sessions = getattr(cli_print_tool_output, "_streaming_sessions", {})
                 for session_id, session_info in list(streaming_sessions.items()):
                     if session_info.get(
                         "agent_name"
@@ -191,16 +180,12 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
                         finish_tool_streaming(
                             tool_name=session_info.get("tool_name", "unknown"),
                             args=session_info.get("args", {}),
-                            output=session_info.get(
-                                "current_output", "Tool execution completed"
-                            ),
+                            output=session_info.get("current_output", "Tool execution completed"),
                             call_id=session_id,
                             execution_info={"status": "completed", "is_final": True},
                             token_info={
                                 "agent_name": agent_display_name,
-                                "agent_id": getattr(
-                                    instance_agent.model, "agent_id", None
-                                )
+                                "agent_id": getattr(instance_agent.model, "agent_id", None)
                                 if hasattr(instance_agent, "model")
                                 else None,
                             },
@@ -276,9 +261,7 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
         try:
             targets = os.getenv("CAI_SHUTDOWN_TARGETS", "")
             targets_list = [t.strip() for t in targets.split(",") if t.strip()]
-            SHUTDOWN_COORDINATOR.shutdown(
-                sigterm_targets=targets_list if targets_list else None
-            )
+            SHUTDOWN_COORDINATOR.shutdown(sigterm_targets=targets_list if targets_list else None)
         except Exception:
             pass
         raise
@@ -287,6 +270,7 @@ def run_parallel_configs(user_input: str, agent: Any, console: Any) -> None:
 # ---------------------------------------------------------------------------
 # parallel_count > 1 path  (same agent type, N copies)
 # ---------------------------------------------------------------------------
+
 
 def run_simple_parallel(
     conversation_input: Any,
@@ -314,11 +298,7 @@ def run_simple_parallel(
                 agent_id=f"P{instance_number + 1}",
             )
 
-            if (
-                hasattr(instance_agent, "model")
-                and agent is not None
-                and hasattr(agent, "model")
-            ):
+            if hasattr(instance_agent, "model") and agent is not None and hasattr(agent, "model"):
                 if hasattr(instance_agent.model, "model") and hasattr(agent.model, "model"):
                     instance_specific = os.getenv(
                         f"CAI_{last_agent_type.upper()}_{instance_number + 1}_MODEL"

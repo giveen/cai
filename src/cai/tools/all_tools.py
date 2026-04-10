@@ -10,6 +10,8 @@ import os
 
 # ── Command & control / lateral movement ────────────────────────────────────
 from cai.tools.command_and_control.sshpass import run_ssh_command_with_credentials
+from cai.tools.exploitation.exploit_search import github_poc_search
+from cai.tools.knowledge.vault import query_knowledge_base
 from cai.tools.misc.cli_utils import execute_cli_command
 
 # ── Execution & scripting ─────────────────────────────────────────────────────
@@ -21,6 +23,8 @@ from cai.tools.misc.rag_monitor import get_rag_status
 from cai.tools.misc.reasoning import read_key_findings, think, thought, write_key_findings
 from cai.tools.network.capture_traffic import capture_remote_traffic, remote_capture_session_tool
 from cai.tools.network.impacket import impacket_executor
+from cai.tools.network.ligolo import ligolo_executor
+from cai.tools.network.netexec import netexec_executor
 from cai.tools.others.scripting import scripting_tool
 from cai.tools.reconnaissance.blue_team_safe_command import blue_team_safe_command
 from cai.tools.reconnaissance.crypto_tools import decode64, decode_hex_bytes, strings_command
@@ -40,9 +44,18 @@ from cai.tools.reconnaissance.smbclient_tool import (  # noqa: E501
     smb_run_smbclient,
 )
 from cai.tools.reconnaissance.wget import wget
+from cai.tools.web.browser import browser_navigate
 
 # ── Web ───────────────────────────────────────────────────────────────────────
 from cai.tools.web.cewl import cewl
+from cai.tools.web.crawler import deep_crawl, local_crawler
+from cai.tools.web.cve_search import (
+    cve_search_browse,
+    cve_search_db_info,
+    cve_search_last,
+    cve_search_lookup,
+    cve_search_product,
+)
 from cai.tools.web.headers import web_request_framework
 from cai.tools.web.js_surface_mapper import js_surface_mapper
 from cai.tools.web.search_web import duckduckgo_web_search
@@ -51,16 +64,7 @@ from cai.tools.web.session_pin import (
     set_session_cookie,
     unpin_session_cookie,
 )
-from cai.tools.web.cve_search import (
-    cve_search_browse,
-    cve_search_db_info,
-    cve_search_last,
-    cve_search_lookup,
-    cve_search_product,
-)
 from cai.tools.web.sqlmap import sqlmap
-from cai.tools.exploitation.exploit_search import github_poc_search
-from cai.tools.web.browser import browser_navigate
 
 # ── Always-on tool list ───────────────────────────────────────────────────────
 ALL_TOOLS = [
@@ -89,6 +93,8 @@ ALL_TOOLS = [
     capture_remote_traffic,
     remote_capture_session_tool,
     impacket_executor,
+    netexec_executor,
+    ligolo_executor,
     # Web
     web_request_framework,
     js_surface_mapper,
@@ -104,6 +110,10 @@ ALL_TOOLS = [
     github_poc_search,
     # Browser automation
     browser_navigate,
+    deep_crawl,
+    local_crawler,
+    # Local knowledge vault (offline RAG)
+    query_knowledge_base,
     set_session_cookie,
     get_pinned_session_cookie,
     unpin_session_cookie,

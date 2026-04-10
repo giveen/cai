@@ -7,15 +7,15 @@ coupling or circular imports.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from cai.rag.wakeup_index import WakeupIndex
 
-_GLOBAL_WAKEUP: Optional[WakeupIndex] = None
+_GLOBAL_WAKEUP: WakeupIndex | None = None
 
 
 def get_global_wakeup_index(
-    max_facts_per_session: int = 200, embeddings_provider: Optional[Any] = None
+    max_facts_per_session: int = 200, embeddings_provider: Any | None = None
 ) -> WakeupIndex:
     """Return a singleton WakeupIndex, creating it on first use."""
     global _GLOBAL_WAKEUP

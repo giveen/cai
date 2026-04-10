@@ -37,7 +37,9 @@ def test_run_single_response_handles_compaction(monkeypatch):
             new_agent.model = MagicMock()
             return new_agent
 
-    monkeypatch.setattr("cai.sdk.agents.simple_agent_manager.AGENT_MANAGER", DummyAM(), raising=False)
+    monkeypatch.setattr(
+        "cai.sdk.agents.simple_agent_manager.AGENT_MANAGER", DummyAM(), raising=False
+    )
 
     agent2, post, skip, cont = run_single_response(
         agent, "conv", "u", None, False, "", MagicMock(), MagicMock(), 1, 0, 0

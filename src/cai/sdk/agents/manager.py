@@ -5,13 +5,13 @@ This module provides the recursive `sync_models` implementation so that
 concrete manager implementations can inherit and reuse it.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 
 class AgentManager:
     """Base AgentManager mixin providing shared utilities."""
 
-    def sync_models(self, new_model: str, target_agent: Optional[Any] = None):
+    def sync_models(self, new_model: str, target_agent: Any | None = None):
         """Synchronize model settings across managed agents.
 
         This updates the `model` attribute of agent instances managed by

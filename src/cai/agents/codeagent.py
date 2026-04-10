@@ -19,7 +19,8 @@ import platform
 import re
 import signal
 import threading
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import Any
 
 # Third-party imports
 from wasabi import color  # pylint: disable=import-error # noqa: E402
@@ -183,13 +184,13 @@ class CodeAgent(Agent):
         self,
         name: str = "CodeAgent",
         model: str = "alias1",
-        instructions: Union[str, Callable[[], str]] = None,
-        tools: List[Callable] = None,
-        additional_authorized_imports: Optional[List[str]] = None,
+        instructions: str | Callable[[], str] = None,
+        tools: list[Callable] = None,
+        additional_authorized_imports: list[str] | None = None,
         description: str = """Agent focused on writing and executing code.
                    State-of-the-art in code production.""",
-        max_print_outputs_length: Optional[int] = None,
-        reasoning_effort: Optional[str] = "medium",
+        max_print_outputs_length: int | None = None,
+        reasoning_effort: str | None = "medium",
         max_steps: int = 10,
         execution_timeout: int = 60,  # Default timeout of 60 seconds
         tool_choice: str = "auto",
@@ -385,10 +386,10 @@ I'll execute your code and show you the results.
     def process_interaction(
         self,
         cai_instance: object,
-        messages: List[Dict],
-        context_variables: Dict = None,
+        messages: list[dict],
+        context_variables: dict = None,
         debug: bool = False,
-    ) -> Tuple[Result, str, Optional[Any]]:
+    ) -> tuple[Result, str, Any | None]:
         """
         Process a conversation by generating and executing
         Python code.
@@ -463,7 +464,7 @@ I'll execute your code and show you the results.
             )
 
     def _generate_code(
-        self, cai_instance: object, messages: List[Dict], debug: bool = False
+        self, cai_instance: object, messages: list[dict], debug: bool = False
     ) -> str:
         """
         Generate Python code based on the conversation history.
@@ -552,9 +553,15 @@ I'll execute your code and show you the results.
         except Exception as e:
             if debug:
                 print(color(f"❌ Code generation failed: {str(e)}", fg="red", bold=True))
-            raise CodeGenerationError(f"Failed to generate code: {str(e)}")  # pylint: disable=raise-missing-from # noqa: E702,E501
+            raise CodeGenerationError(
+                f"Failed to generate code: {str(e)}"
+            )  # pylint: disable=raise-missing-from # noqa: E702,E501
 
-    def _execute_code(self, code: str, debug: bool = False) -> Result:  # pylint: disable=too-many-locals,too-many-branches,too-many-statements # noqa: E501
+    def _execute_code(
+        self, code: str, debug: bool = False
+    ) -> (
+        Result
+    ):  # pylint: disable=too-many-locals,too-many-branches,too-many-statements # noqa: E501
         """
         Execute the Python code and return the result.
 
@@ -740,7 +747,9 @@ I'll execute your code and show you the results.
 
                     error_message += f"\n\nExecution logs before error:\n```\n{execution_logs}\n```"
 
-                    raise CodeExecutionError(error_message)  # pylint: disable=raise-missing-from # noqa
+                    raise CodeExecutionError(
+                        error_message
+                    )  # pylint: disable=raise-missing-from # noqa
 
             # Prepare the result message
             result_message = "Code execution completed.\n\n"
@@ -788,13 +797,15 @@ I'll execute your code and show you the results.
 
             error_message += f"\n\nExecution logs before error:\n```\n{execution_logs}\n```"
 
-            raise CodeExecutionError(error_message)  # pylint: disable=raise-missing-from # noqa: E702,E501
+            raise CodeExecutionError(
+                error_message
+            )  # pylint: disable=raise-missing-from # noqa: E702,E501
         finally:
             # Always restore original signal handlers
             self._restore_signal_handlers(original_handlers)
 
     def run(
-        self, messages: List[Dict], context_variables: Dict = None, debug: bool = True
+        self, messages: list[dict], context_variables: dict = None, debug: bool = True
     ) -> Result:
         """
         Run the agent on a conversation.

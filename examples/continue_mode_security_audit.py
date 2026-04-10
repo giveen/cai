@@ -31,7 +31,8 @@ def run_security_audit():
     # Create a sample vulnerable file for demonstration
     sample_file = "sample_vulnerable.py"
     with open(sample_file, "w") as f:
-        f.write("""
+        f.write(
+            """
 # Sample file with security vulnerabilities for CAI to find
 
 import os
@@ -56,7 +57,8 @@ def read_file(filename):
 # Hardcoded credentials
 API_KEY = "sk-1234567890abcdef"
 DB_PASSWORD = "admin123"
-""")
+"""
+        )
 
     # Command to run CAI audit
     cmd = [

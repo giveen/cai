@@ -8,7 +8,6 @@ environments.
 import json
 import os
 import subprocess
-from typing import List, Optional
 
 # Third-party imports
 from rich.console import Console
@@ -45,7 +44,7 @@ class WorkspaceCommand(Command):
             "copy", "Copy files between host and container", self.handle_copy_subcommand
         )
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the workspace command.
 
         Args:
@@ -65,7 +64,7 @@ class WorkspaceCommand(Command):
         """Handle the command when no arguments are provided."""
         return self.handle_get()
 
-    def handle_get(self, _: Optional[List[str]] = None) -> bool:
+    def handle_get(self, _: list[str] | None = None) -> bool:
         """Display the current workspace name and directory information."""
         # Get workspace info
         workspace_name = os.getenv("CAI_WORKSPACE", None)
@@ -164,7 +163,7 @@ class WorkspaceCommand(Command):
 
         return True
 
-    def handle_set(self, args: Optional[List[str]] = None) -> bool:
+    def handle_set(self, args: list[str] | None = None) -> bool:
         """Set the current workspace name"""
         if not args or len(args) != 1:
             console.print("[yellow]Usage: /workspace set <workspace_name>[/yellow]")
@@ -370,7 +369,7 @@ class WorkspaceCommand(Command):
         except Exception as e:
             console.print(f"[yellow]Error: {str(e)}[/yellow]")
 
-    def handle_ls_subcommand(self, args: Optional[List[str]] = None) -> bool:
+    def handle_ls_subcommand(self, args: list[str] | None = None) -> bool:
         """Handle the ls subcommand.
 
         Args:
@@ -488,7 +487,7 @@ class WorkspaceCommand(Command):
 
         return True
 
-    def handle_exec_subcommand(self, args: Optional[List[str]] = None) -> bool:
+    def handle_exec_subcommand(self, args: list[str] | None = None) -> bool:
         """Handle the exec subcommand.
 
         Args:
@@ -616,7 +615,7 @@ class WorkspaceCommand(Command):
             console.print(f"[red]Error executing command: {str(e)}[/red]")
             return False
 
-    def handle_copy_subcommand(self, args: Optional[List[str]] = None) -> bool:
+    def handle_copy_subcommand(self, args: list[str] | None = None) -> bool:
         """Handle the copy subcommand.
 
         Args:

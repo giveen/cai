@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import MagicMock
 
 from cai.repl.loop.state import CliSessionState

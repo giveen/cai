@@ -9,7 +9,7 @@ which will then be executed in parallel through the CLI.
 # Standard library imports
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -297,7 +297,7 @@ class ParallelCommand(Command):
             return getattr(agent, "name", agent_key)
         return agent_key
 
-    def handle_add(self, args: Optional[list[str]] = None) -> bool:
+    def handle_add(self, args: list[str] | None = None) -> bool:
         """Handle the add subcommand.
 
         Args:
@@ -377,7 +377,7 @@ class ParallelCommand(Command):
 
         return True
 
-    def handle_list(self, args: Optional[list[str]] = None) -> bool:
+    def handle_list(self, args: list[str] | None = None) -> bool:
         """Handle the list subcommand.
 
         Args:
@@ -449,7 +449,7 @@ class ParallelCommand(Command):
             console.print("[dim]Add one more agent to auto-enable parallel mode[/dim]")
         return True
 
-    def handle_clear(self, args: Optional[list[str]] = None) -> bool:
+    def handle_clear(self, args: list[str] | None = None) -> bool:
         """Handle the clear subcommand.
 
         Args:
@@ -474,7 +474,7 @@ class ParallelCommand(Command):
         console.print("[yellow]Parallel mode DISABLED[/yellow]")
         return True
 
-    def handle_remove(self, args: Optional[list[str]] = None) -> bool:
+    def handle_remove(self, args: list[str] | None = None) -> bool:
         """Handle the remove subcommand.
 
         Args:
@@ -547,7 +547,7 @@ class ParallelCommand(Command):
 
             return True
 
-    def handle_load(self, args: Optional[list[str]] = None) -> bool:
+    def handle_load(self, args: list[str] | None = None) -> bool:
         """Load configuration from YAML file.
 
         Args:
@@ -605,7 +605,7 @@ class ParallelCommand(Command):
 
         return True
 
-    def handle_save(self, args: Optional[list[str]] = None) -> bool:
+    def handle_save(self, args: list[str] | None = None) -> bool:
         """Save current configuration to YAML file.
 
         Args:
@@ -641,7 +641,7 @@ class ParallelCommand(Command):
 
         return True
 
-    def handle_override_models(self, args: Optional[list[str]] = None) -> bool:
+    def handle_override_models(self, args: list[str] | None = None) -> bool:
         """Override all parallel agent models to use the global model.
 
         Args:
@@ -672,7 +672,7 @@ class ParallelCommand(Command):
 
         return True
 
-    def handle_merge(self, args: Optional[list[str]] = None) -> bool:
+    def handle_merge(self, args: list[str] | None = None) -> bool:
         """Handle the merge subcommand to merge message histories from multiple agents.
 
         Args:
@@ -1500,7 +1500,7 @@ class ParallelCommand(Command):
             f"[dim]Note: All {len(source_agents)} source agents now have the combined history[/dim]"
         )
 
-    def _get_message_signature(self, msg: dict) -> Optional[str]:
+    def _get_message_signature(self, msg: dict) -> str | None:
         """Get a unique signature for a message to detect duplicates.
 
         Args:
@@ -1682,7 +1682,7 @@ class ParallelCommand(Command):
 
         return parsed_agents
 
-    def handle_prompt(self, args: Optional[list[str]] = None) -> bool:
+    def handle_prompt(self, args: list[str] | None = None) -> bool:
         """Handle the prompt subcommand to set custom prompts for agents.
 
         Args:

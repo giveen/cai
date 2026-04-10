@@ -7,8 +7,6 @@ and integrate with the CAI execution system.
 
 from __future__ import annotations
 
-from typing import List, Union
-
 from .pattern import Pattern
 
 try:
@@ -20,7 +18,7 @@ except Exception:
 from cai.agents import get_available_agents
 
 
-def pattern_to_parallel_configs(pattern: Union[Pattern, str]) -> List[ParallelConfig]:
+def pattern_to_parallel_configs(pattern: Pattern | str) -> list[ParallelConfig]:
     """Convert a pattern to a list of ParallelConfig objects.
 
     Args:
@@ -49,7 +47,7 @@ def pattern_to_parallel_configs(pattern: Union[Pattern, str]) -> List[ParallelCo
     return pattern.configs
 
 
-def apply_pattern_to_parallel_command(pattern: Union[Pattern, str]) -> None:
+def apply_pattern_to_parallel_command(pattern: Pattern | str) -> None:
     """Apply a pattern to the global PARALLEL_CONFIGS for execution.
 
     This function integrates with the parallel command system by
@@ -94,7 +92,7 @@ def create_pattern_from_current_parallel_configs(name: str, description: str = "
     )
 
 
-def validate_pattern_agents(pattern: Union[Pattern, str]) -> List[str]:
+def validate_pattern_agents(pattern: Pattern | str) -> list[str]:
     """Validate that all agents in a pattern exist.
 
     Args:
@@ -124,7 +122,7 @@ def validate_pattern_agents(pattern: Union[Pattern, str]) -> List[str]:
     return missing
 
 
-def list_pattern_agents(pattern: Union[Pattern, str]) -> List[str]:
+def list_pattern_agents(pattern: Pattern | str) -> list[str]:
     """Get a list of agent names from a pattern.
 
     Args:

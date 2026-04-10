@@ -7,7 +7,6 @@ Automatically runs on first launch if ~/.cai doesn't exist.
 import asyncio
 import os
 from pathlib import Path
-from typing import List
 
 from rich import box
 from rich.console import Console
@@ -102,7 +101,7 @@ class QuickstartCommand(Command):
         except Exception as e:
             return False, f"❌ Error: {str(e)}"
 
-    def check_ollama_models(self) -> List[str]:
+    def check_ollama_models(self) -> list[str]:
         """Check available Ollama models."""
         try:
             import httpx

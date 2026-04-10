@@ -5,9 +5,10 @@ This module provides a single Pattern class that adapts its behavior
 based on the pattern type (parallel, swarm, hierarchical, etc.).
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from cai.repl.commands.parallel import ParallelConfig
@@ -57,25 +58,25 @@ class Pattern:
     """
 
     name: str
-    type: Union[PatternType, str]
+    type: PatternType | str
     description: str = ""
 
     # Type-specific attributes
-    configs: List[ParallelConfig] = field(default_factory=list)  # For parallel
-    entry_agent: Optional[Any] = None  # For swarm
-    agents: List[Any] = field(default_factory=list)  # For swarm/hierarchical
-    root_agent: Optional[Any] = None  # For hierarchical
-    sequence: List[Any] = field(default_factory=list)  # For sequential
-    conditions: Dict[str, Any] = field(default_factory=dict)  # For conditional
+    configs: list[ParallelConfig] = field(default_factory=list)  # For parallel
+    entry_agent: Any | None = None  # For swarm
+    agents: list[Any] = field(default_factory=list)  # For swarm/hierarchical
+    root_agent: Any | None = None  # For hierarchical
+    sequence: list[Any] = field(default_factory=list)  # For sequential
+    conditions: dict[str, Any] = field(default_factory=dict)  # For conditional
 
     # Common configuration options
-    max_concurrent: Optional[int] = None
+    max_concurrent: int | None = None
     unified_context: bool = True
-    timeout: Optional[float] = None
+    timeout: float | None = None
     retry_on_failure: bool = False
 
     # Metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Initialize pattern type and validate."""
@@ -113,7 +114,7 @@ class Pattern:
                 self._conditional_initialized = True
 
     # Type-specific methods
-    def add_parallel_agent(self, agent: Union[str, ParallelConfig]) -> "Pattern":
+    def add_parallel_agent(self, agent: str | ParallelConfig) -> "Pattern":
         """Add an agent for parallel execution."""
         if self.type != PatternType.PARALLEL:
             raise ValueError(
@@ -161,7 +162,7 @@ class Pattern:
         return self
 
     def add_condition(
-        self, condition_name: str, agent: Any, predicate: Optional[Callable] = None
+        self, condition_name: str, agent: Any, predicate: Callable | None = None
     ) -> "Pattern":
         """Add a conditional branch."""
         if self.type != PatternType.CONDITIONAL:
@@ -215,7 +216,7 @@ class Pattern:
 
         return True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert pattern to dictionary representation."""
         base = {
             "name": self.name,
@@ -258,7 +259,7 @@ class Pattern:
 
         return base
 
-    def get_agents(self) -> List[Any]:
+    def get_agents(self) -> list[Any]:
         """Get all agents involved in this pattern."""
         if self.type == PatternType.PARALLEL:
             return [c.agent_name for c in self.configs]
@@ -285,7 +286,7 @@ class Pattern:
 
 # Factory functions for creating patterns
 def parallel_pattern(
-    name: str, description: str = "", agents: Optional[List[str]] = None, **kwargs
+    name: str, description: str = "", agents: list[str] | None = None, **kwargs
 ) -> Pattern:
     """Create a parallel execution pattern."""
     pattern = Pattern(name=name, type=PatternType.PARALLEL, description=description, **kwargs)
@@ -298,7 +299,7 @@ def parallel_pattern(
 
 
 def swarm_pattern(
-    name: str, entry_agent: Any, description: str = "", agents: Optional[List[Any]] = None, **kwargs
+    name: str, entry_agent: Any, description: str = "", agents: list[Any] | None = None, **kwargs
 ) -> Pattern:
     """Create a swarm collaboration pattern."""
     pattern = Pattern(name=name, type=PatternType.SWARM, description=description, **kwargs)
@@ -314,7 +315,7 @@ def hierarchical_pattern(
     name: str,
     root_agent: Any,
     description: str = "",
-    children: Optional[List[Any]] = None,
+    children: list[Any] | None = None,
     **kwargs,
 ) -> Pattern:
     """Create a hierarchical pattern."""
@@ -327,7 +328,7 @@ def hierarchical_pattern(
     return pattern
 
 
-def sequential_pattern(name: str, steps: List[Any], description: str = "", **kwargs) -> Pattern:
+def sequential_pattern(name: str, steps: list[Any], description: str = "", **kwargs) -> Pattern:
     """Create a sequential execution pattern."""
     pattern = Pattern(name=name, type=PatternType.SEQUENTIAL, description=description, **kwargs)
 
@@ -338,7 +339,7 @@ def sequential_pattern(name: str, steps: List[Any], description: str = "", **kwa
 
 
 def conditional_pattern(
-    name: str, conditions: Dict[str, Any], description: str = "", **kwargs
+    name: str, conditions: dict[str, Any], description: str = "", **kwargs
 ) -> Pattern:
     """Create a conditional execution pattern."""
     pattern = Pattern(name=name, type=PatternType.CONDITIONAL, description=description, **kwargs)

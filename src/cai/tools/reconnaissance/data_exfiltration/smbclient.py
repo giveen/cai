@@ -20,12 +20,11 @@ import asyncio
 import os
 import stat
 import tempfile
-from typing import List, Optional, Union
 
 from cai.tools import validation  # pylint: disable=import-error
 
 
-def _write_auth_file(username: str, password: str, domain: Optional[str] = None) -> str:
+def _write_auth_file(username: str, password: str, domain: str | None = None) -> str:
     """Write a temporary Samba authentication file and return its path.
 
     The file is created with restrictive permissions (0o600). The caller
@@ -51,7 +50,7 @@ def _write_auth_file(username: str, password: str, domain: Optional[str] = None)
     return tf_name
 
 
-def _validate_host_and_share(host: str, share: str) -> Optional[str]:
+def _validate_host_and_share(host: str, share: str) -> str | None:
     if not host:
         return "Invalid host: required"
     if not validation.is_valid_host(host):
@@ -69,13 +68,13 @@ def _validate_host_and_share(host: str, share: str) -> Optional[str]:
 async def run_smbclient(
     host: str,
     share: str,
-    username: Optional[str] = None,
-    password: Optional[str] = None,
-    domain: Optional[str] = None,
+    username: str | None = None,
+    password: str | None = None,
+    domain: str | None = None,
     port: int = 445,
-    commands: Optional[Union[str, List[str]]] = None,
+    commands: str | list[str] | None = None,
     use_auth_file: bool = False,
-    extra_args: Optional[List[str]] = None,
+    extra_args: list[str] | None = None,
     timeout: int = 60,
 ) -> str:
     """Run `smbclient` against a host/share and return combined stdout/stderr.
@@ -100,9 +99,9 @@ async def run_smbclient(
 
     # Build the base argv
     service = f"//{host}/{share}"
-    argv: List[str] = ["smbclient", service, "-p", str(port)]
+    argv: list[str] = ["smbclient", service, "-p", str(port)]
 
-    authfile_path: Optional[str] = None
+    authfile_path: str | None = None
     try:
         if username:
             if use_auth_file:
@@ -169,9 +168,9 @@ async def run_smbclient(
 
 async def list_shares(
     host: str,
-    username: Optional[str] = None,
-    password: Optional[str] = None,
-    domain: Optional[str] = None,
+    username: str | None = None,
+    password: str | None = None,
+    domain: str | None = None,
     port: int = 445,
     use_auth_file: bool = False,
     timeout: int = 30,
@@ -182,8 +181,8 @@ async def list_shares(
     if not validation.is_valid_host(host):
         return f"Invalid host '{host}'"
 
-    argv: List[str] = ["smbclient", "-L", host, "-p", str(port)]
-    authfile_path: Optional[str] = None
+    argv: list[str] = ["smbclient", "-L", host, "-p", str(port)]
+    authfile_path: str | None = None
     try:
         if username:
             if use_auth_file:
@@ -236,9 +235,9 @@ async def download_file(
     share: str,
     remote_path: str,
     local_path: str,
-    username: Optional[str] = None,
-    password: Optional[str] = None,
-    domain: Optional[str] = None,
+    username: str | None = None,
+    password: str | None = None,
+    domain: str | None = None,
     port: int = 445,
     use_auth_file: bool = False,
     timeout: int = 120,

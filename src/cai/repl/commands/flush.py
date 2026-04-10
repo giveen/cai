@@ -4,7 +4,6 @@ This module provides commands for clearing conversation history.
 """
 
 import os
-from typing import Dict, List, Optional
 
 from rich.console import Console  # pylint: disable=import-error
 from rich.panel import Panel  # pylint: disable=import-error
@@ -29,9 +28,7 @@ class FlushCommand(Command):
         self.add_subcommand("all", "Clear history for all agents", self.handle_all)
         self.add_subcommand("agent", "Clear history for a specific agent", self.handle_agent)
 
-    def handle(
-        self, args: Optional[List[str]] = None, messages: Optional[List[Dict]] = None
-    ) -> bool:
+    def handle(self, args: list[str] | None = None, messages: list[dict] | None = None) -> bool:
         """Handle the flush command.
 
         Args:
@@ -104,7 +101,7 @@ class FlushCommand(Command):
 
         return True
 
-    def handle_all(self, args: Optional[List[str]] = None) -> bool:
+    def handle_all(self, args: list[str] | None = None) -> bool:
         """Clear history for all agents."""
         try:
             from cai.sdk.agents.models.openai_chatcompletions import (
@@ -169,7 +166,7 @@ class FlushCommand(Command):
 
         return True
 
-    def handle_agent(self, args: Optional[List[str]] = None) -> bool:
+    def handle_agent(self, args: list[str] | None = None) -> bool:
         """Clear history for a specific agent using 'agent' subcommand."""
         if not args:
             console.print("[red]Error: Agent name required[/red]")
@@ -180,7 +177,7 @@ class FlushCommand(Command):
         agent_name = " ".join(args)
         return self._clear_agent(agent_name)
 
-    def handle_specific_agent(self, args: List[str]) -> bool:
+    def handle_specific_agent(self, args: list[str]) -> bool:
         """Clear history for a specific agent (direct syntax)."""
         # Check if first arg is an ID
         identifier = args[0]
@@ -505,7 +502,7 @@ class FlushCommand(Command):
 
         return True
 
-    def handle_no_args(self, messages: Optional[List[Dict]] = None) -> bool:
+    def handle_no_args(self, messages: list[dict] | None = None) -> bool:
         """Legacy method for backward compatibility."""
         return self.handle_current_agent()
 

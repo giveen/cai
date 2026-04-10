@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import MagicMock
 
 import cai.repl.loop.session as session
@@ -32,9 +31,15 @@ def test_initialize_session_minimal(monkeypatch):
     )
 
     # UI helpers and session recorder
-    monkeypatch.setattr("cai.repl.commands.FuzzyCommandCompleter", lambda: MagicMock(), raising=False)
-    monkeypatch.setattr("cai.repl.ui.keybindings.create_key_bindings", lambda current_text: "kb", raising=False)
-    monkeypatch.setattr("cai.repl.ui.logging.setup_session_logging", lambda: "history.log", raising=False)
+    monkeypatch.setattr(
+        "cai.repl.commands.FuzzyCommandCompleter", lambda: MagicMock(), raising=False
+    )
+    monkeypatch.setattr(
+        "cai.repl.ui.keybindings.create_key_bindings", lambda current_text: "kb", raising=False
+    )
+    monkeypatch.setattr(
+        "cai.repl.ui.logging.setup_session_logging", lambda: "history.log", raising=False
+    )
 
     class DummySessionLogger:
         session_id = "sid"

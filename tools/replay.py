@@ -33,7 +33,6 @@ import os
 import re
 import sys
 import time
-from typing import Dict, List, Tuple
 
 # Disable session recording for replay tool
 os.environ["CAI_DISABLE_SESSION_RECORDING"] = "true"
@@ -86,7 +85,7 @@ def display_execution_time(metrics=None):
     console.print(time_panel)
 
 
-def load_jsonl(file_path: str) -> List[Dict]:
+def load_jsonl(file_path: str) -> list[dict]:
     """Load a JSONL file and return its contents as a list of dictionaries."""
     data = []
     with open(file_path, encoding="utf-8") as f:
@@ -99,7 +98,7 @@ def load_jsonl(file_path: str) -> List[Dict]:
     return data
 
 
-def detect_parallel_agents(messages: List[Dict]) -> Dict[str, str]:
+def detect_parallel_agents(messages: list[dict]) -> dict[str, str]:
     """
     Detect parallel agents from messages by analyzing sender field patterns.
     Returns a mapping of agent_id to agent_name.
@@ -120,11 +119,11 @@ def detect_parallel_agents(messages: List[Dict]) -> Dict[str, str]:
 
 
 def replay_conversation(
-    messages: List[Dict],
+    messages: list[dict],
     replay_delay: float = 0.5,
-    usage: Tuple = None,
+    usage: tuple = None,
     jsonl_file_path: str = None,
-    full_data: List[Dict] = None,
+    full_data: list[dict] = None,
 ) -> None:
     """
     Replay a conversation from a list of messages, printing in real-time.
@@ -490,7 +489,7 @@ def replay_conversation(
 
 
 def display_parallel_graph(
-    agent_messages: Dict[str, List[Dict]], parallel_agents: Dict[str, str]
+    agent_messages: dict[str, list[dict]], parallel_agents: dict[str, str]
 ) -> None:
     """Display a graph showing the parallel agent interactions."""
     print("\n" + "=" * 80)
@@ -572,12 +571,12 @@ def display_parallel_graph(
     console.print("\n[bold]Summary:[/bold]")
     total_messages = sum(len(msgs) for msgs in agent_messages.values())
     unique_user_messages = len(
-        set(
+        {
             msg.get("content", "")
             for msgs in agent_messages.values()
             for msg in msgs
             if msg.get("role") == "user"
-        )
+        }
     )
 
     console.print(f"• Total agents: {len(parallel_agents)}")

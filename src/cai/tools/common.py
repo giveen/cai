@@ -9,7 +9,7 @@ import subprocess  # nosec B404
 import threading
 import time
 import uuid
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from wasabi.util import color  # pylint: disable=import-error
 
@@ -39,8 +39,8 @@ from cai.tools.sessions import (
 
 
 def _start_tool_streaming_helper(
-    tool_name: str, tool_args: dict, call_id: Optional[str] = None
-) -> Tuple[str, dict]:
+    tool_name: str, tool_args: dict, call_id: str | None = None
+) -> tuple[str, dict]:
     """Start a streaming session and return (call_id, token_info)."""
     from cai.util import start_tool_streaming
 
@@ -64,7 +64,7 @@ def _finish_tool_streaming_helper(
     content: str,
     call_id: str,
     execution_info: dict,
-    token_info: Optional[dict] = None,
+    token_info: dict | None = None,
 ) -> None:
     """Finish a streaming session, ensuring token_info is available."""
     from cai.util import finish_tool_streaming
@@ -247,7 +247,9 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         error_output = e.stdout if e.stdout else str(e)
         timeout_msg = f"Timeout executing SSH command: {error_output}"
         if stdout and not stream:
-            print(f"\033[33m{context_msg} $ {original_cmd_for_msg}\nTIMEOUT\n{error_output}\033[0m")  # noqa E501
+            print(
+                f"\033[33m{context_msg} $ {original_cmd_for_msg}\nTIMEOUT\n{error_output}\033[0m"
+            )  # noqa E501
         return timeout_msg
     except FileNotFoundError:
         # Handle case where ssh or sshpass isn't installed
@@ -255,7 +257,9 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         print(color(error_msg, fg="red"))
         return error_msg
     except Exception as e:  # pylint: disable=broad-except
-        error_msg = f"Error executing SSH command '{original_cmd_for_msg}' on {ssh_host}: {e}"  # noqa E501
+        error_msg = (
+            f"Error executing SSH command '{original_cmd_for_msg}' on {ssh_host}: {e}"  # noqa E501
+        )
         print(color(error_msg, fg="red"))
         return error_msg
 
@@ -615,7 +619,7 @@ async def run_command_async(
 
     ctf = ctf_global
     # Pre-initialize target_dir so exception handlers and later blocks can reference it safely
-    target_dir = _get_workspace_dir()
+    _target_dir = _get_workspace_dir()
 
     # Check for session execution
     if session_id:
@@ -742,6 +746,7 @@ def run_command(
     # Auto-inject pinned session cookie into HTTP tool commands.
     try:
         from cai.util.orchestration import inject_pinned_cookie_into_command
+
         _injected = inject_pinned_cookie_into_command(full_command)
         if _injected != full_command:
             command = _injected
@@ -882,12 +887,14 @@ def run_command(
         if active_container and not is_ssh_env:
             container_id = active_container
             container_workspace = _get_container_workspace_path()
-            context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
+            _context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
 
             # Handle Async Session Creation in Container
             if async_mode and not session_id:
                 # Create a session specifically for the container environment
-                new_session_id = create_shell_session(command, container_id=container_id)  # noqa E501
+                new_session_id = create_shell_session(
+                    command, container_id=container_id
+                )  # noqa E501
                 if "Failed" in new_session_id:  # Check if session creation failed
                     # Switch back to idle mode before returning error
                     stop_active_timer()
@@ -993,7 +1000,7 @@ def run_command(
                 # Initialize the streaming session with a consistent call_id format
                 call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
 
-                target_dir = _get_workspace_dir()
+                _target_dir = _get_workspace_dir()
                 # full_command = f"cd '{target_dir}' && {command}"
                 full_command = command
                 # Update with "executing" status

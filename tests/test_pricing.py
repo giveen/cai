@@ -37,6 +37,7 @@ if PYTEST_AVAILABLE:
         COST_TRACKER.model_pricing_cache.clear()
         yield
         COST_TRACKER.model_pricing_cache.clear()
+
 else:
 
     def setup_test():
@@ -103,9 +104,10 @@ def test_local_models_return_zero_cost():
             print(f"Model: {model:<25} | Pricing: {pricing} | Cost (100/50 tokens): ${cost:.6f}")
 
             if PYTEST_AVAILABLE:
-                assert pricing == (0.0, 0.0), (
-                    f"Model {model} should have zero pricing, got {pricing}"
-                )
+                assert pricing == (
+                    0.0,
+                    0.0,
+                ), f"Model {model} should have zero pricing, got {pricing}"
                 assert cost == 0.0, f"Model {model} should have zero cost, got {cost}"
             else:
                 if pricing != (0.0, 0.0):
@@ -153,9 +155,9 @@ def test_paid_models_return_nonzero_cost():
             print(f"Model: {model:<30} | Pricing: {pricing} | Cost (100/50 tokens): ${cost:.6f}")
 
             if PYTEST_AVAILABLE:
-                assert pricing[0] > 0 or pricing[1] > 0, (
-                    f"Model {model} should have non-zero pricing, got {pricing}"
-                )
+                assert (
+                    pricing[0] > 0 or pricing[1] > 0
+                ), f"Model {model} should have non-zero pricing, got {pricing}"
                 assert cost > 0, f"Model {model} should have non-zero cost, got {cost}"
             else:
                 if not (pricing[0] > 0 or pricing[1] > 0):
@@ -219,12 +221,12 @@ def test_private_model_alias0_with_pricing_json():
                 print(f"Expected pricing: {expected_pricing} | Expected cost: ${expected_cost:.6f}")
 
                 if PYTEST_AVAILABLE:
-                    assert pricing == expected_pricing, (
-                        f"alias0 should have pricing {expected_pricing}, got {pricing}"
-                    )
-                    assert abs(cost - expected_cost) < 1e-10, (
-                        f"alias0 should have cost {expected_cost}, got {cost}"
-                    )
+                    assert (
+                        pricing == expected_pricing
+                    ), f"alias0 should have pricing {expected_pricing}, got {pricing}"
+                    assert (
+                        abs(cost - expected_cost) < 1e-10
+                    ), f"alias0 should have cost {expected_cost}, got {cost}"
                 else:
                     if pricing != expected_pricing:
                         raise AssertionError(
@@ -258,9 +260,9 @@ def test_reset_cost_for_local_model():
         print(f"Model: qwen3:14b (free)        | Pricing: {pricing} | Reset result: {result}")
 
         if PYTEST_AVAILABLE:
-            assert result == True, "qwen3:14b should be identified as a free model"
+            assert result, "qwen3:14b should be identified as a free model"
         else:
-            if result != True:
+            if not result:
                 raise AssertionError("qwen3:14b should be identified as a free model")
 
     # Test with a paid model
@@ -278,9 +280,9 @@ def test_reset_cost_for_local_model():
         print(f"Model: gpt-4 (paid)            | Pricing: {pricing} | Reset result: {result}")
 
         if PYTEST_AVAILABLE:
-            assert result == False, "gpt-4 should not be identified as a free model"
+            assert not result, "gpt-4 should not be identified as a free model"
         else:
-            if result != False:
+            if result:
                 raise AssertionError("gpt-4 should not be identified as a free model")
 
     print("=" * 80)
@@ -318,9 +320,10 @@ def test_model_not_found_anywhere_returns_zero():
             )
 
             if PYTEST_AVAILABLE:
-                assert pricing == (0.0, 0.0), (
-                    f"Unknown model should have zero pricing, got {pricing}"
-                )
+                assert pricing == (
+                    0.0,
+                    0.0,
+                ), f"Unknown model should have zero pricing, got {pricing}"
                 assert cost == 0.0, f"Unknown model should have zero cost, got {cost}"
             else:
                 if pricing != (0.0, 0.0):
@@ -382,12 +385,12 @@ def test_model_not_in_pricing_json_falls_back_to_litellm():
                     )
 
                     if PYTEST_AVAILABLE:
-                        assert pricing == expected_gpt4_pricing, (
-                            f"gpt-4 should use LiteLLM pricing, got {pricing}"
-                        )
-                        assert pricing_alias0 == expected_alias0_pricing, (
-                            f"alias0 should use local pricing, got {pricing_alias0}"
-                        )
+                        assert (
+                            pricing == expected_gpt4_pricing
+                        ), f"gpt-4 should use LiteLLM pricing, got {pricing}"
+                        assert (
+                            pricing_alias0 == expected_alias0_pricing
+                        ), f"alias0 should use local pricing, got {pricing_alias0}"
                     else:
                         if pricing != expected_gpt4_pricing:
                             raise AssertionError(f"gpt-4 should use LiteLLM pricing, got {pricing}")

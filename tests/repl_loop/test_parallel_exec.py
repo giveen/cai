@@ -1,4 +1,3 @@
-import asyncio
 from unittest.mock import MagicMock
 
 from cai.repl.loop.parallel_exec import run_simple_parallel
@@ -15,7 +14,9 @@ def test_run_simple_parallel_appends_message(monkeypatch):
     main_agent.model.add_to_message_history = add
 
     # get_available_agents returns mapping
-    monkeypatch.setattr("cai.agents.get_available_agents", lambda: {"myagent": MagicMock(name="A")}, raising=False)
+    monkeypatch.setattr(
+        "cai.agents.get_available_agents", lambda: {"myagent": MagicMock(name="A")}, raising=False
+    )
 
     # get_agent_by_name returns per-instance agent
     def get_agent_side(agent_type, custom_name=None, agent_id=None, **kwargs):

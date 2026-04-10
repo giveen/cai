@@ -7,13 +7,13 @@ recent queries, and totals).
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from cai.rag.vector_db_adapter import get_rag_status as _get_rag_status
 from cai.sdk.agents import function_tool
 
 
-def _get_rag_status_impl() -> Dict[str, Any]:
+def _get_rag_status_impl() -> dict[str, Any]:
     """Return RAG status snapshot."""
     return _get_rag_status()
 

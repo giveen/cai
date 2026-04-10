@@ -7,7 +7,6 @@ ensuring that each agent has its own completely independent copy of the conversa
 
 import copy
 from threading import Lock
-from typing import Dict, List, Optional, Tuple
 
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
@@ -16,15 +15,13 @@ class ParallelHistoryIsolation:
     """Manages isolated message histories for parallel agent execution."""
 
     def __init__(self):
-        self._isolated_histories: Dict[str, List[dict]] = {}  # agent_id -> isolated history
-        self._base_history: List[dict] = []  # The base history before parallel execution
+        self._isolated_histories: dict[str, list[dict]] = {}  # agent_id -> isolated history
+        self._base_history: list[dict] = []  # The base history before parallel execution
         self._lock = Lock()
         self._parallel_mode = False
-        self._selected_agent_id: Optional[str] = (
-            None  # Track which agent was selected after parallel
-        )
+        self._selected_agent_id: str | None = None  # Track which agent was selected after parallel
 
-    def create_isolated_history(self, base_history: List[dict]) -> List[dict]:
+    def create_isolated_history(self, base_history: list[dict]) -> list[dict]:
         """Create a deep copy of the given history to ensure complete isolation.
 
         Args:
@@ -37,8 +34,8 @@ class ParallelHistoryIsolation:
         return copy.deepcopy(base_history)
 
     def transfer_to_parallel(
-        self, base_history: List[dict], num_agents: int, agent_ids: List[str]
-    ) -> Dict[str, List[dict]]:
+        self, base_history: list[dict], num_agents: int, agent_ids: list[str]
+    ) -> dict[str, list[dict]]:
         """Transfer from single agent mode to parallel mode.
 
         Creates N isolated copies of the base history, one for each parallel agent.
@@ -67,8 +64,8 @@ class ParallelHistoryIsolation:
             return isolated_histories
 
     def transfer_from_parallel(
-        self, agent_histories: Dict[str, List[dict]], selected_agent_id: Optional[str] = None
-    ) -> List[dict]:
+        self, agent_histories: dict[str, list[dict]], selected_agent_id: str | None = None
+    ) -> list[dict]:
         """Transfer from parallel mode back to single agent mode.
 
         Selects one agent's history to continue with in single agent mode.
@@ -102,7 +99,7 @@ class ParallelHistoryIsolation:
             # Return a deep copy to ensure continued isolation
             return copy.deepcopy(selected_history)
 
-    def get_isolated_history(self, agent_id: str) -> Optional[List[dict]]:
+    def get_isolated_history(self, agent_id: str) -> list[dict] | None:
         """Get the isolated history for a specific agent.
 
         Args:
@@ -129,7 +126,7 @@ class ParallelHistoryIsolation:
                 # Add a deep copy of the message
                 self._isolated_histories[agent_id].append(copy.deepcopy(new_message))
 
-    def replace_isolated_history(self, agent_id: str, new_history: List[dict]):
+    def replace_isolated_history(self, agent_id: str, new_history: list[dict]):
         """Replace an agent's entire isolated history.
 
         Args:
@@ -166,12 +163,12 @@ class ParallelHistoryIsolation:
         with self._lock:
             return len(self._isolated_histories) > 0
 
-    def get_base_history(self) -> List[dict]:
+    def get_base_history(self) -> list[dict]:
         """Get the base history (before parallel execution)."""
         with self._lock:
             return copy.deepcopy(self._base_history)
 
-    def get_selected_agent_id(self) -> Optional[str]:
+    def get_selected_agent_id(self) -> str | None:
         """Get the ID of the agent selected after parallel execution."""
         return self._selected_agent_id
 
@@ -192,8 +189,8 @@ class ParallelHistoryIsolation:
                         AGENT_MANAGER.add_to_history(agent_name, copy.deepcopy(msg))
 
     def create_parallel_agent_histories(
-        self, base_agent_name: str, agent_configs: List[Tuple[str, str]]
-    ) -> Dict[str, List[dict]]:
+        self, base_agent_name: str, agent_configs: list[tuple[str, str]]
+    ) -> dict[str, list[dict]]:
         """Create isolated histories for parallel agents based on configurations.
 
         Args:

@@ -367,10 +367,6 @@ class TestLoadCommand:
         """Test that messages are appended to existing history."""
         mock_input.return_value = "n"  # Don't create memory
         mock_load_jsonl.return_value = sample_jsonl_messages
-        existing_history = [
-            {"role": "user", "content": "Existing message 1"},
-            {"role": "assistant", "content": "Existing response 1"},
-        ]
 
         # Mock AGENT_MANAGER methods
         mock_agent_manager.get_agent_by_id.return_value = None

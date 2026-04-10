@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Optional
 from urllib.parse import quote
 
 from cai.agents.guardrails import sanitize_external_content as _sanitize
@@ -186,9 +185,7 @@ def _format_cve5_item(cve5: dict) -> str:
             vendor = prod.get("vendor", "")
             product = prod.get("product", "")
             versions = prod.get("versions", [])
-            ver_str = ", ".join(
-                v.get("version", "") for v in versions[:5] if isinstance(v, dict)
-            )
+            ver_str = ", ".join(v.get("version", "") for v in versions[:5] if isinstance(v, dict))
             lines.append(f"- **{vendor} {product}** (versions: {ver_str or 'see references'})")
 
     if refs:
@@ -269,7 +266,10 @@ def cve_search_lookup(cve_id: str) -> str:
     if data is None:
         return f"[ERROR] Could not retrieve {normed} — API unreachable or CVE not found."
 
-    if isinstance(data, dict) and not data:
+    if not isinstance(data, dict):
+        return f"[ERROR] Unexpected response format for {normed}: {type(data).__name__}."
+
+    if not data:
         return f"[NOT FOUND] {normed} was not found in the cve-search database."
 
     result = _format_cve(data)
@@ -358,7 +358,8 @@ def cve_search_product(vendor: str, product: str) -> str:
     total_label = f"{total_count} total, " if total_count else ""
     shown = items[:30]
 
-    lines = [f"### CVEs for `{safe_vendor}/{safe_product}` ({total_label}top {len(shown)} by CVSS)\n"]
+    header = f"### CVEs for `{safe_vendor}/{safe_product}` ({total_label}top {len(shown)} by CVSS)"
+    lines = [header + "\n"]
     for i, item in enumerate(shown, 1):
         # fkie_nvd
         if "descriptions" in item and "vulnStatus" in item:
@@ -448,15 +449,21 @@ def cve_search_last(count: int = 10) -> str:
                         break
                 if not vuln_desc:
                     vuln_desc = doc_summary
-                entries.append({
-                    "id": cve_id,
-                    "modified": rel_date,
-                    "summary": vuln_desc,
-                    "cwe": cwe_name,
-                })
+                entries.append(
+                    {
+                        "id": cve_id,
+                        "modified": rel_date,
+                        "summary": vuln_desc,
+                        "cwe": cwe_name,
+                    }
+                )
         elif isinstance(bundle, dict):
             # Legacy or direct CVE record
-            cid = bundle.get("id") or bundle.get("cveId") or bundle.get("cveMetadata", {}).get("cveId", "")
+            cid = (
+                bundle.get("id")
+                or bundle.get("cveId")
+                or bundle.get("cveMetadata", {}).get("cveId", "")
+            )
             if cid:
                 entries.append(bundle)
 
@@ -483,7 +490,7 @@ def cve_search_last(count: int = 10) -> str:
 # Tool 4 — Browse vendors / products
 # ---------------------------------------------------------------------------
 @function_tool
-def cve_search_browse(vendor: Optional[str] = None) -> str:
+def cve_search_browse(vendor: str | None = None) -> str:
     """Browse vendors or the products offered by a specific vendor via cve-search.
 
     Without a vendor argument, returns a list of all vendors in the CVE
@@ -540,7 +547,9 @@ def cve_search_browse(vendor: Optional[str] = None) -> str:
 # ---------------------------------------------------------------------------
 @function_tool
 def cve_search_db_info() -> str:
-    """Return metadata about the cve-search database: source, record counts, and last-updated timestamps.
+    """Return metadata about the cve-search database.
+
+    Includes source, record counts, and last-updated timestamps.
 
     Use this tool to verify that the CVE data is fresh before relying on it
     for a time-sensitive assessment.

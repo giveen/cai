@@ -5,7 +5,6 @@ This module provides commands for terminating active processes or sessions.
 
 import os
 import signal
-from typing import List, Optional
 
 from rich.console import Console  # pylint: disable=import-error
 
@@ -23,7 +22,7 @@ class KillCommand(Command):
             name="/kill", description="Terminate active processes or sessions", aliases=["/k"]
         )
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the kill command.
 
         Args:
@@ -34,7 +33,7 @@ class KillCommand(Command):
         """
         return self.handle_kill_command(args)
 
-    def handle_kill_command(self, args: List[str]) -> bool:
+    def handle_kill_command(self, args: list[str]) -> bool:
         """Kill a background process by PID.
 
         Args:

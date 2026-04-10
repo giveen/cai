@@ -34,7 +34,6 @@ import os
 import re
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Set, Tuple
 
 import pandas as pd
 
@@ -70,8 +69,8 @@ VALID_ENTITIES = {
 
 
 def find_entities_with_positions(
-    text: str, skip_entities: Set[str] = set()
-) -> List[Tuple[str, int, int, str]]:
+    text: str, skip_entities: set[str] = set()
+) -> list[tuple[str, int, int, str]]:
     """
     Find entities marked with brackets and their positions in the text.
     Returns: List of (entity_type, start_pos, end_pos, full_tag)
@@ -94,7 +93,7 @@ def find_entities_with_positions(
     return sorted(entities, key=lambda x: x[1])
 
 
-def generate_span_labels(text: str, entities: List[Tuple[str, int, int, str]]) -> str:
+def generate_span_labels(text: str, entities: list[tuple[str, int, int, str]]) -> str:
     """
     Generate span labels in format: start:end:entity_type|start:end:entity_type
     """
@@ -108,7 +107,7 @@ def generate_span_labels(text: str, entities: List[Tuple[str, int, int, str]]) -
     return "|".join(spans)
 
 
-def generate_bio_labels(text: str, entities: List[Tuple[str, int, int, str]]) -> str:
+def generate_bio_labels(text: str, entities: list[tuple[str, int, int, str]]) -> str:
     """
     Generate BIO labels for each character in the text
     """
@@ -133,7 +132,7 @@ def generate_bio_labels(text: str, entities: List[Tuple[str, int, int, str]]) ->
 
 
 def normalize_annotations(
-    df: pd.DataFrame, annotator_config: Dict[str, Dict[str, str]], skip_entities: Set[str] = set()
+    df: pd.DataFrame, annotator_config: dict[str, dict[str, str]], skip_entities: set[str] = set()
 ) -> pd.DataFrame:
     """
     Normalize annotations for ground truth and all annotators.
@@ -178,8 +177,8 @@ def normalize_annotations(
 
 
 def calculate_metrics(
-    df: pd.DataFrame, annotator_config: Dict[str, Dict[str, str]], skip_entities: Set[str] = set()
-) -> Dict:
+    df: pd.DataFrame, annotator_config: dict[str, dict[str, str]], skip_entities: set[str] = set()
+) -> dict:
     """
     Calculate metrics comparing ground truth with annotators
     """
@@ -311,11 +310,11 @@ def calculate_metrics(
 
 
 def generate_overall_report(
-    stats: Dict,
+    stats: dict,
     output_dir: str,
     input_file: str,
-    annotator_config: Dict[str, Dict[str, str]],
-    skip_entities: Set[str] = set(),
+    annotator_config: dict[str, dict[str, str]],
+    skip_entities: set[str] = set(),
 ):
     """Generate overall statistics report"""
     with open(os.path.join(output_dir, "overall_report.txt"), "w") as f:
@@ -351,7 +350,7 @@ def generate_overall_report(
 
 
 def generate_entity_report(
-    stats: Dict, output_dir: str, annotator_names: List[str], skip_entities: Set[str] = set()
+    stats: dict, output_dir: str, annotator_names: list[str], skip_entities: set[str] = set()
 ):
     """Generate per-entity type performance report"""
     with open(os.path.join(output_dir, "entity_performance.txt"), "w") as f:
@@ -380,7 +379,7 @@ def generate_entity_report(
 
 
 def generate_mistakes_report(
-    stats: Dict, output_dir: str, annotator_names: List[str], skip_entities: Set[str] = set()
+    stats: dict, output_dir: str, annotator_names: list[str], skip_entities: set[str] = set()
 ):
     """Generate detailed mistakes report"""
     with open(os.path.join(output_dir, "mistakes.txt"), "w") as f:
@@ -418,7 +417,7 @@ def generate_mistakes_report(
 
 
 def generate_metrics_report(
-    stats: Dict, output_dir: str, annotator_names: List[str], skip_entities: Set[str] = set()
+    stats: dict, output_dir: str, annotator_names: list[str], skip_entities: set[str] = set()
 ):
     """Generate overall metrics report"""
     with open(os.path.join(output_dir, "metrics.txt"), "w") as f:

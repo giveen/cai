@@ -48,7 +48,6 @@ where:
 import importlib
 import os
 import pkgutil
-from typing import Dict
 
 try:
     from dotenv import load_dotenv  # pylint: disable=import-error # noqa: E501
@@ -94,7 +93,7 @@ model = os.environ.get("CAI_MODEL", "alias1")
 PATTERNS = ["hierarchical", "swarm", "chain_of_thought", "auction_based", "recursive"]
 
 
-def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
+def get_available_agents() -> dict[str, Agent]:  # pylint: disable=R0912  # noqa
     """
     Get a dictionary of all available agents compiled
     from the cai/agents folder.
@@ -140,7 +139,9 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
 
     # Also check the patterns subdirectory
     patterns_path = os.path.join(os.path.dirname(__file__), "patterns")
-    if os.path.exists(patterns_path) and os.path.isdir(patterns_path):  # pylint: disable=R1702  # noqa
+    if os.path.exists(patterns_path) and os.path.isdir(
+        patterns_path
+    ):  # pylint: disable=R1702  # noqa
         for _, name, _ in pkgutil.iter_modules([patterns_path], __name__ + ".patterns."):
             try:
                 module = importlib.import_module(name)

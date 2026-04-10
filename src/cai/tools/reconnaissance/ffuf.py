@@ -10,12 +10,11 @@ output.
 from __future__ import annotations
 
 import subprocess
-from typing import List, Optional, Union
 
 from cai.tools import validation  # pylint: disable=import-error
 
 
-def _validate_url(u: Optional[str]) -> Optional[str]:
+def _validate_url(u: str | None) -> str | None:
     if not u:
         return "Invalid url: required and must include FUZZ"
     if "FUZZ" not in u:
@@ -27,7 +26,7 @@ def _validate_url(u: Optional[str]) -> Optional[str]:
     return None
 
 
-def _validate_wordlists(w: Union[str, List[str]]) -> Optional[str]:
+def _validate_wordlists(w: str | list[str]) -> str | None:
     if not w:
         return "Invalid wordlist: required"
     if isinstance(w, str):
@@ -40,7 +39,7 @@ def _validate_wordlists(w: Union[str, List[str]]) -> Optional[str]:
     return None
 
 
-def _validate_headers(headers: Optional[List[str]]) -> Optional[str]:
+def _validate_headers(headers: list[str] | None) -> str | None:
     if not headers:
         return None
     for h in headers:
@@ -55,17 +54,17 @@ def _validate_headers(headers: Optional[List[str]]) -> Optional[str]:
 
 def run_ffuf(
     url: str,
-    wordlist: Union[str, List[str]],
-    headers: Optional[List[str]] = None,
-    method: Optional[str] = None,
-    data: Optional[str] = None,
-    threads: Optional[int] = None,
-    rate: Optional[Union[int, float, str]] = None,
-    proxy: Optional[str] = None,
+    wordlist: str | list[str],
+    headers: list[str] | None = None,
+    method: str | None = None,
+    data: str | None = None,
+    threads: int | None = None,
+    rate: int | float | str | None = None,
+    proxy: str | None = None,
     json_output: bool = False,
-    output_file: Optional[str] = None,
+    output_file: str | None = None,
     timeout: int = 300,
-    extra_args: Optional[List[str]] = None,
+    extra_args: list[str] | None = None,
 ) -> str:
     """Run `ffuf` with the provided options and return combined stdout/stderr.
 
@@ -86,7 +85,7 @@ def run_ffuf(
     if data and validation.contains_shell_metacharacters(data):
         return "Invalid data: contains shell metacharacters"
 
-    argv: List[str] = ["ffuf", "-u", url]
+    argv: list[str] = ["ffuf", "-u", url]
 
     # wordlist(s)
     if isinstance(wordlist, str):

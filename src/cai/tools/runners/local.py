@@ -50,8 +50,8 @@ async def run_local_async(
     process_start_time = time.time()
     try:
         target_dir = workspace_dir or _get_workspace_dir()
-        original_cmd_for_msg = command
-        context_msg = f"(local:{target_dir})"
+        _original_cmd_for_msg = command
+        _context_msg = f"(local:{target_dir})"
 
         if stream:
             # Streamed execution using asyncio create_subprocess_shell
@@ -356,7 +356,7 @@ def run_local(
     process_start_time = time.time()
     try:
         target_dir = workspace_dir or _get_workspace_dir()
-        context_msg = f"(local:{target_dir})"
+        _context_msg = f"(local:{target_dir})"
 
         if stream:
             from cai.util import finish_tool_streaming, start_tool_streaming, update_tool_streaming

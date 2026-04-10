@@ -7,7 +7,7 @@ services, and vulnerabilities using the Shodan API.
 
 import ipaddress
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
@@ -115,7 +115,7 @@ def shodan_host_info(ip: str) -> str:
     return "\n".join(formatted_result)
 
 
-def _perform_shodan_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+def _perform_shodan_search(query: str, limit: int = 10) -> list[dict[str, Any]]:
     """
     Helper function to perform Shodan searches.
 
@@ -164,7 +164,7 @@ def _perform_shodan_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
         raise RuntimeError(f"Network error when contacting Shodan: {str(e)}")
 
 
-def _get_shodan_host_info(ip: str) -> Optional[Dict[str, Any]]:
+def _get_shodan_host_info(ip: str) -> dict[str, Any] | None:
     """
     Helper function to get host information from Shodan.
 

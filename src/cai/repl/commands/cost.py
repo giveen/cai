@@ -6,7 +6,6 @@ This module provides commands for viewing usage costs and statistics.
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
 
 from rich import box
 from rich.columns import Columns
@@ -48,7 +47,7 @@ class CostCommand(Command):
         self.add_subcommand("sessions", "Show recent sessions", self.handle_sessions)
         self.add_subcommand("reset", "Reset usage statistics", self.handle_reset)
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """
         Handle the /cost command.
 
@@ -70,7 +69,7 @@ class CostCommand(Command):
         # Default to summary
         return self.handle_summary()
 
-    def handle_summary(self, args: Optional[List[str]] = None) -> bool:
+    def handle_summary(self, args: list[str] | None = None) -> bool:
         """Display cost summary including current session and global totals."""
         console.print("\n[bold cyan]💰 CAI Usage Cost Summary[/bold cyan]")
         console.print("=" * 40)
@@ -209,7 +208,7 @@ class CostCommand(Command):
 
             console.print(f"  {model:<20} {bar:<30} ${cost:.4f}")
 
-    def handle_models(self, args: Optional[List[str]] = None) -> bool:
+    def handle_models(self, args: list[str] | None = None) -> bool:
         """Show detailed costs by model."""
         if not GLOBAL_USAGE_TRACKER.enabled:
             console.print("[yellow]Usage tracking is disabled[/yellow]")
@@ -299,7 +298,7 @@ class CostCommand(Command):
 
         return True
 
-    def handle_daily(self, args: Optional[List[str]] = None) -> bool:
+    def handle_daily(self, args: list[str] | None = None) -> bool:
         """Show daily usage breakdown."""
         if not GLOBAL_USAGE_TRACKER.enabled:
             console.print("[yellow]Usage tracking is disabled[/yellow]")
@@ -410,7 +409,7 @@ class CostCommand(Command):
             except Exception:
                 console.print(f"  {week_start:<20} ${cost:.4f}")
 
-    def handle_sessions(self, args: Optional[List[str]] = None) -> bool:
+    def handle_sessions(self, args: list[str] | None = None) -> bool:
         """Show recent session details."""
         if not GLOBAL_USAGE_TRACKER.enabled:
             console.print("[yellow]Usage tracking is disabled[/yellow]")
@@ -520,7 +519,7 @@ class CostCommand(Command):
 
         return True
 
-    def handle_reset(self, args: Optional[List[str]] = None) -> bool:
+    def handle_reset(self, args: list[str] | None = None) -> bool:
         """Reset usage statistics (with confirmation)."""
         if not GLOBAL_USAGE_TRACKER.enabled:
             console.print("[yellow]Usage tracking is disabled[/yellow]")

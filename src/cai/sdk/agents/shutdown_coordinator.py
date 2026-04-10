@@ -7,15 +7,14 @@ controlled shutdown (Ctrl+C) events.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Callable, List, Optional
+from collections.abc import Callable, Iterable
 
 
 class ShutdownCoordinator:
     """Coordinate shutdown actions and best-effort hardware cleanup."""
 
     def __init__(self):
-        self._callbacks: List[Callable[[], None]] = []
+        self._callbacks: list[Callable[[], None]] = []
 
     def register(self, cb: Callable[[], None]) -> None:
         """Register a synchronous callback to be invoked during shutdown."""
@@ -39,7 +38,7 @@ class ShutdownCoordinator:
             # torch not installed or unavailable - ignore
             pass
 
-    def _terminate_processes_by_name(self, names: Optional[Iterable[str]]) -> None:
+    def _terminate_processes_by_name(self, names: Iterable[str] | None) -> None:
         if not names:
             return
         try:
@@ -67,7 +66,7 @@ class ShutdownCoordinator:
             # psutil not installed or failure enumerating processes - ignore
             pass
 
-    def shutdown(self, sigterm_targets: Optional[Iterable[str]] = None) -> None:
+    def shutdown(self, sigterm_targets: Iterable[str] | None = None) -> None:
         """Perform coordinated shutdown actions.
 
         This will attempt GPU cleanup, terminate named processes, and run

@@ -112,9 +112,6 @@ Usage Examples:
 """
 
 from cai.bootstrap import initialize_env
-
-# Initialize environment early (load .env, configure warnings and logging filters)
-initialize_env()
 import asyncio
 import logging
 import os
@@ -122,13 +119,16 @@ import shlex
 import sys
 import time
 
+# Initialize environment early (load .env, configure warnings and logging filters)
+initialize_env()
+
 # OpenAI imports
 from rich.console import Console  # noqa: E402
 
 from cai import is_pentestperf_available  # noqa: E402
 
 # CAI agents imports
-from cai.agents import get_agent_by_name
+from cai.agents import get_agent_by_name  # noqa: E402
 
 # CAI REPL imports
 from cai.repl.commands import handle_command as commands_handle_command  # noqa: E402
@@ -410,6 +410,7 @@ def _run_cai_cli_impl(
                 continue
 
             from cai.repl.loop.response_handler import build_conversation_input
+
             conversation_input = build_conversation_input(agent, user_input, messages_ctf)
 
             # Debug trace: confirm the runner is being invoked.
@@ -417,6 +418,7 @@ def _run_cai_cli_impl(
             # goes to stderr, which bypasses the Rich/prompt_toolkit buffer.
             if os.getenv("CAI_DEBUG", "1") == "2":
                 import sys as _sys
+
                 _sys.stderr.write(
                     f"[CAI DEBUG] runner invoked: agent={getattr(agent, 'name', '?')!r} "
                     f"input_len={len(str(conversation_input))}\n"
@@ -426,11 +428,13 @@ def _run_cai_cli_impl(
             # Process the conversation with the agent - with parallel execution if enabled
             if parallel_count > 1:
                 from cai.repl.loop.parallel_exec import run_simple_parallel
+
                 run_simple_parallel(
                     conversation_input, agent, console, last_agent_type, parallel_count
                 )
             else:
                 from cai.repl.loop.response_handler import run_single_response
+
                 (
                     agent,
                     _post_compact_input,
@@ -451,7 +455,6 @@ def _run_cai_cli_impl(
                 )
                 if _should_continue:
                     continue
-
 
             turn_count += 1
 

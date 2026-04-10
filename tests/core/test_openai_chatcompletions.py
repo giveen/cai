@@ -214,7 +214,7 @@ async def test_fetch_response_non_stream(monkeypatch) -> None:
     model = OpenAIChatCompletionsModel(model=cai_model, openai_client=dummy_client)  # type: ignore
     # Execute the private fetch with a system instruction and simple string input.
     with generation_span(disabled=True) as span:
-        result = await model._fetch_response(
+        _ = await model._fetch_response(
             system_instructions="sys",
             input="hi",
             model_settings=ModelSettings(),
@@ -357,7 +357,7 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
     assert isinstance(resp.output[1], ResponseFunctionToolCall)
 
     # Make another request to ensure counter increments properly
-    resp2: ModelResponse = await model.get_response(
+    _ = await model.get_response(
         system_instructions="You are a helpful assistant",
         input="Another request",
         model_settings=ModelSettings(),

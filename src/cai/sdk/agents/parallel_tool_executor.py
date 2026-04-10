@@ -10,8 +10,9 @@ import logging
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from .items import ItemHelpers, ToolCallOutputItem
 from .run_context import RunContextWrapper
@@ -26,12 +27,12 @@ class PendingToolCall:
     tool_call_id: str
     tool_name: str
     tool_function: Callable
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
     agent_name: str
     context_wrapper: RunContextWrapper
     submitted_at: float = field(default_factory=time.time)
-    result: Optional[Any] = None
-    error: Optional[Exception] = None
+    result: Any | None = None
+    error: Exception | None = None
     completed: bool = False
 
 
@@ -45,13 +46,13 @@ class ParallelToolExecutor:
 
     def __init__(self, max_concurrent_tools: int = 50):
         self.max_concurrent_tools = max_concurrent_tools
-        self.pending_calls: Dict[str, PendingToolCall] = {}
-        self.active_tasks: List[asyncio.Task] = []
-        self.agent_queues: Dict[str, List[str]] = defaultdict(list)  # agent_name -> [tool_call_ids]
+        self.pending_calls: dict[str, PendingToolCall] = {}
+        self.active_tasks: list[asyncio.Task] = []
+        self.agent_queues: dict[str, list[str]] = defaultdict(list)  # agent_name -> [tool_call_ids]
         self._lock = asyncio.Lock()
         self._semaphore = asyncio.Semaphore(max_concurrent_tools)
         self._running = True
-        self._executor_task: Optional[asyncio.Task] = None
+        self._executor_task: asyncio.Task | None = None
 
     async def start(self):
         """Start the background executor task."""
@@ -77,10 +78,10 @@ class ParallelToolExecutor:
         self,
         tool_name: str,
         tool_function: Callable,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
         agent_name: str,
         context_wrapper: RunContextWrapper,
-        tool_call_id: Optional[str] = None,
+        tool_call_id: str | None = None,
     ) -> str:
         """
         Submit a tool call for parallel execution.
@@ -108,7 +109,7 @@ class ParallelToolExecutor:
 
     async def get_tool_result(
         self, tool_call_id: str, timeout: float = 300
-    ) -> Tuple[Any, Optional[Exception]]:
+    ) -> tuple[Any, Exception | None]:
         """
         Wait for and retrieve the result of a tool call.
 
@@ -131,9 +132,7 @@ class ParallelToolExecutor:
 
         raise asyncio.TimeoutError(f"Tool call {tool_call_id} timed out after {timeout} seconds")
 
-    async def get_agent_results(
-        self, agent_name: str
-    ) -> List[Tuple[str, Any, Optional[Exception]]]:
+    async def get_agent_results(self, agent_name: str) -> list[tuple[str, Any, Exception | None]]:
         """
         Get all completed results for a specific agent.
 
@@ -223,7 +222,7 @@ class ParallelToolExecutor:
 
 
 # Global instance for shared tool execution
-_global_executor: Optional[ParallelToolExecutor] = None
+_global_executor: ParallelToolExecutor | None = None
 
 
 def get_parallel_tool_executor() -> ParallelToolExecutor:
@@ -252,13 +251,13 @@ class ParallelToolMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._parallel_executor = get_parallel_tool_executor()
-        self._pending_parallel_calls: List[str] = []
+        self._pending_parallel_calls: list[str] = []
 
     async def submit_parallel_tool(
         self,
         tool_name: str,
         tool_function: Callable,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
         context_wrapper: RunContextWrapper,
     ) -> str:
         """Submit a tool for parallel execution."""
@@ -275,7 +274,7 @@ class ParallelToolMixin:
         self._pending_parallel_calls.append(tool_call_id)
         return tool_call_id
 
-    async def collect_parallel_results(self) -> List[ToolCallOutputItem]:
+    async def collect_parallel_results(self) -> list[ToolCallOutputItem]:
         """Collect results from parallel tool executions."""
         results = []
 

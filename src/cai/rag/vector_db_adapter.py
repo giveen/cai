@@ -26,7 +26,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
 
 from cai.rag.metrics import collector
 
@@ -38,10 +38,10 @@ class VectorDBConfig:
     Backends may read provider-specific options from `options`.
     """
 
-    name: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    options: Dict[str, Any] = field(default_factory=dict)
+    name: str | None = None
+    host: str | None = None
+    port: int | None = None
+    options: dict[str, Any] = field(default_factory=dict)
 
 
 def with_retries(retries: int = 3, base_delay: float = 0.2, backoff: float = 2.0):
@@ -53,7 +53,7 @@ def with_retries(retries: int = 3, base_delay: float = 0.2, backoff: float = 2.0
 
     def decorator(fn):
         def wrapper(*args, **kwargs):
-            last_exc: Optional[BaseException] = None
+            last_exc: BaseException | None = None
             delay = base_delay
             for attempt in range(retries):
                 try:
@@ -73,7 +73,7 @@ def with_retries(retries: int = 3, base_delay: float = 0.2, backoff: float = 2.0
     return decorator
 
 
-def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str, Any]]:
+def _canonicalize_search_results(results: Any, limit: int = 3) -> list[dict[str, Any]]:
     """Normalize heterogeneous backend search outputs into a canonical
     list of dicts with keys: `id`, `text`, `metadata`, `score`.
 
@@ -81,7 +81,7 @@ def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str,
     output), single dicts, lists/tuples of various shapes, and best-effort
     converts them into the canonical shape expected by the RAG callers.
     """
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     if results is None:
         return out
 
@@ -95,7 +95,7 @@ def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str,
                 parsed = json.loads(s)
                 results = parsed
             except Exception:
-                lines = [l.strip() for l in s.splitlines() if l.strip()]
+                lines = [ln.strip() for ln in s.splitlines() if ln.strip()]
                 for i, line in enumerate(lines[:limit]):
                     out.append(
                         {
@@ -107,7 +107,7 @@ def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str,
                     )
                 return out
         else:
-            lines = [l.strip() for l in s.splitlines() if l.strip()]
+            lines = [ln.strip() for ln in s.splitlines() if ln.strip()]
             for i, line in enumerate(lines[:limit]):
                 out.append(
                     {
@@ -223,7 +223,7 @@ class VectorDBAdapter(ABC):
     """
 
     def __init__(
-        self, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None
+        self, config: dict[str, Any] | None = None, embeddings_provider: Any | None = None
     ):
         self.config = VectorDBConfig(**(config or {})) if config is not None else VectorDBConfig()
         # Optional embeddings provider instance. If not provided, a
@@ -241,19 +241,19 @@ class VectorDBAdapter(ABC):
 
     @abstractmethod
     def add_points(
-        self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]
+        self, id_point: Any, collection_name: str, texts: list[str], metadata: list[dict]
     ) -> bool:
         raise NotImplementedError()
 
     @abstractmethod
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Return a health dictionary like {'ok': bool, 'details': str|dict}.
 
         Implementations should try to be non-destructive and fast.
         """
         raise NotImplementedError()
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Return embeddings for the provided texts using the configured
         embeddings provider. If no provider was supplied at construction
         time, a default provider is created lazily.
@@ -273,7 +273,7 @@ class VectorDBAdapter(ABC):
         return self.embeddings_provider.embed_texts(texts)
 
 
-def get_vector_db_adapter(name: Optional[str] = None, **kwargs) -> VectorDBAdapter:
+def get_vector_db_adapter(name: str | None = None, **kwargs) -> VectorDBAdapter:
     """Factory to get an adapter by name or environment `CAI_VECTOR_DB`.
 
     Behavior:
@@ -339,9 +339,9 @@ class QdrantAdapter(VectorDBAdapter):
 
     def __init__(
         self,
-        client: Optional[Any] = None,
-        config: Optional[Dict[str, Any]] = None,
-        embeddings_provider: Optional[Any] = None,
+        client: Any | None = None,
+        config: dict[str, Any] | None = None,
+        embeddings_provider: Any | None = None,
     ):
         super().__init__(config=config, embeddings_provider=embeddings_provider)
         self._client = client
@@ -393,7 +393,7 @@ class QdrantAdapter(VectorDBAdapter):
 
     @with_retries(retries=2)
     def add_points(
-        self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]
+        self, id_point: Any, collection_name: str, texts: list[str], metadata: list[dict]
     ) -> bool:
         self._ensure_client()
         # Attempt to compute embeddings and pass them to the client if the
@@ -424,7 +424,7 @@ class QdrantAdapter(VectorDBAdapter):
             id_point=id_point, collection_name=collection_name, texts=texts, metadata=metadata
         )
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Lightweight health check for Qdrant connector.
 
         Attempts to ensure the client can be instantiated, then looks for
@@ -487,9 +487,9 @@ class MemPalaceAdapter(VectorDBAdapter):
 
     def __init__(
         self,
-        palace_path: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
-        embeddings_provider: Optional[Any] = None,
+        palace_path: str | None = None,
+        config: dict[str, Any] | None = None,
+        embeddings_provider: Any | None = None,
     ):
         super().__init__(config=config, embeddings_provider=embeddings_provider)
         # Allow palace_path to be provided via explicit arg, config options, or env
@@ -532,14 +532,14 @@ class MemPalaceAdapter(VectorDBAdapter):
     # provided here.
 
     def add_points(
-        self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]
+        self, id_point: Any, collection_name: str, texts: list[str], metadata: list[dict]
     ) -> bool:
         # Intentionally not implemented to avoid accidental writes; use mempalace CLI or API
         raise NotImplementedError(
             "MemPalaceAdapter.add_points is not implemented. Use mempalace CLI/API for ingestion."
         )
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         # Check palace path existence first
         try:
             path = os.path.expanduser(self.palace_path)
@@ -569,10 +569,10 @@ class MemPalaceAdapter(VectorDBAdapter):
 
 
 # Backend registry so new adapters can be registered at runtime
-_BACKEND_REGISTRY: Dict[str, Type[VectorDBAdapter]] = {}
+_BACKEND_REGISTRY: dict[str, type[VectorDBAdapter]] = {}
 
 
-def register_vector_db_backend(name: str, cls: Type[VectorDBAdapter]) -> None:
+def register_vector_db_backend(name: str, cls: type[VectorDBAdapter]) -> None:
     """Register a backend adapter class under a short name."""
     _BACKEND_REGISTRY[name.lower()] = cls
 
@@ -585,12 +585,12 @@ register_vector_db_backend("palace", MemPalaceAdapter)
 register_vector_db_backend("mp", MemPalaceAdapter)
 
 
-def list_registered_backends() -> List[str]:
+def list_registered_backends() -> list[str]:
     """Return names of currently registered vector DB backends."""
     return list(_BACKEND_REGISTRY.keys())
 
 
-def get_rag_status() -> Dict[str, Any]:
+def get_rag_status() -> dict[str, Any]:
     """Return a lightweight snapshot of RAG-related metrics and adapter state.
 
     This function is intentionally conservative: it returns the global
@@ -605,7 +605,7 @@ def get_rag_status() -> Dict[str, Any]:
     # Provide a best-effort summary of adapter cache state; avoid
     # importing adapters or relying on runtime instances here to keep
     # this function side-effect free at import time.
-    adapters_summary: Dict[str, Any] = {k: {"registered": True} for k in _BACKEND_REGISTRY.keys()}
+    adapters_summary: dict[str, Any] = {k: {"registered": True} for k in _BACKEND_REGISTRY.keys()}
 
     return {"metrics": metrics_snapshot, "adapters": adapters_summary}
 
@@ -621,7 +621,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
     """
 
     def __init__(
-        self, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None
+        self, config: dict[str, Any] | None = None, embeddings_provider: Any | None = None
     ):
         super().__init__(config=config, embeddings_provider=embeddings_provider)
         opts = self.config.options or {}
@@ -641,12 +641,12 @@ class LocalFallbackAdapter(VectorDBAdapter):
             except Exception:
                 self._faiss_available = False
         # collections: name -> {'ids':[], 'texts':[], 'metadata':[], 'vectors':[]}
-        self._collections: Dict[str, Dict[str, List[Any]]] = {}
+        self._collections: dict[str, dict[str, list[Any]]] = {}
         # Cached FAISS indexes per collection (when faiss is available).
         # _faiss_indexes[collection_name] -> faiss.Index or None
         # _faiss_maps[collection_name] -> list mapping faiss index position -> original collection index
-        self._faiss_indexes: Dict[str, Any] = {}
-        self._faiss_maps: Dict[str, List[int]] = {}
+        self._faiss_indexes: dict[str, Any] = {}
+        self._faiss_maps: dict[str, list[int]] = {}
 
         # Persistence / background IO
         self._persist_dir = os.path.expanduser(
@@ -662,7 +662,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
         self._io_lock = threading.Lock()
         self._pending_persist_collections = set()
         # per-collection held lock fds (if we claimed exclusive ownership)
-        self._locks: Dict[str, int] = {}
+        self._locks: dict[str, int] = {}
 
         # Ensure graceful shutdown to flush pending writes and release locks
         try:
@@ -671,7 +671,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
             pass
 
     # FAISS helpers (moved here from MemPalaceAdapter) ------------------
-    def _build_faiss_index(self, collection_name: str, dim: Optional[int] = None) -> None:
+    def _build_faiss_index(self, collection_name: str, dim: int | None = None) -> None:
         """Build or rebuild a FAISS Index for the given collection.
 
         If `dim` is provided, only vectors with matching dimensionality
@@ -1000,7 +1000,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
         return True
 
     def add_points(
-        self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]
+        self, id_point: Any, collection_name: str, texts: list[str], metadata: list[dict]
     ) -> bool:
         # Ensure collection
         self.create_collection(collection_name)
@@ -1009,7 +1009,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
         # helper imports and defaults
         import uuid
 
-        metadata_list: List[Dict[str, Any]] = []
+        metadata_list: list[dict[str, Any]] = []
 
         # Normalize ids and metadata lists to match texts length
         if isinstance(id_point, (list, tuple)) and len(id_point) == len(texts):
@@ -1149,7 +1149,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
 
         return True
 
-    def export_collection(self, collection_name: str) -> List[Dict[str, Any]]:
+    def export_collection(self, collection_name: str) -> list[dict[str, Any]]:
         """Return a list of documents for the collection with optional vectors.
 
         Each document is a dict: {id, text, metadata, vector}
@@ -1157,7 +1157,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
         if collection_name not in self._collections:
             return []
         col = self._collections[collection_name]
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for i in range(len(col["ids"])):
             out.append(
                 {
@@ -1169,7 +1169,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
             )
         return out
 
-    def delete_points(self, collection_name: str, ids: List[str]) -> bool:
+    def delete_points(self, collection_name: str, ids: list[str]) -> bool:
         """Delete points by id from the local collection. Returns True if any removed."""
         if collection_name not in self._collections:
             return False
@@ -1204,7 +1204,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
                     pass
         return removed
 
-    def list_collections(self) -> List[str]:
+    def list_collections(self) -> list[str]:
         return list(self._collections.keys())
 
     def purge_older_than(self, cutoff_ts: float) -> int:
@@ -1316,10 +1316,10 @@ class LocalFallbackAdapter(VectorDBAdapter):
                         raise RuntimeError("numpy/faiss unavailable")
                     qarr = np_mod.array([qvec], dtype="float32")
                     k = min(limit, int(getattr(idx, "ntotal", 0)))
-                    D, I = idx.search(qarr, k)
+                    distances, indices = idx.search(qarr, k)
                     results = []
                     fmap = self._faiss_maps.get(collection_name, [])
-                    for score, pos in zip(D[0], I[0]):
+                    for score, pos in zip(distances[0], indices[0]):
                         if int(pos) < 0:
                             continue
                         orig_i = fmap[int(pos)] if int(pos) < len(fmap) else None
@@ -1370,7 +1370,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
             pass
         return results
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         return {
             "ok": True,
             "details": {

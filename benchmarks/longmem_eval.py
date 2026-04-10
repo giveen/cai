@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from typing import Dict, List
 
 from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
 from cai.rag.retriever_pipeline import DenseRetriever, Reranker, RetrieverCombiner, SimpleBM25
@@ -79,7 +78,7 @@ def evaluate(adapter, docs, queries, gt_ids, provider, top_ks=(1, 3, 5)):
         ),
     }
 
-    results: Dict[str, List[float]] = {name: [0.0 for _ in top_ks] for name in pipelines.keys()}
+    results: dict[str, list[float]] = {name: [0.0 for _ in top_ks] for name in pipelines.keys()}
     total = len(queries)
 
     for q, gt in zip(queries, gt_ids):

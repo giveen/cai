@@ -4,9 +4,9 @@ import ast
 import inspect
 import json
 import re
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Literal, Union, overload
+from typing import TYPE_CHECKING, Any, Literal, Union, overload
 
 try:
     from pydantic import ValidationError
@@ -24,7 +24,9 @@ else:
     Filters = Any
     RankingOptions = Any
     UserLocation = Any
-from typing_extensions import Concatenate, ParamSpec
+from typing import Concatenate
+
+from typing_extensions import ParamSpec
 
 from . import _debug
 from .computer import AsyncComputer, Computer

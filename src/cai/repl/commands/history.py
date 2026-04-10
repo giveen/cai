@@ -4,7 +4,7 @@ This module provides commands for displaying conversation history with agent-bas
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rich.console import Console  # pylint: disable=import-error
 from rich.panel import Panel  # pylint: disable=import-error
@@ -35,7 +35,7 @@ class HistoryCommand(Command):
             "index", "Show message by index and optionally filter by role", self.handle_index
         )
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the history command.
 
         Args:
@@ -362,7 +362,7 @@ class HistoryCommand(Command):
 
         return True
 
-    def handle_all(self, args: Optional[List[str]] = None) -> bool:
+    def handle_all(self, args: list[str] | None = None) -> bool:
         """Show history from all agents in chronological order."""
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
@@ -416,7 +416,7 @@ class HistoryCommand(Command):
         console.print(table)
         return True
 
-    def handle_agent(self, args: Optional[List[str]] = None) -> bool:
+    def handle_agent(self, args: list[str] | None = None) -> bool:
         """Show history for a specific agent."""
         if not args:
             console.print("[red]Error: Agent name or ID required[/red]")
@@ -633,7 +633,7 @@ class HistoryCommand(Command):
         console.print(table)
         return True
 
-    def handle_search(self, args: Optional[List[str]] = None) -> bool:
+    def handle_search(self, args: list[str] | None = None) -> bool:
         """Search for messages containing specific terms across all agents."""
         if not args:
             console.print("[red]Error: Search term required[/red]")
@@ -709,7 +709,7 @@ class HistoryCommand(Command):
 
         return True
 
-    def _format_message_content(self, content: Any, tool_calls: List[Dict[str, Any]]) -> str:
+    def _format_message_content(self, content: Any, tool_calls: list[dict[str, Any]]) -> str:
         """Format message content for display, handling both text and tool calls.
 
         Args:
@@ -754,7 +754,7 @@ class HistoryCommand(Command):
             # No content or tool calls (empty message)
             return "[dim italic]Empty message[/dim italic]"
 
-    def handle_index(self, args: Optional[List[str]] = None) -> bool:
+    def handle_index(self, args: list[str] | None = None) -> bool:
         """Show message by index and optionally filter by role.
 
         Usage: /history index <agent_name> <index> [role]

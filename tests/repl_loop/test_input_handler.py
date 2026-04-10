@@ -1,6 +1,3 @@
-import time
-from unittest.mock import MagicMock
-
 from cai.repl.loop.input_handler import get_next_input
 
 

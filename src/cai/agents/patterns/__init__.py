@@ -7,7 +7,7 @@ and parallel patterns (for simultaneous execution).
 
 import importlib
 import pkgutil
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 __all__ = [
     "Pattern",
@@ -30,7 +30,7 @@ __all__ = [
 PATTERNS = {}
 
 
-def discover_patterns() -> Dict[str, "Pattern"]:
+def discover_patterns() -> dict[str, "Pattern"]:
     """Discover all patterns in the patterns directory.
 
     Automatically identifies and loads both swarm and parallel patterns,
@@ -183,7 +183,7 @@ def get_pattern(pattern_name: str) -> Optional["Pattern"]:
     return PATTERNS.get(pattern_name)
 
 
-def get_patterns_by_type(pattern_type: Union[str, "PatternType"]) -> Dict[str, "Pattern"]:
+def get_patterns_by_type(pattern_type: Union[str, "PatternType"]) -> dict[str, "Pattern"]:
     """Get all available patterns of a specific type.
 
     Args:
@@ -208,7 +208,7 @@ def get_patterns_by_type(pattern_type: Union[str, "PatternType"]) -> Dict[str, "
     return result
 
 
-def get_parallel_patterns() -> Dict[str, "Pattern"]:
+def get_parallel_patterns() -> dict[str, "Pattern"]:
     """Get all available parallel patterns.
 
     Returns:
@@ -219,7 +219,7 @@ def get_parallel_patterns() -> Dict[str, "Pattern"]:
     return get_patterns_by_type(PatternType.PARALLEL)
 
 
-def get_swarm_patterns() -> Dict[str, "Pattern"]:
+def get_swarm_patterns() -> dict[str, "Pattern"]:
     """Get all available swarm patterns.
 
     Returns:

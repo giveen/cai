@@ -12,7 +12,6 @@ import datetime as _dt
 import json
 import os
 import re
-from typing import Dict, List, Optional
 
 # Small stopword set for deterministic extractive summarization
 _STOPWORDS = {
@@ -44,7 +43,7 @@ _STOPWORDS = {
 }
 
 
-def _split_sentences(text: str) -> List[str]:
+def _split_sentences(text: str) -> list[str]:
     if not text:
         return []
     # keep it simple and deterministic: split on sentence enders
@@ -52,12 +51,12 @@ def _split_sentences(text: str) -> List[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def _tokenize(text: str) -> List[str]:
+def _tokenize(text: str) -> list[str]:
     return [t.lower() for t in re.findall(r"\w+", text or "")]
 
 
-def _word_frequencies(texts: List[str]) -> Dict[str, int]:
-    freqs: Dict[str, int] = {}
+def _word_frequencies(texts: list[str]) -> dict[str, int]:
+    freqs: dict[str, int] = {}
     for t in texts:
         for w in _tokenize(t):
             if w in _STOPWORDS:
@@ -66,7 +65,7 @@ def _word_frequencies(texts: List[str]) -> Dict[str, int]:
     return freqs
 
 
-def generate_l0_summary(collection_texts: List[str], max_tokens: int = 170) -> str:
+def generate_l0_summary(collection_texts: list[str], max_tokens: int = 170) -> str:
     """Generate a compact (approximate) extractive L0 summary.
 
     This is a deterministic, dependency-free fallback summarizer that
@@ -126,7 +125,7 @@ def generate_l0_summary(collection_texts: List[str], max_tokens: int = 170) -> s
     return " ".join(out)
 
 
-def generate_l1_summary(collection_texts: List[str], max_tokens: int = 450) -> str:
+def generate_l1_summary(collection_texts: list[str], max_tokens: int = 450) -> str:
     """Generate a larger (L1) summary. Uses the same heuristic with a bigger budget."""
     return generate_l0_summary(collection_texts, max_tokens=max_tokens)
 
@@ -139,7 +138,7 @@ def _default_store_path() -> str:
     return os.path.join(os.getcwd(), ".cai", "wakeup_summaries.json")
 
 
-def read_persisted_summaries(store_path: Optional[str] = None) -> Dict[str, Dict[str, str]]:
+def read_persisted_summaries(store_path: str | None = None) -> dict[str, dict[str, str]]:
     path = store_path or _default_store_path()
     try:
         if not os.path.exists(path):
@@ -151,7 +150,7 @@ def read_persisted_summaries(store_path: Optional[str] = None) -> Dict[str, Dict
 
 
 def persist_summaries(
-    palace_id: str, l0: str, l1: Optional[str] = None, store_path: Optional[str] = None
+    palace_id: str, l0: str, l1: str | None = None, store_path: str | None = None
 ) -> bool:
     path = store_path or _default_store_path()
     data = read_persisted_summaries(path)
@@ -174,9 +173,9 @@ def persist_summaries(
 
 def load_summaries_for_session(
     session_id: str,
-    palace_texts: Optional[Dict[str, List[str]]],
+    palace_texts: dict[str, list[str]] | None,
     wakeup_index: object,
-    store_path: Optional[str] = None,
+    store_path: str | None = None,
     regenerate_if_missing: bool = False,
     l0_tokens: int = 170,
     l1_tokens: int = 450,

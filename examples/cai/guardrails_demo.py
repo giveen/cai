@@ -17,7 +17,7 @@ async def demo_guardrails():
 
     safe_input = "Please check what files are in the current directory"
     try:
-        result = await Runner.run(one_tool_agent, safe_input)
+        _ = await Runner.run(one_tool_agent, safe_input)
         print(f"✅ Safe input accepted: {safe_input[:50]}...")
     except InputGuardrailTripwireTriggered:
         print(f"❌ Safe input wrongly blocked: {safe_input}")

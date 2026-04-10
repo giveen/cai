@@ -12,28 +12,27 @@ Matrix green-on-black throughout.
 from __future__ import annotations
 
 import asyncio
-import logging
 import inspect
 import json
+import logging
 import os
 import re
-import time
 import textwrap
+import time
 from datetime import datetime
-from typing import Any, Optional, cast
-
-logger = logging.getLogger(__name__)
+from pathlib import Path
+from typing import Any, cast
 
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text as RichText
 from textual import events, on, work
-from textual.reactive import reactive
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.message import Message
+from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
@@ -50,6 +49,8 @@ from textual.widgets import (
     TabPane,
 )
 from textual.widgets._text_area import TextArea
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # ASCII banner – Matrix green applied via Rich Text styles at render time
@@ -900,7 +901,7 @@ BrowserPreview {
     height: 0;
     display: none;
     background: #000000;
-    border: bold magenta;
+    border: solid magenta;
     layout: vertical;
     padding: 0 1;
 }
@@ -1921,7 +1922,7 @@ class TerminalPanel(Widget):
         self._run_worker = None
         self._workers: list[Any] = []
         self._prompt_history: list[str] = []
-        self._history_index: Optional[int] = None
+        self._history_index: int | None = None
 
     def _get_input_widget(self):
         try:
@@ -2225,7 +2226,7 @@ class TerminalPanel(Widget):
             except Exception:
                 wrapped = body
             # reapply indentation to each wrapped sub-line
-            wrapped = "\n".join(indent + l for l in wrapped.splitlines())
+            wrapped = "\n".join(indent + ln for ln in wrapped.splitlines())
             out_lines.append(wrapped)
         return "\n".join(out_lines)
 
@@ -2342,7 +2343,7 @@ class TerminalPanel(Widget):
         if (
             not self._busy
             and text.endswith("\n")
-            and "\n" not in text[:-1]       # no embedded newline → was single-line
+            and "\n" not in text[:-1]  # no embedded newline → was single-line
         ):
             if text[:-1].strip():
                 # Non-empty content → submit via the normal path
@@ -2560,6 +2561,7 @@ class TerminalPanel(Widget):
         # the terminal.  Confirms input crossed the UI→Runner boundary.
         try:
             import sys as _sys
+
             _sys.stderr.write(
                 f"[CAI-TUI] handoff: T{self._term_id} agent={self._agent_name!r} "
                 f"text_len={len(text)} preview={text[:80]!r}\n"
@@ -2567,7 +2569,9 @@ class TerminalPanel(Widget):
             _sys.stderr.flush()
             logger.info(
                 "[TUI-handoff] term=%d agent=%r text_len=%d",
-                self._term_id, self._agent_name, len(text),
+                self._term_id,
+                self._agent_name,
+                len(text),
             )
         except Exception:
             pass
@@ -2591,6 +2595,7 @@ class TerminalPanel(Widget):
         # Temporary debug tracing for stream event diagnosis
         try:
             import sys as _sys
+
             _sys.stderr.write(
                 f"[cai-tui-debug] _run_agent start: term={self._term_id} "
                 f"agent={self._agent_name} model={self._model_name} "
@@ -2615,7 +2620,10 @@ class TerminalPanel(Widget):
         try:
             try:
                 import sys as _sys
-                _sys.stderr.write(f"[cai-tui-debug] calling Runner.run_streamed term={self._term_id}\n")
+
+                _sys.stderr.write(
+                    f"[cai-tui-debug] calling Runner.run_streamed term={self._term_id}\n"
+                )
                 _sys.stderr.flush()
                 logger.debug("calling Runner.run_streamed for term=%s", self._term_id)
             except Exception:
@@ -2644,6 +2652,7 @@ class TerminalPanel(Widget):
             def _tui_progress_writer(msg: str, style: str | None = None) -> None:
                 try:
                     from rich.markup import escape as _re
+
                     plain = _re(str(msg))
                     colour = style or "bold yellow"
                     self._write_system_message("compact", plain, style=colour)
@@ -2652,8 +2661,10 @@ class TerminalPanel(Widget):
                     self._set_status(f"T{self._term_id}> {short}")
                 except Exception:
                     pass
+
             try:
                 from cai.util import set_progress_writer
+
                 set_progress_writer(_tui_progress_writer)
             except Exception:
                 pass
@@ -2667,8 +2678,10 @@ class TerminalPanel(Widget):
                     log.write(renderable)
                 except Exception:
                     pass
+
             try:
                 from cai.util import set_panel_writer
+
                 set_panel_writer(_tui_panel_writer)
             except Exception:
                 pass
@@ -2677,21 +2690,24 @@ class TerminalPanel(Widget):
             # (e.g. cewl wordlist generation) can show/hide the LoadingIndicator.
             def _tui_loading_writer(visible: bool) -> None:
                 try:
-                    indicator = self.query_one(
-                        f"#term-loading-{self._term_id}", LoadingIndicator
-                    )
+                    indicator = self.query_one(f"#term-loading-{self._term_id}", LoadingIndicator)
                     indicator.display = visible
                 except Exception:
                     pass
+
             try:
                 from cai.util import set_tool_loading_writer
+
                 set_tool_loading_writer(_tui_loading_writer)
             except Exception:
                 pass
 
             try:
                 import sys as _sys
-                _sys.stderr.write(f"[cai-tui-debug] stream iterator obtained term={self._term_id}\n")
+
+                _sys.stderr.write(
+                    f"[cai-tui-debug] stream iterator obtained term={self._term_id}\n"
+                )
                 _sys.stderr.flush()
                 logger.debug("stream iterator obtained for term=%s", self._term_id)
             except Exception:
@@ -2713,7 +2729,10 @@ class TerminalPanel(Widget):
                     delta = self._extract_stream_text_delta(event.data)
                     try:
                         import sys as _sys
-                        _sys.stderr.write(f"[cai-tui-debug] RAW_EVENT type={getattr(event.data,'type',type(event.data).__name__)} delta_len={len(delta or '')}\n")
+
+                        _sys.stderr.write(
+                            f"[cai-tui-debug] RAW_EVENT type={getattr(event.data,'type',type(event.data).__name__)} delta_len={len(delta or '')}\n"
+                        )
                         _sys.stderr.flush()
                         logger.debug(
                             "raw delta len=%d preview=%r",
@@ -2734,10 +2753,12 @@ class TerminalPanel(Widget):
                                 line, _stream_line_buf = _stream_line_buf.split("\n", 1)
                                 if line:  # skip blank splits
                                     try:
-                                        log.write(RichText(
-                                            f"[stream:{self._term_id}] {line}",
-                                            style="#3399ff",
-                                        ))
+                                        log.write(
+                                            RichText(
+                                                f"[stream:{self._term_id}] {line}",
+                                                style="#3399ff",
+                                            )
+                                        )
                                     except Exception:
                                         pass
                     continue
@@ -2870,9 +2891,7 @@ class TerminalPanel(Widget):
             try:
                 _fo = getattr(result, "final_output", None) if result is not None else None
                 _is_empty_response = (
-                    run_status == "completed"
-                    and _had_tool_outputs
-                    and (_fo == "" or _fo is None)
+                    run_status == "completed" and _had_tool_outputs and (_fo == "" or _fo is None)
                 )
             except Exception:
                 _is_empty_response = False
@@ -2902,6 +2921,7 @@ class TerminalPanel(Widget):
             # re-submit with a continuation prompt, exactly as the CLI does.
             try:
                 from cai.sdk.agents.exceptions import ContextCompactedError as _CCE
+
                 _is_compact = isinstance(exc, _CCE)
             except Exception:
                 _is_compact = "ContextCompactedError" in type(exc).__name__
@@ -2917,6 +2937,7 @@ class TerminalPanel(Widget):
                     # Reload agent via AGENT_MANAGER in case it was refreshed.
                     try:
                         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AM
+
                         _reloaded = _AM.get_active_agent()
                         if _reloaded is not None:
                             self._agent = _reloaded
@@ -2932,15 +2953,14 @@ class TerminalPanel(Widget):
                         "Pick up exactly where you left off using only NEW approaches."
                     )
                     # Schedule a fresh run with the continuation prompt.
-                    self.call_after_refresh(
-                        lambda: self._run_worker.__class__  # keep linter happy
-                    )
+                    self.call_after_refresh(lambda: self._run_worker.__class__)  # keep linter happy
                     self._run_worker = self._run_agent(_continuation)
                     return  # skip the error-state path below
                 except Exception as _retry_exc:
                     # If the retry scheduling itself fails, fall through to
                     # the generic error handler so the user is informed.
                     import sys as _sys
+
                     _sys.stderr.write(f"[cai-tui-debug] compact retry failed: {_retry_exc!r}\n")
                     _sys.stderr.flush()
 
@@ -2948,6 +2968,7 @@ class TerminalPanel(Widget):
             run_error = str(exc)
             try:
                 import sys as _sys
+
                 _sys.stderr.write(f"[cai-tui-debug] EXCEPTION in _run_agent: {exc!r}\n")
                 _sys.stderr.flush()
             except Exception:
@@ -2965,6 +2986,7 @@ class TerminalPanel(Widget):
             # exception message twice (once raw, once via _write_system_message).
             try:
                 from rich.panel import Panel as _Panel
+
                 log.write(
                     _Panel(
                         f"[bold]{type(exc).__name__}[/bold]: {exc}",
@@ -2982,25 +3004,26 @@ class TerminalPanel(Widget):
             # Unregister the TUI progress writer so CLI mode gets its console back.
             try:
                 from cai.util import set_progress_writer
+
                 set_progress_writer(None)
             except Exception:
                 pass
             # Unregister the TUI panel writer so CLI mode gets its console back.
             try:
                 from cai.util import set_panel_writer
+
                 set_panel_writer(None)
             except Exception:
                 pass
             # Unregister the loading writer and ensure the indicator is hidden.
             try:
                 from cai.util import set_tool_loading_writer
+
                 set_tool_loading_writer(None)
             except Exception:
                 pass
             try:
-                indicator = self.query_one(
-                    f"#term-loading-{self._term_id}", LoadingIndicator
-                )
+                indicator = self.query_one(f"#term-loading-{self._term_id}", LoadingIndicator)
                 indicator.display = False
             except Exception:
                 pass
@@ -3019,10 +3042,12 @@ class TerminalPanel(Widget):
             # Flush any partial line left in the streaming buffer (no-op when stream_debug=False)
             try:
                 if stream_debug and _stream_line_buf.strip():
-                    log.write(RichText(
-                        f"[stream:{self._term_id}] {_stream_line_buf}",
-                        style="#3399ff",
-                    ))
+                    log.write(
+                        RichText(
+                            f"[stream:{self._term_id}] {_stream_line_buf}",
+                            style="#3399ff",
+                        )
+                    )
             except Exception:
                 pass
             if stream_iter is not None:
@@ -3073,6 +3098,7 @@ class BrowserPreview(Widget):
     """
 
     screenshot_path: reactive[str] = reactive("")
+    interactive_map_data: reactive[list] = reactive([])
 
     def compose(self) -> ComposeResult:
         yield Static("", id="browser-preview-content")
@@ -3103,32 +3129,244 @@ class BrowserPreview(Widget):
                 pass
 
             if existing is None:
+                # If Pillow is available and we have map data, composite an overlay
+                use_path = path
+                try:
+                    if self.interactive_map_data:
+                        from PIL import Image, ImageDraw, ImageFont  # type: ignore
+
+                        orig = Image.open(path).convert("RGBA")
+                        overlay_img = Image.new("RGBA", orig.size, (255, 255, 255, 0))
+                        draw = ImageDraw.Draw(overlay_img)
+                        try:
+                            font = ImageFont.load_default()
+                        except Exception:
+                            font = None
+
+                        def _measure_label(text: str) -> tuple[int, int]:
+                            if not font:
+                                return len(text) * 6, 10
+                            if hasattr(draw, "textbbox"):
+                                left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                                return max(0, right - left), max(0, bottom - top)
+                            if hasattr(draw, "textsize"):
+                                return draw.textsize(text, font=font)
+                            return len(text) * 6, 10
+
+                        # Playwright viewport assumed; scale rects to image size if needed
+                        vp_w, vp_h = 1280, 800
+                        sx = orig.width / vp_w if vp_w else 1.0
+                        sy = orig.height / vp_h if vp_h else 1.0
+
+                        for node in (self.interactive_map_data or [])[:80]:
+                            try:
+                                rect = node.get("rect") or {}
+                                if not rect:
+                                    continue
+                                x = int(rect.get("x") or 0)
+                                y = int(rect.get("y") or 0)
+                                w = int(rect.get("w") or 0)
+                                h = int(rect.get("h") or 0)
+                                rx = int(x * sx)
+                                ry = int(y * sy)
+                                rw = max(2, int(w * sx))
+                                rh = max(2, int(h * sy))
+
+                                outline_w = max(1, orig.width // 300)
+                                draw.rectangle(
+                                    [rx, ry, rx + rw, ry + rh],
+                                    outline=(255, 77, 255, 200),
+                                    width=outline_w,
+                                )
+
+                                idx = (
+                                    node.get("map_index")
+                                    if node.get("map_index") is not None
+                                    else node.get("index")
+                                )
+                                label = str(idx) if idx is not None else ""
+                                if label:
+                                    tx, ty = rx + 4, ry + 4
+                                    # text background
+                                    tw, th = _measure_label(label)
+                                    draw.rectangle(
+                                        [tx - 2, ty - 2, tx + tw + 2, ty + th + 2],
+                                        fill=(0, 0, 0, 160),
+                                    )
+                                    draw.text((tx, ty), label, fill=(255, 255, 255, 255), font=font)
+                            except Exception:
+                                continue
+
+                        out = Image.alpha_composite(orig, overlay_img)
+                        ts = int(time.time())
+                        p = Path(path)
+                        overlay_path = str(p.with_name(f"{p.stem}_overlay_{ts}.png"))
+                        try:
+                            out.save(overlay_path)
+                            use_path = overlay_path
+                        except Exception:
+                            use_path = path
+                except Exception:
+                    use_path = path
+
                 content_widget.display = False
-                self.mount(TerminalImage(path))
+                self.mount(TerminalImage(use_path))
             else:
                 try:
-                    existing.path = path  # type: ignore[attr-defined]
+                    # If map data available, attempt to composite overlay and update path
+                    use_path = path
+                    try:
+                        if self.interactive_map_data:
+                            from PIL import Image, ImageDraw, ImageFont  # type: ignore
+
+                            orig = Image.open(path).convert("RGBA")
+                            overlay_img = Image.new("RGBA", orig.size, (255, 255, 255, 0))
+                            draw = ImageDraw.Draw(overlay_img)
+                            try:
+                                font = ImageFont.load_default()
+                            except Exception:
+                                font = None
+
+                            def _measure_label(text: str) -> tuple[int, int]:
+                                if not font:
+                                    return len(text) * 6, 10
+                                if hasattr(draw, "textbbox"):
+                                    left, top, right, bottom = draw.textbbox(
+                                        (0, 0), text, font=font
+                                    )
+                                    return max(0, right - left), max(0, bottom - top)
+                                if hasattr(draw, "textsize"):
+                                    return draw.textsize(text, font=font)
+                                return len(text) * 6, 10
+
+                            vp_w, vp_h = 1280, 800
+                            sx = orig.width / vp_w if vp_w else 1.0
+                            sy = orig.height / vp_h if vp_h else 1.0
+                            for node in (self.interactive_map_data or [])[:80]:
+                                try:
+                                    rect = node.get("rect") or {}
+                                    if not rect:
+                                        continue
+                                    x = int(rect.get("x") or 0)
+                                    y = int(rect.get("y") or 0)
+                                    w = int(rect.get("w") or 0)
+                                    h = int(rect.get("h") or 0)
+                                    rx = int(x * sx)
+                                    ry = int(y * sy)
+                                    rw = max(2, int(w * sx))
+                                    rh = max(2, int(h * sy))
+                                    outline_w = max(1, orig.width // 300)
+                                    draw.rectangle(
+                                        [rx, ry, rx + rw, ry + rh],
+                                        outline=(255, 77, 255, 200),
+                                        width=outline_w,
+                                    )
+                                    idx = (
+                                        node.get("map_index")
+                                        if node.get("map_index") is not None
+                                        else node.get("index")
+                                    )
+                                    label = str(idx) if idx is not None else ""
+                                    if label:
+                                        tx, ty = rx + 4, ry + 4
+                                        tw, th = _measure_label(label)
+                                        draw.rectangle(
+                                            [tx - 2, ty - 2, tx + tw + 2, ty + th + 2],
+                                            fill=(0, 0, 0, 160),
+                                        )
+                                        draw.text(
+                                            (tx, ty), label, fill=(255, 255, 255, 255), font=font
+                                        )
+                                except Exception:
+                                    continue
+                            out = Image.alpha_composite(orig, overlay_img)
+                            ts = int(time.time())
+                            p = Path(path)
+                            overlay_path = str(p.with_name(f"{p.stem}_overlay_{ts}.png"))
+                            try:
+                                out.save(overlay_path)
+                                use_path = overlay_path
+                            except Exception:
+                                use_path = path
+                    except Exception:
+                        use_path = path
+                    existing.path = use_path  # type: ignore[attr-defined]
                 except Exception:
                     pass
+
+            # Render a simple legend overlay (below the image) showing map indices
+            try:
+                overlay = self.query_one("#browser-preview-overlay", Static)
+            except Exception:
+                overlay = None
+
+            legend_lines = []
+            try:
+                for node in (self.interactive_map_data or [])[:40]:
+                    idx = node.get("map_index") or node.get("index") or ""
+                    name = (node.get("name") or "").strip()
+                    selector = node.get("selector") or node.get("id") or ""
+                    rect = node.get("rect") or {}
+                    coords = (
+                        f"({rect.get('x')},{rect.get('y')} {rect.get('w')}x{rect.get('h')})"
+                        if rect
+                        else ""
+                    )
+                    legend_lines.append(f"[{idx}] {name} {selector} {coords}")
+            except Exception:
+                legend_lines = []
+
+            legend_text = "\n".join(legend_lines) or ""
+            if overlay is None:
+                try:
+                    self.mount(Static(legend_text, id="browser-preview-overlay"))
+                except Exception:
+                    pass
+            else:
+                try:
+                    overlay.update(legend_text)
+                except Exception:
+                    pass
+
             return
         except ImportError:
             pass
 
         # Fallback: show the path + instruction in a styled Static
         fname = path.split("/")[-1] if "/" in path else path
+        # Compose fallback text content and include the interactive map legend
+        legend_lines = []
+        try:
+            for node in (self.interactive_map_data or [])[:40]:
+                idx = node.get("map_index") or node.get("index") or ""
+                name = (node.get("name") or "").strip()
+                selector = node.get("selector") or node.get("id") or ""
+                legend_lines.append(f"[{idx}] {name} {selector}")
+        except Exception:
+            legend_lines = []
+
+        legend_text = "\n".join(legend_lines) or ""
         content_widget.update(
             f"[bold magenta]Browser Screenshot[/bold magenta]\n"
             f"[#ff77ff]{fname}[/#ff77ff]\n"
             f"[dim #aa55aa]{path}[/dim #aa55aa]\n\n"
-            "[dim]Install textual-image for inline preview (pip install textual-image)[/dim]"
+            "[dim]Install textual-image for inline preview (pip install textual-image)[/dim]\n\n"
+            f"{legend_text}"
         )
 
-    def set_screenshot(self, path: str) -> None:
-        """Thread-safe entry point called by the screenshot writer closure."""
-        self.app.call_from_thread(self._set_screenshot_path, path)
+    def set_screenshot(self, path: str, interactive_map: list | None = None) -> None:
+        """Thread-safe entry point called by the screenshot writer closure.
 
-    def _set_screenshot_path(self, path: str) -> None:
+        Accepts an optional ``interactive_map`` list produced by the browser tool.
+        """
+        self.app.call_from_thread(self._set_screenshot_path, path, interactive_map)
+
+    def _set_screenshot_path(self, path: str, interactive_map: list | None = None) -> None:
         self.screenshot_path = path
+        try:
+            self.interactive_map_data = interactive_map or []
+        except Exception:
+            self.interactive_map_data = []
 
 
 # ---------------------------------------------------------------------------
@@ -3203,7 +3441,7 @@ class CAIApp(App):
     def __init__(
         self,
         agent=None,
-        initial_prompt: Optional[str] = None,
+        initial_prompt: str | None = None,
     ) -> None:
         super().__init__()
         self._agent = agent
@@ -3214,15 +3452,15 @@ class CAIApp(App):
         self._initial_prompt = initial_prompt
         self._sidebar_visible = True
         self._available_agents: dict = {}
-        self._active_team: Optional[int] = None
+        self._active_team: int | None = None
         self._queue_items: list[dict] = []
-        self._queue_selected_idx: Optional[int] = None
+        self._queue_selected_idx: int | None = None
         self._queue_running: bool = False
         self._queue_broadcast_mode: bool = False
         self._tool_registry: dict[str, dict] = {}
         self._tool_call_history: list[dict] = []
-        self._selected_tool_id: Optional[str] = None
-        self._selected_tool_call_idx: Optional[int] = None
+        self._selected_tool_id: str | None = None
+        self._selected_tool_call_idx: int | None = None
         self._tool_button_id_to_tool_id: dict[str, str] = {}
         self._tool_tool_id_to_button_id: dict[str, str] = {}
         self._tool_calls_file: str = TOOL_CALLS_FILE
@@ -3238,9 +3476,9 @@ class CAIApp(App):
         self._telemetry_pending_runs: dict[int, dict] = {}
         self._telemetry_pending_tool_calls: dict[str, dict] = {}
         self._telemetry_stats_by_term: dict[int, dict] = {}
-        self._context_snapshot_by_term: dict[int, dict] = (
-            self._load_context_snapshots_latest_by_term()
-        )
+        self._context_snapshot_by_term: dict[
+            int, dict
+        ] = self._load_context_snapshots_latest_by_term()
         self._stats_started_ts: float = time.time()
         self._price_limit_warned: bool = False
         self._price_limit_paused: bool = False
@@ -4597,6 +4835,7 @@ class CAIApp(App):
         # Wire the global screenshot notifier to the BrowserPreview widget
         try:
             from cai.util import set_screenshot_writer
+
             browser_preview = self.query_one("#browser-preview", BrowserPreview)
             set_screenshot_writer(browser_preview.set_screenshot)
         except Exception:
@@ -4611,6 +4850,7 @@ class CAIApp(App):
     def on_unmount(self) -> None:
         try:
             from cai.util import set_screenshot_writer
+
             set_screenshot_writer(None)
         except Exception:
             pass
@@ -4730,8 +4970,8 @@ class CAIApp(App):
                 pass
 
         for idx, tool_id in enumerate(sorted(self._tool_registry.keys()), start=1):
-            meta = self._tool_registry.get(tool_id, {})
-            name = meta.get("name", tool_id)
+            _meta = self._tool_registry.get(tool_id, {})
+            name = _meta.get("name", tool_id)
             btn_id = f"tool-select-{idx}"
             self._tool_button_id_to_tool_id[btn_id] = tool_id
             self._tool_tool_id_to_button_id[tool_id] = btn_id
@@ -5023,7 +5263,7 @@ class CAIApp(App):
             return
 
         try:
-            meta = self._tool_registry.get(tool_id, {})
+            _meta = self._tool_registry.get(tool_id, {})
             output_or_awaitable = runner(params)
             if inspect.isawaitable(output_or_awaitable):
                 output = await output_or_awaitable
@@ -5898,7 +6138,7 @@ class CAIApp(App):
         except Exception:
             self._queue_selected_idx = None
 
-    def _selected_queue_index(self) -> Optional[int]:
+    def _selected_queue_index(self) -> int | None:
         idx = self._queue_selected_idx
         try:
             lv = self.query_one("#queue-list", ListView)
@@ -6239,7 +6479,7 @@ class CAIApp(App):
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
             parallel_cmd = ParallelCommand()
-            current_agent = AGENT_MANAGER.get_active_agent()
+            _current_agent = AGENT_MANAGER.get_active_agent()
             current_agent_name = AGENT_MANAGER._active_agent_name
             if not current_agent_name:
                 return
@@ -6425,7 +6665,7 @@ class CAIApp(App):
         except Exception:
             pass
 
-    def _set_selected_session(self, idx: Optional[int]) -> None:
+    def _set_selected_session(self, idx: int | None) -> None:
         """Set the currently selected session index and update visuals."""
         try:
             self._session_selected_idx = idx
@@ -6521,7 +6761,7 @@ class CAIApp(App):
             except Exception:
                 pass
 
-    def _update_session_preview(self, idx: Optional[int]) -> None:
+    def _update_session_preview(self, idx: int | None) -> None:
         """Update the `#session-preview` Static with token/cost summary and a snippet."""
         try:
             preview = self.query_one("#session-preview", Static)
@@ -6595,7 +6835,7 @@ class CAIApp(App):
             except Exception:
                 pass
 
-    def _infer_agent_from_session_messages(self, messages: list) -> Optional[str]:
+    def _infer_agent_from_session_messages(self, messages: list) -> str | None:
         """Try to infer the best-matching available agent key from session messages.
 
         Heuristic:
@@ -6787,7 +7027,7 @@ class CAIApp(App):
         self._command_palette_recent.insert(0, key)
         self._command_palette_recent = self._command_palette_recent[:20]
 
-    def _selected_or_latest_session_idx(self) -> Optional[int]:
+    def _selected_or_latest_session_idx(self) -> int | None:
         selected = getattr(self, "_session_selected_idx", None)
         if (
             selected is not None
@@ -6929,13 +7169,14 @@ class CAIApp(App):
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-def run_tui(agent=None, initial_prompt: Optional[str] = None) -> None:
+def run_tui(agent=None, initial_prompt: str | None = None) -> None:
     """Launch the Matrix TUI (blocks until the user exits with ^q or /exit)."""
     # Guarantee .env is loaded and LOCAL_* vars are propagated to OPENAI_* before
     # the first agent request fires — even when the TUI is invoked directly without
     # going through cli.py (which normally calls initialize_env() at import time).
     try:
         from cai.bootstrap import initialize_env
+
         initialize_env()
     except Exception:
         pass

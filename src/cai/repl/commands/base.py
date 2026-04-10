@@ -3,7 +3,8 @@ Base module for CAI REPL commands.
 This module provides the base structure for all commands in the CAI REPL.
 """
 
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from rich.console import Console  # pylint: disable=import-error
 
@@ -13,7 +14,7 @@ console = Console()
 class Command:
     """Base class for all commands."""
 
-    def __init__(self, name: str, description: str, aliases: List[str] = None):
+    def __init__(self, name: str, description: str, aliases: list[str] = None):
         """Initialize a command.
 
         Args:
@@ -24,7 +25,7 @@ class Command:
         self.name = name
         self.description = description
         self.aliases = aliases or []
-        self.subcommands: Dict[str, Dict[str, Any]] = {}
+        self.subcommands: dict[str, dict[str, Any]] = {}
 
     def add_subcommand(self, name: str, description: str, handler: Callable):
         """Add a subcommand to this command.
@@ -36,7 +37,7 @@ class Command:
         """
         self.subcommands[name] = {"description": description, "handler": handler}
 
-    def get_subcommands(self) -> List[str]:
+    def get_subcommands(self) -> list[str]:
         """Get a list of all subcommand names.
 
         Returns:
@@ -55,7 +56,7 @@ class Command:
         """
         return self.subcommands.get(subcommand, {}).get("description", "")
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the command.
 
         Args:
@@ -98,8 +99,8 @@ class Command:
 
 
 # Registry for all commands
-COMMANDS: Dict[str, Command] = {}
-COMMAND_ALIASES: Dict[str, str] = {}
+COMMANDS: dict[str, Command] = {}
+COMMAND_ALIASES: dict[str, str] = {}
 
 
 def register_command(command: Command) -> None:
@@ -115,7 +116,7 @@ def register_command(command: Command) -> None:
         COMMAND_ALIASES[alias] = command.name
 
 
-def get_command(name: str) -> Optional[Command]:
+def get_command(name: str) -> Command | None:
     """Get a command by name or alias.
 
     Args:
@@ -130,7 +131,7 @@ def get_command(name: str) -> Optional[Command]:
     return COMMANDS.get(name)
 
 
-def handle_command(command: str, args: Optional[List[str]] = None) -> bool:
+def handle_command(command: str, args: list[str] | None = None) -> bool:
     """Handle a command.
 
     Args:

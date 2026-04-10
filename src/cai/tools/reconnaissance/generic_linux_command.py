@@ -7,7 +7,6 @@ import json
 import os
 import re
 import uuid
-from typing import Optional
 
 from cai.sdk.agents import function_tool
 from cai.tools import validation
@@ -24,7 +23,7 @@ from cai.tools.common import (
 
 @function_tool(strict_mode=False)
 async def generic_linux_command(
-    command: str = "", interactive: bool = False, session_id: Optional[str] = None
+    command: str = "", interactive: bool = False, session_id: str | None = None
 ) -> str:
     """
     Execute commands with session management.
@@ -166,8 +165,8 @@ async def generic_linux_command(
         # - command="session" and session_id="output <id>"
         # - command="session" and session_id="#1" or "S1" or "last"
         parts = command.split()
-        action: Optional[str] = None
-        arg: Optional[str] = None
+        action: str | None = None
+        arg: str | None = None
         if len(parts) > 1:
             action = parts[1]
         if len(parts) > 2:

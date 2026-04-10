@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from typing import Any
 
 from openai import AsyncOpenAI
 
@@ -53,7 +54,7 @@ ctf_agent = Agent(
 
 
 # Complex way to do a handoff
-async def invoke_flag_discriminator(context: RunContextWrapper[Any], args: str = "") -> Agent:
+async def invoke_flag_discriminator(context: Any, args: str = "") -> Agent:
     """
     This function is called when we need to hand off the task to the flag_discriminator.
     """

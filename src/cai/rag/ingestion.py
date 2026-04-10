@@ -17,7 +17,7 @@ import os
 import threading
 import time
 import traceback
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from cai.rag.metrics import collector
 
@@ -36,7 +36,7 @@ class IngestionManager:
         max_retries: int = 3,
         backoff_base: float = 0.2,
         backoff_factor: float = 2.0,
-        ttl_seconds: Optional[int] = None,
+        ttl_seconds: int | None = None,
         retention_interval: int = 3600,
     ):
         self.adapter = adapter
@@ -49,7 +49,7 @@ class IngestionManager:
         self.retention_interval = int(retention_interval)
 
         # queue: list of tuples (collection_name, ids, texts, metadata)
-        self._queue: List[Tuple[str, Any, List[str], List[dict]]] = []
+        self._queue: list[tuple[str, Any, list[str], list[dict]]] = []
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._wakeup = threading.Event()
@@ -69,7 +69,7 @@ class IngestionManager:
             self._retention_thread = None
 
     def enqueue(
-        self, collection: str, id_point: Any, texts: List[str], metadata: List[dict]
+        self, collection: str, id_point: Any, texts: list[str], metadata: list[dict]
     ) -> None:
         with self._lock:
             self._queue.append((collection, id_point, texts, metadata))
@@ -104,7 +104,7 @@ class IngestionManager:
             self._wakeup.wait(self.batch_interval)
             self._wakeup.clear()
             # drain up to batch_size items
-            to_process: List[Tuple[str, Any, List[str], List[dict]]] = []
+            to_process: list[tuple[str, Any, list[str], list[dict]]] = []
             with self._lock:
                 if not self._queue:
                     continue
@@ -114,15 +114,15 @@ class IngestionManager:
                     to_process.append(self._queue.pop(0))
 
             # group by collection
-            grouped: Dict[str, List[Tuple[Any, List[str], List[dict]]]] = {}
+            grouped: dict[str, list[tuple[Any, list[str], list[dict]]]] = {}
             for collection, id_point, texts, metadata in to_process:
                 grouped.setdefault(collection, []).append((id_point, texts, metadata))
 
             for collection, items in grouped.items():
                 # flatten items: combine ids, texts, metadata
-                combined_ids: List[Any] = []
-                combined_texts: List[str] = []
-                combined_meta: List[dict] = []
+                combined_ids: list[Any] = []
+                combined_texts: list[str] = []
+                combined_meta: list[dict] = []
                 for id_point, texts, metadata in items:
                     # id_point can be a single id or list
                     if isinstance(id_point, (list, tuple)):
@@ -245,7 +245,7 @@ class IngestionManager:
 
 
 # Simple registry to reuse ingestion manager per adapter instance
-_INGESTORS: Dict[int, IngestionManager] = {}
+_INGESTORS: dict[int, IngestionManager] = {}
 
 
 def get_ingestor(adapter: Any, **kwargs) -> IngestionManager:

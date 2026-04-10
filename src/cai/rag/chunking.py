@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import struct
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
-def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[Dict[str, Any]]:
+def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list[dict[str, Any]]:
     """Deterministically chunk ``text`` into pieces.
 
     Returns a list of dicts: {"text": str, "start": int, "end": int, "index": int}
@@ -31,7 +31,7 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[Di
         raise ValueError("chunk_size must be > 0")
     step = max(1, chunk_size - max(0, overlap))
 
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     start = 0
     idx = 0
     L = len(txt)
@@ -44,7 +44,7 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[Di
     return out
 
 
-def _embed_fingerprint_from_vec(vec: List[float]) -> Optional[str]:
+def _embed_fingerprint_from_vec(vec: list[float]) -> str | None:
     """Deterministically compute a hex fingerprint from an embedding vector.
 
     Packs floats as big-endian doubles and hashes the byte sequence.
@@ -64,9 +64,9 @@ def _embed_fingerprint_from_vec(vec: List[float]) -> Optional[str]:
 
 
 def fingerprint_chunks(
-    chunks: List[Dict[str, Any]],
-    embeddings: Optional[List[List[float]]] = None,
-) -> List[Dict[str, Any]]:
+    chunks: list[dict[str, Any]],
+    embeddings: list[list[float]] | None = None,
+) -> list[dict[str, Any]]:
     """Given chunk dicts and optional embeddings, compute fingerprints.
 
     Each returned dict augments the chunk with keys:
@@ -75,7 +75,7 @@ def fingerprint_chunks(
       - fingerprint: combined "content:embed" when both present, else content_hash
       - chunk_id: a stable id derived from content_hash + index
     """
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for i, c in enumerate(chunks):
         txt = c.get("text", "")
         try:

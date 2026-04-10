@@ -2,29 +2,28 @@
 Module for CAI REPL session logging.
 """
 
-from pathlib import Path
 import re
 import textwrap
-from typing import Optional
+from pathlib import Path
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.markup import escape as _escape
 from rich import box as _box
+from rich.console import Console
+from rich.markup import escape as _escape
+from rich.panel import Panel
 
 # Map logical style names → (border colour, title markup colour)
 _STYLE_COLOURS = {
     "yellow": ("bold yellow", "bold yellow"),
-    "cyan":   ("bold cyan",   "bold cyan"),
-    "green":  ("bold green",  "bold green"),
-    "red":    ("bold red",    "bold red"),
+    "cyan": ("bold cyan", "bold cyan"),
+    "green": ("bold green", "bold green"),
+    "red": ("bold red", "bold red"),
 }
 
 
 def render_tool_output(
     tool_name: str,
     output: str,
-    agent_name: Optional[str] = None,
+    agent_name: str | None = None,
     style: str = "cyan",
     max_chars: int = 4000,
 ) -> None:
@@ -94,6 +93,7 @@ def render_tool_output(
         )
         try:
             from cai.util import write_panel
+
             write_panel(panel)
         except Exception:
             Console().print(panel)

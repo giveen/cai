@@ -12,17 +12,17 @@ during the refactor while keeping behavior simple and safe.
 from __future__ import annotations
 
 import atexit
+import hashlib
 import importlib.resources
 import json
 import os
 import pathlib
+
 import threading
 import time
-import re
-import textwrap
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional
-import hashlib
+from typing import Any
 
 from rich.console import Console
 from rich.theme import Theme
@@ -36,16 +36,16 @@ console = Console(theme=theme)
 # The TUI sets this to a callable(msg: str, style: str | None) so that
 # auto-compact progress messages are routed to the RichLog widget instead
 # of stdout.  When None, callers fall back to plain console.print().
-_progress_writer: Optional[Callable[[str, Optional[str]], None]] = None
+_progress_writer: Callable[[str, str | None], None] | None = None
 
 # The TUI sets this to a callable(renderable: Any) so that Rich Panels
 # (e.g. the "Intelligence Panel" from display_agent_analysis) are written
 # to the RichLog widget instead of stdout.  When None, callers fall back
 # to Console().print(renderable).
-_panel_writer: Optional[Callable[[Any], None]] = None
+_panel_writer: Callable[[Any], None] | None = None
 
 
-def set_panel_writer(writer: Optional[Callable[[Any], None]]) -> None:
+def set_panel_writer(writer: Callable[[Any], None] | None) -> None:
     """Register (or clear) a global Rich-renderable panel writer.
 
     The callable receives a single ``renderable`` argument (any Rich
@@ -73,10 +73,10 @@ def write_panel(renderable: Any) -> None:
 # The TUI sets this to a callable(visible: bool) so that long-running
 # tool calls (e.g. cewl wordlist generation) can display a LoadingIndicator
 # in the active terminal widget.  When None the callback is silently skipped.
-_tool_loading_writer: Optional[Callable[[bool], None]] = None
+_tool_loading_writer: Callable[[bool], None] | None = None
 
 
-def set_tool_loading_writer(writer: Optional[Callable[[bool], None]]) -> None:
+def set_tool_loading_writer(writer: Callable[[bool], None] | None) -> None:
     """Register (or clear) a global tool-loading state notifier.
 
     The callable receives a single ``visible: bool`` argument — ``True`` to
@@ -97,7 +97,7 @@ def notify_tool_loading(visible: bool) -> None:
             pass
 
 
-def set_progress_writer(writer: Optional[Callable[[str, Optional[str]], None]]) -> None:
+def set_progress_writer(writer: Callable[[str, str | None], None] | None) -> None:
     """Register (or clear) a global progress message writer.
 
     The callable receives ``(msg, style)`` where *style* is an optional Rich
@@ -107,7 +107,7 @@ def set_progress_writer(writer: Optional[Callable[[str, Optional[str]], None]]) 
     _progress_writer = writer
 
 
-def write_progress(msg: str, style: Optional[str] = None) -> None:
+def write_progress(msg: str, style: str | None = None) -> None:
     """Write a progress message via the registered writer or fallback console."""
     global _progress_writer
     if _progress_writer is not None:
@@ -126,36 +126,40 @@ def write_progress(msg: str, style: Optional[str] = None) -> None:
 
 
 # -------------------- Screenshot writer (TUI BrowserPreview) --------------------
-# The TUI sets this to a callable(path: str) so that browser screenshots are
-# routed to the BrowserPreview widget instead of being silently ignored.
-# When None the notification is a no-op.
-_screenshot_writer: Optional[Callable[[str], None]] = None
+# The TUI sets this to a callable(path: str, interactive_map: Optional[list]) so that
+# browser screenshots and their associated interactive map can be routed to the
+# BrowserPreview widget. When None the notification is a no-op.
+_screenshot_writer: Callable[[str, object], None] | None = None
 
 
-def set_screenshot_writer(writer: Optional[Callable[[str], None]]) -> None:
-    """Register (or clear) a global screenshot path notifier.
+def set_screenshot_writer(writer: Callable[[str, object], None] | None) -> None:
+    """Register (or clear) a global screenshot notifier.
 
-    The callable receives the absolute path to the latest screenshot PNG.
-    Pass ``None`` to deregister.
+    The callable receives the absolute path to the latest screenshot PNG and an
+    optional ``interactive_map`` (list of dicts). Pass ``None`` to deregister.
     """
     global _screenshot_writer
     _screenshot_writer = writer
 
 
-def notify_screenshot(path: str) -> None:
-    """Notify the registered screenshot writer of a new screenshot path."""
+def notify_screenshot(path: str, interactive_map: object | None = None) -> None:
+    """Notify the registered screenshot writer of a new screenshot path.
+
+    ``interactive_map`` is an optional list of interactive node dicts produced by
+    the browser tool. Callers may pass ``None`` when no map is available.
+    """
     global _screenshot_writer
     if _screenshot_writer is not None:
         try:
-            _screenshot_writer(path)
+            _screenshot_writer(path, interactive_map)
         except Exception:
             pass
 
 
 # -------------------- Timers (active / idle) --------------------
-_active_timer_start: Optional[float] = None
+_active_timer_start: float | None = None
 _active_time_total: float = 0.0
-_idle_timer_start: Optional[float] = None
+_idle_timer_start: float | None = None
 _idle_time_total: float = 0.0
 _timing_lock = threading.Lock()
 
@@ -248,8 +252,8 @@ LITELLM_URL = (
 class CostTracker:
     session_total_cost: float = 0.0
     current_agent_total_cost: float = 0.0
-    model_pricing_cache: Dict[str, tuple] = field(default_factory=dict)
-    calculated_costs_cache: Dict[str, float] = field(default_factory=dict)
+    model_pricing_cache: dict[str, tuple] = field(default_factory=dict)
+    calculated_costs_cache: dict[str, float] = field(default_factory=dict)
     last_interaction_cost: float = 0.0
 
     def log_final_cost(self) -> None:
@@ -301,7 +305,7 @@ class CostTracker:
         model: str,
         input_tokens: int,
         output_tokens: int,
-        label: Optional[str] = None,
+        label: str | None = None,
         force_calculation: bool = False,
     ) -> float:
         key = f"{model}_{input_tokens}_{output_tokens}"
@@ -337,7 +341,7 @@ def calculate_model_cost(
     model: str,
     input_tokens: int,
     output_tokens: int,
-    label: Optional[str] = None,
+    label: str | None = None,
     force_calculation: bool = False,
 ) -> float:
     try:
@@ -514,8 +518,8 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
 
 # -------------------- Lightweight streaming/CLI helpers (no-op / safe) --------------------
 # These are intentionally minimal so modules importing them don't fail.
-_STREAMING_SESSIONS: Dict[str, Dict[str, Any]] = {}
-_AGENT_STREAMING_CONTEXTS: Dict[str, Dict[str, Any]] = {}
+_STREAMING_SESSIONS: dict[str, dict[str, Any]] = {}
+_AGENT_STREAMING_CONTEXTS: dict[str, dict[str, Any]] = {}
 # Backwards-compatible name used by older modules
 _LIVE_STREAMING_PANELS = _STREAMING_SESSIONS
 
@@ -535,7 +539,9 @@ def _make_callid_key(agent_name: str, call_id: str) -> str:
     return f"{agent_name}:callid:{call_id}"
 
 
-def mark_runitem_rendered(agent_name: str, *, content: str | None = None, call_id: str | None = None) -> None:
+def mark_runitem_rendered(
+    agent_name: str, *, content: str | None = None, call_id: str | None = None
+) -> None:
     try:
         if content:
             _RENDERED_RUNITEM_KEYS.add(_make_content_key(agent_name, content))
@@ -545,7 +551,9 @@ def mark_runitem_rendered(agent_name: str, *, content: str | None = None, call_i
         pass
 
 
-def is_runitem_rendered(agent_name: str, *, content: str | None = None, call_id: str | None = None) -> bool:
+def is_runitem_rendered(
+    agent_name: str, *, content: str | None = None, call_id: str | None = None
+) -> bool:
     try:
         if call_id and _make_callid_key(agent_name, call_id) in _RENDERED_RUNITEM_KEYS:
             return True
@@ -569,8 +577,8 @@ def clear_rendered_runitems_for_agent(agent_name: str) -> None:
 def cli_print_tool_output(
     tool_name: str,
     output: str,
-    call_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
+    call_id: str | None = None,
+    agent_name: str | None = None,
     **_kwargs,
 ) -> None:
     # Always suppress empty output
@@ -647,22 +655,22 @@ def cli_print_tool_output(
 
 # Deduplication state attached to the function itself
 cli_print_tool_output._seen_calls: set = set()  # type: ignore[attr-defined]
-cli_print_tool_output._command_display_times: Dict[str, float] = {}  # type: ignore[attr-defined]
+cli_print_tool_output._command_display_times: dict[str, float] = {}  # type: ignore[attr-defined]
 
 
 def cli_print_tool_call(
     tool_name: str,
-    tool_args: Optional[dict] = None,
-    tool_output: Optional[str] = None,
-    call_id: Optional[str] = None,
+    tool_args: dict | None = None,
+    tool_output: str | None = None,
+    call_id: str | None = None,
     interaction_input_tokens: int = 0,
     interaction_output_tokens: int = 0,
     interaction_reasoning_tokens: int = 0,
     total_input_tokens: int = 0,
     total_output_tokens: int = 0,
     total_reasoning_tokens: int = 0,
-    model: Optional[str] = None,
-    agent_name: Optional[str] = None,
+    model: str | None = None,
+    agent_name: str | None = None,
     debug: bool = False,
     **_kwargs,
 ) -> None:
@@ -693,7 +701,9 @@ def cli_print_tool_call(
         from cai.repl.ui.logging import render_tool_output
 
         if tool_output is None:
-            render_tool_output(tool_name or "tool", "(no output)", agent_name=agent_name, style="cyan")
+            render_tool_output(
+                tool_name or "tool", "(no output)", agent_name=agent_name, style="cyan"
+            )
         else:
             out = str(tool_output)
             display = out if len(out) <= 500 else out[:500] + "…"
@@ -710,7 +720,9 @@ def cli_print_tool_call(
             pass
 
 
-def cli_print_agent_messages(agent_name: str, messages: list | None = None, *args, **_kwargs) -> None:
+def cli_print_agent_messages(
+    agent_name: str, messages: list | None = None, *args, **_kwargs
+) -> None:
     """Print agent messages for the CLI.
 
     Backwards-compatible shim: callers sometimes pass a single ``message``
@@ -729,7 +741,9 @@ def cli_print_agent_messages(agent_name: str, messages: list | None = None, *arg
         else:
             msgs = list(messages)
 
-        suppress = bool(_kwargs.get("suppress_empty", False)) if isinstance(_kwargs, dict) else False
+        suppress = (
+            bool(_kwargs.get("suppress_empty", False)) if isinstance(_kwargs, dict) else False
+        )
 
         if suppress and not msgs:
             return
@@ -907,7 +921,9 @@ def update_tool_streaming(*args, **_kwargs) -> None:
 
     # Fallbacks for chunk if still None
     if chunk is None:
-        chunk = _kwargs.get("content") or _kwargs.get("current_output") or _kwargs.get("chunk") or ""
+        chunk = (
+            _kwargs.get("content") or _kwargs.get("current_output") or _kwargs.get("chunk") or ""
+        )
 
     s = _STREAMING_SESSIONS.get(call_id)
     if s is not None:
@@ -947,7 +963,7 @@ def create_agent_streaming_context(
     counter: int = 0,
     model: str = "",
     **_kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create and register a streaming context for *agent_name*.
 
     Accepts the extra ``counter`` and ``model`` kwargs that
@@ -966,7 +982,7 @@ def create_agent_streaming_context(
 def update_agent_streaming_content(
     agent_name_or_ctx,
     content: str = "",
-    token_stats: Optional[Dict[str, Any]] = None,
+    token_stats: dict[str, Any] | None = None,
     **_kwargs,
 ) -> None:
     """Append *content* to the streaming context and print it to the terminal.
@@ -1000,7 +1016,7 @@ def update_agent_streaming_content(
 
 def finish_agent_streaming(
     agent_name_or_ctx,
-    token_stats: Optional[Dict[str, Any]] = None,
+    token_stats: dict[str, Any] | None = None,
     **_kwargs,
 ) -> None:
     """Finalise the streaming session for *agent_name_or_ctx*.
@@ -1044,8 +1060,8 @@ def cleanup_agent_streaming_resources(agent_name: str) -> None:
 
 # -------------------- Claude thinking helpers (minimal) --------------------
 def start_claude_thinking_if_applicable(
-    agent_name: Optional[str] = None, *_, **__
-) -> Optional[Dict[str, Any]]:
+    agent_name: str | None = None, *_, **__
+) -> dict[str, Any] | None:
     """Return a minimal thinking context when requested by callers.
 
     The real implementation shows a live 'thinking' panel. Here we return
@@ -1193,7 +1209,7 @@ def get_ollama_api_base() -> str:
     )
 
 
-def get_ollama_auth_headers() -> Dict[str, str]:
+def get_ollama_auth_headers() -> dict[str, str]:
     api_key = os.getenv("OLLAMA_API_KEY") or os.getenv("OPENAI_API_KEY")
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
@@ -1210,7 +1226,7 @@ def get_model_name(model: str) -> str:
     return model
 
 
-def get_model_input_tokens(model: str) -> Optional[int]:
+def get_model_input_tokens(model: str) -> int | None:
     # Best-effort mapping for UI; returns None when unknown
     return None
 

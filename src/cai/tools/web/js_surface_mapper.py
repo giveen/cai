@@ -17,7 +17,6 @@ import re
 import time
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests  # type: ignore
@@ -73,25 +72,25 @@ _HIGH_VALUE_STRINGS = [
 
 @dataclass
 class _ExtractionResult:
-    origins: Set[str] = field(default_factory=set)
-    endpoints: Set[str] = field(default_factory=set)
-    graphql_endpoints: Set[str] = field(default_factory=set)
-    graphql_ops: Set[str] = field(default_factory=set)
-    persisted_hashes: Set[str] = field(default_factory=set)
-    ws_endpoints: Set[str] = field(default_factory=set)
-    high_value: Set[str] = field(default_factory=set)
+    origins: set[str] = field(default_factory=set)
+    endpoints: set[str] = field(default_factory=set)
+    graphql_endpoints: set[str] = field(default_factory=set)
+    graphql_ops: set[str] = field(default_factory=set)
+    persisted_hashes: set[str] = field(default_factory=set)
+    ws_endpoints: set[str] = field(default_factory=set)
+    high_value: set[str] = field(default_factory=set)
 
 
 class _AssetHTMLParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
-        self.script_srcs: List[str] = []
-        self.inline_scripts: List[str] = []
+        self.script_srcs: list[str] = []
+        self.inline_scripts: list[str] = []
         self._in_script: bool = False
-        self._current_inline: List[str] = []
-        self.link_hrefs: List[str] = []
+        self._current_inline: list[str] = []
+        self.link_hrefs: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {k.lower(): (v or "") for k, v in attrs}
         if tag.lower() == "script":
             src = attrs_dict.get("src", "").strip()
@@ -139,12 +138,12 @@ def _origin(url: str) -> str:
 
 def _fetch_text(
     url: str,
-    headers: Optional[Dict[str, str]],
-    cookies: Optional[Dict[str, str]],
+    headers: dict[str, str] | None,
+    cookies: dict[str, str] | None,
     timeout: int,
     max_bytes: int,
     verify: bool = True,
-) -> Tuple[str, Optional[str]]:
+) -> tuple[str, str | None]:
     """Fetch URL content, bounded by *max_bytes* and a total wall-clock deadline.
 
     Returns (text, None) on success, or ('', error_string) on failure.
@@ -233,9 +232,9 @@ def _merge_result(target: _ExtractionResult, src: _ExtractionResult) -> None:
 @function_tool(strict_mode=False)
 def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
     base_url: str,
-    entry_paths: Optional[List[str]] = None,
-    headers: Optional[Dict[str, str]] = None,
-    cookies: Optional[Dict[str, str]] = None,
+    entry_paths: list[str] | None = None,
+    headers: dict[str, str] | None = None,
+    cookies: dict[str, str] | None = None,
     same_origin_only: bool = True,
     max_assets: int = 30,
     max_bytes_per_asset: int = 2_000_000,
@@ -268,11 +267,11 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
     base_origin = _origin(base_url)
     entry_paths = entry_paths or ["/"]
 
-    assets: List[str] = []
-    inline_sources: List[Tuple[str, str]] = []
-    errors: List[str] = []
-    evidence: Dict[str, Set[str]] = {}
-    sourcemaps_info: List[Dict[str, object]] = []
+    assets: list[str] = []
+    inline_sources: list[tuple[str, str]] = []
+    errors: list[str] = []
+    evidence: dict[str, set[str]] = {}
+    sourcemaps_info: list[dict[str, object]] = []
 
     # Fetch entry HTML pages
     for path in entry_paths:
@@ -296,8 +295,8 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
             assets.append(full)
 
     # De-dup assets and apply limits
-    seen: Set[str] = set()
-    dedup_assets: List[str] = []
+    seen: set[str] = set()
+    dedup_assets: list[str] = []
     for a in assets:
         if a in seen:
             continue
@@ -368,7 +367,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
                     errors.append(f"{sm_url} -> sourcemap parse error: {exc}")
 
     # Build output
-    endpoints_by_origin: Dict[str, List[str]] = {}
+    endpoints_by_origin: dict[str, list[str]] = {}
     for ep in sorted(extraction.endpoints):
         endpoints_by_origin.setdefault(base_origin, []).append(ep)
 

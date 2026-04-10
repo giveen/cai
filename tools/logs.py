@@ -29,7 +29,6 @@ import re
 import threading
 import time
 from collections import defaultdict
-from typing import Dict, Optional
 
 import folium
 import matplotlib.pyplot as plt
@@ -55,13 +54,13 @@ class RateLimiter:
         self.requests_per_hour = requests_per_hour
         self.requests_per_day = requests_per_day
         # Map of client_ip -> list[timestamp]
-        self.request_history: Dict[str, list] = defaultdict(list)
+        self.request_history: dict[str, list] = defaultdict(list)
 
         # Lock to make rate limiting safe under Flask's threaded mode
         self._lock = threading.Lock()
 
         # Last-seen timestamp per IP, used for eviction
-        self.last_seen: Dict[str, float] = {}
+        self.last_seen: dict[str, float] = {}
 
         # Configurable caps for memory safety
         self.max_ips = int(os.getenv("RATE_LIMIT_MAX_IPS", "10000"))
@@ -264,7 +263,7 @@ class Visualizations:
         self.df = df
         self.config = config
 
-    def create_daily_logs(self) -> Optional[str]:
+    def create_daily_logs(self) -> str | None:
         if not self.config.enable_daily_logs:
             return None
 
@@ -332,7 +331,7 @@ class Visualizations:
         plt.tight_layout()
         return self._get_plot_base64()
 
-    def create_system_distribution(self) -> Optional[str]:
+    def create_system_distribution(self) -> str | None:
         if not self.config.enable_system_dist:
             return None
 
@@ -353,7 +352,7 @@ class Visualizations:
         plt.tight_layout()
         return self._get_plot_base64()
 
-    def create_user_activity(self) -> Optional[str]:
+    def create_user_activity(self) -> str | None:
         if not self.config.enable_user_activity:
             return None
 
@@ -373,7 +372,7 @@ class Visualizations:
         plt.tight_layout()
         return self._get_plot_base64()
 
-    def create_map(self) -> Optional[str]:
+    def create_map(self) -> str | None:
         if not self.config.enable_map:
             return None
 
@@ -387,7 +386,7 @@ class Visualizations:
             ).add_to(m)
         return m._repr_html_()
 
-    def create_ip_date_heatmap(self) -> Optional[str]:
+    def create_ip_date_heatmap(self) -> str | None:
         # Only create if there are valid IPs (not 'disabled')
         df = self.df[self.df["ip_address"] != "disabled"].copy()
         if df.empty:

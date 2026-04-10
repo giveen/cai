@@ -5,10 +5,8 @@ agent display and accounting information. Kept as a thin compatibility
 helper so callers in `common` can import it.
 """
 
-from typing import Dict
 
-
-def _get_agent_token_info() -> Dict:
+def _get_agent_token_info() -> dict:
     """Get current agent's token information from the active model instance.
 
     Returns a dict with keys matching the previous implementation in

@@ -1,4 +1,3 @@
-import os
 from unittest.mock import MagicMock
 
 import cai.repl.loop.agent_sync as agent_sync

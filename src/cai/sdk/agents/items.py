@@ -58,7 +58,7 @@ except Exception:
             return {}
 
 
-from typing_extensions import TypeAlias
+from typing import TypeAlias
 
 from .exceptions import AgentsException, ModelBehaviorError
 from .usage import Usage

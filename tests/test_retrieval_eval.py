@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
 from cai.rag.retriever_pipeline import (
@@ -12,7 +12,7 @@ from cai.rag.vector_db_adapter import LocalFallbackAdapter
 
 def _build_synthetic_dataset(
     num_docs: int = 50, num_topics: int = 5, vector_dim: int = 64
-) -> Tuple[LocalFallbackAdapter, List[Dict[str, Any]], List[str], List[str]]:
+) -> tuple[LocalFallbackAdapter, list[dict[str, Any]], list[str], list[str]]:
     """Create a small deterministic dataset and return adapter, docs, queries, ground_truth_ids.
 
     Returns:
@@ -62,8 +62,8 @@ def _build_synthetic_dataset(
 
 
 def _evaluate_recall(
-    adapter, docs, queries: List[str], gt_ids: List[str], provider, top_ks=(1, 3, 5)
-) -> Dict[str, List[float]]:
+    adapter, docs, queries: list[str], gt_ids: list[str], provider, top_ks=(1, 3, 5)
+) -> dict[str, list[float]]:
     max_k = max(top_ks)
     # retrievers
     dense = DenseRetriever(adapter, collection_name="test_coll")
@@ -86,7 +86,7 @@ def _evaluate_recall(
         ),
     }
 
-    results: Dict[str, List[float]] = {name: [0.0 for _ in top_ks] for name in pipelines.keys()}
+    results: dict[str, list[float]] = {name: [0.0 for _ in top_ks] for name in pipelines.keys()}
     total = len(queries)
 
     for q, gt in zip(queries, gt_ids):

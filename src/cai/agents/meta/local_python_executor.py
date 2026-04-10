@@ -29,10 +29,10 @@ import inspect
 import logging
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from importlib import import_module
 from types import ModuleType
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -257,10 +257,10 @@ def fix_final_answer_code(code: str) -> str:
 
 def evaluate_unaryop(
     expression: ast.UnaryOp,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     operand = evaluate_ast(
         expression.operand, state, static_tools, custom_tools, authorized_imports
@@ -281,10 +281,10 @@ def evaluate_unaryop(
 
 def evaluate_lambda(
     lambda_expression: ast.Lambda,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Callable:
     args = [arg.arg for arg in lambda_expression.args.args]
 
@@ -305,10 +305,10 @@ def evaluate_lambda(
 
 def evaluate_while(
     while_loop: ast.While,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> None:
     iterations = 0
     while evaluate_ast(while_loop.test, state, static_tools, custom_tools, authorized_imports):
@@ -329,10 +329,10 @@ def evaluate_while(
 
 def create_function(
     func_def: ast.FunctionDef,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Callable:
     def new_func(*args: Any, **kwargs: Any) -> Any:
         func_state = state.copy()
@@ -392,10 +392,10 @@ def create_function(
 
 def evaluate_function_def(
     func_def: ast.FunctionDef,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Callable:
     custom_tools[func_def.name] = create_function(
         func_def, state, static_tools, custom_tools, authorized_imports
@@ -405,10 +405,10 @@ def evaluate_function_def(
 
 def evaluate_class_def(
     class_def: ast.ClassDef,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> type:
     class_name = class_def.name
     bases = [
@@ -452,10 +452,10 @@ def evaluate_class_def(
 
 def evaluate_augassign(
     expression: ast.AugAssign,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     def get_current_value(target: ast.AST) -> Any:
         if isinstance(target, ast.Name):
@@ -536,10 +536,10 @@ def evaluate_augassign(
 
 def evaluate_boolop(
     node: ast.BoolOp,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> bool:
     if isinstance(node.op, ast.And):
         for value in node.values:
@@ -555,10 +555,10 @@ def evaluate_boolop(
 
 def evaluate_binop(
     binop: ast.BinOp,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     # Recursively evaluate the left and right operands
     left_val = evaluate_ast(binop.left, state, static_tools, custom_tools, authorized_imports)
@@ -608,10 +608,10 @@ def evaluate_binop(
 
 def evaluate_assign(
     assign: ast.Assign,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     result = evaluate_ast(assign.value, state, static_tools, custom_tools, authorized_imports)
     if len(assign.targets) == 1:
@@ -636,10 +636,10 @@ def evaluate_assign(
 def set_value(
     target: ast.AST,
     value: Any,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> None:
     if isinstance(target, ast.Name):
         if target.id in static_tools:
@@ -668,10 +668,10 @@ def set_value(
 
 def evaluate_call(
     call: ast.Call,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     if not (
         isinstance(call.func, ast.Attribute)
@@ -766,10 +766,10 @@ def evaluate_call(
 
 def evaluate_subscript(
     subscript: ast.Subscript,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     index = evaluate_ast(subscript.slice, state, static_tools, custom_tools, authorized_imports)
     value = evaluate_ast(subscript.value, state, static_tools, custom_tools, authorized_imports)
@@ -813,10 +813,10 @@ def evaluate_subscript(
 
 def evaluate_name(
     name: ast.Name,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     if name.id in state:
         return state[name.id]
@@ -834,10 +834,10 @@ def evaluate_name(
 
 def evaluate_condition(
     condition: ast.Compare,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> bool | object:
     result = True
     left = evaluate_ast(condition.left, state, static_tools, custom_tools, authorized_imports)
@@ -876,10 +876,10 @@ def evaluate_condition(
 
 def evaluate_if(
     if_statement: ast.If,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     result = None
     test_result = evaluate_ast(
@@ -900,10 +900,10 @@ def evaluate_if(
 
 def evaluate_for(
     for_loop: ast.For,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> Any:
     result = None
     iterator = evaluate_ast(for_loop.iter, state, static_tools, custom_tools, authorized_imports)
@@ -935,14 +935,14 @@ def evaluate_for(
 
 def evaluate_listcomp(
     listcomp: ast.ListComp,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
-) -> List[Any]:
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
+) -> list[Any]:
     def inner_evaluate(
-        generators: List[ast.comprehension], index: int, current_state: Dict[str, Any]
-    ) -> List[Any]:
+        generators: list[ast.comprehension], index: int, current_state: dict[str, Any]
+    ) -> list[Any]:
         if index >= len(generators):
             return [
                 evaluate_ast(
@@ -981,10 +981,10 @@ def evaluate_listcomp(
 
 def evaluate_try(
     try_node: ast.Try,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> None:
     try:
         for stmt in try_node.body:
@@ -1016,10 +1016,10 @@ def evaluate_try(
 
 def evaluate_raise(
     raise_node: ast.Raise,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> None:
     if raise_node.exc is not None:
         exc = evaluate_ast(raise_node.exc, state, static_tools, custom_tools, authorized_imports)
@@ -1042,10 +1042,10 @@ def evaluate_raise(
 
 def evaluate_assert(
     assert_node: ast.Assert,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> None:
     test_result = evaluate_ast(
         assert_node.test, state, static_tools, custom_tools, authorized_imports
@@ -1064,10 +1064,10 @@ def evaluate_assert(
 
 def evaluate_with(
     with_node: ast.With,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> None:
     contexts = []
     for item in with_node.items:
@@ -1201,11 +1201,11 @@ def import_modules(expression, state, authorized_imports):
 
 def evaluate_dictcomp(
     dictcomp: ast.DictComp,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
-) -> Dict[Any, Any]:
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
+) -> dict[Any, Any]:
     result = {}
     for gen in dictcomp.generators:
         iter_value = evaluate_ast(gen.iter, state, static_tools, custom_tools, authorized_imports)
@@ -1243,10 +1243,10 @@ def evaluate_dictcomp(
 
 def evaluate_delete(
     delete_node: ast.Delete,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str],
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str],
 ) -> None:
     """
     Evaluate a delete statement (del x, del x[y]).
@@ -1281,10 +1281,10 @@ def evaluate_delete(
 
 def evaluate_ast(
     expression: ast.AST,
-    state: Dict[str, Any],
-    static_tools: Dict[str, Callable],
-    custom_tools: Dict[str, Callable],
-    authorized_imports: List[str] = BASE_BUILTIN_MODULES,
+    state: dict[str, Any],
+    static_tools: dict[str, Callable],
+    custom_tools: dict[str, Callable],
+    authorized_imports: list[str] = BASE_BUILTIN_MODULES,
 ):
     """
     Evaluate an abstract syntax tree using the content of the variables stored in a state and only evaluating a given
@@ -1444,10 +1444,10 @@ class FinalAnswerException(Exception):
 
 def evaluate_python_code(
     code: str,
-    static_tools: Optional[Dict[str, Callable]] = None,
-    custom_tools: Optional[Dict[str, Callable]] = None,
-    state: Optional[Dict[str, Any]] = None,
-    authorized_imports: List[str] = BASE_BUILTIN_MODULES,
+    static_tools: dict[str, Callable] | None = None,
+    custom_tools: dict[str, Callable] | None = None,
+    state: dict[str, Any] | None = None,
+    authorized_imports: list[str] = BASE_BUILTIN_MODULES,
     max_print_outputs_length: int = DEFAULT_MAX_LEN_OUTPUT,
 ):
     """
@@ -1518,9 +1518,9 @@ def evaluate_python_code(
 class LocalPythonInterpreter:
     def __init__(
         self,
-        additional_authorized_imports: List[str],
-        tools: Dict,
-        max_print_outputs_length: Optional[int] = None,
+        additional_authorized_imports: list[str],
+        tools: dict,
+        max_print_outputs_length: int | None = None,
     ):
         self.custom_tools = {}
         self.state = {}
@@ -1552,7 +1552,7 @@ class LocalPythonInterpreter:
                 )
         self.authorized_imports = validated_imports
 
-    def __call__(self, code_action: str, additional_variables: Dict) -> Tuple[Any, str, bool]:
+    def __call__(self, code_action: str, additional_variables: dict) -> tuple[Any, str, bool]:
         self.state.update(additional_variables)
         output, is_final_answer = evaluate_python_code(
             code_action,

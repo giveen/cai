@@ -9,7 +9,7 @@ import json
 import os
 import subprocess
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import rich.box
 from rich.console import Console
@@ -85,7 +85,7 @@ class DockerManager:
             return False
 
     @staticmethod
-    def get_container_list() -> List[Dict[str, Any]]:
+    def get_container_list() -> list[dict[str, Any]]:
         """Get a list of running Docker containers.
 
         Returns:
@@ -112,7 +112,7 @@ class DockerManager:
             return []
 
     @staticmethod
-    def get_images_list() -> List[Dict[str, Any]]:
+    def get_images_list() -> list[dict[str, Any]]:
         """Get a list of Docker images.
 
         Returns:
@@ -139,7 +139,7 @@ class DockerManager:
             return []
 
     @staticmethod
-    def pull_image(image_name: str) -> Tuple[bool, str]:
+    def pull_image(image_name: str) -> tuple[bool, str]:
         """Pull a Docker image.
 
         Args:
@@ -172,7 +172,7 @@ class DockerManager:
             return False, f"Error pulling image: {str(e)}"
 
     @staticmethod
-    def run_container(image_name: str, container_name: str = None) -> Tuple[bool, str]:
+    def run_container(image_name: str, container_name: str = None) -> tuple[bool, str]:
         """Run a Docker container.
 
         Args:
@@ -828,7 +828,7 @@ class VirtualizationCommand(Command):
         self.add_subcommand("pull", "Pull a Docker image", self.handle_pull_subcommand)
         self.add_subcommand("run", "Run a Docker container", self.handle_run_subcommand)
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the virtualization command.
 
         Args:
@@ -1028,9 +1028,7 @@ class VirtualizationCommand(Command):
             else "[dim]Available[/dim]"
         )
         display_host = (
-            "💻 [bold green]Host System ⭐ ACTIVE[/bold green]"
-            if is_host_active
-            else "💻 Host System"
+            "💻 [bold green]Host System ⭐ ACTIVE[/bold green]" if is_host_active else "💻 Host System"
         )
 
         image_table.add_row(
@@ -1250,7 +1248,7 @@ class VirtualizationCommand(Command):
             "[dim]When a container is active, all shell commands will execute inside that container. LLM commands will also be executed in this environment.[/dim]"
         )
 
-    def handle_pull_subcommand(self, args: Optional[List[str]] = None) -> bool:
+    def handle_pull_subcommand(self, args: list[str] | None = None) -> bool:
         """Handle the pull subcommand.
 
         Args:
@@ -1290,7 +1288,7 @@ class VirtualizationCommand(Command):
 
         return success
 
-    def handle_run_subcommand(self, args: Optional[List[str]] = None) -> bool:
+    def handle_run_subcommand(self, args: list[str] | None = None) -> bool:
         """Handle the run subcommand.
 
         Args:

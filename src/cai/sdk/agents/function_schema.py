@@ -4,8 +4,9 @@ import contextlib
 import inspect
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, get_args, get_origin, get_type_hints
+from typing import Any, Literal, get_args, get_origin, get_type_hints
 
 from griffe import Docstring, DocstringSectionKind
 from pydantic import BaseModel, Field, create_model

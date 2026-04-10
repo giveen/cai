@@ -46,9 +46,9 @@ def _assert_tool_follows_assistant(result, tool_call_id):
         and m.get("tool_calls")
         and any(tc["id"] == tool_call_id for tc in m["tool_calls"])
     )
-    assert tool_idx > asst_idx, (
-        f"Tool {tool_call_id} at index {tool_idx} should follow assistant at index {asst_idx}"
-    )
+    assert (
+        tool_idx > asst_idx
+    ), f"Tool {tool_call_id} at index {tool_idx} should follow assistant at index {asst_idx}"
 
 
 def test_two_tool_responses_reversed_order():

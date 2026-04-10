@@ -3,7 +3,6 @@ Here are the CLI tools for executing commands.
 """
 
 import shlex
-from typing import List
 
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
@@ -99,7 +98,7 @@ def find_file(file_path: str, args: str = "", ctf=None) -> str:
     """
     # Block dangerous flags that enable RCE, file writes, or deletion
     try:
-        args_tokens: List[str] = shlex.split(args) if args else []
+        args_tokens: list[str] = shlex.split(args) if args else []
     except Exception:
         args_tokens = [args]
 

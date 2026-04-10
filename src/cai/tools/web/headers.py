@@ -87,6 +87,7 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
         # Caller-supplied values take precedence.
         try:
             from cai.util.orchestration import get_pinned_cookie
+
             _pinned = get_pinned_cookie()
             if _pinned:
                 pinned_dict = {}

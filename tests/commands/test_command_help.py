@@ -375,14 +375,12 @@ class TestHelpCommand:
         assert result is True
         assert mock_console.print.call_count >= 1
         # Check that one of the print calls contains the expected message
-        found_message = False
         all_content = []
         for call in mock_console.print.call_args_list:
             call_args = call[0][0]
             content = str(call_args.renderable if hasattr(call_args, "renderable") else call_args)
             all_content.append(content)
             if "No platforms registered" in content or "no platforms" in content.lower():
-                found_message = True
                 break
         # The implementation might have changed, so let's just check that it printed something reasonable
         assert len(all_content) > 0, "No content was printed"

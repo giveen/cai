@@ -298,7 +298,8 @@ class OpenAIResponsesModel(Model):
         output_schema: AgentOutputSchema | None,
         handoffs: list[Handoff],
         stream: Literal[True],
-    ) -> AsyncStream[ResponseStreamEvent]: ...
+    ) -> AsyncStream[ResponseStreamEvent]:
+        ...
 
     @overload
     async def _fetch_response(
@@ -310,7 +311,8 @@ class OpenAIResponsesModel(Model):
         output_schema: AgentOutputSchema | None,
         handoffs: list[Handoff],
         stream: Literal[False],
-    ) -> Response: ...
+    ) -> Response:
+        ...
 
     async def _fetch_response(
         self,

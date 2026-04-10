@@ -107,6 +107,7 @@ def sqlmap(
     # Merge pinned session cookie (caller-supplied value takes precedence).
     try:
         from cai.util.orchestration import merge_pinned_cookie
+
         cookie = merge_pinned_cookie(cookie)
     except Exception:
         pass

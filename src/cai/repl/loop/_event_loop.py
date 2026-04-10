@@ -47,6 +47,7 @@ def run_async(coro: Any) -> Any:
         # Cannot call run_until_complete on a running loop.  Create a fresh
         # dedicated loop for this call so the caller doesn't crash silently.
         import sys
+
         sys.stderr.write(
             "[CAI WARNING] run_async: event loop already running — "
             "spinning a fresh loop for this call.\n"

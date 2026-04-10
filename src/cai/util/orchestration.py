@@ -16,12 +16,10 @@ import os
 import re
 import threading
 import time
-from typing import Optional
 
 from rich.console import Console
 
 from cai.repl.ui.metrics import display_session_report
-
 
 # ---------------------------------------------------------------------------
 # Session-cookie pinning
@@ -94,9 +92,7 @@ def merge_pinned_cookie(existing_cookie: str) -> str:
 
 
 # Regex matching CLI tools that accept a --cookie / -b flag
-_COOKIE_TOOLS = re.compile(
-    r"^\s*(?:curl|wget|sqlmap|cewl|httpie|http|wfuzz|gobuster|ffuf)\b"
-)
+_COOKIE_TOOLS = re.compile(r"^\s*(?:curl|wget|sqlmap|cewl|httpie|http|wfuzz|gobuster|ffuf)\b")
 # Already has a cookie arg? (don't double-inject)
 _HAS_COOKIE_ARG = re.compile(
     r"(?:^|\s)(?:--cookie[= ]|-b\s|--header[= ]['\"]?Cookie:)",
@@ -356,7 +352,7 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     return processed_messages
 
 
-def notify_auto_compact_enabled(console: Optional[Console] = None) -> None:
+def notify_auto_compact_enabled(console: Console | None = None) -> None:
     """Notify the user at startup when auto-compact is enabled via env vars."""
     if console is None:
         console = Console()
@@ -376,7 +372,7 @@ def maybe_auto_compact(
     agent,
     console: Console,
     last_user_input: str,
-    post_compact_input: Optional[str],
+    post_compact_input: str | None,
     skip_auto_compact_after_interrupt: bool,
     parallel_count: int,
 ):
@@ -445,7 +441,7 @@ def maybe_auto_compact(
     return agent, post_compact_input, skip_auto_compact_after_interrupt
 
 
-def create_last_log_symlink(log_filename: Optional[str]) -> None:
+def create_last_log_symlink(log_filename: str | None) -> None:
     """Create/update the `logs/last` symlink pointing to the current log file."""
     try:
         from pathlib import Path
@@ -495,14 +491,14 @@ def start_cli_loop(
     # Reuse most of the original function's local variable names for compatibility
     agent = starting_agent
     turn_count = 0
-    idle_time = 0
-    _post_compact_input: Optional[str] = None
+    _idle_time = 0
+    _post_compact_input: str | None = None
     _last_user_input: str = ""
     _skip_auto_compact_after_interrupt = False
-    last_model = os.getenv("CAI_MODEL", "alias1")
+    _last_model = os.getenv("CAI_MODEL", "alias1")
     last_agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
-    parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
-    use_initial_prompt = initial_prompt is not None
+    _parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
+    _use_initial_prompt = initial_prompt is not None
 
     # Reset cost tracking and agent registry
     from cai.util import COST_TRACKER
@@ -515,10 +511,10 @@ def start_cli_loop(
     AGENT_MANAGER.switch_to_single_agent(starting_agent, starting_agent_name)
 
     # Initialize utilities
-    command_completer = FuzzyCommandCompleter()
+    _command_completer = FuzzyCommandCompleter()
     current_text = [""]
-    kb = create_key_bindings(current_text)
-    history_file = setup_session_logging()
+    _kb = create_key_bindings(current_text)
+    _history_file = setup_session_logging()
     session_logger = get_session_recorder()
 
     GLOBAL_USAGE_TRACKER.start_session(session_id=session_logger.session_id, agent_name=None)
@@ -529,8 +525,8 @@ def start_cli_loop(
     display_quick_guide(console)
     notify_auto_compact_enabled(console)
 
-    prev_max_turns = max_turns
-    turn_limit_reached = False
+    _prev_max_turns = max_turns
+    _turn_limit_reached = False
 
     while True:
         # The core main-loop logic closely follows the original implementation
@@ -545,7 +541,7 @@ def start_cli_loop(
             )
 
             start_idle_timer()
-            idle_start_time = time.time()
+            _idle_start_time = time.time()
 
             # (Truncated) - For brevity the full loop mirrors the original
             # implementation and uses the helpers defined above such as
@@ -793,11 +789,11 @@ def handle_post_turn(
     agent,
     console: Console,
     last_user_input: str,
-    post_compact_input: Optional[str],
+    post_compact_input: str | None,
     skip_auto_compact_after_interrupt: bool,
     parallel_count: int,
     session_logger=None,
-    start_time: Optional[float] = None,
+    start_time: float | None = None,
     idle_time: int = 0,
 ):
     """Perform end-of-turn orchestration for an agent.

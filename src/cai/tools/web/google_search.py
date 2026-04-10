@@ -7,7 +7,6 @@ This module provides functions to perform Google searches in two modes:
 """
 
 import os
-from typing import Dict, List
 
 import requests
 from dotenv import load_dotenv
@@ -68,7 +67,7 @@ def google_dork_search(dork_query: str, num_results: int = 100) -> str:
 
 def _perform_search(
     query: str, num_results: int = 10, is_dork: bool = False
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     """
     Helper function to perform Google searches.
 

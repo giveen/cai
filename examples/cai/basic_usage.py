@@ -52,7 +52,7 @@ async def main_streamed():
 
     # Process the streaming response events
     event_count = 0
-    start_time = time.time()
+    _ = time.time()
 
     # Process the streaming response
     async for event in result.stream_events():

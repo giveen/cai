@@ -16,7 +16,7 @@ Usage in ``_run_cai_cli_impl`` (after the refactor is complete)::
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -33,7 +33,7 @@ class CliSessionState:
     idle_start_time: float = 0.0
 
     # -------------------------------------------------- inter-iteration signals
-    _post_compact_input: Optional[str] = None
+    _post_compact_input: str | None = None
     """Replay message set by auto-compact so the agent can continue without
     waiting for the user to re-type the task."""
 
@@ -59,15 +59,15 @@ class CliSessionState:
     command_completer: Any = field(default=None, repr=False)
     current_text: Any = field(default_factory=lambda: [""], repr=False)
     kb: Any = field(default=None, repr=False)
-    history_file: Optional[str] = None
+    history_file: str | None = None
     session_logger: Any = field(default=None, repr=False)
 
     # --------------------------------------------------------- CTF integration
     force_until_flag: bool = False
-    initial_prompt: Optional[str] = None
+    initial_prompt: str | None = None
 
     # ------------------------------------------- Universal Local API settings
-    local_api_base: Optional[str] = field(default=None)
+    local_api_base: str | None = field(default=None)
     """Resolved base URL for the active local API server.
 
     Priority chain (highest to lowest):

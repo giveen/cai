@@ -7,7 +7,6 @@ delegate session-summary rendering to this focused module.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from rich.console import Console
 
@@ -19,7 +18,7 @@ def format_time(seconds: float) -> str:
     return f"{hours:02d}:{mins:02d}:{secs:02d}"
 
 
-def display_session_report(session_logger, console: Optional[Console] = None) -> dict:
+def display_session_report(session_logger, console: Console | None = None) -> dict:
     """Compute and print a session summary panel.
 
     Returns the computed metrics dictionary for callers that need it.
@@ -106,7 +105,7 @@ def display_session_report(session_logger, console: Optional[Console] = None) ->
 __all__ = ["display_session_report", "format_time"]
 
 
-def handle_keyboard_interrupt(session_logger, console: Optional[Console] = None) -> dict:
+def handle_keyboard_interrupt(session_logger, console: Console | None = None) -> dict:
     """Handle KeyboardInterrupt timing and render the session report.
 
     Stops active timing, starts idle timing and prints the session summary.
