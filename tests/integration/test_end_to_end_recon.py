@@ -1,12 +1,17 @@
-import time
-import random
 import datetime as _dt
+import random
+import time
 
 import pytest
 
-from cai.rag.vector_db_adapter import LocalFallbackAdapter
-from cai.rag.retriever_pipeline import DenseRetriever, SimpleBM25, RetrieverCombiner, RetrieverPipeline
 from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
+from cai.rag.retriever_pipeline import (
+    DenseRetriever,
+    RetrieverCombiner,
+    RetrieverPipeline,
+    SimpleBM25,
+)
+from cai.rag.vector_db_adapter import LocalFallbackAdapter
 
 
 @pytest.mark.integration
@@ -50,8 +55,10 @@ def test_end_to_end_recon_hybrid_prioritizes_recent(tmp_path, monkeypatch):
         specials.append((t, m))
 
     # most-recent valid l.wilson entry (should be prioritized)
-    valid_text = f"SMB access: l.wilson password: VALID_HASH_LW_ABC123 - successful login"
-    valid_meta = {"provenance": {"timestamp": now_ts, "source": "test", "original_text": valid_text}}
+    valid_text = "SMB access: l.wilson password: VALID_HASH_LW_ABC123 - successful login"
+    valid_meta = {
+        "provenance": {"timestamp": now_ts, "source": "test", "original_text": valid_text}
+    }
     specials.append((valid_text, valid_meta))
 
     # Fill up to ~500 lines with noisy logs
@@ -59,7 +66,7 @@ def test_end_to_end_recon_hybrid_prioritizes_recent(tmp_path, monkeypatch):
     filler_count = total - len(specials)
     fillers = []
     for i in range(filler_count):
-        t = f"Random log entry {i} user=usr{random.randint(0,9999)} event={random.choice(['connect','disconnect','timeout'])}"
+        t = f"Random log entry {i} user=usr{random.randint(0, 9999)} event={random.choice(['connect', 'disconnect', 'timeout'])}"
         # stagger timestamps across older..now range
         ts = (older + _dt.timedelta(seconds=i)).isoformat() + "Z"
         m = {"provenance": {"timestamp": ts, "source": "test", "original_text": t}}
@@ -97,7 +104,7 @@ def test_end_to_end_recon_hybrid_prioritizes_recent(tmp_path, monkeypatch):
     res = pipeline.retrieve("l.wilson password", top_k=10)
     assert isinstance(res, list)
     assert len(res) > 0
-    texts = [ (r.get("text") or "") for r in res ]
+    texts = [(r.get("text") or "") for r in res]
 
     # locate valid and older invalid entries in the returned list
     valid_idx = next((i for i, t in enumerate(texts) if "VALID_HASH_LW_ABC123" in t), None)

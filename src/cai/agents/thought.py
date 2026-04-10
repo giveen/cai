@@ -5,14 +5,17 @@ using reasoner as a tool call
 
 support meta agent may better @cai.sdk.agents.meta.reasoner_support
 """
-from cai.tools.misc.reasoning import think
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
+from cai.tools.misc.reasoning import think
+
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
-from cai.util import load_prompt_template, create_system_prompt_renderer
 import os
+
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 # Determine API key
 api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
@@ -31,7 +34,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:

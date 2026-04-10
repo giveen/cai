@@ -1,31 +1,30 @@
 """
 This is used to create a generic linux command.
 """
-import os
-import uuid
-import re
-import json
+
 import ast
-import unicodedata
-from typing import Optional
-from cai.tools.common import (run_command, run_command_async,
-                              list_shell_sessions,
-                              get_session_output,
-                              terminate_session,
-                              _resolve_session_id,
-                              ACTIVE_SESSIONS)  # pylint: disable=import-error # noqa E501
+import json
+import os
+import re
+import uuid
+
 from cai.sdk.agents import function_tool
-from wasabi.util import color  # pylint: disable=import-error
 from cai.tools import validation
-
-
-
+from cai.tools.common import (
+    ACTIVE_SESSIONS,  # pylint: disable=import-error # noqa E501
+    _resolve_session_id,
+    get_session_output,
+    list_shell_sessions,
+    run_command,
+    run_command_async,
+    terminate_session,
+)
 
 
 @function_tool(strict_mode=False)
-async def generic_linux_command(command: str = "",
-                                interactive: bool = False,
-                                session_id: Optional[str] = None) -> str:
+async def generic_linux_command(
+    command: str = "", interactive: bool = False, session_id: str | None = None
+) -> str:
     """
     Execute commands with session management.
 
@@ -64,6 +63,7 @@ async def generic_linux_command(command: str = "",
     """
     # Handle special session management commands (tolerant parser)
     cmd_lower = command.strip().lower()
+
     # Normalize session_id robustly: handle dict/list/bool, JSON-like strings,
     # and extract common id fields when present. Empty objects/arrays and
     # sentinel strings ('null','none','{}') become None.
@@ -107,7 +107,7 @@ async def generic_linux_command(command: str = "",
                 s = s[1:-1].strip()
 
             # If looks like JSON/Python literal, try to parse and extract
-            if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
+            if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
                 try:
                     parsed = json.loads(s)
                     return _sanitize_session_id(parsed)
@@ -130,7 +130,7 @@ async def generic_linux_command(command: str = "",
             if s == "" or low in {"none", "null", "nil", "undefined"}:
                 return None
             # braces/brackets-only
-            if re.fullmatch(r'[\{\}\[\]\s]*', s):
+            if re.fullmatch(r"[\{\}\[\]\s]*", s):
                 return None
 
             return s
@@ -149,7 +149,7 @@ async def generic_linux_command(command: str = "",
             return "No active sessions"
         lines = ["Active sessions:"]
         for s in sessions:
-            fid = s.get('friendly_id') or ""
+            fid = s.get("friendly_id") or ""
             fid_show = (fid + " ") if fid else ""
             lines.append(
                 f"{fid_show}({s['session_id'][:8]}) cmd='{s['command']}' last={s['last_activity']} running={s['running']}"
@@ -165,8 +165,8 @@ async def generic_linux_command(command: str = "",
         # - command="session" and session_id="output <id>"
         # - command="session" and session_id="#1" or "S1" or "last"
         parts = command.split()
-        action: Optional[str] = None
-        arg: Optional[str] = None
+        action: str | None = None
+        arg: str | None = None
         if len(parts) > 1:
             action = parts[1]
         if len(parts) > 2:
@@ -191,7 +191,7 @@ async def generic_linux_command(command: str = "",
                 return "No active sessions"
             lines = ["Active sessions:"]
             for s in sessions:
-                fid = s.get('friendly_id') or ""
+                fid = s.get("friendly_id") or ""
                 fid_show = (fid + " ") if fid else ""
                 lines.append(
                     f"{fid_show}({s['session_id'][:8]}) cmd='{s['command']}' last={s['last_activity']} running={s['running']}"
@@ -215,40 +215,42 @@ async def generic_linux_command(command: str = "",
     # Handle environment information command
     if command.strip() == "env info" or command.strip() == "environment info":
         env_info = []
-        
+
         # Check CTF environment
         try:
             from cai.cli import ctf_global
-            if ctf_global and hasattr(ctf_global, 'get_shell'):
+
+            if ctf_global and hasattr(ctf_global, "get_shell"):
                 env_info.append("🎯 CTF Environment: Active")
             else:
                 env_info.append("🎯 CTF Environment: Not available")
         except Exception:
             env_info.append("🎯 CTF Environment: Not available")
-        
+
         # Check Container environment
         active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
         if active_container:
             env_info.append(f"🐳 Container: {active_container[:12]}")
         else:
             env_info.append("🐳 Container: Not active")
-        
+
         # Check SSH environment
-        ssh_user = os.getenv('SSH_USER')
-        ssh_host = os.getenv('SSH_HOST')
+        ssh_user = os.getenv("SSH_USER")
+        ssh_host = os.getenv("SSH_HOST")
         if ssh_user and ssh_host:
             env_info.append(f"🔗 SSH: {ssh_user}@{ssh_host}")
         else:
             env_info.append("🔗 SSH: Not configured")
-        
+
         # Check workspace
         try:
             from cai.tools.common import _get_workspace_dir
+
             workspace = _get_workspace_dir()
             env_info.append(f"📁 Workspace: {workspace}")
         except Exception:
             env_info.append("📁 Workspace: Unknown")
-        
+
         return "Current Environment:\n" + "\n".join(env_info)
 
     if not command.strip():
@@ -262,7 +264,11 @@ async def generic_linux_command(command: str = "",
     # In CI/tests we want to avoid running privileged or interactive system
     # commands that require root or prompt for passwords. Make this opt-in
     # via `RUN_AGENT_INTEGRATION_TESTS=1` so developers can still run them.
-    run_integration = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower() in ("1", "true", "yes")
+    run_integration = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if not run_integration:
         lowered = command.lower()
         privileged_indicators = [
@@ -294,16 +300,16 @@ async def generic_linux_command(command: str = "",
         timeout = 10
     else:
         timeout = 100
-        
+
     # Tools always stream EXCEPT in parallel mode or when CAI_STREAM=False
     # In parallel mode, multiple agents run concurrently with Runner.run()
     # and streaming would create confusing overlapping outputs
     stream = True  # Default to streaming
-    
+
     # Check if CAI_STREAM is explicitly set to False
     if os.getenv("CAI_STREAM", "true").lower() == "false":
         stream = False
-    
+
     # Simple heuristic: If CAI_PARALLEL > 1 AND we have a P agent ID, disable streaming
     # This is more reliable than trying to count active agents
     try:
@@ -311,15 +317,16 @@ async def generic_linux_command(command: str = "",
         if parallel_count > 1:
             # Check if this is a P agent
             from cai.sdk.agents.models.openai_chatcompletions import get_current_active_model
+
             model = get_current_active_model()
-            if model and hasattr(model, 'agent_id') and model.agent_id:
-                if model.agent_id.startswith('P') and model.agent_id[1:].isdigit():
+            if model and hasattr(model, "agent_id") and model.agent_id:
+                if model.agent_id.startswith("P") and model.agent_id[1:].isdigit():
                     stream = False
-                    
+
     except Exception:
         # If we can't determine the context, default to streaming
         pass
-    
+
     # Generate a call_id for streaming
     call_id = str(uuid.uuid4())[:8]
 
@@ -327,33 +334,41 @@ async def generic_linux_command(command: str = "",
     # This is an additional layer of defense beyond the guardrails
     # Respect CAI_GUARDRAILS environment variable
     guardrails_enabled = os.getenv("CAI_GUARDRAILS", "true").lower() != "false"
-    
+
     if guardrails_enabled:
         # Check for file write operations that create Python/shell scripts with dangerous content
         # Pattern: echo/cat with base64 decode and execute
-        if re.search(r'(echo|cat|printf).*>.*\.(py|sh|bash|pl|rb|php)', command):
+        if re.search(r"(echo|cat|printf).*>.*\.(py|sh|bash|pl|rb|php)", command):
             # Check if the command contains base64 strings and execution patterns
-            if "base64" in command and any(danger in command for danger in ['os.system', 'subprocess', 'exec', 'eval']):
-                return "Error: Blocked attempt to create script with base64 decode and execute pattern"
+            if "base64" in command and any(
+                danger in command for danger in ["os.system", "subprocess", "exec", "eval"]
+            ):
+                return (
+                    "Error: Blocked attempt to create script with base64 decode and execute pattern"
+                )
             # Check for the specific base64 string from POC
             if "bmMgMTkyLjE2OC4zLjE0IDQ0NDQgLWUgL2Jpbi9zaAo=" in command:
                 return "Error: Blocked attempt to create script with known malicious base64 payload"
-        
+
         # Also check heredoc patterns for creating files
-        if re.search(r'cat.*<<.*>.*\.(py|sh|bash|pl|rb|php)', command):
-            if "base64" in command and any(danger in command for danger in ['os.system', 'subprocess', 'exec', 'eval']):
+        if re.search(r"cat.*<<.*>.*\.(py|sh|bash|pl|rb|php)", command):
+            if "base64" in command and any(
+                danger in command for danger in ["os.system", "subprocess", "exec", "eval"]
+            ):
                 return "Error: Blocked attempt to create script with base64 decode and execute pattern via heredoc"
-        
+
         # CRITICAL MITIGATION: Block creation of scripts containing command substitution in /tmp
         # This prevents PoC 10 where external input tricks agent into creating executable with $(env)
-        if re.search(r'(cat|echo|printf).*>.*/(tmp|var/tmp|dev/shm)/.*\.(sh|bash|py)', command, re.IGNORECASE):
+        if re.search(
+            r"(cat|echo|printf).*>.*/(tmp|var/tmp|dev/shm)/.*\.(sh|bash|py)", command, re.IGNORECASE
+        ):
             # Check if the content being written contains command substitution
-            if '$(' in command or '`' in command:
+            if "$(" in command or "`" in command:
                 return "Error: Blocked creation of script in temporary directory with command substitution. This is likely a prompt injection attempt."
-        
+
         # Block heredoc creation of scripts with command substitution in temp directories
-        if re.search(r'cat.*<<.*EOF.*>.*/(tmp|var/tmp|dev/shm)/', command, re.IGNORECASE):
-            if '$(' in command or '`' in command:
+        if re.search(r"cat.*<<.*EOF.*>.*/(tmp|var/tmp|dev/shm)/", command, re.IGNORECASE):
+            if "$(" in command or "`" in command:
                 return "Error: Blocked heredoc creation of script with command substitution in temporary directory."
         dangerous_patterns = [
             r"(?i)rm\s+-rf\s+/",
@@ -369,11 +384,11 @@ async def generic_linux_command(command: str = "",
             r"(?i)printf.*\|.*sh",  # Printf pipe to sh
             r"(?i)socat\s+TCP:[\d\.]+:\d+.*EXEC",  # Socat reverse shell - blocks PoC15
         ]
-        
+
         for pattern in dangerous_patterns:
             if re.search(pattern, command):
                 return f"Error: Command blocked due to dangerous pattern: {pattern}"
-        
+
         # Check for base64 encoded commands that might be dangerous
         if "base64" in command and ("-d" in command or "--decode" in command):
             # Extract and check what's being decoded
@@ -382,9 +397,10 @@ async def generic_linux_command(command: str = "",
             if match:
                 try:
                     import base64
+
                     encoded = match.group(1)
-                    decoded = base64.b64decode(encoded).decode('utf-8', errors='ignore')
-                    
+                    decoded = base64.b64decode(encoded).decode("utf-8", errors="ignore")
+
                     # Check if decoded content contains dangerous commands
                     dangerous_decoded = [
                         r"(?i)nc\s+[\d\.]+\s+\d+",  # Netcat to IP
@@ -394,14 +410,14 @@ async def generic_linux_command(command: str = "",
                         r"(?i)eval\s+",  # Eval command
                         r"(?i)rm\s+-rf",  # Dangerous rm
                     ]
-                    
+
                     for pattern in dangerous_decoded:
                         if re.search(pattern, decoded):
                             return f"Error: Blocked base64-encoded dangerous command. Decoded content contains: {pattern}"
                 except Exception:
                     # If we can't decode, be cautious
                     pass
-        
+
         # Check for base32 encoded commands that might be dangerous (PoC5 mitigation)
         if "base32" in command and ("-d" in command or "--decode" in command):
             # Extract and check what's being decoded
@@ -410,9 +426,10 @@ async def generic_linux_command(command: str = "",
             if match:
                 try:
                     import base64
+
                     encoded = match.group(1)
-                    decoded = base64.b32decode(encoded).decode('utf-8', errors='ignore')
-                    
+                    decoded = base64.b32decode(encoded).decode("utf-8", errors="ignore")
+
                     # Check if decoded content contains dangerous commands
                     dangerous_decoded = [
                         r"(?i)curl.*\$\(",  # Curl with command substitution
@@ -425,14 +442,14 @@ async def generic_linux_command(command: str = "",
                         r"(?i)\$\(.*env.*\)",  # Environment variable exfiltration
                         r"(?i)`.*env.*`",  # Alternative env exfiltration
                     ]
-                    
+
                     for pattern in dangerous_decoded:
                         if re.search(pattern, decoded):
                             return f"Error: Blocked base32-encoded dangerous command. Decoded content contains: {pattern}"
                 except Exception:
                     # If we can't decode, be cautious
                     pass
-    
+
     # Execute respecting session/interactive semantics and capture result
     # Resolve session_id: if it doesn't correspond to an existing active session,
     # clear it so we fall through to normal (non-session) execution instead of
@@ -486,20 +503,50 @@ async def generic_linux_command(command: str = "",
             tool_name="generic_linux_command",
         )
     else:
+
         def _looks_interactive(cmd: str) -> bool:
-            first = cmd.strip().split(' ', 1)[0].lower()
+            first = cmd.strip().split(" ", 1)[0].lower()
             interactive_bins = {
-                'bash','sh','zsh','fish','python','ipython','ptpython','node','ruby','irb',
-                'psql','mysql','sqlite3','mongo','redis-cli','ftp','sftp','telnet','ssh',
-                'nc','ncat','socat','gdb','lldb','r2','radare2','tshark','tcpdump','tail',
-                'journalctl','watch','less','more'
+                "bash",
+                "sh",
+                "zsh",
+                "fish",
+                "python",
+                "ipython",
+                "ptpython",
+                "node",
+                "ruby",
+                "irb",
+                "psql",
+                "mysql",
+                "sqlite3",
+                "mongo",
+                "redis-cli",
+                "ftp",
+                "sftp",
+                "telnet",
+                "ssh",
+                "nc",
+                "ncat",
+                "socat",
+                "gdb",
+                "lldb",
+                "r2",
+                "radare2",
+                "tshark",
+                "tcpdump",
+                "tail",
+                "journalctl",
+                "watch",
+                "less",
+                "more",
             }
             if first in interactive_bins:
                 return True
             lowered = cmd.lower()
-            if ' -i' in lowered or ' -it' in lowered:
+            if " -i" in lowered or " -it" in lowered:
                 return True
-            if 'tail -f' in lowered or 'journalctl -f' in lowered or 'watch ' in lowered:
+            if "tail -f" in lowered or "journalctl -f" in lowered or "watch " in lowered:
                 return True
             return False
 
@@ -527,12 +574,13 @@ async def generic_linux_command(command: str = "",
                 call_id=call_id,
                 tool_name="generic_linux_command",
             )
-    
+
     # Post-execution sanitization delegated to validation module
     if isinstance(result, str):
         result = validation.sanitize_tool_output(command, result)
-    
+
     return result
+
 
 @function_tool
 def null_tool() -> str:

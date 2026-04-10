@@ -1,20 +1,22 @@
 """
 CTF Flag Discriminator Agent with test
 """
+
 import os
+
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff
 from cai.agents.one_tool import one_tool_agent
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff
 
-model = os.getenv('CAI_MODEL', "alias1")
+model = os.getenv("CAI_MODEL", "alias1")
 
 # Create OpenAI client with fallback API key to prevent initialization errors
 # The actual API key should be set in environment variables or .env file
-api_key = os.getenv('OPENAI_API_KEY', 'sk-placeholder-key-for-local-models')
+api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
 
 _openai_client = None
 if AsyncOpenAI is not None:
@@ -27,7 +29,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=("alias1" if os.getenv('CAI_MODEL') == "o3-mini" else model),
+            model=("alias1" if os.getenv("CAI_MODEL") == "o3-mini" else model),
             openai_client=_openai_client,
         )
     except Exception:
@@ -47,10 +49,11 @@ flag_discriminator = Agent(
         handoff(
             agent=one_tool_agent,
             tool_name_override="ctf_agent",
-            tool_description_override="Call the CTF agent to continue investigating if no flag is found"
+            tool_description_override="Call the CTF agent to continue investigating if no flag is found",
         )
-    ]
+    ],
 )
+
 
 # Transfer Function
 def transfer_to_flag_discriminator(**kwargs):  # pylint: disable=W0613

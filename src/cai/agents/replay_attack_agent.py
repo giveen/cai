@@ -1,5 +1,5 @@
 """Replay Attack and Counteroffensive Agent
-Specialized agent module focused on network replay attacks, packet manipulation, 
+Specialized agent module focused on network replay attacks, packet manipulation,
 and counteroffensive techniques for security testing and incident response.
 This agent specializes in:
 - Network packet capture and analysis
@@ -17,16 +17,16 @@ Objectives:
 - Evaluate defensive controls against replay attacks
 """
 
-
 import os
+
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from cai.util import load_prompt_template, create_system_prompt_renderer
-from dotenv import load_dotenv
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 # Prompts
 replay_attack_agent_prompt = load_prompt_template("prompts/system_replay_attack_agent.md")
@@ -41,9 +41,8 @@ replay_attack_agent = Agent(
     description="""Agent that specializes in network replay attacks and counteroffensive techniques.
                    Expert in packet manipulation, traffic replay, and protocol exploitation.""",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "alias1"),
+        model=os.getenv("CAI_MODEL", "alias1"),
         openai_client=AsyncOpenAI(),
     ),
     tools=tools,
 )
-

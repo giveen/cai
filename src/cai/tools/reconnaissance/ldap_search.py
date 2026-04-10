@@ -6,25 +6,24 @@ authenticated LDAP queries with safe, validated inputs.
 """
 
 import shlex
-from typing import Optional
 
 from cai.sdk.agents import function_tool
 from cai.tools.common import run_command
 from cai.tools.validation import contains_shell_metacharacters, is_valid_target
 
-
 # ---------------------------------------------------------------------------
 # Input validation helpers
 # ---------------------------------------------------------------------------
+
 
 def _validate_ldap_inputs(
     host: str,
     base_dn: str,
     filter_str: str,
-    bind_dn: Optional[str],
-    password: Optional[str],
+    bind_dn: str | None,
+    password: str | None,
     extra_args: str,
-) -> Optional[str]:
+) -> str | None:
     """Return an error string if any input is unsafe, else None."""
     host_s = (host or "").strip()
     if not host_s:
@@ -52,8 +51,8 @@ def _build_ldapsearch_cmd(
     base_dn: str,
     filter_str: str,
     attributes: str,
-    bind_dn: Optional[str],
-    password: Optional[str],
+    bind_dn: str | None,
+    password: str | None,
     scope: str,
     port: int,
     use_tls: bool,
@@ -94,6 +93,7 @@ def _build_ldapsearch_cmd(
 # ---------------------------------------------------------------------------
 # Public tool
 # ---------------------------------------------------------------------------
+
 
 @function_tool
 def ldap_search(  # noqa: PLR0913

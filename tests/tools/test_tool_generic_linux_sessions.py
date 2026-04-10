@@ -1,7 +1,7 @@
+import json
 import os
 import re
-import json
-import asyncio
+
 import pytest
 
 os.environ["OPENAI_API_KEY"] = "test_key_for_ci_environment"
@@ -66,4 +66,3 @@ async def test_session_parsing_variants():
     await generic_linux_command.on_invoke_tool(
         RunContextWrapper(None), json.dumps({"command": f"kill {alias}"})
     )
-

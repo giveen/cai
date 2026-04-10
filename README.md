@@ -361,6 +361,25 @@ pip install cai-framework
 
 Always create a new virtual environment to ensure proper dependency installation when updating CAI.
 
+Optional: browser automation
+----------------------------
+
+To enable the browser automation features (used by the `browser_navigate` tool), install the optional `browser` extras and install Chromium for Playwright:
+
+```bash
+# from a fresh virtualenv
+pip install 'cai-framework[browser]'
+# then install the browser binaries Playwright uses
+python -m playwright install chromium
+```
+
+If you prefer to install Playwright manually instead of using extras, run:
+
+```bash
+pip install playwright
+python -m playwright install chromium
+```
+
 The following subsections provide a more detailed walkthrough on selected popular Operating Systems. Refer to the [Development](#development) section for developer-related install instructions.
 For API Keys env syntax  check litellm Documentation. [LiteLLM Documentation](https://docs.litellm.ai/docs/tutorials/installation)
 
@@ -964,6 +983,21 @@ pre-commit run --all-files # all files
 ### Optional Requirements: caiextensions
 
 Currently, the extensions are not publicly available as the engineering endeavour to maintain them is significant. Instead, we're making selected custom caiextensions available for partner companies across collaborations.
+
+### Crawl4AI local crawler
+
+To enable the optional local-first crawler used by `deep_crawl`, install Crawl4AI and run its setup helper to ensure browser engines are available:
+
+```bash
+pip install -U crawl4ai
+# ensure Playwright browsers are installed (crawl4ai-setup will guide you)
+crawl4ai-setup
+# optionally: playwright install chromium
+```
+
+When installed, CAI exposes the `deep_crawl` tool which uses `AsyncWebCrawler` and
+`DefaultMarkdownGenerator` to produce LLM-ready Markdown reports saved under
+`logs/recon/`.
 
 ### :information_source: Usage Data Collection
 

@@ -1,9 +1,9 @@
 """
 Config command for CAI via environmental variables.
 """
+
 # Standard library imports
 import os
-from typing import List, Optional
 
 # Third party imports
 from rich.console import Console  # pylint: disable=import-error
@@ -17,136 +17,120 @@ console = Console()
 # Define environment variables with descriptions and default values
 ENV_VARS = {
     # CTF variables
-    1: {
-        "name": "CTF_NAME",
-        "description": "Name of the CTF challenge to run",
-        "default": None
-    },
+    1: {"name": "CTF_NAME", "description": "Name of the CTF challenge to run", "default": None},
     2: {
         "name": "CTF_CHALLENGE",
         "description": "Specific challenge name within the CTF to test",
-        "default": None
+        "default": None,
     },
     3: {
         "name": "CTF_SUBNET",
         "description": "Network subnet for the CTF container",
-        "default": "192.168.3.0/24"
+        "default": "192.168.3.0/24",
     },
     4: {
         "name": "CTF_IP",
         "description": "IP address for the CTF container",
-        "default": "192.168.3.100"
+        "default": "192.168.3.100",
     },
     5: {
         "name": "CTF_INSIDE",
         "description": "Whether to conquer the CTF from within container",
-        "default": "true"
+        "default": "true",
     },
     # CAI variables
-    6: {
-        "name": "CAI_MODEL",
-        "description": "Model to use for agents",
-        "default": "alias1"
-    },
+    6: {"name": "CAI_MODEL", "description": "Model to use for agents", "default": "alias1"},
     7: {
         "name": "CAI_DEBUG",
         "description": "Set debug output level (0: Only tool outputs, 1: Verbose debug output, 2: CLI debug output)",  # noqa: E501 # pylint: disable=line-too-long
-        "default": "1"
+        "default": "1",
     },
-    8: {
-        "name": "CAI_BRIEF",
-        "description": "Enable/disable brief output mode",
-        "default": "false"
-    },
+    8: {"name": "CAI_BRIEF", "description": "Enable/disable brief output mode", "default": "false"},
     9: {
         "name": "CAI_MAX_TURNS",
         "description": "Maximum number of turns for agent interactions",
-        "default": "inf"
+        "default": "inf",
     },
     10: {
         "name": "CAI_TRACING",
         "description": "Enable/disable OpenTelemetry tracing",
-        "default": "true"
+        "default": "true",
     },
     11: {
         "name": "CAI_AGENT_TYPE",
         "description": "Specify the agents to use (boot2root, one_tool...)",  # noqa: E501 # pylint: disable=line-too-long
-        "default": "one_tool"
+        "default": "one_tool",
     },
-    12: {
-        "name": "CAI_STATE",
-        "description": "Enable/disable stateful mode",
-        "default": "false"
-    },
+    12: {"name": "CAI_STATE", "description": "Enable/disable stateful mode", "default": "false"},
     13: {
         "name": "CAI_MEMORY",
         "description": "Enable/disable memory mode (episodic, semantic, all)",
-        "default": "false"
+        "default": "false",
     },
     14: {
         "name": "CAI_MEMORY_ONLINE",
         "description": "Enable/disable online memory mode",
-        "default": "false"
+        "default": "false",
     },
     15: {
         "name": "CAI_MEMORY_OFFLINE",
         "description": "Enable/disable offline memory",
-        "default": "false"
+        "default": "false",
     },
     16: {
         "name": "CAI_ENV_CONTEXT",
         "description": "Add dirs and current env to llm context",
-        "default": "true"
+        "default": "true",
     },
     17: {
         "name": "CAI_MEMORY_ONLINE_INTERVAL",
         "description": "Number of turns between online memory updates",
-        "default": "5"
+        "default": "5",
     },
     18: {
         "name": "CAI_PRICE_LIMIT",
         "description": "Price limit for the conversation in dollars",
-        "default": "1"
+        "default": "1",
     },
     19: {
         "name": "CAI_REPORT",
         "description": "Enable/disable reporter mode (ctf, nis2, pentesting)",
-        "default": "ctf"
+        "default": "ctf",
     },
     20: {
         "name": "CAI_SUPPORT_MODEL",
         "description": "Model to use for the support agent",
-        "default": "o3-mini"
+        "default": "o3-mini",
     },
     21: {
         "name": "CAI_SUPPORT_INTERVAL",
         "description": "Number of turns between support agent executions",
-        "default": "5"
-    },    
+        "default": "5",
+    },
     22: {
         "name": "CAI_STREAM",
         "description": "Boolean to enable real-time, chunked responses instead of full messages.",
-        "default": "True"
+        "default": "True",
     },
     23: {
         "name": "CAI_WORKSPACE",
         "description": "Name of the current workspace (affects log file naming)",
-        "default": None 
+        "default": None,
     },
     24: {
         "name": "CAI_WORKSPACE_DIR",
         "description": "Path to the current workspace directory",
-        "default": None 
+        "default": None,
     },
     25: {
         "name": "CAI_STREAM",
         "description": "Boolean to enable real-time, chunked responses instead of full messages.",
-        "default": "True"
+        "default": "True",
     },
     26: {
         "name": "CAI_GUARDRAILS",
         "description": "Enable/disable security guardrails for prompt injection protection",
-        "default": "true"
+        "default": "true",
     },
 }
 
@@ -187,29 +171,19 @@ class ConfigCommand(Command):
         """Initialize the config command."""
         super().__init__(
             name="/config",
-            description=(
-                "Display and configure environment variables"
-            ),
-            aliases=["/cfg"]
+            description=("Display and configure environment variables"),
+            aliases=["/cfg"],
         )
         # Dynamically add agent-specific model variables
         self._add_agent_model_vars()
 
         # Add subcommands
         self.add_subcommand(
-            "list",
-            "List all environment variables and their values",
-            self.handle_list
+            "list", "List all environment variables and their values", self.handle_list
         )
+        self.add_subcommand("set", "Set an environment variable by its number", self.handle_set)
         self.add_subcommand(
-            "set",
-            "Set an environment variable by its number",
-            self.handle_set
-        )
-        self.add_subcommand(
-            "get",
-            "Get the value of an environment variable by its number",
-            self.handle_get
+            "get", "Get the value of an environment variable by its number", self.handle_get
         )
 
     def handle_no_args(self) -> bool:
@@ -262,7 +236,7 @@ class ConfigCommand(Command):
             # If we can't get agents, just skip adding these variables
             pass
 
-    def handle_list(self, _: Optional[List[str]] = None) -> bool:
+    def handle_list(self, _: list[str] | None = None) -> bool:
         """List all environment variables and their values.
 
         Args:
@@ -271,11 +245,7 @@ class ConfigCommand(Command):
         Returns:
             True if successful
         """
-        table = Table(
-            title="Environment Variables",
-            show_header=True,
-            header_style="bold yellow"
-        )
+        table = Table(title="Environment Variables", show_header=True, header_style="bold yellow")
         table.add_column("#", style="dim")
         table.add_column("Variable", style="yellow")
         table.add_column("Value", style="green")
@@ -287,21 +257,13 @@ class ConfigCommand(Command):
             current_value = get_env_var_value(var_name)
             default_value = var_info["default"] or "Not set"
 
-            table.add_row(
-                str(num),
-                var_name,
-                current_value,
-                default_value,
-                var_info["description"]
-            )
+            table.add_row(str(num), var_name, current_value, default_value, var_info["description"])
 
         console.print(table)
-        console.print(
-            "\nUsage: /config set <number> <value> to configure a variable"
-        )
+        console.print("\nUsage: /config set <number> <value> to configure a variable")
         return True
 
-    def handle_get(self, args: Optional[List[str]] = None) -> bool:
+    def handle_get(self, args: list[str] | None = None) -> bool:
         """Get the value of an environment variable by its number.
 
         Args:
@@ -311,17 +273,13 @@ class ConfigCommand(Command):
             True if successful, False otherwise
         """
         if not args or len(args) < 1:
-            console.print(
-                "[yellow]Usage: /config get <number>[/yellow]"
-            )
+            console.print("[yellow]Usage: /config get <number>[/yellow]")
             return False
 
         try:
             var_num = int(args[0])
             if var_num not in ENV_VARS:
-                console.print(
-                    f"[red]Error: Variable number {var_num} not found[/red]"
-                )
+                console.print(f"[red]Error: Variable number {var_num} not found[/red]")
                 return False
 
             var_info = ENV_VARS[var_num]
@@ -335,12 +293,10 @@ class ConfigCommand(Command):
             )
             return True
         except ValueError:
-            console.print(
-                "[red]Error: Variable number must be an integer[/red]"
-            )
+            console.print("[red]Error: Variable number must be an integer[/red]")
             return False
 
-    def handle_set(self, args: Optional[List[str]] = None) -> bool:
+    def handle_set(self, args: list[str] | None = None) -> bool:
         """Set an environment variable by its number.
 
         Args:
@@ -350,17 +306,13 @@ class ConfigCommand(Command):
             True if successful, False otherwise
         """
         if not args or len(args) < 2:
-            console.print(
-                "[yellow]Usage: /config set <number> <value>[/yellow]"
-            )
+            console.print("[yellow]Usage: /config set <number> <value>[/yellow]")
             return False
 
         try:
             var_num = int(args[0])
             if var_num not in ENV_VARS:
-                console.print(
-                    f"[red]Error: Variable number {var_num} not found[/red]"
-                )
+                console.print(f"[red]Error: Variable number {var_num} not found[/red]")
                 return False
 
             value = args[1]
@@ -370,15 +322,10 @@ class ConfigCommand(Command):
             old_value = get_env_var_value(var_name)
             set_env_var(var_name, value)
 
-            console.print(
-                f"[green]Set {var_name} to '{value}' "
-                f"(was: '{old_value}')[/green]"
-            )
+            console.print(f"[green]Set {var_name} to '{value}' (was: '{old_value}')[/green]")
             return True
         except ValueError:
-            console.print(
-                "[red]Error: Variable number must be an integer[/red]"
-            )
+            console.print("[red]Error: Variable number must be an integer[/red]")
             return False
 
 

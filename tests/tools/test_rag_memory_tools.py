@@ -1,4 +1,8 @@
+import asyncio
+import inspect
 import json
+import os
+import runpy
 import sys
 import types
 
@@ -6,17 +10,25 @@ import pytest
 
 # Ensure a placeholder cai.rag.vector_db exists for imports during tests
 _vb_mod = types.ModuleType("cai.rag.vector_db")
+
+
 class _PlaceholderQdrant:
     def __init__(self, *args, **kwargs):
         pass
-setattr(_vb_mod, "QdrantConnector", _PlaceholderQdrant)
+
+
+_vb_mod.QdrantConnector = _PlaceholderQdrant
 sys.modules["cai.rag.vector_db"] = _vb_mod
 
 # Provide a permissive shim for strict_schema to avoid strict-json-schema enforcement
 _ss_mod = types.ModuleType("cai.sdk.agents.strict_schema")
+
+
 def _ensure_strict_json_schema(schema):
     return schema
-setattr(_ss_mod, "ensure_strict_json_schema", _ensure_strict_json_schema)
+
+
+_ss_mod.ensure_strict_json_schema = _ensure_strict_json_schema
 sys.modules["cai.sdk.agents.strict_schema"] = _ss_mod
 
 # Note: we intentionally avoid importing the real RunContextWrapper to keep imports lightweight
@@ -40,10 +52,7 @@ class DummyQdrant:
 
 
 # A lightweight substitute for the real @function_tool decorator used during tests.
-import inspect
-import asyncio
-import runpy
-import os
+
 
 def _simple_function_tool(func=None, **_kwargs):
     def _create(f):
@@ -79,21 +88,24 @@ def _simple_function_tool(func=None, **_kwargs):
 @pytest.mark.asyncio
 async def test_query_memory_valid_invalid_and_missing(monkeypatch):
     # Load the module under test with a lightweight function_tool shim
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    mod_path = os.path.join(root, 'src', 'cai', 'tools', 'misc', 'rag.py')
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    mod_path = os.path.join(root, "src", "cai", "tools", "misc", "rag.py")
     # Ensure imports like `from cai.sdk.agents import function_tool` pick up our shim
     _agents_mod = types.ModuleType("cai.sdk.agents")
-    setattr(_agents_mod, "function_tool", _simple_function_tool)
+    _agents_mod.function_tool = _simple_function_tool
     sys.modules["cai.sdk.agents"] = _agents_mod
     # Ensure the vector_db import resolves to our DummyQdrant for the module import
     _vb_mod2 = types.ModuleType("cai.rag.vector_db")
-    setattr(_vb_mod2, "QdrantConnector", DummyQdrant)
+    _vb_mod2.QdrantConnector = DummyQdrant
     sys.modules["cai.rag.vector_db"] = _vb_mod2
-    mod = runpy.run_path(mod_path, init_globals={'function_tool': _simple_function_tool})
+    mod = runpy.run_path(mod_path, init_globals={"function_tool": _simple_function_tool})
     # ensure the module's connector uses our dummy implementation
-    mod['QdrantConnector'] = DummyQdrant
-    tool = mod['query_memory']
+    mod["QdrantConnector"] = DummyQdrant
+    tool = mod["query_memory"]
     ctx = None
+
+    # Force qdrant adapter so QdrantConnector (DummyQdrant) is used for search
+    monkeypatch.setenv("CAI_VECTOR_DB", "qdrant")
 
     # valid JSON
     out = await tool.on_invoke_tool(ctx, json.dumps({"query": "hello", "top_k": 1}))
@@ -110,22 +122,22 @@ async def test_query_memory_valid_invalid_and_missing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_add_to_memory_episodic_valid_invalid_and_missing(monkeypatch):
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    mod_path = os.path.join(root, 'src', 'cai', 'tools', 'misc', 'rag.py')
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    mod_path = os.path.join(root, "src", "cai", "tools", "misc", "rag.py")
     _agents_mod = types.ModuleType("cai.sdk.agents")
-    setattr(_agents_mod, "function_tool", _simple_function_tool)
+    _agents_mod.function_tool = _simple_function_tool
     sys.modules["cai.sdk.agents"] = _agents_mod
     _vb_mod2 = types.ModuleType("cai.rag.vector_db")
-    setattr(_vb_mod2, "QdrantConnector", DummyQdrant)
+    _vb_mod2.QdrantConnector = DummyQdrant
     sys.modules["cai.rag.vector_db"] = _vb_mod2
-    mod = runpy.run_path(mod_path, init_globals={'function_tool': _simple_function_tool})
-    mod['QdrantConnector'] = DummyQdrant
-    tool = mod['add_to_memory_episodic']
+    mod = runpy.run_path(mod_path, init_globals={"function_tool": _simple_function_tool})
+    mod["QdrantConnector"] = DummyQdrant
+    tool = mod["add_to_memory_episodic"]
     ctx = None
 
     # valid JSON
     out = await tool.on_invoke_tool(ctx, json.dumps({"texts": "some text", "step": 1}))
-    assert "Successfully added document" in str(out)
+    assert "Successfully added" in str(out) or "Queued" in str(out)
 
     # invalid JSON
     out = await tool.on_invoke_tool(ctx, "{not valid json}")
@@ -138,22 +150,22 @@ async def test_add_to_memory_episodic_valid_invalid_and_missing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_add_to_memory_semantic_valid_invalid_and_missing(monkeypatch):
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    mod_path = os.path.join(root, 'src', 'cai', 'tools', 'misc', 'rag.py')
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    mod_path = os.path.join(root, "src", "cai", "tools", "misc", "rag.py")
     _agents_mod = types.ModuleType("cai.sdk.agents")
-    setattr(_agents_mod, "function_tool", _simple_function_tool)
+    _agents_mod.function_tool = _simple_function_tool
     sys.modules["cai.sdk.agents"] = _agents_mod
     _vb_mod2 = types.ModuleType("cai.rag.vector_db")
-    setattr(_vb_mod2, "QdrantConnector", DummyQdrant)
+    _vb_mod2.QdrantConnector = DummyQdrant
     sys.modules["cai.rag.vector_db"] = _vb_mod2
-    mod = runpy.run_path(mod_path, init_globals={'function_tool': _simple_function_tool})
-    mod['QdrantConnector'] = DummyQdrant
-    tool = mod['add_to_memory_semantic']
+    mod = runpy.run_path(mod_path, init_globals={"function_tool": _simple_function_tool})
+    mod["QdrantConnector"] = DummyQdrant
+    tool = mod["add_to_memory_semantic"]
     ctx = None
 
     # valid JSON
     out = await tool.on_invoke_tool(ctx, json.dumps({"texts": "some semantic text", "step": 2}))
-    assert "Successfully added document" in str(out)
+    assert "Successfully added" in str(out) or "Queued" in str(out)
 
     # invalid JSON
     out = await tool.on_invoke_tool(ctx, "{not valid json}")

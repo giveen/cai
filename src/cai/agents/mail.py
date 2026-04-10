@@ -2,23 +2,24 @@
 Mail Agent module for checking email configuration security.
 
 """
+
 import os
+
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 
 import dns.resolver  # pylint: disable=import-error
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, function_tool
 from cai.tools.misc.cli_utils import execute_cli_command
-from cai.sdk.agents import function_tool
 
 # Determine API key
 api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
 
 
-
-def get_txt_record(domain, record_type='TXT'):
+def get_txt_record(domain, record_type="TXT"):
     """
     Utility function to fetch TXT records for a given domain.
     Returns a list of record strings or an empty list if none found.
@@ -35,7 +36,7 @@ def check_spf(domain: str):
     Checks for the presence of an SPF record in the domain's TXT records.
     Returns the SPF record string if found; otherwise, returns None.
     """
-    txt_records = get_txt_record(domain, 'TXT')
+    txt_records = get_txt_record(domain, "TXT")
     for record in txt_records:
         if record.lower().startswith("v=spf1"):
             return record
@@ -49,7 +50,7 @@ def check_dmarc(domain: str):
     Returns the DMARC record string if found; otherwise, returns None.
     """
     dmarc_domain = f"_dmarc.{domain}"
-    txt_records = get_txt_record(dmarc_domain, 'TXT')
+    txt_records = get_txt_record(dmarc_domain, "TXT")
     for record in txt_records:
         if record.lower().startswith("v=dmarc1"):
             return record
@@ -64,15 +65,14 @@ def check_dkim(domain: str, selector: str = "default"):
     Returns the DKIM record string if found; otherwise returns None.
     """
     dkim_domain = f"{selector}._domainkey.{domain}"
-    txt_records = get_txt_record(dkim_domain, 'TXT')
+    txt_records = get_txt_record(dkim_domain, "TXT")
     if txt_records:
         return txt_records[0]
     return None
 
+
 @function_tool
-def check_mail_spoofing_vulnerability(
-        domain: str,
-        dkim_selector: str = "default") -> dict:
+def check_mail_spoofing_vulnerability(domain: str, dkim_selector: str = "default") -> dict:
     """
     Checks if domain is vulnerable to mail spoofing by inspecting SPF,
     DMARC, and DKIM. Returns dict with domain, records found/missing,
@@ -83,12 +83,11 @@ def check_mail_spoofing_vulnerability(
     dmarc_record = check_dmarc(domain)
     dkim_record = check_dkim(domain, selector=dkim_selector)
 
-    results['domain'] = domain
-    results['spf'] = spf_record if spf_record else "Missing SPF record"
-    results['dmarc'] = dmarc_record if dmarc_record else "Missing DMARC record"
-    results['dkim'] = (
-        dkim_record if dkim_record
-        else f"Missing DKIM record (selector: {dkim_selector})"
+    results["domain"] = domain
+    results["spf"] = spf_record if spf_record else "Missing SPF record"
+    results["dmarc"] = dmarc_record if dmarc_record else "Missing DMARC record"
+    results["dkim"] = (
+        dkim_record if dkim_record else f"Missing DKIM record (selector: {dkim_selector})"
     )
 
     vulnerabilities = []
@@ -99,10 +98,8 @@ def check_mail_spoofing_vulnerability(
     if not dkim_record:
         vulnerabilities.append("DKIM")
 
-    results['vulnerable'] = bool(vulnerabilities)
-    results['issues'] = (
-        vulnerabilities or ["None detected. All email auth configured."]
-    )
+    results["vulnerable"] = bool(vulnerabilities)
+    results["issues"] = vulnerabilities or ["None detected. All email auth configured."]
 
     full_string = ""
     for key, value in results.items():
@@ -121,7 +118,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:
@@ -138,5 +135,5 @@ dns_smtp_agent = Agent(
         "USE ONLY TOOL CALLS, DONT RETURN REASON."
     ),
     tools=[check_mail_spoofing_vulnerability, execute_cli_command],
-    model=_model_inst
+    model=_model_inst,
 )

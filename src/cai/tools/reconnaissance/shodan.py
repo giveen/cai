@@ -4,13 +4,15 @@ Shodan search utility for reconnaissance.
 This module provides functions to search Shodan for information about hosts,
 services, and vulnerabilities using the Shodan API.
 """
-import os
-import requests
-from typing import Dict, List, Optional, Any
-from dotenv import load_dotenv
-from cai.sdk.agents import function_tool
-import ipaddress
 
+import ipaddress
+import os
+from typing import Any
+
+import requests
+from dotenv import load_dotenv
+
+from cai.sdk.agents import function_tool
 
 # Default HTTP timeout for Shodan API calls
 _SHODAN_HTTP_TIMEOUT = 10
@@ -31,7 +33,7 @@ def shodan_search(query: str, limit: int = 10) -> str:
     # Basic validation
     if not query or not isinstance(query, str):
         return "Error: query must be a non-empty string"
-    if '\n' in query or '\r' in query:
+    if "\n" in query or "\r" in query:
         return "Error: query contains invalid newline characters"
     if len(query) > 500:
         return "Error: query too long (max 500 chars)"
@@ -46,16 +48,16 @@ def shodan_search(query: str, limit: int = 10) -> str:
 
     formatted_results = []
     for result in results:
-        ip = result.get('ip_str', 'N/A')
-        port = result.get('port', 'N/A')
-        org = result.get('org', 'N/A')
-        hostnames = ', '.join(result.get('hostnames', ['N/A']))
-        country = result.get('location', {}).get('country_name', 'N/A')
+        ip = result.get("ip_str", "N/A")
+        port = result.get("port", "N/A")
+        org = result.get("org", "N/A")
+        hostnames = ", ".join(result.get("hostnames", ["N/A"]))
+        country = result.get("location", {}).get("country_name", "N/A")
 
-        banner = ''
-        if 'data' in result and result['data']:
-            raw = result['data']
-            banner = (raw[:400] + '...') if len(raw) > 400 else raw
+        banner = ""
+        if "data" in result and result["data"]:
+            raw = result["data"]
+            banner = (raw[:400] + "...") if len(raw) > 400 else raw
 
         block = f"IP: {ip}\nPort: {port}\nOrganization: {org}\nHostnames: {hostnames}\nCountry: {country}\n"
         if banner:
@@ -63,6 +65,7 @@ def shodan_search(query: str, limit: int = 10) -> str:
         formatted_results.append(block)
 
     return "\n\n".join(formatted_results)
+
 
 @function_tool
 def shodan_host_info(ip: str) -> str:
@@ -101,18 +104,18 @@ def shodan_host_info(ip: str) -> str:
         f"Domains: {', '.join(result.get('domains', ['N/A']))}",
     ]
 
-    if 'ports' in result:
+    if "ports" in result:
         formatted_result.append(f"Open Ports: {', '.join(map(str, result['ports']))}")
 
-    if 'vulns' in result:
+    if "vulns" in result:
         formatted_result.append("Vulnerabilities:")
-        for vuln in result['vulns']:
+        for vuln in result["vulns"]:
             formatted_result.append(f"- {vuln}")
 
     return "\n".join(formatted_result)
 
 
-def _perform_shodan_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+def _perform_shodan_search(query: str, limit: int = 10) -> list[dict[str, Any]]:
     """
     Helper function to perform Shodan searches.
 
@@ -134,17 +137,22 @@ def _perform_shodan_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     params = {
         "key": api_key,
         "query": query,
-        "limit": min(max(1, int(limit)), 100)  # enforce sensible bounds
+        "limit": min(max(1, int(limit)), 100),  # enforce sensible bounds
     }
 
     try:
-        response = requests.get(base_url, params=params, timeout=_SHODAN_HTTP_TIMEOUT, headers={"User-Agent": "CAI-Shodan-Client/1.0"})
+        response = requests.get(
+            base_url,
+            params=params,
+            timeout=_SHODAN_HTTP_TIMEOUT,
+            headers={"User-Agent": "CAI-Shodan-Client/1.0"},
+        )
 
         if response.status_code != 200:
             try:
-                err = response.json().get('error', '')
+                err = response.json().get("error", "")
             except Exception:
-                err = response.text or ''
+                err = response.text or ""
             raise RuntimeError(f"Shodan API error {response.status_code}: {err}")
 
         data = response.json()
@@ -156,7 +164,7 @@ def _perform_shodan_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
         raise RuntimeError(f"Network error when contacting Shodan: {str(e)}")
 
 
-def _get_shodan_host_info(ip: str) -> Optional[Dict[str, Any]]:
+def _get_shodan_host_info(ip: str) -> dict[str, Any] | None:
     """
     Helper function to get host information from Shodan.
 
@@ -177,12 +185,17 @@ def _get_shodan_host_info(ip: str) -> Optional[Dict[str, Any]]:
     params = {"key": api_key}
 
     try:
-        response = requests.get(base_url, params=params, timeout=_SHODAN_HTTP_TIMEOUT, headers={"User-Agent": "CAI-Shodan-Client/1.0"})
+        response = requests.get(
+            base_url,
+            params=params,
+            timeout=_SHODAN_HTTP_TIMEOUT,
+            headers={"User-Agent": "CAI-Shodan-Client/1.0"},
+        )
         if response.status_code != 200:
             try:
-                err = response.json().get('error', '')
+                err = response.json().get("error", "")
             except Exception:
-                err = response.text or ''
+                err = response.text or ""
             raise RuntimeError(f"Shodan API error {response.status_code}: {err}")
         return response.json()
     except requests.RequestException as e:

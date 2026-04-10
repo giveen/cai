@@ -218,7 +218,9 @@ def test_convert_tool_choice_handles_standard_and_named_options(converter) -> No
     assert tool_choice_dict["function"]["name"] == "mytool"
 
 
-def test_convert_response_format_returns_not_given_for_plain_text_and_dict_for_schemas(converter) -> None:
+def test_convert_response_format_returns_not_given_for_plain_text_and_dict_for_schemas(
+    converter,
+) -> None:
     """
     The `_Converter.convert_response_format` method should return NOT_GIVEN
     when no output schema is provided or if the output schema indicates
@@ -396,7 +398,9 @@ def test_unknown_object_errors(converter):
     """
     Test that unknown objects are converted correctly.
     """
-    with pytest.raises(UserError, match="❌ Invalid message format - Check documentation for supported types"):
+    with pytest.raises(
+        UserError, match="❌ Invalid message format - Check documentation for supported types"
+    ):
         # Purposely ignore the type error
         converter.items_to_messages([TestObject()])  # type: ignore
 

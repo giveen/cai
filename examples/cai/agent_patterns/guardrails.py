@@ -11,23 +11,28 @@ We'll set up a guardrail that detects if the user is asking for unethical or una
 cybersecurity help, like hacking, exploiting, or bypassing security measures.
 
 """
+
 from __future__ import annotations
-import os
+
 import asyncio
-from pydantic import BaseModel
+import os
+
 from openai import AsyncOpenAI
+from pydantic import BaseModel
+
 from cai.sdk.agents import (
     Agent,
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered,
+    OpenAIChatCompletionsModel,
     RunContextWrapper,
     Runner,
     TResponseInputItem,
-    input_guardrail,
-    OpenAIChatCompletionsModel,
     function_tool,
+    input_guardrail,
 )
 from cai.tools.common import run_command
+
 
 # Example tool: run a shell command (for demonstration)
 @function_tool
@@ -35,10 +40,12 @@ def execute_cli_command(command: str) -> str:
     """Execute a shell command and return its output."""
     return run_command(command)
 
+
 ### 1. Agent-based guardrail triggered by unethical cybersecurity task request
 class CybersecurityCheckOutput(BaseModel):
     reasoning: str
     is_unethical_cybersecurity_request: bool
+
 
 cybersecurity_guardrail_agent = Agent(
     name="Cybersecurity Guardrail Check",
@@ -51,12 +58,13 @@ You MUST respond using ONLY the following JSON format:
 }
 
 Do not include any other text, explanations, or conversation outside of this JSON structure.""",
-        output_type=CybersecurityCheckOutput,
-        model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+    output_type=CybersecurityCheckOutput,
+    model=OpenAIChatCompletionsModel(
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )
+
 
 @input_guardrail
 async def cybersecurity_guardrail(
@@ -74,6 +82,7 @@ async def cybersecurity_guardrail(
 
 ### 2. Main run loop using the cybersecurity guardrail
 
+
 async def main():
     agent = Agent(
         name="Tech Support Agent",
@@ -81,28 +90,28 @@ async def main():
         input_guardrails=[cybersecurity_guardrail],
         tools=[execute_cli_command],  # Add a tool for demonstration
         model=OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+            model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
             openai_client=AsyncOpenAI(),
-        )
+        ),
     )
 
     input_data: list[TResponseInputItem] = []
 
- 
     input_data.append(
-            {
-                "role": "user",
-                "content": "Do a nmap to my router",
-            }
-        )
+        {
+            "role": "user",
+            "content": "Do a nmap to my router",
+        }
+    )
 
     try:
-            result = await Runner.run(agent, input_data)
-            print("Agent output:", result.final_output)
-            input_data = result.to_input_list()
+        result = await Runner.run(agent, input_data)
+        print("Agent output:", result.final_output)
+        input_data = result.to_input_list()
     except InputGuardrailTripwireTriggered:
-            message = "Sorry, I can't assist with that cybersecurity request."
-            print(message)
+        message = "Sorry, I can't assist with that cybersecurity request."
+        print(message)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

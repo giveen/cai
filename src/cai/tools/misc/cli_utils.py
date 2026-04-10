@@ -2,9 +2,10 @@
 CLI utilities module for executing shell commands and processing their output.
 """
 
-from cai.tools.common import run_command  # pylint: disable=E0401
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=E0401
+
 
 @function_tool
 def execute_cli_command(command: str) -> str:

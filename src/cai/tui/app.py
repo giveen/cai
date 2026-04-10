@@ -8,24 +8,32 @@ Activated with:
 Layout mirrors the CAI PRO screenshot; colours are classic
 Matrix green-on-black throughout.
 """
+
 from __future__ import annotations
 
 import asyncio
 import inspect
-import os
 import json
-import time
+import logging
+import os
 import re
+import textwrap
+import time
 from datetime import datetime
-from typing import Optional, Any, cast
+from pathlib import Path
+from typing import Any, cast
 
-from textual import work, on
+from rich.markdown import Markdown
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text as RichText
+from textual import events, on, work
 from textual.app import App, ComposeResult
-from textual import events
-from textual.screen import ModalScreen
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.message import Message
+from textual.reactive import reactive
+from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
     Button,
@@ -34,16 +42,15 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
+    LoadingIndicator,
     RichLog,
     Static,
     TabbedContent,
     TabPane,
 )
-from rich.text import Text as RichText
-from rich.markdown import Markdown
-from rich.syntax import Syntax
-from rich.table import Table
 from textual.widgets._text_area import TextArea
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # ASCII banner – Matrix green applied via Rich Text styles at render time
@@ -73,16 +80,28 @@ _BANNER_LINES = [
 # Agent name prettifier
 # ---------------------------------------------------------------------------
 _ACRONYMS = {
-    "sast", "dfir", "dns", "smtp", "sdr", "ctf", "mcp",
-    "api", "iot", "ai", "ml", "ids", "ips", "osint",
+    "sast",
+    "dfir",
+    "dns",
+    "smtp",
+    "sdr",
+    "ctf",
+    "mcp",
+    "api",
+    "iot",
+    "ai",
+    "ml",
+    "ids",
+    "ips",
+    "osint",
 }
 
 # Suffix → short distinguishing label appended after the base name
 _SUFFIX_LABELS: list[tuple[str, str]] = [
-    ("_swarm_pattern", " ↺"),   # swarm
-    ("_swarm_pa",      " ↺"),
-    ("_pattern",       " ⊕"),   # non-swarm pattern
-    ("_agent",         ""),      # plain agent – strip cleanly
+    ("_swarm_pattern", " ↺"),  # swarm
+    ("_swarm_pa", " ↺"),
+    ("_pattern", " ⊕"),  # non-swarm pattern
+    ("_agent", ""),  # plain agent – strip cleanly
 ]
 
 
@@ -106,8 +125,8 @@ def _pretty_name(raw: str) -> str:
     # Abbreviate long blue/red team names to fit the sidebar
     name = (
         name.replace("blue_team_red_team_shared_context", "Blue/Red Shared")
-            .replace("blue_team_red_team_split_context",  "Blue/Red Split")
-            .replace("blue_team_red_team",                "Blue/Red Team")
+        .replace("blue_team_red_team_split_context", "Blue/Red Split")
+        .replace("blue_team_red_team", "Blue/Red Team")
     )
     if "_" not in name and " " in name:
         # Already replaced with a friendly string above
@@ -587,6 +606,13 @@ TerminalPanel.-error-panel {
     padding: 0 1;
 }
 
+.term-loading {
+    height: 1;
+    display: none;
+    background: #001a00;
+    color: #00cc66;
+}
+
 TerminalPanel.-busy-panel .term-status {
     background: #102300;
     color: #66ff99;
@@ -869,6 +895,29 @@ _CSS += """
 }
 """
 
+# Browser preview panel CSS (appended separately for clarity)
+_CSS += """
+BrowserPreview {
+    height: 0;
+    display: none;
+    background: #000000;
+    border: solid magenta;
+    layout: vertical;
+    padding: 0 1;
+}
+
+BrowserPreview.-visible {
+    display: block;
+    height: 22;
+}
+
+#browser-preview-content {
+    height: 1fr;
+    color: #ff77ff;
+    background: #000000;
+}
+"""
+
 # Simple on-disk config used by the TUI config screens.
 CONFIG_FILE = os.path.join(os.getcwd(), "tui_config.json")
 TOOL_CALLS_FILE = os.path.join(os.getcwd(), "logs", "tui_tool_calls.jsonl")
@@ -881,12 +930,14 @@ CONTEXT_SNAPSHOTS_FILE = os.path.join(os.getcwd(), "logs", "tui_context_usage.js
 CONTEXT_SNAPSHOTS_MAX_BYTES = 2 * 1024 * 1024
 CONTEXT_SNAPSHOTS_MAX_BACKUPS = 2
 
+
 def _load_tui_config() -> dict:
     try:
-        with open(CONFIG_FILE, "r") as f:
+        with open(CONFIG_FILE) as f:
             return json.load(f)
     except Exception:
         return {}
+
 
 def _save_tui_config(cfg: dict) -> None:
     try:
@@ -901,56 +952,244 @@ def _save_tui_config(cfg: dict) -> None:
 # ---------------------------------------------------------------------------
 CONFIG_VARIABLES = [
     {"name": "CTF_NAME", "default": "Not set", "description": "Name of the CTF challenge to run"},
-    {"name": "CTF_CHALLENGE", "default": "Not set", "description": "Specific challenge name within the CTF to test"},
-    {"name": "CTF_SUBNET", "default": "192.168.3.0/24", "description": "Network subnet for the CTF container"},
-    {"name": "CTF_IP", "default": "192.168.3.100", "description": "IP address for the CTF container"},
-    {"name": "CTF_INSIDE", "default": "true", "description": "Whether to conquer the CTF from within container"},
+    {
+        "name": "CTF_CHALLENGE",
+        "default": "Not set",
+        "description": "Specific challenge name within the CTF to test",
+    },
+    {
+        "name": "CTF_SUBNET",
+        "default": "192.168.3.0/24",
+        "description": "Network subnet for the CTF container",
+    },
+    {
+        "name": "CTF_IP",
+        "default": "192.168.3.100",
+        "description": "IP address for the CTF container",
+    },
+    {
+        "name": "CTF_INSIDE",
+        "default": "true",
+        "description": "Whether to conquer the CTF from within container",
+    },
     {"name": "CAI_MODEL", "default": "alias1", "description": "Model to use for agents"},
-    {"name": "CAI_DEBUG", "default": "1", "description": "Set debug output level (0: Only tool outputs, 1: Verbose debug output, 2: CLI debug output)"},
+    {
+        "name": "CAI_DEBUG",
+        "default": "1",
+        "description": "Set debug output level (0: Only tool outputs, 1: Verbose debug output, 2: CLI debug output)",
+    },
     {"name": "CAI_BRIEF", "default": "false", "description": "Enable/disable brief output mode"},
-    {"name": "CAI_MAX_TURNS", "default": "inf", "description": "Maximum number of turns for agent interactions"},
-    {"name": "CAI_TRACING", "default": "true", "description": "Enable/disable OpenTelemetry tracing"},
-    {"name": "CAI_AGENT_TYPE", "default": "one_tool", "description": "Specify the agents to use (boot2root, one_tool...)"},
+    {
+        "name": "CAI_MAX_TURNS",
+        "default": "inf",
+        "description": "Maximum number of turns for agent interactions",
+    },
+    {
+        "name": "CAI_TRACING",
+        "default": "true",
+        "description": "Enable/disable OpenTelemetry tracing",
+    },
+    {
+        "name": "CAI_AGENT_TYPE",
+        "default": "one_tool",
+        "description": "Specify the agents to use (boot2root, one_tool...)",
+    },
     {"name": "CAI_STATE", "default": "false", "description": "Enable/disable stateful mode"},
-    {"name": "CAI_MEMORY", "default": "false", "description": "Enable/disable memory mode (episodic, semantic, all)"},
-    {"name": "CAI_MEMORY_ONLINE", "default": "false", "description": "Enable/disable online memory mode"},
-    {"name": "CAI_MEMORY_OFFLINE", "default": "false", "description": "Enable/disable offline memory"},
-    {"name": "CAI_ENV_CONTEXT", "default": "true", "description": "Add dirs and current env to llm context"},
-    {"name": "CAI_MEMORY_ONLINE_INTERVAL", "default": "5", "description": "Number of turns between online memory updates"},
-    {"name": "CAI_PRICE_LIMIT", "default": "0", "description": "Price limit for the conversation in dollars"},
-    {"name": "CAI_REPORT", "default": "ctf", "description": "Enable/disable reporter mode (ctf, nis2, pentesting)"},
-    {"name": "CAI_SUPPORT_MODEL", "default": "o3-mini", "description": "Model to use for the support agent"},
-    {"name": "CAI_SUPPORT_INTERVAL", "default": "5", "description": "Number of turns between support agent executions"},
-    {"name": "CAI_STREAM", "default": "true", "description": "Boolean to enable real-time, chunked responses"},
-    {"name": "CAI_WORKSPACE", "default": "Not set", "description": "Name of the current workspace (affects log file naming)"},
-    {"name": "CAI_WORKSPACE_DIR", "default": "Not set", "description": "Path to the current workspace directory"},
-    {"name": "CAI_GUARDRAILS", "default": "true", "description": "Enable/disable security guardrails for prompt injection protection"},
-    {"name": "CAI_ANDROID_SAST_MODEL", "default": "Not set", "description": "Model override for AndroidSAST agent"},
-    {"name": "CAI_APP_LOGIC_MAPPER_MODEL", "default": "Not set", "description": "Model override for AppLogicMapper agent"},
-    {"name": "CAI_BB_TRIAGE_SWARM_PATTERN_MODEL", "default": "Not set", "description": "Model override for Bug bounty Triage agent"},
-    {"name": "CAI_BLUE_TEAM_RED_TEAM_SHARED_CONTEXT_MODEL", "default": "Not set", "description": "Model override for shared blue/red context agent"},
-    {"name": "CAI_BLUE_TEAM_RED_TEAM_SPLIT_CONTEXT_MODEL", "default": "Not set", "description": "Model override for split blue/red context agent"},
-    {"name": "CAI_BLUETEAM_AGENT_MODEL", "default": "Not set", "description": "Model override for Blue Team agent"},
-    {"name": "CAI_BUG_BOUNTER_AGENT_MODEL", "default": "Not set", "description": "Model override for Bug Bounter agent"},
-    {"name": "CAI_DFIR_AGENT_MODEL", "default": "Not set", "description": "Model override for DFIR agent"},
-    {"name": "CAI_DNS_SMTP_AGENT_MODEL", "default": "Not set", "description": "Model override for DNS/SMTP agent"},
-    {"name": "CAI_FLAG_DISCRIMINATOR_MODEL", "default": "Not set", "description": "Model override for Flag discriminator agent"},
-    {"name": "CAI_INJECTION_DETECTOR_AGENT_MODEL", "default": "Not set", "description": "Model override for Prompt Injection Detector agent"},
-    {"name": "CAI_MEMORY_ANALYSIS_AGENT_MODEL", "default": "Not set", "description": "Model override for Memory Analysis Specialist agent"},
-    {"name": "CAI_NETWORK_SECURITY_ANALYZER_AGENT_MODEL", "default": "Not set", "description": "Model override for Network Security Analyzer agent"},
-    {"name": "CAI_OFFSEC_PATTERN_MODEL", "default": "Not set", "description": "Model override for offsec_pattern agent"},
-    {"name": "CAI_ONE_TOOL_AGENT_MODEL", "default": "Not set", "description": "Model override for one tool CTF agent"},
-    {"name": "CAI_REDTEAM_AGENT_MODEL", "default": "Not set", "description": "Model override for Red Team agent"},
-    {"name": "CAI_REDTEAM_SWARM_PATTERN_MODEL", "default": "Not set", "description": "Model override for Red Team swarm manager"},
-    {"name": "CAI_REPLAY_ATTACK_AGENT_MODEL", "default": "Not set", "description": "Model override for Replay Attack agent"},
-    {"name": "CAI_REPORTING_AGENT_MODEL", "default": "Not set", "description": "Model override for reporting agent"},
-    {"name": "CAI_RETESTER_AGENT_MODEL", "default": "Not set", "description": "Model override for Retester agent"},
-    {"name": "CAI_REVERSE_ENGINEERING_AGENT_MODEL", "default": "Not set", "description": "Model override for Reverse Engineering agent"},
-    {"name": "CAI_SUBGHZ_SDR_AGENT_MODEL", "default": "Not set", "description": "Model override for Sub-GHz SDR agent"},
-    {"name": "CAI_THOUGHT_AGENT_MODEL", "default": "Not set", "description": "Model override for ThoughtAgent"},
-    {"name": "CAI_USE_CASE_AGENT_MODEL", "default": "Not set", "description": "Model override for Use Case agent"},
-    {"name": "CAI_WEB_PENTESTER_AGENT_MODEL", "default": "Not set", "description": "Model override for Web App Pentester agent"},
-    {"name": "CAI_WIFI_SECURITY_AGENT_MODEL", "default": "Not set", "description": "Model override for Wi-Fi Security Tester agent"},
+    {
+        "name": "CAI_MEMORY",
+        "default": "false",
+        "description": "Enable/disable memory mode (episodic, semantic, all)",
+    },
+    {
+        "name": "CAI_MEMORY_ONLINE",
+        "default": "false",
+        "description": "Enable/disable online memory mode",
+    },
+    {
+        "name": "CAI_MEMORY_OFFLINE",
+        "default": "false",
+        "description": "Enable/disable offline memory",
+    },
+    {
+        "name": "CAI_ENV_CONTEXT",
+        "default": "true",
+        "description": "Add dirs and current env to llm context",
+    },
+    {
+        "name": "CAI_MEMORY_ONLINE_INTERVAL",
+        "default": "5",
+        "description": "Number of turns between online memory updates",
+    },
+    {
+        "name": "CAI_PRICE_LIMIT",
+        "default": "0",
+        "description": "Price limit for the conversation in dollars",
+    },
+    {
+        "name": "CAI_REPORT",
+        "default": "ctf",
+        "description": "Enable/disable reporter mode (ctf, nis2, pentesting)",
+    },
+    {
+        "name": "CAI_SUPPORT_MODEL",
+        "default": "o3-mini",
+        "description": "Model to use for the support agent",
+    },
+    {
+        "name": "CAI_SUPPORT_INTERVAL",
+        "default": "5",
+        "description": "Number of turns between support agent executions",
+    },
+    {
+        "name": "CAI_STREAM",
+        "default": "true",
+        "description": "Boolean to enable real-time, chunked responses",
+    },
+    {
+        "name": "CAI_WORKSPACE",
+        "default": "Not set",
+        "description": "Name of the current workspace (affects log file naming)",
+    },
+    {
+        "name": "CAI_WORKSPACE_DIR",
+        "default": "Not set",
+        "description": "Path to the current workspace directory",
+    },
+    {
+        "name": "CAI_GUARDRAILS",
+        "default": "true",
+        "description": "Enable/disable security guardrails for prompt injection protection",
+    },
+    {
+        "name": "CAI_ANDROID_SAST_MODEL",
+        "default": "Not set",
+        "description": "Model override for AndroidSAST agent",
+    },
+    {
+        "name": "CAI_APP_LOGIC_MAPPER_MODEL",
+        "default": "Not set",
+        "description": "Model override for AppLogicMapper agent",
+    },
+    {
+        "name": "CAI_BB_TRIAGE_SWARM_PATTERN_MODEL",
+        "default": "Not set",
+        "description": "Model override for Bug bounty Triage agent",
+    },
+    {
+        "name": "CAI_BLUE_TEAM_RED_TEAM_SHARED_CONTEXT_MODEL",
+        "default": "Not set",
+        "description": "Model override for shared blue/red context agent",
+    },
+    {
+        "name": "CAI_BLUE_TEAM_RED_TEAM_SPLIT_CONTEXT_MODEL",
+        "default": "Not set",
+        "description": "Model override for split blue/red context agent",
+    },
+    {
+        "name": "CAI_BLUETEAM_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Blue Team agent",
+    },
+    {
+        "name": "CAI_BUG_BOUNTER_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Bug Bounter agent",
+    },
+    {
+        "name": "CAI_DFIR_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for DFIR agent",
+    },
+    {
+        "name": "CAI_DNS_SMTP_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for DNS/SMTP agent",
+    },
+    {
+        "name": "CAI_FLAG_DISCRIMINATOR_MODEL",
+        "default": "Not set",
+        "description": "Model override for Flag discriminator agent",
+    },
+    {
+        "name": "CAI_INJECTION_DETECTOR_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Prompt Injection Detector agent",
+    },
+    {
+        "name": "CAI_MEMORY_ANALYSIS_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Memory Analysis Specialist agent",
+    },
+    {
+        "name": "CAI_NETWORK_SECURITY_ANALYZER_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Network Security Analyzer agent",
+    },
+    {
+        "name": "CAI_OFFSEC_PATTERN_MODEL",
+        "default": "Not set",
+        "description": "Model override for offsec_pattern agent",
+    },
+    {
+        "name": "CAI_ONE_TOOL_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for one tool CTF agent",
+    },
+    {
+        "name": "CAI_REDTEAM_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Red Team agent",
+    },
+    {
+        "name": "CAI_REDTEAM_SWARM_PATTERN_MODEL",
+        "default": "Not set",
+        "description": "Model override for Red Team swarm manager",
+    },
+    {
+        "name": "CAI_REPLAY_ATTACK_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Replay Attack agent",
+    },
+    {
+        "name": "CAI_REPORTING_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for reporting agent",
+    },
+    {
+        "name": "CAI_RETESTER_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Retester agent",
+    },
+    {
+        "name": "CAI_REVERSE_ENGINEERING_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Reverse Engineering agent",
+    },
+    {
+        "name": "CAI_SUBGHZ_SDR_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Sub-GHz SDR agent",
+    },
+    {
+        "name": "CAI_THOUGHT_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for ThoughtAgent",
+    },
+    {
+        "name": "CAI_USE_CASE_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Use Case agent",
+    },
+    {
+        "name": "CAI_WEB_PENTESTER_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Web App Pentester agent",
+    },
+    {
+        "name": "CAI_WIFI_SECURITY_AGENT_MODEL",
+        "default": "Not set",
+        "description": "Model override for Wi-Fi Security Tester agent",
+    },
 ]
 
 
@@ -959,10 +1198,19 @@ CONFIG_VARIABLES = [
 # ---------------------------------------------------------------------------
 TEAM_PRESETS = [
     ("2 red + 2 bug", ["redteam_agent", "redteam_agent", "bug_bounter_agent", "bug_bounter_agent"]),
-    ("1 red + 3 bug", ["redteam_agent", "bug_bounter_agent", "bug_bounter_agent", "bug_bounter_agent"]),
+    (
+        "1 red + 3 bug",
+        ["redteam_agent", "bug_bounter_agent", "bug_bounter_agent", "bug_bounter_agent"],
+    ),
     ("2 red + 2 blue", ["redteam_agent", "redteam_agent", "blueteam_agent", "blueteam_agent"]),
-    ("2 blue + 2 bug", ["blueteam_agent", "blueteam_agent", "bug_bounter_agent", "bug_bounter_agent"]),
-    ("red + blue + retest + bug", ["redteam_agent", "blueteam_agent", "retester_agent", "bug_bounter_agent"]),
+    (
+        "2 blue + 2 bug",
+        ["blueteam_agent", "blueteam_agent", "bug_bounter_agent", "bug_bounter_agent"],
+    ),
+    (
+        "red + blue + retest + bug",
+        ["redteam_agent", "blueteam_agent", "retester_agent", "bug_bounter_agent"],
+    ),
     ("2 red + 2 retest", ["redteam_agent", "redteam_agent", "retester_agent", "retester_agent"]),
     ("2 blue + 2 retest", ["blueteam_agent", "blueteam_agent", "retester_agent", "retester_agent"]),
     ("4 red", ["redteam_agent", "redteam_agent", "redteam_agent", "redteam_agent"]),
@@ -1144,7 +1392,7 @@ class CommandPaletteModal(ModalScreen):
 
         ranked: list[tuple[int, dict]] = []
         for cmd in self._commands:
-            searchable = f"{cmd.get('id','')} {cmd.get('name','')} {cmd.get('description','')}"
+            searchable = f"{cmd.get('id', '')} {cmd.get('name', '')} {cmd.get('description', '')}"
             score = self._fuzzy_score(query, searchable)
             if score < 0:
                 continue
@@ -1182,7 +1430,7 @@ class CommandPaletteModal(ModalScreen):
             label = f"{name:<8}  {desc}"
             if shortcut:
                 label += f"  [{shortcut}]"
-            btn = Button(label, id=f"palette-cmd-{cmd.get('id','')}", classes="palette-cmd")
+            btn = Button(label, id=f"palette-cmd-{cmd.get('id', '')}", classes="palette-cmd")
             if idx == self._selected_idx:
                 btn.add_class("-selected")
             await holder.mount(btn)
@@ -1240,7 +1488,7 @@ class CommandPaletteModal(ModalScreen):
         bid = event.button.id or ""
         if not bid.startswith("palette-cmd-"):
             return
-        cmd_id = bid[len("palette-cmd-"):]
+        cmd_id = bid[len("palette-cmd-") :]
         self.dismiss(("run", cmd_id))
 
 
@@ -1404,7 +1652,12 @@ class ModelParamsScreen(ModalScreen):
                 sys = self.query_one("#model-system", Input).value
             except Exception:
                 sys = ""
-            self.dismiss(("save_model_params", {"temperature": temp, "max_tokens": max_t, "system_prompt": sys}))
+            self.dismiss(
+                (
+                    "save_model_params",
+                    {"temperature": temp, "max_tokens": max_t, "system_prompt": sys},
+                )
+            )
         else:
             self.dismiss(None)
 
@@ -1450,7 +1703,9 @@ class ExportImportScreen(ModalScreen):
             with Horizontal():
                 yield Button("Export", id="export-do", classes="modal-btn")
                 yield Button("Import", id="import-do", classes="modal-btn")
-                yield Button("Close", id="export-import-cancel", classes="modal-btn modal-btn--cancel")
+                yield Button(
+                    "Close", id="export-import-cancel", classes="modal-btn modal-btn--cancel"
+                )
 
     @on(Button.Pressed)
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -1535,7 +1790,9 @@ class SessionRecordingScreen(ModalScreen):
         cur = os.environ.get("CAI_DISABLE_SESSION_RECORDING", "").lower() == "true"
         status = "disabled" if cur else "enabled"
         with Vertical(id="modal-dialog"):
-            yield Static(f"Session recording is currently: [bold]{status}[/bold]", id="modal-agent-label")
+            yield Static(
+                f"Session recording is currently: [bold]{status}[/bold]", id="modal-agent-label"
+            )
             with Horizontal():
                 yield Button("Toggle", id="session-toggle", classes="modal-btn")
                 yield Button("Close", id="session-cancel", classes="modal-btn modal-btn--cancel")
@@ -1580,7 +1837,9 @@ class ConfigOverviewScreen(ModalScreen):
             with ScrollableContainer(id="config-overview-scroll"):
                 yield ListView(id="config-overview-list")
             with Horizontal():
-                yield Button("Close", id="config-overview-close", classes="modal-btn modal-btn--cancel")
+                yield Button(
+                    "Close", id="config-overview-close", classes="modal-btn modal-btn--cancel"
+                )
 
     async def on_mount(self) -> None:
         try:
@@ -1591,8 +1850,12 @@ class ConfigOverviewScreen(ModalScreen):
                 name = str(v.get("name") or "")
                 # Prefer explicit env var, then persisted config, then default
                 cfg = _load_tui_config()
-                val = os.environ.get(name) or cfg.get("env", {}).get(name) or v.get("default", "Not set")
-                display = f"{idx+1:2d} | {name:<40.40} | {str(val):<15.15} | {v.get('default', ''):<12.12} | {v.get('description','')[:60]}"
+                val = (
+                    os.environ.get(name)
+                    or cfg.get("env", {}).get(name)
+                    or v.get("default", "Not set")
+                )
+                display = f"{idx + 1:2d} | {name:<40.40} | {str(val):<15.15} | {v.get('default', ''):<12.12} | {v.get('description', '')[:60]}"
                 item = ListItem(Label(display), id=f"config-item-{idx}")
                 await lv.mount(item)
                 await item.mount(Button("Edit", id=f"cfg-edit-{idx}", classes="agent-btn"))
@@ -1659,7 +1922,7 @@ class TerminalPanel(Widget):
         self._run_worker = None
         self._workers: list[Any] = []
         self._prompt_history: list[str] = []
-        self._history_index: Optional[int] = None
+        self._history_index: int | None = None
 
     def _get_input_widget(self):
         try:
@@ -1778,7 +2041,9 @@ class TerminalPanel(Widget):
         if self._history_index is None:
             self._history_index = len(self._prompt_history)
 
-        self._history_index = max(0, min(len(self._prompt_history), self._history_index + direction))
+        self._history_index = max(
+            0, min(len(self._prompt_history), self._history_index + direction)
+        )
         if self._history_index >= len(self._prompt_history):
             self._set_input_text("")
             self._update_input_meta("")
@@ -1843,7 +2108,9 @@ class TerminalPanel(Widget):
         try:
             log = self.query_one(f"#term-log-{self._term_id}", RichLog)
             if isinstance(obj, dict):
-                table = Table(title="Structured Output", show_header=True, header_style="bold #00ff00")
+                table = Table(
+                    title="Structured Output", show_header=True, header_style="bold #00ff00"
+                )
                 table.add_column("Key", style="#00cc00")
                 table.add_column("Value", style="#00ff00")
                 for key, value in list(obj.items())[:30]:
@@ -1851,7 +2118,11 @@ class TerminalPanel(Widget):
                 log.write(table)
                 return True
             if isinstance(obj, list):
-                table = Table(title=f"Structured Output ({len(obj)} items)", show_header=True, header_style="bold #00ff00")
+                table = Table(
+                    title=f"Structured Output ({len(obj)} items)",
+                    show_header=True,
+                    header_style="bold #00ff00",
+                )
                 table.add_column("Index", style="#00cc00")
                 table.add_column("Value", style="#00ff00")
                 for idx, value in enumerate(obj[:30]):
@@ -1887,7 +2158,22 @@ class TerminalPanel(Widget):
             return
 
         # Fallback to markdown render for rich formatting and tables.
-        log.write(Markdown(text))
+        # Wrap long lines to avoid overflowing the terminal panel width and then
+        # prefer Markdown rendering; fall back to plain RichText if Markdown fails.
+        try:
+            size = getattr(self, "size", None) or getattr(self.app, "size", None)
+            w = int(getattr(size, "width", 0) or 0)
+            wrap_width = max(40, w - 8) if w > 0 else 80
+        except Exception:
+            wrap_width = 80
+        wrapped = self._wrap_text_for_width(text, wrap_width)
+        try:
+            log.write(Markdown(wrapped))
+        except Exception:
+            try:
+                log.write(RichText(wrapped))
+            except Exception:
+                log.write(wrapped)
 
     def _format_tool_output_preview(self, output: str) -> tuple[str, bool]:
         text = str(output or "")
@@ -1902,7 +2188,47 @@ class TerminalPanel(Widget):
         if len(text) > max_chars:
             text = text[:max_chars]
             collapsed = True
+        # Wrap long lines to avoid overflowing the terminal panel width.
+        try:
+            size = getattr(self, "size", None) or getattr(self.app, "size", None)
+            w = int(getattr(size, "width", 0) or 0)
+            wrap_width = max(40, w - 8) if w > 0 else 80
+        except Exception:
+            wrap_width = 80
+        text = self._wrap_text_for_width(text, wrap_width)
         return text, collapsed
+
+    def _wrap_text_for_width(self, text: str, width: int) -> str:
+        """Return text with long lines wrapped to `width` while preserving indentation.
+
+        Uses textwrap.fill with break_long_words so extremely long tokens still break
+        and won't overflow the panel box.
+        """
+        if not text:
+            return text
+        out_lines: list[str] = []
+        for line in str(text).splitlines():
+            if not line.strip():
+                out_lines.append(line)
+                continue
+            # preserve leading indentation
+            leading = len(line) - len(line.lstrip(" "))
+            indent = " " * leading
+            body = line.lstrip(" ")
+            try:
+                wrapped = textwrap.fill(
+                    body,
+                    width=max(20, width - leading),
+                    replace_whitespace=False,
+                    break_long_words=True,
+                    break_on_hyphens=True,
+                )
+            except Exception:
+                wrapped = body
+            # reapply indentation to each wrapped sub-line
+            wrapped = "\n".join(indent + ln for ln in wrapped.splitlines())
+            out_lines.append(wrapped)
+        return "\n".join(out_lines)
 
     def _extract_stream_text_delta(self, raw_data) -> str:
         data = raw_data
@@ -1953,6 +2279,10 @@ class TerminalPanel(Widget):
             wrap=True,
         )
         yield Static("", id=f"term-status-{self._term_id}", classes="term-status")
+        yield LoadingIndicator(
+            id=f"term-loading-{self._term_id}",
+            classes="term-loading",
+        )
         with Horizontal(classes="term-input-row"):
             yield Static("CAI>", classes="term-input-prefix")
             with Vertical(classes="term-input-column"):
@@ -1966,19 +2296,26 @@ class TerminalPanel(Widget):
                     id=f"term-input-{self._term_id}",
                     classes="term-input",
                 )
-                yield Static("0 chars · single-line", id=f"term-input-meta-{self._term_id}", classes="term-input-meta")
+                yield Static(
+                    "0 chars · single-line",
+                    id=f"term-input-meta-{self._term_id}",
+                    classes="term-input-meta",
+                )
 
     async def on_mount(self) -> None:
         from rich.text import Text as RichText
+
         log = self.query_one(f"#term-log-{self._term_id}", RichLog)
         self._set_visual_state("ready")
         for line in _BANNER_LINES:
             log.write(RichText(line, style="#00ff00"))
         log.write(RichText("", style=""))
-        log.write(RichText(
-            f"T{self._term_id} ready — {_pretty_name(self._agent_name)}",
-            style="#006600",
-        ))
+        log.write(
+            RichText(
+                f"T{self._term_id} ready — {_pretty_name(self._agent_name)}",
+                style="#006600",
+            )
+        )
         self._write_system_message(
             "init",
             f"agent={self._agent_name} model={self._model_name}",
@@ -1989,10 +2326,37 @@ class TerminalPanel(Widget):
         self._update_input_meta("")
 
     @on(TextArea.Changed)
-    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+    async def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if (event.text_area.id or "") != f"term-input-{self._term_id}":
             return
         text = str(getattr(event.text_area, "text", "") or "")
+
+        # ── Enter-key detection ───────────────────────────────────────────────
+        # In Textual 8+, TextArea._on_key intercepts ALL printable characters
+        # (including Enter) with event.stop() + event.prevent_default() so the
+        # key event NEVER bubbles to TerminalPanel.on_key.  For Enter it inserts
+        # '\n' into the document before stopping propagation.
+        #
+        # We detect the resulting document state: text ends with exactly one '\n'
+        # and has NO embedded '\n' (was single-line before the keypress) → that
+        # means a plain Enter was just pressed while in single-line mode → submit.
+        if (
+            not self._busy
+            and text.endswith("\n")
+            and "\n" not in text[:-1]  # no embedded newline → was single-line
+        ):
+            if text[:-1].strip():
+                # Non-empty content → submit via the normal path
+                # (_submit_from_input_widget strips the trailing \n via .strip())
+                await self._submit_from_input_widget()
+            else:
+                # Empty Enter press → discard the newline, keep input blank
+                self._set_input_text("")
+                self._resize_input_for_text("")
+                self._update_input_meta("")
+            return
+
+        # Normal change: resize the input to fit the content and update metadata
         self._resize_input_for_text(text)
         self._update_input_meta(text)
         try:
@@ -2037,7 +2401,13 @@ class TerminalPanel(Widget):
             return
 
         if key == "enter":
-            if "\n" not in text:
+            # Safety net: in Textual 8+ this branch is unreachable because
+            # TextArea._on_key consumes Enter with event.stop() before it bubbles.
+            # Kept for forward-compatibility if Textual changes this behaviour.
+            effective_text = text.rstrip("\n")
+            if "\n" not in effective_text and effective_text.strip():
+                if text != effective_text:
+                    self._set_input_text(effective_text)
                 event.prevent_default()
                 event.stop()
                 await self._submit_from_input_widget()
@@ -2051,9 +2421,7 @@ class TerminalPanel(Widget):
         self._agent = agent
         self._agent_name = agent_name
         try:
-            self.query_one(
-                f"#term-header-{self._term_id}", Static
-            ).update(self._header_text())
+            self.query_one(f"#term-header-{self._term_id}", Static).update(self._header_text())
         except Exception:
             pass
 
@@ -2061,6 +2429,7 @@ class TerminalPanel(Widget):
 
     async def dispatch(self, text: str) -> None:
         from rich.text import Text as RichText
+
         log = self.query_one(f"#term-log-{self._term_id}", RichLog)
         log.write(RichText(f"> {text}", style="bold #00ff00"))
 
@@ -2069,18 +2438,20 @@ class TerminalPanel(Widget):
             self.app.exit()
             return
         if cmd == "/help":
-            log.write(RichText(
-                "  /exit /quit     Exit the TUI\n"
-                "  /clear          Clear this terminal\n"
-                "  /retry          Retry last prompt after an error\n"
-                "  /cancel         Cancel current run (same as Ctrl+C / Esc)\n"
-                "  /help           Show this message\n"
-                "  tip             Append ' all' to broadcast a prompt to T1-T4\n"
-                "\n"
-                "  ^q  Exit    ^l  Clear    ^c  Cancel    ^s  Sidebar\n"
-                "  Esc Cancel",
-                style="#00cc00",
-            ))
+            log.write(
+                RichText(
+                    "  /exit /quit     Exit the TUI\n"
+                    "  /clear          Clear this terminal\n"
+                    "  /retry          Retry last prompt after an error\n"
+                    "  /cancel         Cancel current run (same as Ctrl+C / Esc)\n"
+                    "  /help           Show this message\n"
+                    "  tip             Append ' all' to broadcast a prompt to T1-T4\n"
+                    "\n"
+                    "  ^q  Exit    ^l  Clear    ^c  Cancel    ^s  Sidebar\n"
+                    "  Esc Cancel",
+                    style="#00cc00",
+                )
+            )
             return
         if cmd in ("/clear", "/cls"):
             log.clear()
@@ -2124,35 +2495,41 @@ class TerminalPanel(Widget):
             return
 
         if self._busy:
-            log.write(RichText(
-                "  [busy] Working... cancel with Ctrl+C, Esc, or /cancel",
-                style="#ffcc00",
-            ))
+            log.write(
+                RichText(
+                    "  [busy] Working... cancel with Ctrl+C, Esc, or /cancel",
+                    style="#ffcc00",
+                )
+            )
             return
 
         if not cmd:
             try:
-                    try:
-                        app_obj = getattr(self, "app", None)
-                        can_dispatch = True
-                        if app_obj and hasattr(app_obj, "_can_dispatch_prompt"):
-                            can_dispatch = cast(Any, app_obj)._can_dispatch_prompt()
-                        if not can_dispatch:
-                            log.write(RichText(
+                try:
+                    app_obj = getattr(self, "app", None)
+                    can_dispatch = True
+                    if app_obj and hasattr(app_obj, "_can_dispatch_prompt"):
+                        can_dispatch = cast(Any, app_obj)._can_dispatch_prompt()
+                    if not can_dispatch:
+                        log.write(
+                            RichText(
                                 "  [paused] Price limit exceeded. Increase CAI_PRICE_LIMIT or start a new session.",
                                 style="#ff4444",
-                            ))
-                            return
-                    except Exception:
-                        pass
+                            )
+                        )
+                        return
+                except Exception:
+                    pass
             except Exception:
                 pass
 
         if self._agent is None:
-            log.write(RichText(
-                "  No agent loaded. Select one from the sidebar.",
-                style="#ff4444",
-            ))
+            log.write(
+                RichText(
+                    "  No agent loaded. Select one from the sidebar.",
+                    style="#ff4444",
+                )
+            )
             return
 
         # Open full config overview with /config
@@ -2166,7 +2543,9 @@ class TerminalPanel(Widget):
                     pass
                 # Also schedule the interactive full-config worker (overview/edit loop)
                 try:
-                    getattr(cast(Any, app_obj), "_open_config_screen", lambda *a, **k: None)("full-config")
+                    getattr(cast(Any, app_obj), "_open_config_screen", lambda *a, **k: None)(
+                        "full-config"
+                    )
                 except Exception:
                     pass
             except Exception:
@@ -2178,14 +2557,33 @@ class TerminalPanel(Widget):
         self._busy = True
         self._set_visual_state("busy")
         self._set_status(f"T{self._term_id}> [{ts}] ⟳ Working… (Ctrl+C to cancel)")
+        # Mandatory handoff trace — visible on stderr even when Textual occupies
+        # the terminal.  Confirms input crossed the UI→Runner boundary.
+        try:
+            import sys as _sys
+
+            _sys.stderr.write(
+                f"[CAI-TUI] handoff: T{self._term_id} agent={self._agent_name!r} "
+                f"text_len={len(text)} preview={text[:80]!r}\n"
+            )
+            _sys.stderr.flush()
+            logger.info(
+                "[TUI-handoff] term=%d agent=%r text_len=%d",
+                self._term_id,
+                self._agent_name,
+                len(text),
+            )
+        except Exception:
+            pass
         self._run_worker = self._run_agent(text)
 
     @work(exclusive=True)
     async def _run_agent(self, text: str) -> None:
         from rich.text import Text as RichText
+
         from cai.sdk.agents import Runner
-        from cai.sdk.agents.stream_events import RunItemStreamEvent, RawResponsesStreamEvent
         from cai.sdk.agents.items import ToolCallOutputItem
+        from cai.sdk.agents.stream_events import RawResponsesStreamEvent, RunItemStreamEvent
 
         log = self.query_one(f"#term-log-{self._term_id}", RichLog)
         stream_iter = None
@@ -2193,6 +2591,26 @@ class TerminalPanel(Widget):
         run_status = "completed"
         run_error: str | None = None
         streamed_chars = 0
+
+        # Temporary debug tracing for stream event diagnosis
+        try:
+            import sys as _sys
+
+            _sys.stderr.write(
+                f"[cai-tui-debug] _run_agent start: term={self._term_id} "
+                f"agent={self._agent_name} model={self._model_name} "
+                f"text_len={len(str(text or ''))}\n"
+            )
+            _sys.stderr.flush()
+            logger.debug(
+                "_run_agent start: term=%s agent=%s model=%s text_len=%d",
+                self._term_id,
+                self._agent_name,
+                self._model_name,
+                len(str(text or "")),
+            )
+        except Exception:
+            pass
         try:
             getattr(cast(Any, self.app), "_telemetry_run_started", lambda *a, **k: None)(
                 self._term_id, self._agent_name, text
@@ -2200,23 +2618,162 @@ class TerminalPanel(Widget):
         except Exception:
             pass
         try:
+            try:
+                import sys as _sys
+
+                _sys.stderr.write(
+                    f"[cai-tui-debug] calling Runner.run_streamed term={self._term_id}\n"
+                )
+                _sys.stderr.flush()
+                logger.debug("calling Runner.run_streamed for term=%s", self._term_id)
+            except Exception:
+                pass
+
+            # Suppress CAI_STREAM and CAI_STREAM_DEBUG while the TUI worker
+            # runs so the underlying model driver doesn't try to render its
+            # own Rich streaming panel (which would bleed into the RichLog).
+            # The TUI renders the final message via message_output_created /
+            # _render_agent_message — it does not need nor want the raw delta
+            # debug lines that stream_debug produces.
+            _prev_cai_stream = os.environ.get("CAI_STREAM")
+            _prev_cai_stream_debug = os.environ.get("CAI_STREAM_DEBUG")
+            try:
+                os.environ["CAI_STREAM"] = "false"
+                os.environ["CAI_STREAM_DEBUG"] = "0"
+            except Exception:
+                pass
+
             result = Runner.run_streamed(self._agent, text)
             stream_iter = result.stream_events()
 
+            # Register a TUI-aware progress writer so that auto-compact
+            # status messages (e.g. "Generating summary…") appear in the
+            # RichLog instead of stdout.
+            def _tui_progress_writer(msg: str, style: str | None = None) -> None:
+                try:
+                    from rich.markup import escape as _re
+
+                    plain = _re(str(msg))
+                    colour = style or "bold yellow"
+                    self._write_system_message("compact", plain, style=colour)
+                    # Keep the status bar updated during long summarisation calls
+                    short = plain if len(plain) <= 72 else plain[:71] + "…"
+                    self._set_status(f"T{self._term_id}> {short}")
+                except Exception:
+                    pass
+
+            try:
+                from cai.util import set_progress_writer
+
+                set_progress_writer(_tui_progress_writer)
+            except Exception:
+                pass
+
+            # Register a TUI-aware panel writer so that Rich Panels (e.g. the
+            # "Intelligence Panel" from display_agent_analysis) are written to
+            # the RichLog widget instead of stdout.
+            def _tui_panel_writer(renderable: Any) -> None:
+                try:
+                    log = self.query_one(f"#term-log-{self._term_id}", RichLog)
+                    log.write(renderable)
+                except Exception:
+                    pass
+
+            try:
+                from cai.util import set_panel_writer
+
+                set_panel_writer(_tui_panel_writer)
+            except Exception:
+                pass
+
+            # Register a loading-state writer so that long-running tools
+            # (e.g. cewl wordlist generation) can show/hide the LoadingIndicator.
+            def _tui_loading_writer(visible: bool) -> None:
+                try:
+                    indicator = self.query_one(f"#term-loading-{self._term_id}", LoadingIndicator)
+                    indicator.display = visible
+                except Exception:
+                    pass
+
+            try:
+                from cai.util import set_tool_loading_writer
+
+                set_tool_loading_writer(_tui_loading_writer)
+            except Exception:
+                pass
+
+            try:
+                import sys as _sys
+
+                _sys.stderr.write(
+                    f"[cai-tui-debug] stream iterator obtained term={self._term_id}\n"
+                )
+                _sys.stderr.flush()
+                logger.debug("stream iterator obtained for term=%s", self._term_id)
+            except Exception:
+                pass
+
+            # stream_debug is always False in the TUI — the TUI renders the
+            # final agent reply via _render_agent_message (message_output_created).
+            stream_debug = False
+            _stream_line_buf: str = ""
+
             async for event in stream_iter:
+                try:
+                    logger.debug("received stream event type=%s", type(event).__name__)
+                except Exception:
+                    pass
+
                 if isinstance(event, RawResponsesStreamEvent):
                     delta = self._extract_stream_text_delta(event.data)
+                    try:
+                        import sys as _sys
+
+                        _sys.stderr.write(
+                            f"[cai-tui-debug] RAW_EVENT type={getattr(event.data,'type',type(event.data).__name__)} delta_len={len(delta or '')}\n"
+                        )
+                        _sys.stderr.flush()
+                        logger.debug(
+                            "raw delta len=%d preview=%r",
+                            len(delta or ""),
+                            (delta or "")[:200],
+                        )
+                    except Exception:
+                        pass
                     if delta:
                         streamed_chars += len(delta)
-                        self._set_status(
-                            f"T{self._term_id}> ⟳ Streaming… {streamed_chars} chars"
-                        )
+                        self._set_status(f"T{self._term_id}> ⟳ Streaming… {streamed_chars} chars")
+                        if stream_debug:
+                            # Accumulate into line buffer; flush only on newlines
+                            # so each log.write() renders a complete line of text
+                            # rather than a single token.
+                            _stream_line_buf += str(delta)
+                            while "\n" in _stream_line_buf:
+                                line, _stream_line_buf = _stream_line_buf.split("\n", 1)
+                                if line:  # skip blank splits
+                                    try:
+                                        log.write(
+                                            RichText(
+                                                f"[stream:{self._term_id}] {line}",
+                                                style="#3399ff",
+                                            )
+                                        )
+                                    except Exception:
+                                        pass
                     continue
 
                 if not isinstance(event, RunItemStreamEvent):
                     continue
                 ev_name = event.name
                 item = event.item
+                try:
+                    logger.debug(
+                        "run item event: name=%s item_type=%s",
+                        ev_name,
+                        getattr(item, "type", "<unknown>"),
+                    )
+                except Exception:
+                    pass
 
                 try:
                     getattr(cast(Any, self.app), "_emit_telemetry", lambda *a, **k: None)(
@@ -2230,11 +2787,14 @@ class TerminalPanel(Widget):
 
                 if ev_name == "message_output_created":
                     try:
-                        getattr(cast(Any, self.app), "_telemetry_first_token", lambda *a, **k: None)(self._term_id, self._agent_name)
+                        getattr(
+                            cast(Any, self.app), "_telemetry_first_token", lambda *a, **k: None
+                        )(self._term_id, self._agent_name)
                     except Exception:
                         pass
                     try:
                         from cai.sdk.agents.items import ItemHelpers
+
                         content = ItemHelpers.text_message_output(cast(Any, item))
                     except Exception:
                         content = str(getattr(item, "content", ""))
@@ -2242,12 +2802,34 @@ class TerminalPanel(Widget):
                         self._render_agent_message(content)
 
                 elif ev_name == "reasoning_item_created":
-                    self._write_system_message("progress", "reasoning step created", style="#00cc88")
+                    # Render reasoning / thought content as a panel (if available)
+                    try:
+                        from cai.sdk.agents.items import ItemHelpers
+
+                        content = ItemHelpers.text_message_output(cast(Any, item))
+                    except Exception:
+                        content = str(getattr(item, "content", "") or "")
+
+                    if content:
+                        try:
+                            from cai.repl.ui.renderers import display_agent_thought
+
+                            agent_name = getattr(self, "_agent_name", None)
+                            display_agent_thought(content, agent_name)
+                        except Exception:
+                            self._write_system_message(
+                                "progress", "reasoning step created", style="#00cc88"
+                            )
+                    else:
+                        self._write_system_message(
+                            "progress", "reasoning step created", style="#00cc88"
+                        )
 
                 elif ev_name == "tool_called":
                     raw = getattr(item, "raw_item", item)
                     fn_name = getattr(
-                        raw, "name",
+                        raw,
+                        "name",
                         getattr(getattr(raw, "function", None), "name", "tool"),
                     )
                     fn_args = str(getattr(raw, "arguments", "…"))
@@ -2258,9 +2840,33 @@ class TerminalPanel(Widget):
                         "name": str(fn_name),
                         "args": fn_args,
                     }
-                    log.write(RichText(f"  ▶ {fn_name}({fn_args}) [running]", style="#006600"))
                     try:
-                        getattr(cast(Any, self.app), "_telemetry_tool_called", lambda *a, **k: None)(
+                        from cai.util import write_panel
+                        from rich.panel import Panel as _Panel
+                        from rich import box as _box
+
+                        agent_name = getattr(self, "_agent_name", "Agent")
+                        fn_args_disp_safe = fn_args.replace("[", "\\[")
+                        body = (
+                            f"[bold bright_yellow]⚡ {fn_name}[/bold bright_yellow]  "
+                            f"[dim yellow]{fn_args_disp_safe}[/dim yellow]"
+                        )
+                        write_panel(
+                            _Panel(
+                                body,
+                                box=_box.HEAVY,
+                                border_style="bold yellow",
+                                title=f"[bold yellow]🛠  {agent_name}[/bold yellow]",
+                                padding=(0, 1),
+                                expand=True,
+                            )
+                        )
+                    except Exception:
+                        log.write(RichText(f"  ▶ {fn_name}({fn_args}) [running]", style="#006600"))
+                    try:
+                        getattr(
+                            cast(Any, self.app), "_telemetry_tool_called", lambda *a, **k: None
+                        )(
                             self._term_id,
                             self._agent_name,
                             str(fn_name),
@@ -2286,10 +2892,14 @@ class TerminalPanel(Widget):
                         self._tool_outputs_by_call_id[call_id] = full_output
                         preview, collapsed = self._format_tool_output_preview(full_output)
                         name = self._active_tool_calls.get(call_id, {}).get("name", "tool")
-                        log.write(RichText(f"  ✓ {name} [success] call_id={call_id}", style="#00cc00"))
+                        log.write(
+                            RichText(f"  ✓ {name} [success] call_id={call_id}", style="#00cc00")
+                        )
                         self._render_agent_message(preview)
                         if collapsed:
-                            remaining = max(0, len(full_output.splitlines()) - len(preview.splitlines()))
+                            remaining = max(
+                                0, len(full_output.splitlines()) - len(preview.splitlines())
+                            )
                             log.write(
                                 RichText(
                                     f"    … collapsed {remaining} lines, use /expand {call_id} for full output",
@@ -2298,7 +2908,9 @@ class TerminalPanel(Widget):
                             )
                         try:
                             out_preview = preview.splitlines()[0] if preview else full_output
-                            getattr(cast(Any, self.app), "_telemetry_tool_output", lambda *a, **k: None)(
+                            getattr(
+                                cast(Any, self.app), "_telemetry_tool_output", lambda *a, **k: None
+                            )(
                                 self._term_id,
                                 self._agent_name,
                                 call_id,
@@ -2309,14 +2921,70 @@ class TerminalPanel(Widget):
                         if call_id in self._active_tool_calls:
                             self._active_tool_calls.pop(call_id, None)
 
+
+
         except asyncio.CancelledError:
             run_status = "cancelled"
             log.write(RichText("  [cancelled]", style="#ff6600"))
             self._write_system_message("progress", "run cancelled", style="#ffaa00")
         except Exception as exc:
+            # ContextCompactedError is a resumption signal, not a fatal error.
+            # The context window was auto-compacted; reload the agent and
+            # re-submit with a continuation prompt, exactly as the CLI does.
+            try:
+                from cai.sdk.agents.exceptions import ContextCompactedError as _CCE
+
+                _is_compact = isinstance(exc, _CCE)
+            except Exception:
+                _is_compact = "ContextCompactedError" in type(exc).__name__
+
+            if _is_compact:
+                try:
+                    run_status = "completed"
+                    self._write_system_message(
+                        "progress",
+                        "✓ Context window compacted — resuming task",
+                        style="#00cc88",
+                    )
+                    # Reload agent via AGENT_MANAGER in case it was refreshed.
+                    try:
+                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AM
+
+                        _reloaded = _AM.get_active_agent()
+                        if _reloaded is not None:
+                            self._agent = _reloaded
+                    except Exception:
+                        pass
+                    _continuation = (
+                        f"{self._last_prompt_text}\n\n"
+                        "IMPORTANT: Your context window was just compacted. "
+                        "Your session memory is already loaded above. "
+                        "Review the 'Exhausted Approaches' section in your memory and "
+                        "DO NOT repeat any technique, command, URL, port scan, or login "
+                        "attempt already listed there. "
+                        "Pick up exactly where you left off using only NEW approaches."
+                    )
+                    # Schedule a fresh run with the continuation prompt.
+                    self.call_after_refresh(lambda: self._run_worker.__class__)  # keep linter happy
+                    self._run_worker = self._run_agent(_continuation)
+                    return  # skip the error-state path below
+                except Exception as _retry_exc:
+                    # If the retry scheduling itself fails, fall through to
+                    # the generic error handler so the user is informed.
+                    import sys as _sys
+
+                    _sys.stderr.write(f"[cai-tui-debug] compact retry failed: {_retry_exc!r}\n")
+                    _sys.stderr.flush()
+
             run_status = "error"
             run_error = str(exc)
-            log.write(RichText(f"  [error] {exc}", style="#ff4444"))
+            try:
+                import sys as _sys
+
+                _sys.stderr.write(f"[cai-tui-debug] EXCEPTION in _run_agent: {exc!r}\n")
+                _sys.stderr.flush()
+            except Exception:
+                pass
             # Mark any running tool calls as errored in the log.
             for call_id, meta in list(self._active_tool_calls.items()):
                 log.write(
@@ -2326,18 +2994,83 @@ class TerminalPanel(Widget):
                     )
                 )
             self._active_tool_calls.clear()
-            self._write_system_message("error", str(exc), style="#ff4444")
-            self._write_system_message("error", "use /retry to run the last prompt again", style="#ff6666")
+            # Render a single clean error panel — avoids printing the same
+            # exception message twice (once raw, once via _write_system_message).
+            try:
+                from rich.panel import Panel as _Panel
+
+                log.write(
+                    _Panel(
+                        f"[bold]{type(exc).__name__}[/bold]: {exc}",
+                        title="[bold red]Error[/bold red]",
+                        border_style="red",
+                        padding=(0, 1),
+                    )
+                )
+            except Exception:
+                log.write(RichText(f"  [error] {exc}", style="#ff4444"))
+            log.write(RichText("  hint: use /retry to run the last prompt again", style="#ff6666"))
         finally:
             self._busy = False
             self._run_worker = None
+            # Unregister the TUI progress writer so CLI mode gets its console back.
+            try:
+                from cai.util import set_progress_writer
+
+                set_progress_writer(None)
+            except Exception:
+                pass
+            # Unregister the TUI panel writer so CLI mode gets its console back.
+            try:
+                from cai.util import set_panel_writer
+
+                set_panel_writer(None)
+            except Exception:
+                pass
+            # Unregister the loading writer and ensure the indicator is hidden.
+            try:
+                from cai.util import set_tool_loading_writer
+
+                set_tool_loading_writer(None)
+            except Exception:
+                pass
+            try:
+                indicator = self.query_one(f"#term-loading-{self._term_id}", LoadingIndicator)
+                indicator.display = False
+            except Exception:
+                pass
+            # Restore CAI_STREAM / CAI_STREAM_DEBUG to their original values.
+            try:
+                if _prev_cai_stream is None:
+                    os.environ.pop("CAI_STREAM", None)
+                else:
+                    os.environ["CAI_STREAM"] = _prev_cai_stream
+                if _prev_cai_stream_debug is None:
+                    os.environ.pop("CAI_STREAM_DEBUG", None)
+                else:
+                    os.environ["CAI_STREAM_DEBUG"] = _prev_cai_stream_debug
+            except Exception:
+                pass
+            # Flush any partial line left in the streaming buffer (no-op when stream_debug=False)
+            try:
+                if stream_debug and _stream_line_buf.strip():
+                    log.write(
+                        RichText(
+                            f"[stream:{self._term_id}] {_stream_line_buf}",
+                            style="#3399ff",
+                        )
+                    )
+            except Exception:
+                pass
             if stream_iter is not None:
                 try:
                     await cast(Any, stream_iter).aclose()
                 except Exception:
                     pass
             try:
-                status_text = getattr(cast(Any, self.app), "_telemetry_run_finished", lambda *a, **k: "")(
+                status_text = getattr(
+                    cast(Any, self.app), "_telemetry_run_finished", lambda *a, **k: ""
+                )(
                     self._term_id,
                     self._agent_name,
                     result,
@@ -2363,6 +3096,289 @@ class TerminalPanel(Widget):
             self.query_one(f"#term-status-{self._term_id}", Static).update(out)
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Browser preview widget
+# ---------------------------------------------------------------------------
+class BrowserPreview(Widget):
+    """Displays the most recent browser screenshot path and optional VLM sitrep.
+
+    Becomes visible (adds ``-visible`` CSS class) when a screenshot is
+    delivered via :func:`set_screenshot`.  Uses ``textual-image`` for inline
+    rendering when the library is available; falls back to a styled text panel.
+    """
+
+    screenshot_path: reactive[str] = reactive("")
+    interactive_map_data: reactive[list] = reactive([])
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="browser-preview-content")
+
+    def watch_screenshot_path(self, path: str) -> None:
+        """React to a new screenshot path: update content and show the panel."""
+        if not path:
+            self.remove_class("-visible")
+            return
+
+        self.add_class("-visible")
+
+        try:
+            content_widget = self.query_one("#browser-preview-content", Static)
+        except Exception:
+            return
+
+        # Try textual-image first for rich inline display
+        try:
+            from textual_image.widget import Image as TerminalImage  # type: ignore
+
+            # Replace the Static placeholder with a TerminalImage on first use;
+            # subsequent calls update its path attribute.
+            existing = None
+            try:
+                existing = self.query_one("TerminalImage")
+            except Exception:
+                pass
+
+            if existing is None:
+                # If Pillow is available and we have map data, composite an overlay
+                use_path = path
+                try:
+                    if self.interactive_map_data:
+                        from PIL import Image, ImageDraw, ImageFont  # type: ignore
+
+                        orig = Image.open(path).convert("RGBA")
+                        overlay_img = Image.new("RGBA", orig.size, (255, 255, 255, 0))
+                        draw = ImageDraw.Draw(overlay_img)
+                        try:
+                            font = ImageFont.load_default()
+                        except Exception:
+                            font = None
+
+                        def _measure_label(text: str) -> tuple[int, int]:
+                            if not font:
+                                return len(text) * 6, 10
+                            if hasattr(draw, "textbbox"):
+                                left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                                return max(0, right - left), max(0, bottom - top)
+                            if hasattr(draw, "textsize"):
+                                return draw.textsize(text, font=font)
+                            return len(text) * 6, 10
+
+                        # Playwright viewport assumed; scale rects to image size if needed
+                        vp_w, vp_h = 1280, 800
+                        sx = orig.width / vp_w if vp_w else 1.0
+                        sy = orig.height / vp_h if vp_h else 1.0
+
+                        for node in (self.interactive_map_data or [])[:80]:
+                            try:
+                                rect = node.get("rect") or {}
+                                if not rect:
+                                    continue
+                                x = int(rect.get("x") or 0)
+                                y = int(rect.get("y") or 0)
+                                w = int(rect.get("w") or 0)
+                                h = int(rect.get("h") or 0)
+                                rx = int(x * sx)
+                                ry = int(y * sy)
+                                rw = max(2, int(w * sx))
+                                rh = max(2, int(h * sy))
+
+                                outline_w = max(1, orig.width // 300)
+                                draw.rectangle(
+                                    [rx, ry, rx + rw, ry + rh],
+                                    outline=(255, 77, 255, 200),
+                                    width=outline_w,
+                                )
+
+                                idx = (
+                                    node.get("map_index")
+                                    if node.get("map_index") is not None
+                                    else node.get("index")
+                                )
+                                label = str(idx) if idx is not None else ""
+                                if label:
+                                    tx, ty = rx + 4, ry + 4
+                                    # text background
+                                    tw, th = _measure_label(label)
+                                    draw.rectangle(
+                                        [tx - 2, ty - 2, tx + tw + 2, ty + th + 2],
+                                        fill=(0, 0, 0, 160),
+                                    )
+                                    draw.text((tx, ty), label, fill=(255, 255, 255, 255), font=font)
+                            except Exception:
+                                continue
+
+                        out = Image.alpha_composite(orig, overlay_img)
+                        ts = int(time.time())
+                        p = Path(path)
+                        overlay_path = str(p.with_name(f"{p.stem}_overlay_{ts}.png"))
+                        try:
+                            out.save(overlay_path)
+                            use_path = overlay_path
+                        except Exception:
+                            use_path = path
+                except Exception:
+                    use_path = path
+
+                content_widget.display = False
+                self.mount(TerminalImage(use_path))
+            else:
+                try:
+                    # If map data available, attempt to composite overlay and update path
+                    use_path = path
+                    try:
+                        if self.interactive_map_data:
+                            from PIL import Image, ImageDraw, ImageFont  # type: ignore
+
+                            orig = Image.open(path).convert("RGBA")
+                            overlay_img = Image.new("RGBA", orig.size, (255, 255, 255, 0))
+                            draw = ImageDraw.Draw(overlay_img)
+                            try:
+                                font = ImageFont.load_default()
+                            except Exception:
+                                font = None
+
+                            def _measure_label(text: str) -> tuple[int, int]:
+                                if not font:
+                                    return len(text) * 6, 10
+                                if hasattr(draw, "textbbox"):
+                                    left, top, right, bottom = draw.textbbox(
+                                        (0, 0), text, font=font
+                                    )
+                                    return max(0, right - left), max(0, bottom - top)
+                                if hasattr(draw, "textsize"):
+                                    return draw.textsize(text, font=font)
+                                return len(text) * 6, 10
+
+                            vp_w, vp_h = 1280, 800
+                            sx = orig.width / vp_w if vp_w else 1.0
+                            sy = orig.height / vp_h if vp_h else 1.0
+                            for node in (self.interactive_map_data or [])[:80]:
+                                try:
+                                    rect = node.get("rect") or {}
+                                    if not rect:
+                                        continue
+                                    x = int(rect.get("x") or 0)
+                                    y = int(rect.get("y") or 0)
+                                    w = int(rect.get("w") or 0)
+                                    h = int(rect.get("h") or 0)
+                                    rx = int(x * sx)
+                                    ry = int(y * sy)
+                                    rw = max(2, int(w * sx))
+                                    rh = max(2, int(h * sy))
+                                    outline_w = max(1, orig.width // 300)
+                                    draw.rectangle(
+                                        [rx, ry, rx + rw, ry + rh],
+                                        outline=(255, 77, 255, 200),
+                                        width=outline_w,
+                                    )
+                                    idx = (
+                                        node.get("map_index")
+                                        if node.get("map_index") is not None
+                                        else node.get("index")
+                                    )
+                                    label = str(idx) if idx is not None else ""
+                                    if label:
+                                        tx, ty = rx + 4, ry + 4
+                                        tw, th = _measure_label(label)
+                                        draw.rectangle(
+                                            [tx - 2, ty - 2, tx + tw + 2, ty + th + 2],
+                                            fill=(0, 0, 0, 160),
+                                        )
+                                        draw.text(
+                                            (tx, ty), label, fill=(255, 255, 255, 255), font=font
+                                        )
+                                except Exception:
+                                    continue
+                            out = Image.alpha_composite(orig, overlay_img)
+                            ts = int(time.time())
+                            p = Path(path)
+                            overlay_path = str(p.with_name(f"{p.stem}_overlay_{ts}.png"))
+                            try:
+                                out.save(overlay_path)
+                                use_path = overlay_path
+                            except Exception:
+                                use_path = path
+                    except Exception:
+                        use_path = path
+                    existing.path = use_path  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            # Render a simple legend overlay (below the image) showing map indices
+            try:
+                overlay = self.query_one("#browser-preview-overlay", Static)
+            except Exception:
+                overlay = None
+
+            legend_lines = []
+            try:
+                for node in (self.interactive_map_data or [])[:40]:
+                    idx = node.get("map_index") or node.get("index") or ""
+                    name = (node.get("name") or "").strip()
+                    selector = node.get("selector") or node.get("id") or ""
+                    rect = node.get("rect") or {}
+                    coords = (
+                        f"({rect.get('x')},{rect.get('y')} {rect.get('w')}x{rect.get('h')})"
+                        if rect
+                        else ""
+                    )
+                    legend_lines.append(f"[{idx}] {name} {selector} {coords}")
+            except Exception:
+                legend_lines = []
+
+            legend_text = "\n".join(legend_lines) or ""
+            if overlay is None:
+                try:
+                    self.mount(Static(legend_text, id="browser-preview-overlay"))
+                except Exception:
+                    pass
+            else:
+                try:
+                    overlay.update(legend_text)
+                except Exception:
+                    pass
+
+            return
+        except ImportError:
+            pass
+
+        # Fallback: show the path + instruction in a styled Static
+        fname = path.split("/")[-1] if "/" in path else path
+        # Compose fallback text content and include the interactive map legend
+        legend_lines = []
+        try:
+            for node in (self.interactive_map_data or [])[:40]:
+                idx = node.get("map_index") or node.get("index") or ""
+                name = (node.get("name") or "").strip()
+                selector = node.get("selector") or node.get("id") or ""
+                legend_lines.append(f"[{idx}] {name} {selector}")
+        except Exception:
+            legend_lines = []
+
+        legend_text = "\n".join(legend_lines) or ""
+        content_widget.update(
+            f"[bold magenta]Browser Screenshot[/bold magenta]\n"
+            f"[#ff77ff]{fname}[/#ff77ff]\n"
+            f"[dim #aa55aa]{path}[/dim #aa55aa]\n\n"
+            "[dim]Install textual-image for inline preview (pip install textual-image)[/dim]\n\n"
+            f"{legend_text}"
+        )
+
+    def set_screenshot(self, path: str, interactive_map: list | None = None) -> None:
+        """Thread-safe entry point called by the screenshot writer closure.
+
+        Accepts an optional ``interactive_map`` list produced by the browser tool.
+        """
+        self.app.call_from_thread(self._set_screenshot_path, path, interactive_map)
+
+    def _set_screenshot_path(self, path: str, interactive_map: list | None = None) -> None:
+        self.screenshot_path = path
+        try:
+            self.interactive_map_data = interactive_map or []
+        except Exception:
+            self.interactive_map_data = []
 
 
 # ---------------------------------------------------------------------------
@@ -2394,9 +3410,7 @@ class CaiHeader(Widget):
     def compose(self) -> ComposeResult:
         with Horizontal(id="header-left"):
             yield Static(
-                "[bold #00ff00]T1[/bold #00ff00]"
-                "[#004400] | [/#004400]"
-                "[#00ff00]Terminal[/#00ff00]",
+                "[bold #00ff00]T1[/bold #00ff00][#004400] | [/#004400][#00ff00]Terminal[/#00ff00]",
                 id="header-left-text",
             )
             with Horizontal(id="header-nav"):
@@ -2426,12 +3440,12 @@ class CAIApp(App):
     TITLE = "CAI"
 
     BINDINGS = [
-        Binding("ctrl+q", "quit",           "Exit",    show=True),
-        Binding("ctrl+l", "clear_active",   "Clear",   show=True),
-        Binding("ctrl+c", "cancel_active",  "Cancel",  show=True),
+        Binding("ctrl+q", "quit", "Exit", show=True),
+        Binding("ctrl+l", "clear_active", "Clear", show=True),
+        Binding("ctrl+c", "cancel_active", "Cancel", show=True),
         Binding("ctrl+s", "toggle_sidebar", "Sidebar", show=True),
-        Binding("escape", "cancel_active",  "Cancel",  show=True),
-        Binding("ctrl+p", "command_palette","Palette", show=True),
+        Binding("escape", "cancel_active", "Cancel", show=True),
+        Binding("ctrl+p", "command_palette", "Palette", show=True),
     ]
 
     CSS = _CSS
@@ -2439,7 +3453,7 @@ class CAIApp(App):
     def __init__(
         self,
         agent=None,
-        initial_prompt: Optional[str] = None,
+        initial_prompt: str | None = None,
     ) -> None:
         super().__init__()
         self._agent = agent
@@ -2450,15 +3464,15 @@ class CAIApp(App):
         self._initial_prompt = initial_prompt
         self._sidebar_visible = True
         self._available_agents: dict = {}
-        self._active_team: Optional[int] = None
+        self._active_team: int | None = None
         self._queue_items: list[dict] = []
-        self._queue_selected_idx: Optional[int] = None
+        self._queue_selected_idx: int | None = None
         self._queue_running: bool = False
         self._queue_broadcast_mode: bool = False
         self._tool_registry: dict[str, dict] = {}
         self._tool_call_history: list[dict] = []
-        self._selected_tool_id: Optional[str] = None
-        self._selected_tool_call_idx: Optional[int] = None
+        self._selected_tool_id: str | None = None
+        self._selected_tool_call_idx: int | None = None
         self._tool_button_id_to_tool_id: dict[str, str] = {}
         self._tool_tool_id_to_button_id: dict[str, str] = {}
         self._tool_calls_file: str = TOOL_CALLS_FILE
@@ -2474,7 +3488,9 @@ class CAIApp(App):
         self._telemetry_pending_runs: dict[int, dict] = {}
         self._telemetry_pending_tool_calls: dict[str, dict] = {}
         self._telemetry_stats_by_term: dict[int, dict] = {}
-        self._context_snapshot_by_term: dict[int, dict] = self._load_context_snapshots_latest_by_term()
+        self._context_snapshot_by_term: dict[
+            int, dict
+        ] = self._load_context_snapshots_latest_by_term()
         self._stats_started_ts: float = time.time()
         self._price_limit_warned: bool = False
         self._price_limit_paused: bool = False
@@ -2517,7 +3533,14 @@ class CAIApp(App):
     def _is_retrieval_tool(self, tool_name: str) -> bool:
         name = (tool_name or "").lower()
         retrieval_markers = (
-            "search", "retriev", "rag", "file_search", "web_search", "google", "shodan", "mcp"
+            "search",
+            "retriev",
+            "rag",
+            "file_search",
+            "web_search",
+            "google",
+            "shodan",
+            "mcp",
         )
         return any(marker in name for marker in retrieval_markers)
 
@@ -2584,7 +3607,7 @@ class CAIApp(App):
                 paths.append(self._telemetry_file)
 
             for path in paths:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     for line in f:
                         raw = line.strip()
                         if not raw:
@@ -2650,7 +3673,9 @@ class CAIApp(App):
             model_name = str(s.get("model", self._model_name) or self._model_name)
             in_price = float(s.get("input_price_per_token", 0.0) or 0.0)
             out_price = float(s.get("output_price_per_token", 0.0) or 0.0)
-            pricing_lines.append(f"T{term_id}: model={model_name} in={in_price:.8f} out={out_price:.8f}")
+            pricing_lines.append(
+                f"T{term_id}: model={model_name} in={in_price:.8f} out={out_price:.8f}"
+            )
 
         if active_terms <= 0:
             try:
@@ -2884,6 +3909,7 @@ class CAIApp(App):
         name = str(model_name or "").lower().strip()
         try:
             from cai.util import get_model_input_tokens
+
             max_tokens = int(get_model_input_tokens(name) or 0)
             if max_tokens > 0:
                 return max_tokens
@@ -3007,7 +4033,9 @@ class CAIApp(App):
         reasoning_tokens = int(details.get("reasoning_tokens", 0) or 0)
         if cached_tokens > 0:
             categories["system_prompt_tokens"] += cached_tokens
-            categories["user_prompt_tokens"] = max(0, int(categories["user_prompt_tokens"]) - cached_tokens)
+            categories["user_prompt_tokens"] = max(
+                0, int(categories["user_prompt_tokens"]) - cached_tokens
+            )
         if reasoning_tokens > 0:
             categories["assistant_response_tokens"] += reasoning_tokens
 
@@ -3102,7 +4130,7 @@ class CAIApp(App):
                 paths.append(self._context_snapshots_file)
 
             for path in paths:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     for line in f:
                         raw = line.strip()
                         if not raw:
@@ -3161,7 +4189,9 @@ class CAIApp(App):
                     else:
                         cast(Any, inp).value = str(payload)
                     inp.focus()
-                    self._log_to_active_terminal("[context] copied summary to input", style="#00ff00")
+                    self._log_to_active_terminal(
+                        "[context] copied summary to input", style="#00ff00"
+                    )
                 except Exception:
                     pass
                 continue
@@ -3197,7 +4227,9 @@ class CAIApp(App):
                 "tool_results_tokens": 0,
             },
         }
-        self._emit_telemetry(term_id, agent_name, "run_started", {"prompt_chars": len(prompt or "")})
+        self._emit_telemetry(
+            term_id, agent_name, "run_started", {"prompt_chars": len(prompt or "")}
+        )
 
     def _telemetry_first_token(self, term_id: int, agent_name: str) -> None:
         run = self._telemetry_pending_runs.get(self._run_key(term_id))
@@ -3241,7 +4273,9 @@ class CAIApp(App):
             stats["retrieval_calls"] += 1
             if run and isinstance(run.get("categories"), dict):
                 # Best-effort attribution: retrieval calls often pull memory/RAG context.
-                run["categories"]["memory_rag_tokens"] += self._estimate_tokens_from_text(args_preview)
+                run["categories"]["memory_rag_tokens"] += self._estimate_tokens_from_text(
+                    args_preview
+                )
             self._emit_telemetry(
                 term_id,
                 agent_name,
@@ -3274,10 +4308,14 @@ class CAIApp(App):
         )
         run = self._telemetry_pending_runs.get(self._run_key(term_id))
         if run and isinstance(run.get("categories"), dict):
-            run["categories"]["tool_results_tokens"] += self._estimate_tokens_from_text(output_preview)
+            run["categories"]["tool_results_tokens"] += self._estimate_tokens_from_text(
+                output_preview
+            )
         if pending.get("is_retrieval"):
             if run and isinstance(run.get("categories"), dict):
-                run["categories"]["memory_rag_tokens"] += self._estimate_tokens_from_text(output_preview)
+                run["categories"]["memory_rag_tokens"] += self._estimate_tokens_from_text(
+                    output_preview
+                )
             self._emit_telemetry(
                 term_id,
                 agent_name,
@@ -3328,8 +4366,12 @@ class CAIApp(App):
                     input_tokens += int(usage_totals.get("input_tokens", 0) or 0)
                     output_tokens += int(usage_totals.get("output_tokens", 0) or 0)
                     total_tokens += int(usage_totals.get("total_tokens", 0) or 0)
-                    usage_detail_totals["cached_tokens"] += int(usage_totals.get("cached_tokens", 0) or 0)
-                    usage_detail_totals["reasoning_tokens"] += int(usage_totals.get("reasoning_tokens", 0) or 0)
+                    usage_detail_totals["cached_tokens"] += int(
+                        usage_totals.get("cached_tokens", 0) or 0
+                    )
+                    usage_detail_totals["reasoning_tokens"] += int(
+                        usage_totals.get("reasoning_tokens", 0) or 0
+                    )
         except Exception:
             pass
 
@@ -3359,7 +4401,9 @@ class CAIApp(App):
             from cai.util import COST_TRACKER
 
             interaction_cost = float(
-                COST_TRACKER.calculate_cost(model_name, input_tokens, output_tokens, label="TUI_STATS")
+                COST_TRACKER.calculate_cost(
+                    model_name, input_tokens, output_tokens, label="TUI_STATS"
+                )
             )
             input_price, output_price = COST_TRACKER.get_model_pricing(model_name)
         except Exception:
@@ -3481,7 +4525,9 @@ class CAIApp(App):
 
         try:
             bottom = self.query_one("#term-row-bottom", Horizontal)
-            bottom_visible = any(getattr(child, "display", True) for child in bottom.query(TerminalPanel))
+            bottom_visible = any(
+                getattr(child, "display", True) for child in bottom.query(TerminalPanel)
+            )
             bottom.display = bottom_visible
         except Exception:
             pass
@@ -3508,8 +4554,21 @@ class CAIApp(App):
             elif mode == "small" and bid.startswith("agent-"):
                 btn.label = self._truncate_label(base, max_len)
             elif mode == "small" and bid in {
-                "sessions-refresh", "sessions-load", "sessions-resume", "sessions-export", "sessions-rename", "sessions-delete",
-                "queue-run", "queue-delete", "queue-clear", "queue-broadcast-mode", "tools-run", "tools-inspect", "tools-replay", "tools-inject", "tools-inject-mode",
+                "sessions-refresh",
+                "sessions-load",
+                "sessions-resume",
+                "sessions-export",
+                "sessions-rename",
+                "sessions-delete",
+                "queue-run",
+                "queue-delete",
+                "queue-clear",
+                "queue-broadcast-mode",
+                "tools-run",
+                "tools-inspect",
+                "tools-replay",
+                "tools-inject",
+                "tools-inject-mode",
             }:
                 btn.label = self._truncate_label(base, 10)
             else:
@@ -3520,7 +4579,9 @@ class CAIApp(App):
                     if bid.startswith("team-"):
                         idx = int(bid.split("-")[-1])
                         label, composition = TEAM_PRESETS[idx]
-                        btn.tooltip = self._team_tooltip_text(idx, label, composition) + "\nViewport: large"
+                        btn.tooltip = (
+                            self._team_tooltip_text(idx, label, composition) + "\nViewport: large"
+                        )
                     elif bid.startswith("agent-"):
                         btn.tooltip = f"Agent: {base}"
                 elif mode == "small" and not btn.tooltip:
@@ -3626,6 +4687,7 @@ class CAIApp(App):
                     with Vertical(id="terminals"):
                         with Horizontal(id="term-row-top", classes="term-row"):
                             pass  # first panel added in on_mount
+                    yield BrowserPreview(id="browser-preview")
                 with TabPane("Agents", id="tab-agents"):
                     with Vertical(id="agents-pane"):
                         with ScrollableContainer(id="agents-scroll"):
@@ -3639,7 +4701,9 @@ class CAIApp(App):
                                         id=f"team-{i}",
                                         classes="team-btn",
                                     )
-                            yield Static("Select a team to see strategy hints.", id="team-playbook-preview")
+                            yield Static(
+                                "Select a team to see strategy hints.", id="team-playbook-preview"
+                            )
                             yield Button("+ Create Team", id="new-team-btn")
                 with TabPane("Queue", id="tab-queue"):
                     with Vertical(id="queue-pane"):
@@ -3648,8 +4712,12 @@ class CAIApp(App):
                         with Horizontal(id="queue-actions"):
                             yield Button("Run Queue", id="queue-run", classes="agent-btn")
                             yield Button("Delete Selected", id="queue-delete", classes="team-btn")
-                            yield Button("Clear All", id="queue-clear", classes="modal-btn modal-btn--cancel")
-                            yield Button("Broadcast: OFF", id="queue-broadcast-mode", classes="team-btn")
+                            yield Button(
+                                "Clear All", id="queue-clear", classes="modal-btn modal-btn--cancel"
+                            )
+                            yield Button(
+                                "Broadcast: OFF", id="queue-broadcast-mode", classes="team-btn"
+                            )
                         with Horizontal(id="queue-input-row"):
                             yield Static("+", id="queue-prefix")
                             yield Input(
@@ -3665,19 +4733,37 @@ class CAIApp(App):
                         with Horizontal(id="sessions-controls"):
                             yield Button("Refresh", id="sessions-refresh", classes="team-btn")
                             yield Button("Load Selected", id="sessions-load", classes="agent-btn")
-                            yield Button("Resume Selected", id="sessions-resume", classes="agent-btn")
-                            yield Button("Export Selected", id="sessions-export", classes="agent-btn")
-                            yield Button("Rename Selected", id="sessions-rename", classes="agent-btn")
-                            yield Button("Delete Selected", id="sessions-delete", classes="modal-btn modal-btn--cancel")
+                            yield Button(
+                                "Resume Selected", id="sessions-resume", classes="agent-btn"
+                            )
+                            yield Button(
+                                "Export Selected", id="sessions-export", classes="agent-btn"
+                            )
+                            yield Button(
+                                "Rename Selected", id="sessions-rename", classes="agent-btn"
+                            )
+                            yield Button(
+                                "Delete Selected",
+                                id="sessions-delete",
+                                classes="modal-btn modal-btn--cancel",
+                            )
                 with TabPane("Config", id="tab-config"):
                     with Vertical(id="config-pane"):
                         yield Button("Providers", id="config-providers", classes="menu-btn")
                         yield Button("Model Params", id="config-model-params", classes="menu-btn")
                         yield Button("Memory / RAG", id="config-memory", classes="menu-btn")
-                        yield Button("Export / Import", id="config-export-import", classes="menu-btn")
+                        yield Button(
+                            "Export / Import", id="config-export-import", classes="menu-btn"
+                        )
                         yield Button("Environment", id="config-env", classes="menu-btn")
-                        yield Button("Toggle Session Recording", id="config-session-recording", classes="menu-btn")
-                        yield Button("Reset Defaults", id="config-reset-defaults", classes="menu-btn")
+                        yield Button(
+                            "Toggle Session Recording",
+                            id="config-session-recording",
+                            classes="menu-btn",
+                        )
+                        yield Button(
+                            "Reset Defaults", id="config-reset-defaults", classes="menu-btn"
+                        )
                 with TabPane("Tools", id="tab-tools"):
                     with Vertical(id="tools-pane"):
                         with ScrollableContainer(id="tools-list-scroll"):
@@ -3707,6 +4793,7 @@ class CAIApp(App):
         # Load available agents
         try:
             from cai.agents import get_available_agents
+
             self._available_agents = get_available_agents()
         except Exception:
             self._available_agents = {}
@@ -3757,11 +4844,28 @@ class CAIApp(App):
         except Exception:
             pass
 
+        # Wire the global screenshot notifier to the BrowserPreview widget
+        try:
+            from cai.util import set_screenshot_writer
+
+            browser_preview = self.query_one("#browser-preview", BrowserPreview)
+            set_screenshot_writer(browser_preview.set_screenshot)
+        except Exception:
+            pass
+
         if self._initial_prompt:
             await first.dispatch(self._initial_prompt)
 
     def on_resize(self, event: events.Resize) -> None:
         self._apply_responsive_layout(int(event.size.width), int(event.size.height))
+
+    def on_unmount(self) -> None:
+        try:
+            from cai.util import set_screenshot_writer
+
+            set_screenshot_writer(None)
+        except Exception:
+            pass
 
     def _build_tool_registry(self) -> dict[str, dict]:
         """Build TUI tool registry from built-ins plus active terminal agent tools."""
@@ -3878,8 +4982,8 @@ class CAIApp(App):
                 pass
 
         for idx, tool_id in enumerate(sorted(self._tool_registry.keys()), start=1):
-            meta = self._tool_registry.get(tool_id, {})
-            name = meta.get("name", tool_id)
+            _meta = self._tool_registry.get(tool_id, {})
+            name = _meta.get("name", tool_id)
             btn_id = f"tool-select-{idx}"
             self._tool_button_id_to_tool_id[btn_id] = tool_id
             self._tool_tool_id_to_button_id[tool_id] = btn_id
@@ -3903,7 +5007,9 @@ class CAIApp(App):
         except Exception:
             pass
 
-    def _append_tool_call(self, tool_id: str, inputs: dict, output: dict, replayed: bool = False) -> dict:
+    def _append_tool_call(
+        self, tool_id: str, inputs: dict, output: dict, replayed: bool = False
+    ) -> dict:
         call_id = f"tool-{len(self._tool_call_history) + 1}"
         record = {
             "call_id": call_id,
@@ -3931,7 +5037,7 @@ class CAIApp(App):
                 paths.append(self._tool_calls_file)
 
             for path in paths:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     for line in f:
                         raw = line.strip()
                         if not raw:
@@ -4099,7 +5205,9 @@ class CAIApp(App):
             if not isinstance(params, dict):
                 params = {}
         except Exception:
-            self._log_to_active_terminal("[tool] Invalid JSON args; expected an object.", style="#ff4444")
+            self._log_to_active_terminal(
+                "[tool] Invalid JSON args; expected an object.", style="#ff4444"
+            )
             return
 
         meta = self._tool_registry.get(tool_id, {})
@@ -4161,11 +5269,13 @@ class CAIApp(App):
             if not isinstance(params, dict):
                 params = {}
         except Exception:
-            self._log_to_active_terminal("[tool] Replay args must be valid JSON object.", style="#ff4444")
+            self._log_to_active_terminal(
+                "[tool] Replay args must be valid JSON object.", style="#ff4444"
+            )
             return
 
         try:
-            meta = self._tool_registry.get(tool_id, {})
+            _meta = self._tool_registry.get(tool_id, {})
             output_or_awaitable = runner(params)
             if inspect.isawaitable(output_or_awaitable):
                 output = await output_or_awaitable
@@ -4198,7 +5308,9 @@ class CAIApp(App):
                     panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
                     await panel.dispatch(payload)
                 except Exception as exc:
-                    self._log_to_active_terminal(f"[inject] command dispatch failed: {exc}", style="#ff4444")
+                    self._log_to_active_terminal(
+                        f"[inject] command dispatch failed: {exc}", style="#ff4444"
+                    )
             else:
                 self._log_to_active_terminal(f"[inject/input] {payload}", style="#00ff00")
                 inp = self.query_one(f"#term-input-{self._active_term_id}", TextArea)
@@ -4249,7 +5361,9 @@ class CAIApp(App):
                 panel.add_class("-inactive-panel")
         try:
             size = self.size
-            self._apply_terminal_visibility(self._responsive_mode_for_size(int(size.width), int(size.height)))
+            self._apply_terminal_visibility(
+                self._responsive_mode_for_size(int(size.width), int(size.height))
+            )
         except Exception:
             pass
         # Update header to reflect active terminal
@@ -4337,7 +5451,7 @@ class CAIApp(App):
             return
 
         if btn_id.startswith("agent-"):
-            agent_name = btn_id[len("agent-"):]
+            agent_name = btn_id[len("agent-") :]
             if agent_name in self._available_agents:
                 self._open_agent_modal(agent_name)
             return
@@ -4352,7 +5466,7 @@ class CAIApp(App):
 
         if btn_id.startswith("tool-call-"):
             try:
-                idx = int(btn_id[len("tool-call-"):])
+                idx = int(btn_id[len("tool-call-") :])
                 if idx < 0 or idx >= len(self._tool_call_history):
                     return
                 self._selected_tool_call_idx = idx
@@ -4394,7 +5508,7 @@ class CAIApp(App):
             return
 
         if btn_id.startswith("team-"):
-            self._activate_team(int(btn_id[len("team-"):]))
+            self._activate_team(int(btn_id[len("team-") :]))
             return
 
         if btn_id == "queue-add":
@@ -4432,7 +5546,7 @@ class CAIApp(App):
             try:
                 if selected is not None:
                     self._session_open_worker(int(selected))
-                elif hasattr(self, '_session_files') and self._session_files:
+                elif hasattr(self, "_session_files") and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_open_worker(int(first))
             except Exception:
@@ -4443,7 +5557,7 @@ class CAIApp(App):
             try:
                 if selected is not None:
                     self._session_resume_worker(int(selected))
-                elif hasattr(self, '_session_files') and self._session_files:
+                elif hasattr(self, "_session_files") and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_resume_worker(int(first))
             except Exception:
@@ -4454,7 +5568,7 @@ class CAIApp(App):
             try:
                 if selected is not None:
                     self._session_export_worker(int(selected))
-                elif hasattr(self, '_session_files') and self._session_files:
+                elif hasattr(self, "_session_files") and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_export_worker(int(first))
             except Exception:
@@ -4465,7 +5579,7 @@ class CAIApp(App):
             try:
                 if selected is not None:
                     self._session_rename_worker(int(selected))
-                elif hasattr(self, '_session_files') and self._session_files:
+                elif hasattr(self, "_session_files") and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_rename_worker(int(first))
             except Exception:
@@ -4476,7 +5590,7 @@ class CAIApp(App):
             try:
                 if selected is not None:
                     self._session_delete_worker(int(selected))
-                elif hasattr(self, '_session_files') and self._session_files:
+                elif hasattr(self, "_session_files") and self._session_files:
                     first = sorted(self._session_files.keys())[0]
                     self._session_delete_worker(int(first))
             except Exception:
@@ -4553,7 +5667,7 @@ class CAIApp(App):
             "config-reset-defaults",
         ):
             try:
-                action_key = btn_id[len("config-"):]
+                action_key = btn_id[len("config-") :]
                 # Open the full config screen directly (avoid an extra confirm modal)
                 try:
                     self._open_config_screen(action_key)
@@ -4572,9 +5686,7 @@ class CAIApp(App):
         """Open the agent modal from a worker so push_screen_wait is valid."""
         active_label = f"T{self._active_term_id}"
         at_max = len(list(self.query(TerminalPanel))) >= 4
-        result = await self.push_screen_wait(
-            AgentModal(agent_name, active_label, at_max=at_max)
-        )
+        result = await self.push_screen_wait(AgentModal(agent_name, active_label, at_max=at_max))
         await self._handle_agent_modal(result)
 
     @work(exclusive=False)
@@ -4655,8 +5767,14 @@ class CAIApp(App):
                         var = CONFIG_VARIABLES[idx]
                         name = str(var.get("name") or "")
                         cur_cfg = _load_tui_config()
-                        current = os.environ.get(name) or cur_cfg.get("env", {}).get(name) or var.get("default", "")
-                        newval = await self.push_screen_wait(PromptModal(f"Set value for {name} (empty to unset):", str(current)))
+                        current = (
+                            os.environ.get(name)
+                            or cur_cfg.get("env", {}).get(name)
+                            or var.get("default", "")
+                        )
+                        newval = await self.push_screen_wait(
+                            PromptModal(f"Set value for {name} (empty to unset):", str(current))
+                        )
                         if newval is None:
                             continue
                         # Apply change
@@ -4671,10 +5789,14 @@ class CAIApp(App):
                                 cfg2.setdefault("env", {})[name] = newval
                             _save_tui_config(cfg2)
                             if log:
-                                log.write(RichText.from_markup(f"[green]Set {name} = {newval}[/green]"))
+                                log.write(
+                                    RichText.from_markup(f"[green]Set {name} = {newval}[/green]")
+                                )
                         except Exception as e:
                             if log:
-                                log.write(RichText.from_markup(f"[red]Failed to set {name}: {e}[/red]"))
+                                log.write(
+                                    RichText.from_markup(f"[red]Failed to set {name}: {e}[/red]")
+                                )
                         continue
 
                     elif action == "reset":
@@ -4695,10 +5817,16 @@ class CAIApp(App):
                                 cfg2.setdefault("env", {})[name] = str(default)
                             _save_tui_config(cfg2)
                             if log:
-                                log.write(RichText.from_markup(f"[green]Reset {name} to {default}[/green]"))
+                                log.write(
+                                    RichText.from_markup(
+                                        f"[green]Reset {name} to {default}[/green]"
+                                    )
+                                )
                         except Exception as e:
                             if log:
-                                log.write(RichText.from_markup(f"[red]Failed to reset {name}: {e}[/red]"))
+                                log.write(
+                                    RichText.from_markup(f"[red]Failed to reset {name}: {e}[/red]")
+                                )
                         continue
                     else:
                         # Unknown action – break
@@ -4711,7 +5839,9 @@ class CAIApp(App):
         if screen is None:
             try:
                 panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
-                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Unknown config section: {action_key}[/red]"))
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(
+                    RichText.from_markup(f"[red]Unknown config section: {action_key}[/red]")
+                )
             except Exception:
                 pass
             return
@@ -4740,7 +5870,11 @@ class CAIApp(App):
             elif key == "test_provider":
                 _, name = result
                 if log:
-                    log.write(RichText.from_markup(f"[dim]Provider test requested for {name} (not implemented)[/dim]"))
+                    log.write(
+                        RichText.from_markup(
+                            f"[dim]Provider test requested for {name} (not implemented)[/dim]"
+                        )
+                    )
 
             elif key == "save_model_params":
                 _, params = result
@@ -4752,11 +5886,17 @@ class CAIApp(App):
 
             elif key == "rebuild_memory":
                 if log:
-                    log.write(RichText.from_markup("[dim]Rebuild memory requested (not implemented)[/dim]"))
+                    log.write(
+                        RichText.from_markup(
+                            "[dim]Rebuild memory requested (not implemented)[/dim]"
+                        )
+                    )
 
             elif key == "evict_memory":
                 if log:
-                    log.write(RichText.from_markup("[dim]Evict memory requested (not implemented)[/dim]"))
+                    log.write(
+                        RichText.from_markup("[dim]Evict memory requested (not implemented)[/dim]")
+                    )
 
             elif key == "export_config":
                 _, path = result
@@ -4777,16 +5917,20 @@ class CAIApp(App):
                 _, path = result
                 try:
                     if path and os.path.exists(path):
-                        with open(path, "r") as f:
+                        with open(path) as f:
                             imported = json.load(f)
                         cfg = _load_tui_config()
                         cfg.update(imported)
                         _save_tui_config(cfg)
                         if log:
-                            log.write(RichText.from_markup(f"[green]Imported config from {path}[/green]"))
+                            log.write(
+                                RichText.from_markup(f"[green]Imported config from {path}[/green]")
+                            )
                     else:
                         if log:
-                            log.write(RichText.from_markup(f"[red]Import path not found: {path}[/red]"))
+                            log.write(
+                                RichText.from_markup(f"[red]Import path not found: {path}[/red]")
+                            )
                 except Exception as e:
                     if log:
                         log.write(RichText.from_markup(f"[red]Import failed: {e}[/red]"))
@@ -4834,7 +5978,11 @@ class CAIApp(App):
                     if os.path.exists(CONFIG_FILE):
                         os.remove(CONFIG_FILE)
                     if log:
-                        log.write(RichText.from_markup("[green]Reset TUI config to defaults (config file removed)[/green]"))
+                        log.write(
+                            RichText.from_markup(
+                                "[green]Reset TUI config to defaults (config file removed)[/green]"
+                            )
+                        )
                 except Exception as e:
                     if log:
                         log.write(RichText.from_markup(f"[red]Reset failed: {e}[/red]"))
@@ -4855,9 +6003,7 @@ class CAIApp(App):
 
         if action == "update":
             try:
-                panel = self.query_one(
-                    f"#terminal-panel-{self._active_term_id}", TerminalPanel
-                )
+                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
                 panel.update_agent(new_agent, agent_name)
                 self._set_active_terminal(self._active_term_id)
             except Exception:
@@ -5004,7 +6150,7 @@ class CAIApp(App):
         except Exception:
             self._queue_selected_idx = None
 
-    def _selected_queue_index(self) -> Optional[int]:
+    def _selected_queue_index(self) -> int | None:
         idx = self._queue_selected_idx
         try:
             lv = self.query_one("#queue-list", ListView)
@@ -5029,7 +6175,7 @@ class CAIApp(App):
             removed = self._queue_items.pop(idx)
             self._queue_selected_idx = None
             self._update_queue_view()
-            self._log_to_active_terminal(f"[queue] deleted: {removed.get('text','')[:120]}")
+            self._log_to_active_terminal(f"[queue] deleted: {removed.get('text', '')[:120]}")
         except Exception:
             pass
 
@@ -5068,10 +6214,14 @@ class CAIApp(App):
                     if broadcast:
                         await self._broadcast_prompt(text)
                     else:
-                        panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
+                        panel = self.query_one(
+                            f"#terminal-panel-{self._active_term_id}", TerminalPanel
+                        )
                         await panel.dispatch(text)
                     item["status"] = "completed"
-                    self._log_to_active_terminal(f"[queue] ({current}/{total}) completed: {text[:120]}")
+                    self._log_to_active_terminal(
+                        f"[queue] ({current}/{total}) completed: {text[:120]}"
+                    )
                 except Exception as exc:
                     item["status"] = "error"
                     item["error"] = str(exc)
@@ -5102,7 +6252,12 @@ class CAIApp(App):
 
     def _team_tooltip_text(self, idx: int, label: str, agent_types: list[str]) -> str:
         parts: list[str] = []
-        for agent_name in ("redteam_agent", "blueteam_agent", "bug_bounter_agent", "retester_agent"):
+        for agent_name in (
+            "redteam_agent",
+            "blueteam_agent",
+            "bug_bounter_agent",
+            "retester_agent",
+        ):
             count = agent_types.count(agent_name)
             if count > 0:
                 parts.append(f"{count} {agent_name}")
@@ -5132,11 +6287,7 @@ class CAIApp(App):
 
         label, composition = TEAM_PRESETS[idx]
         hint = self._team_playbook_hint(idx)
-        text = (
-            f"[bold]Team #{idx + 1}: {label}[/bold]\n"
-            f"T1-T4: {', '.join(composition[:4])}\n"
-            f"{hint}"
-        )
+        text = f"[bold]Team #{idx + 1}: {label}[/bold]\nT1-T4: {', '.join(composition[:4])}\n{hint}"
         try:
             preview.update(RichText.from_markup(text))
         except Exception:
@@ -5270,7 +6421,9 @@ class CAIApp(App):
         for idx, (fname, mtime_ts) in enumerate(files_sorted):
             path = os.path.join(logs_dir, fname)
             try:
-                mtime = datetime.fromtimestamp(mtime_ts).strftime("%Y-%m-%d %H:%M") if mtime_ts else "?"
+                mtime = (
+                    datetime.fromtimestamp(mtime_ts).strftime("%Y-%m-%d %H:%M") if mtime_ts else "?"
+                )
             except Exception:
                 mtime = "?"
             header = f"{fname}  ({mtime})"
@@ -5287,7 +6440,9 @@ class CAIApp(App):
             await actions.mount(Button("Resume", id=f"session-resume-{idx}", classes="agent-btn"))
             await actions.mount(Button("Export", id=f"session-export-{idx}", classes="agent-btn"))
             await actions.mount(Button("Rename", id=f"session-rename-{idx}", classes="team-btn"))
-            await actions.mount(Button("Delete", id=f"session-delete-{idx}", classes="modal-btn modal-btn--cancel"))
+            await actions.mount(
+                Button("Delete", id=f"session-delete-{idx}", classes="modal-btn modal-btn--cancel")
+            )
 
             self._session_files[idx] = path
             self._session_action_containers[idx] = actions
@@ -5318,6 +6473,7 @@ class CAIApp(App):
     async def _session_open_worker(self, idx: int) -> None:
         """Load messages from a session JSONL into the current active agent's history."""
         from rich.text import Text as RichText
+
         try:
             path = self._session_files.get(idx)
             if not path:
@@ -5327,12 +6483,15 @@ class CAIApp(App):
             messages = load_history_from_jsonl(path)
 
             # Merge into active agent similar to /load behavior
-            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-            from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
             from cai.repl.commands.parallel import ParallelCommand
+            from cai.sdk.agents.models.openai_chatcompletions import (
+                ACTIVE_MODEL_INSTANCES,
+                PERSISTENT_MESSAGE_HISTORIES,
+            )
+            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
             parallel_cmd = ParallelCommand()
-            current_agent = AGENT_MANAGER.get_active_agent()
+            _current_agent = AGENT_MANAGER.get_active_agent()
             current_agent_name = AGENT_MANAGER._active_agent_name
             if not current_agent_name:
                 return
@@ -5360,7 +6519,11 @@ class CAIApp(App):
             if not unique_messages:
                 try:
                     panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
-                    panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[dim]No new messages to add from {os.path.basename(path)}[/dim]"))
+                    panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(
+                        RichText.from_markup(
+                            f"[dim]No new messages to add from {os.path.basename(path)}[/dim]"
+                        )
+                    )
                 except Exception:
                     pass
                 return
@@ -5379,7 +6542,7 @@ class CAIApp(App):
 
             if model_instance:
                 model_instance.message_history.clear()
-                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+                os.environ["CAI_CONTEXT_USAGE"] = "0.0"
                 for msg in final_history:
                     try:
                         model_instance.add_to_message_history(msg)
@@ -5392,14 +6555,20 @@ class CAIApp(App):
 
             try:
                 panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
-                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[green]Loaded {len(unique_messages)} messages into {current_agent_name} from {os.path.basename(path)}[/green]"))
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(
+                    RichText.from_markup(
+                        f"[green]Loaded {len(unique_messages)} messages into {current_agent_name} from {os.path.basename(path)}[/green]"
+                    )
+                )
             except Exception:
                 pass
 
         except Exception as e:
             try:
                 panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
-                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Error loading session: {e}[/red]"))
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(
+                    RichText.from_markup(f"[red]Error loading session: {e}[/red]")
+                )
             except Exception:
                 pass
 
@@ -5476,6 +6645,7 @@ class CAIApp(App):
                 return
 
             from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl
+
             messages = load_history_from_jsonl(path)
 
             # Infer agent key from messages
@@ -5507,7 +6677,7 @@ class CAIApp(App):
         except Exception:
             pass
 
-    def _set_selected_session(self, idx: Optional[int]) -> None:
+    def _set_selected_session(self, idx: int | None) -> None:
         """Set the currently selected session index and update visuals."""
         try:
             self._session_selected_idx = idx
@@ -5569,11 +6739,14 @@ class CAIApp(App):
             if not path:
                 return
             default = os.path.basename(path)
-            result = await self.push_screen_wait(PromptModal("Export to (path or directory):", default))
+            result = await self.push_screen_wait(
+                PromptModal("Export to (path or directory):", default)
+            )
             if not result:
                 return
             dest = os.path.expanduser(result)
             import shutil
+
             if os.path.isdir(dest):
                 dest_path = os.path.join(dest, os.path.basename(path))
             else:
@@ -5584,17 +6757,23 @@ class CAIApp(App):
             shutil.copy2(path, dest_path)
             try:
                 panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
-                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[green]Exported {os.path.basename(path)} to {dest_path}[/green]"))
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(
+                    RichText.from_markup(
+                        f"[green]Exported {os.path.basename(path)} to {dest_path}[/green]"
+                    )
+                )
             except Exception:
                 pass
         except Exception as e:
             try:
                 panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
-                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(RichText.from_markup(f"[red]Export failed: {e}[/red]"))
+                panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(
+                    RichText.from_markup(f"[red]Export failed: {e}[/red]")
+                )
             except Exception:
                 pass
 
-    def _update_session_preview(self, idx: Optional[int]) -> None:
+    def _update_session_preview(self, idx: int | None) -> None:
         """Update the `#session-preview` Static with token/cost summary and a snippet."""
         try:
             preview = self.query_one("#session-preview", Static)
@@ -5619,7 +6798,11 @@ class CAIApp(App):
         # Import helpers if available; avoid leaving names unbound for static analysis
         get_token_stats_fn = None
         try:
-            from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl, get_token_stats as _get_token_stats
+            from cai.sdk.agents.run_to_jsonl import (
+                get_token_stats as _get_token_stats,
+                load_history_from_jsonl,
+            )
+
             get_token_stats_fn = _get_token_stats
             messages = load_history_from_jsonl(path)
         except Exception:
@@ -5628,7 +6811,9 @@ class CAIApp(App):
         # Try to get token/cost stats
         try:
             if get_token_stats_fn is not None:
-                model_name, prompt_t, completion_t, total_cost, active, idle = get_token_stats_fn(path)
+                model_name, prompt_t, completion_t, total_cost, active, idle = get_token_stats_fn(
+                    path
+                )
                 stats = f"Model: {model_name or 'unknown'} · prompt:{prompt_t} completion:{completion_t} cost:{total_cost}"
             else:
                 raise Exception("token stats unavailable")
@@ -5638,10 +6823,10 @@ class CAIApp(App):
         # Build snippet: last 6 non-system messages
         snippet_lines = []
         try:
-            filtered = [m for m in messages if isinstance(m, dict) and m.get('role') != 'system']
+            filtered = [m for m in messages if isinstance(m, dict) and m.get("role") != "system"]
             for m in filtered[-6:]:
-                role = m.get('role', '')
-                content = (m.get('content') or '')
+                role = m.get("role", "")
+                content = m.get("content") or ""
                 if not content:
                     # handle nested message structures
                     content = str(m)
@@ -5662,7 +6847,7 @@ class CAIApp(App):
             except Exception:
                 pass
 
-    def _infer_agent_from_session_messages(self, messages: list) -> Optional[str]:
+    def _infer_agent_from_session_messages(self, messages: list) -> str | None:
         """Try to infer the best-matching available agent key from session messages.
 
         Heuristic:
@@ -5706,12 +6891,15 @@ class CAIApp(App):
         for key, agent in self._available_agents.items():
             # Build match variants
             display = getattr(agent, "name", None) or _pretty_name(key)
-            variants = {key, key.replace("_agent", "").replace("_pattern", "").replace("_swarm", "")}
+            variants = {
+                key,
+                key.replace("_agent", "").replace("_pattern", "").replace("_swarm", ""),
+            }
             variants.add(display)
             variants.add(display.replace(" ", ""))
 
             score = 0
-            for cand, cnt in (counts.items() if counts else []):
+            for cand, cnt in counts.items() if counts else []:
                 cand_n = "".join([c for c in cand.lower() if c.isalnum()])
                 for v in variants:
                     try:
@@ -5750,9 +6938,10 @@ class CAIApp(App):
 
     def _render_config_table(self, width: int = 120) -> str:
         """Render the configuration variables as a table string using Rich."""
-        from rich.table import Table
-        from rich.console import Console
         import io
+
+        from rich.console import Console
+        from rich.table import Table
 
         cfg = _load_tui_config()
 
@@ -5780,6 +6969,7 @@ class CAIApp(App):
     def _display_config_table(self) -> None:
         """Write the rendered config table into the active terminal's RichLog."""
         from rich.text import Text as RichText
+
         try:
             panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
             log = panel.query_one(f"#term-log-{panel._term_id}", RichLog)
@@ -5849,9 +7039,13 @@ class CAIApp(App):
         self._command_palette_recent.insert(0, key)
         self._command_palette_recent = self._command_palette_recent[:20]
 
-    def _selected_or_latest_session_idx(self) -> Optional[int]:
+    def _selected_or_latest_session_idx(self) -> int | None:
         selected = getattr(self, "_session_selected_idx", None)
-        if selected is not None and hasattr(self, "_session_files") and selected in self._session_files:
+        if (
+            selected is not None
+            and hasattr(self, "_session_files")
+            and selected in self._session_files
+        ):
             return selected
         try:
             if hasattr(self, "_session_files") and self._session_files:
@@ -5899,15 +7093,20 @@ class CAIApp(App):
         if cmd == "export":
             idx = self._selected_or_latest_session_idx()
             if idx is None:
-                self._log_to_active_terminal("[palette] no session found to export", style="#ff6600")
+                self._log_to_active_terminal(
+                    "[palette] no session found to export", style="#ff6600"
+                )
                 return
             self._session_export_worker(idx)
             return
 
         if cmd == "reset":
             try:
+                from cai.sdk.agents.models.openai_chatcompletions import (
+                    ACTIVE_MODEL_INSTANCES,
+                    PERSISTENT_MESSAGE_HISTORIES,
+                )
                 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-                from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
 
                 current_agent_name = AGENT_MANAGER._active_agent_name
                 if current_agent_name:
@@ -5955,17 +7154,13 @@ class CAIApp(App):
 
     def action_clear_active(self) -> None:
         try:
-            self.query_one(
-                f"#term-log-{self._active_term_id}", RichLog
-            ).clear()
+            self.query_one(f"#term-log-{self._active_term_id}", RichLog).clear()
         except Exception:
             pass
 
     def action_cancel_active(self) -> None:
         try:
-            panel = self.query_one(
-                f"#terminal-panel-{self._active_term_id}", TerminalPanel
-            )
+            panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
             if not panel.cancel_active_run():
                 panel._set_status("")
         except Exception:
@@ -5986,7 +7181,15 @@ class CAIApp(App):
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-def run_tui(agent=None, initial_prompt: Optional[str] = None) -> None:
+def run_tui(agent=None, initial_prompt: str | None = None) -> None:
     """Launch the Matrix TUI (blocks until the user exits with ^q or /exit)."""
-    CAIApp(agent=agent, initial_prompt=initial_prompt).run()
+    # Guarantee .env is loaded and LOCAL_* vars are propagated to OPENAI_* before
+    # the first agent request fires — even when the TUI is invoked directly without
+    # going through cli.py (which normally calls initialize_env() at import time).
+    try:
+        from cai.bootstrap import initialize_env
 
+        initialize_env()
+    except Exception:
+        pass
+    CAIApp(agent=agent, initial_prompt=initial_prompt).run()

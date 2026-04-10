@@ -9,7 +9,7 @@ which will then be executed in parallel through the CLI.
 # Standard library imports
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -23,8 +23,8 @@ from cai.agents import get_available_agents
 # Local imports
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.models.openai_chatcompletions import (
-    get_all_agent_histories,
     clear_agent_history,
+    get_all_agent_histories,
 )
 from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
@@ -110,15 +110,19 @@ class ParallelCommand(Command):
         # Try multiple locations for agents.yml
         config_paths = [
             Path("agents.yml"),  # Current directory (backward compatibility)
-            Path(__file__).parent.parent.parent / "agents" / "patterns" / "configs" / "agents.yml",  # New location
+            Path(__file__).parent.parent.parent
+            / "agents"
+            / "patterns"
+            / "configs"
+            / "agents.yml",  # New location
         ]
-        
+
         config_path = None
         for path in config_paths:
             if path.exists():
                 config_path = path
                 break
-        
+
         if config_path:
             try:
                 with open(config_path) as f:
@@ -130,7 +134,7 @@ class ParallelCommand(Command):
                                 agent_config["name"],
                                 agent_config.get("model"),
                                 agent_config.get("prompt"),
-                                agent_config.get("unified_context", False)
+                                agent_config.get("unified_context", False),
                             )
                             # Assign ID based on position
                             config.id = f"P{idx}"
@@ -150,7 +154,7 @@ class ParallelCommand(Command):
             # Set agent names
             agent_names = [config.agent_name for config in PARALLEL_CONFIGS]
             os.environ["CAI_PARALLEL_AGENTS"] = ",".join(agent_names)
-            
+
             # Set up history isolation for parallel mode
             if not PARALLEL_ISOLATION.is_parallel_mode():
                 # Get current active agent's history as base
@@ -161,16 +165,18 @@ class ParallelCommand(Command):
                     for agent_name in active_agents:
                         base_history = AGENT_MANAGER.get_message_history(agent_name)
                         break
-                
+
                 # Create isolated histories for each parallel agent
                 agent_ids = [config.id for config in PARALLEL_CONFIGS]
-                PARALLEL_ISOLATION.transfer_to_parallel(base_history, len(PARALLEL_CONFIGS), agent_ids)
+                PARALLEL_ISOLATION.transfer_to_parallel(
+                    base_history, len(PARALLEL_CONFIGS), agent_ids
+                )
         else:
             # Disable parallel mode if less than 2 agents
             os.environ["CAI_PARALLEL"] = "1"
             os.environ["CAI_PARALLEL_AGENTS"] = ""
             # Don't clear configs - we want to keep single agent configurations
-            
+
             # Clear parallel isolation if it was active
             if PARALLEL_ISOLATION.is_parallel_mode():
                 # Transfer back to single agent mode
@@ -180,13 +186,13 @@ class ParallelCommand(Command):
                         history = PARALLEL_ISOLATION.get_isolated_history(config.id)
                         if history:
                             all_histories[config.id] = history
-                
+
                 if all_histories:
                     # Select one history to keep
                     selected_history = PARALLEL_ISOLATION.transfer_from_parallel(all_histories)
                     # Store it for the next single agent
                     AGENT_MANAGER._pending_history_transfer = selected_history
-                
+
                 PARALLEL_ISOLATION.clear_all_histories()
 
     def handle_no_args(self) -> bool:
@@ -259,7 +265,9 @@ class ParallelCommand(Command):
             console.print("• /parallel add <agent> - Add another agent")
             console.print("• /parallel list - Show detailed configuration")
             console.print("• /parallel clear - Clear all agents")
-            console.print("• /parallel remove <index/ID> - Remove specific agent (e.g., /parallel remove P2)")
+            console.print(
+                "• /parallel remove <index/ID> - Remove specific agent (e.g., /parallel remove P2)"
+            )
             console.print("• /parallel prompt <ID> <prompt> - Set custom prompt for agent")
             console.print("• /parallel override-models - Make all agents use global model")
             console.print("• /parallel merge <agents/IDs...> - Merge message histories")
@@ -289,7 +297,7 @@ class ParallelCommand(Command):
             return getattr(agent, "name", agent_key)
         return agent_key
 
-    def handle_add(self, args: Optional[list[str]] = None) -> bool:
+    def handle_add(self, args: list[str] | None = None) -> bool:
         """Handle the add subcommand.
 
         Args:
@@ -300,7 +308,9 @@ class ParallelCommand(Command):
         """
         if not args:
             console.print("[red]Error: Agent name required[/red]")
-            console.print("Usage: /parallel add <agent_name> [--model MODEL] [--prompt PROMPT] [--unified]")
+            console.print(
+                "Usage: /parallel add <agent_name> [--model MODEL] [--prompt PROMPT] [--unified]"
+            )
             return False
 
         agent_name = args[0]
@@ -367,7 +377,7 @@ class ParallelCommand(Command):
 
         return True
 
-    def handle_list(self, args: Optional[list[str]] = None) -> bool:
+    def handle_list(self, args: list[str] | None = None) -> bool:
         """Handle the list subcommand.
 
         Args:
@@ -439,7 +449,7 @@ class ParallelCommand(Command):
             console.print("[dim]Add one more agent to auto-enable parallel mode[/dim]")
         return True
 
-    def handle_clear(self, args: Optional[list[str]] = None) -> bool:
+    def handle_clear(self, args: list[str] | None = None) -> bool:
         """Handle the clear subcommand.
 
         Args:
@@ -453,7 +463,7 @@ class ParallelCommand(Command):
 
         # Also clear stored agent instances
         PARALLEL_AGENT_INSTANCES.clear()
-        
+
         # Clear history isolation
         PARALLEL_ISOLATION.clear_all_histories()
 
@@ -464,7 +474,7 @@ class ParallelCommand(Command):
         console.print("[yellow]Parallel mode DISABLED[/yellow]")
         return True
 
-    def handle_remove(self, args: Optional[list[str]] = None) -> bool:
+    def handle_remove(self, args: list[str] | None = None) -> bool:
         """Handle the remove subcommand.
 
         Args:
@@ -520,7 +530,7 @@ class ParallelCommand(Command):
             # Re-assign IDs after removal to keep them sequential
             for idx, config in enumerate(PARALLEL_CONFIGS, 1):
                 config.id = f"P{idx}"
-            
+
             # Sync to environment
             self._sync_to_env()
 
@@ -531,17 +541,13 @@ class ParallelCommand(Command):
                     f"{len(PARALLEL_CONFIGS)} agents[/green]"
                 )
             elif len(PARALLEL_CONFIGS) == 1:
-                console.print(
-                    "[yellow]Parallel mode DISABLED - only 1 agent configured[/yellow]"
-                )
+                console.print("[yellow]Parallel mode DISABLED - only 1 agent configured[/yellow]")
             else:
-                console.print(
-                    "[yellow]Parallel mode DISABLED - no agents configured[/yellow]"
-                )
+                console.print("[yellow]Parallel mode DISABLED - no agents configured[/yellow]")
 
             return True
 
-    def handle_load(self, args: Optional[list[str]] = None) -> bool:
+    def handle_load(self, args: list[str] | None = None) -> bool:
         """Load configuration from YAML file.
 
         Args:
@@ -575,10 +581,10 @@ class ParallelCommand(Command):
                         continue
 
                     config = ParallelConfig(
-                        agent_config["name"], 
-                        agent_config.get("model"), 
+                        agent_config["name"],
+                        agent_config.get("model"),
                         agent_config.get("prompt"),
-                        agent_config.get("unified_context", False)
+                        agent_config.get("unified_context", False),
                     )
                     # Assign ID based on position
                     config.id = f"P{config_idx}"
@@ -599,7 +605,7 @@ class ParallelCommand(Command):
 
         return True
 
-    def handle_save(self, args: Optional[list[str]] = None) -> bool:
+    def handle_save(self, args: list[str] | None = None) -> bool:
         """Save current configuration to YAML file.
 
         Args:
@@ -635,7 +641,7 @@ class ParallelCommand(Command):
 
         return True
 
-    def handle_override_models(self, args: Optional[list[str]] = None) -> bool:
+    def handle_override_models(self, args: list[str] | None = None) -> bool:
         """Override all parallel agent models to use the global model.
 
         Args:
@@ -666,7 +672,7 @@ class ParallelCommand(Command):
 
         return True
 
-    def handle_merge(self, args: Optional[list[str]] = None) -> bool:
+    def handle_merge(self, args: list[str] | None = None) -> bool:
         """Handle the merge subcommand to merge message histories from multiple agents.
 
         Args:
@@ -685,7 +691,7 @@ class ParallelCommand(Command):
 
         # Import PARALLEL_ISOLATION here
         from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
-        
+
         # Get all available agent histories to help with name matching
         all_histories = {}
 
@@ -747,29 +753,34 @@ class ParallelCommand(Command):
             return False
 
         # Check if we're in parallel mode and need to get histories from PARALLEL_ISOLATION
-        if PARALLEL_CONFIGS and (PARALLEL_ISOLATION.is_parallel_mode() or PARALLEL_ISOLATION.has_isolated_histories()):
+        if PARALLEL_CONFIGS and (
+            PARALLEL_ISOLATION.is_parallel_mode() or PARALLEL_ISOLATION.has_isolated_histories()
+        ):
             console.print("[dim]Getting histories from parallel agents...[/dim]")
-            
+
             # Build all_histories from both PARALLEL_ISOLATION and AGENT_MANAGER
             from cai.agents import get_available_agents
+
             available_agents = get_available_agents()
-            
+
             # First, get any histories from AGENT_MANAGER
             all_histories = get_all_agent_histories()
-            
+
             # Then, add histories from PARALLEL_ISOLATION for each configured agent
             for idx, config in enumerate(PARALLEL_CONFIGS, 1):
                 agent_id = config.id or f"P{idx}"
                 isolated_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-                
+
                 if isolated_history:
                     # Get the display name for this agent
                     if config.agent_name in available_agents:
                         agent = available_agents[config.agent_name]
                         agent_display_name = getattr(agent, "name", config.agent_name)
-                        
+
                         # Add instance number if needed
-                        total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                        total_count = sum(
+                            1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name
+                        )
                         if total_count > 1:
                             instance_num = 0
                             for c in PARALLEL_CONFIGS:
@@ -778,15 +789,18 @@ class ParallelCommand(Command):
                                     if c.id == config.id:
                                         break
                             agent_display_name = f"{agent_display_name} #{instance_num}"
-                        
+
                         # Add to all_histories with the agent ID
                         history_key = f"{agent_display_name} [{agent_id}]"
                         all_histories[history_key] = isolated_history
-                        console.print(f"[dim]  Found {len(isolated_history)} messages for {history_key}[/dim]")
-        
+                        console.print(
+                            f"[dim]  Found {len(isolated_history)} messages for {history_key}[/dim]"
+                        )
+
         # If still no histories, check AGENT_MANAGER directly
         if not all_histories:
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
             # Try to get histories from AGENT_MANAGER
             for agent_name, history in AGENT_MANAGER._message_history.items():
                 if history:  # Only include agents with actual history
@@ -796,7 +810,7 @@ class ParallelCommand(Command):
                     else:
                         # Add with P1 suffix for single agent mode
                         all_histories[f"{agent_name} [P1]"] = history
-        
+
         # all_histories already fetched above
         if not all_histories:
             console.print("[yellow]No agent histories found[/yellow]")
@@ -815,14 +829,16 @@ class ParallelCommand(Command):
                     agents_to_merge.append(agent)
                 else:
                     missing_agents.append(agent)
-            
+
             if missing_agents:
-                console.print(f"[red]Error: The following agents were not found: {', '.join(missing_agents)}[/red]")
+                console.print(
+                    f"[red]Error: The following agents were not found: {', '.join(missing_agents)}[/red]"
+                )
                 console.print("[yellow]Available agents with histories:[/yellow]")
                 for agent_name in sorted(all_histories.keys()):
                     console.print(f"  - {agent_name}")
                 return False
-        
+
         # Remove duplicates while preserving order
         seen = set()
         unique_agents_to_merge = []
@@ -839,8 +855,12 @@ class ParallelCommand(Command):
             console.print("[yellow]Available agents with histories:[/yellow]")
             for agent_name in sorted(all_histories.keys()):
                 console.print(f"  - {agent_name}")
-            console.print("\n[dim]Tip: Make sure you have multiple agents with history to merge.[/dim]")
-            console.print("[dim]You can load histories with '/load parallel' or run agents in parallel mode.[/dim]")
+            console.print(
+                "\n[dim]Tip: Make sure you have multiple agents with history to merge.[/dim]"
+            )
+            console.print(
+                "[dim]You can load histories with '/load parallel' or run agents in parallel mode.[/dim]"
+            )
             return False
 
         # Get agent IDs for display
@@ -851,24 +871,26 @@ class ParallelCommand(Command):
                 if config.agent_name in available_agents:
                     agent = available_agents[config.agent_name]
                     display_name = getattr(agent, "name", config.agent_name)
-                    
+
                     # Count instances to get the right name
-                    total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
+                    total_count = sum(
+                        1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name
+                    )
                     instance_num = 0
                     for c in PARALLEL_CONFIGS:
                         if c.agent_name == config.agent_name:
                             instance_num += 1
                             if c.id == config.id:
                                 break
-                    
+
                     # Add instance number if there are duplicates
                     if total_count > 1:
                         full_name = f"{display_name} #{instance_num}"
                     else:
                         full_name = display_name
-                    
+
                     agent_ids[full_name] = config.id
-        
+
         # Format agents for display
         agents_display = []
         for agent in agents_to_merge:
@@ -876,11 +898,11 @@ class ParallelCommand(Command):
                 agents_display.append(f"{agent} [{agent_ids[agent]}]")
             else:
                 agents_display.append(agent)
-        
+
         console.print(f"[cyan]Merging histories from: {', '.join(agents_display)}[/cyan]")
         console.print(f"[cyan]Using strategy: {strategy}[/cyan]")
         console.print(f"[cyan]Target agent: {target_agent}[/cyan]")
-        
+
         # Debug: Show message counts for each agent
         total_unique_messages = 0
         all_signatures = set()
@@ -895,11 +917,15 @@ class ParallelCommand(Command):
                         if sig not in all_signatures:
                             total_unique_messages += 1
                         all_signatures.add(sig)
-                console.print(f"[dim]  - {agent}: {len(agent_history)} messages ({len(agent_signatures)} unique signatures)[/dim]")
+                console.print(
+                    f"[dim]  - {agent}: {len(agent_history)} messages ({len(agent_signatures)} unique signatures)[/dim]"
+                )
             else:
                 console.print(f"[yellow]  - {agent}: Not found in histories[/yellow]")
-        
-        console.print(f"[dim]Total unique messages across all agents: {total_unique_messages}[/dim]")
+
+        console.print(
+            f"[dim]Total unique messages across all agents: {total_unique_messages}[/dim]"
+        )
 
         # Perform the merge based on strategy
         merged_history = []
@@ -921,7 +947,12 @@ class ParallelCommand(Command):
             self._save_merged_history_to_sources(agents_to_merge, merged_history, all_histories)
         else:
             # Explicit target specified: create/update single target agent
-            self._save_merged_history(target_agent, merged_history, remove_sources=remove_sources, source_agents=agents_to_merge)
+            self._save_merged_history(
+                target_agent,
+                merged_history,
+                remove_sources=remove_sources,
+                source_agents=agents_to_merge,
+            )
 
         # Display summary
         message_count = len(merged_history)
@@ -935,7 +966,7 @@ class ParallelCommand(Command):
         summary += f"  User messages: {user_messages}\n"
         summary += f"  Agent messages: {assistant_messages}\n"
         summary += f"  Tool messages: {tool_messages}\n"
-        
+
         if merge_to_all_sources:
             summary += f"  Updated agents: {', '.join(agents_to_merge)}\n\n"
             summary += "[dim]All source agents now have the complete merged history[/dim]"
@@ -964,10 +995,10 @@ class ParallelCommand(Command):
 
         # Create indices to track position in each agent's history
         indices = {agent: 0 for agent in agents_to_merge}
-        
+
         # Process messages in an intelligent interleaved fashion
         all_messages = []
-        
+
         while any(indices[agent] < len(agent_messages[agent]) for agent in agents_to_merge):
             # Look for the next user message across all agents
             next_user_msgs = []
@@ -976,42 +1007,47 @@ class ParallelCommand(Command):
                     msg = agent_messages[agent][indices[agent]]
                     if msg.get("role") == "user":
                         next_user_msgs.append((agent, msg))
-            
+
             if next_user_msgs:
                 # Process the first user message found (they should be similar across agents)
                 chosen_agent, user_msg = next_user_msgs[0]
                 all_messages.append(user_msg)
                 indices[chosen_agent] += 1
-                
+
                 # Skip duplicate user messages from other agents
                 for agent, msg in next_user_msgs[1:]:
                     if msg.get("content") == user_msg.get("content"):
                         indices[agent] += 1
-                
+
                 # Now collect all responses to this user message from all agents
                 responses_collected = True
                 while responses_collected:
                     responses_collected = False
-                    
+
                     for agent in agents_to_merge:
                         if indices[agent] < len(agent_messages[agent]):
                             msg = agent_messages[agent][indices[agent]]
-                            
+
                             # Collect assistant responses and tool interactions until next user message
                             if msg.get("role") in ["assistant", "tool", "system"]:
                                 all_messages.append(msg)
                                 indices[agent] += 1
                                 responses_collected = True
-                                
+
                                 # If this is a tool call, look for the corresponding tool response
                                 if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                                    tool_call_ids = [tc.get("id") for tc in msg.get("tool_calls", [])]
-                                    
+                                    tool_call_ids = [
+                                        tc.get("id") for tc in msg.get("tool_calls", [])
+                                    ]
+
                                     # Look ahead for tool responses
                                     temp_idx = indices[agent]
                                     while temp_idx < len(agent_messages[agent]):
                                         next_msg = agent_messages[agent][temp_idx]
-                                        if next_msg.get("role") == "tool" and next_msg.get("tool_call_id") in tool_call_ids:
+                                        if (
+                                            next_msg.get("role") == "tool"
+                                            and next_msg.get("tool_call_id") in tool_call_ids
+                                        ):
                                             all_messages.append(next_msg)
                                             indices[agent] = temp_idx + 1
                                             break
@@ -1035,17 +1071,19 @@ class ParallelCommand(Command):
         merged = []
         seen_tool_calls = {}  # Track tool calls by ID to avoid duplicates
         seen_messages = set()  # Track message signatures to avoid duplicates
-        
+
         # Debug: show total messages collected
         console.print(f"[dim]Total messages collected from all agents: {len(all_messages)}[/dim]")
-        
+
         # Debug: Show how many unique messages there are
         unique_sigs = set()
         for msg in all_messages:
             sig = self._get_message_signature(msg)
             if sig:
                 unique_sigs.add(sig)
-        console.print(f"[dim]Unique message signatures in collected messages: {len(unique_sigs)}[/dim]")
+        console.print(
+            f"[dim]Unique message signatures in collected messages: {len(unique_sigs)}[/dim]"
+        )
 
         for msg in all_messages:
             should_add = True
@@ -1054,7 +1092,7 @@ class ParallelCommand(Command):
             # Check if we've already seen this exact message
             if msg_sig and msg_sig in seen_messages:
                 should_add = False
-            
+
             # Additional checks for specific message types
             if should_add and msg.get("role") == "user":
                 # For user messages, check if the same content was just added
@@ -1201,49 +1239,59 @@ class ParallelCommand(Command):
 
         return merged
 
-    def _save_merged_history(self, target_agent: str, merged_history: list[dict[str, Any]], remove_sources: bool = False, source_agents: list[str] = None) -> None:
+    def _save_merged_history(
+        self,
+        target_agent: str,
+        merged_history: list[dict[str, Any]],
+        remove_sources: bool = False,
+        source_agents: list[str] = None,
+    ) -> None:
         """Save the merged history to a target agent.
-        
+
         Args:
             target_agent: Name of the target agent to save merged history to
             merged_history: The merged message history
             remove_sources: Whether to remove source agents after merging
             source_agents: List of source agent names to remove (if remove_sources is True)
         """
-        from cai.sdk.agents.models.openai_chatcompletions import (
-            ACTIVE_MODEL_INSTANCES, 
-            PERSISTENT_MESSAGE_HISTORIES
-        )
         from cai.agents import get_available_agents
+        from cai.sdk.agents.models.openai_chatcompletions import (
+            ACTIVE_MODEL_INSTANCES,
+            PERSISTENT_MESSAGE_HISTORIES,
+        )
 
         # First, check if the target agent already exists in PARALLEL_CONFIGS
         _target_config = None
         target_exists_in_configs = False
         _target_display_name = target_agent
-        
+
         # Check if target matches any existing config by display name or ID
         available_agents = get_available_agents()
         for config in PARALLEL_CONFIGS:
             # Get the display name for this config
             agent = available_agents.get(config.agent_name)
-            if agent and hasattr(agent, 'name'):
-                display_name = getattr(agent, 'name', config.agent_name)
-                
+            if agent and hasattr(agent, "name"):
+                display_name = getattr(agent, "name", config.agent_name)
+
                 # Check if target matches display name, agent name, or ID
-                if (display_name.lower() == target_agent.lower() or 
-                    config.agent_name.lower() == target_agent.lower() or
-                    (config.id and config.id.upper() == target_agent.upper())):
+                if (
+                    display_name.lower() == target_agent.lower()
+                    or config.agent_name.lower() == target_agent.lower()
+                    or (config.id and config.id.upper() == target_agent.upper())
+                ):
                     _target_config = config
                     target_exists_in_configs = True
                     _target_display_name = display_name
                     break
-        
+
         # If not in configs, just store the merged history
         if not target_exists_in_configs:
             # Don't create a config for merged agents - they are virtual
             # Just store the merged history in the persistent store
             PERSISTENT_MESSAGE_HISTORIES[target_agent] = merged_history
-            console.print(f"[green]Created merged history for '{target_agent}' with {len(merged_history)} messages[/green]")
+            console.print(
+                f"[green]Created merged history for '{target_agent}' with {len(merged_history)} messages[/green]"
+            )
         else:
             # Target already exists in configs, just update its history
             # First check if there's an active instance
@@ -1254,12 +1302,12 @@ class ParallelCommand(Command):
                     if model:
                         existing_model = model
                         break
-            
+
             if existing_model:
                 # Update existing model's history
                 existing_model.message_history.clear()
                 # Reset context usage since we cleared history
-                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+                os.environ["CAI_CONTEXT_USAGE"] = "0.0"
                 for msg in merged_history:
                     existing_model.add_to_message_history(msg)
                 console.print(f"[green]Updated history for existing agent '{target_agent}'[/green]")
@@ -1267,7 +1315,7 @@ class ParallelCommand(Command):
                 # Store in persistent history
                 PERSISTENT_MESSAGE_HISTORIES[target_agent] = merged_history
                 console.print(f"[green]Updated history for '{target_agent}'[/green]")
-        
+
         # Remove source agents if requested
         if remove_sources and source_agents:
             removed_count = 0
@@ -1275,10 +1323,10 @@ class ParallelCommand(Command):
                 # Skip if source is same as target
                 if source_agent.lower() == target_agent.lower():
                     continue
-                    
+
                 # Clear the source agent's history
                 clear_agent_history(source_agent)
-                
+
                 # Remove from PARALLEL_CONFIGS if it exists there
                 for i in range(len(PARALLEL_CONFIGS) - 1, -1, -1):
                     config = PARALLEL_CONFIGS[i]
@@ -1286,15 +1334,23 @@ class ParallelCommand(Command):
                     available_agents = get_available_agents()
                     if config.agent_name in available_agents:
                         agent = available_agents[config.agent_name]
-                        display_name = getattr(agent, 'name', config.agent_name)
-                        
+                        display_name = getattr(agent, "name", config.agent_name)
+
                         # Check if this config matches the source agent
                         # Handle instance numbers (e.g., "Test Agent #1" matches "Test Agent")
-                        source_base_name = source_agent.split(' #')[0] if ' #' in source_agent else source_agent
-                        
-                        if (display_name == source_agent or 
-                            display_name == source_base_name or
-                            (config.id and source_agent.upper().startswith('P') and config.id.upper() == source_agent.upper())):
+                        source_base_name = (
+                            source_agent.split(" #")[0] if " #" in source_agent else source_agent
+                        )
+
+                        if (
+                            display_name == source_agent
+                            or display_name == source_base_name
+                            or (
+                                config.id
+                                and source_agent.upper().startswith("P")
+                                and config.id.upper() == source_agent.upper()
+                            )
+                        ):
                             PARALLEL_CONFIGS.pop(i)
                             removed_count += 1
                             # Also remove from PARALLEL_AGENT_INSTANCES
@@ -1302,22 +1358,24 @@ class ParallelCommand(Command):
                             if instance_key in PARALLEL_AGENT_INSTANCES:
                                 del PARALLEL_AGENT_INSTANCES[instance_key]
                             break
-            
+
             if removed_count > 0:
                 # Re-assign IDs after removal
                 for idx, config in enumerate(PARALLEL_CONFIGS, 1):
                     config.id = f"P{idx}"
-                
+
                 # Sync to environment
                 self._sync_to_env()
-                
-                console.print(f"[yellow]Removed {removed_count} source agent(s) after merging[/yellow]")
-        
+
+                console.print(
+                    f"[yellow]Removed {removed_count} source agent(s) after merging[/yellow]"
+                )
+
         console.print(
             f"[dim]Note: The merged agent '{target_agent}' is now available with "
             "the combined history[/dim]"
         )
-        
+
         # Disable parallel mode if no agents remain
         if remove_sources and len(PARALLEL_CONFIGS) < 2:
             if len(PARALLEL_CONFIGS) > 0:
@@ -1325,26 +1383,31 @@ class ParallelCommand(Command):
                 PARALLEL_AGENT_INSTANCES.clear()
                 self._sync_to_env()
                 console.print("[yellow]Parallel mode DISABLED after merging[/yellow]")
-    
-    def _save_merged_history_to_sources(self, source_agents: list[str], merged_history: list[dict[str, Any]], original_histories: dict[str, list]) -> None:
+
+    def _save_merged_history_to_sources(
+        self,
+        source_agents: list[str],
+        merged_history: list[dict[str, Any]],
+        original_histories: dict[str, list],
+    ) -> None:
         """Save the merged history to all source agents, avoiding duplicates.
-        
+
         Args:
             source_agents: List of source agent names to update
             merged_history: The merged message history
             original_histories: Original histories before merge (for duplicate detection)
         """
         from cai.sdk.agents.models.openai_chatcompletions import (
-            ACTIVE_MODEL_INSTANCES, 
-            PERSISTENT_MESSAGE_HISTORIES
+            ACTIVE_MODEL_INSTANCES,
+            PERSISTENT_MESSAGE_HISTORIES,
         )
-        
+
         console.print("[dim]Updating all source agents with merged history...[/dim]")
-        
+
         for agent_name in source_agents:
             # Get the original history for this agent
             original_history = original_histories.get(agent_name, [])
-            
+
             # Build a set of message signatures from original history for duplicate detection
             original_signatures = set()
             original_messages_by_sig = {}  # Track actual messages by signature
@@ -1354,14 +1417,14 @@ class ParallelCommand(Command):
                 if sig:
                     original_signatures.add(sig)
                     original_messages_by_sig[sig] = msg
-            
+
             # Track which messages from merged history are truly new
             new_messages = []
             seen_signatures = set(original_signatures)  # Start with original signatures
-            
+
             for msg in merged_history:
                 sig = self._get_message_signature(msg)
-                
+
                 # Check if this message is already in the original history
                 is_duplicate = False
                 if sig in original_signatures:
@@ -1371,16 +1434,16 @@ class ParallelCommand(Command):
                     # Check if we've already added this message in this merge
                     if sig in seen_signatures:
                         is_duplicate = True
-                
+
                 if not is_duplicate and sig:
                     new_messages.append(msg)
                     seen_signatures.add(sig)
-            
+
             # The final history should be the merged history (which already contains all messages)
             # We don't want to append to original history as that would duplicate messages
             # The merged history is already the complete history from all agents
             final_history = merged_history.copy()
-            
+
             # Update the agent's history
             # First check if there's an active instance
             existing_model = None
@@ -1389,19 +1452,20 @@ class ParallelCommand(Command):
                 base_name = agent_name
                 if "[" in agent_name and agent_name.endswith("]"):
                     base_name = agent_name.rsplit("[", 1)[0].strip()
-                
+
                 if model_agent_name == base_name or model_agent_name == agent_name:
                     model = model_ref() if callable(model_ref) else model_ref
                     if model:
                         existing_model = model
                         break
-            
+
             if existing_model:
                 # Update existing model's history
                 existing_model.message_history.clear()
                 # Reset context usage since we're rebuilding history
                 import os
-                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+
+                os.environ["CAI_CONTEXT_USAGE"] = "0.0"
                 for msg in final_history:
                     existing_model.add_to_message_history(msg)
                 console.print(f"[green]✓ Updated {agent_name} (active instance)[/green]")
@@ -1409,51 +1473,53 @@ class ParallelCommand(Command):
                 # Store in persistent history
                 PERSISTENT_MESSAGE_HISTORIES[agent_name] = final_history
                 console.print(f"[green]✓ Updated {agent_name} (persistent storage)[/green]")
-            
+
             # Also update in AGENT_MANAGER if needed
             base_name = agent_name
             if "[" in agent_name and agent_name.endswith("]"):
                 base_name = agent_name.rsplit("[", 1)[0].strip()
                 # Also extract the ID for PARALLEL_ISOLATION
                 agent_id = agent_name.split("[")[1].rstrip("]")
-                
+
                 # Update PARALLEL_ISOLATION if it has this agent
                 if PARALLEL_ISOLATION.get_isolated_history(agent_id) is not None:
                     PARALLEL_ISOLATION.replace_isolated_history(agent_id, final_history)
-            
+
             # Update AGENT_MANAGER's message history directly
             AGENT_MANAGER._message_history[base_name] = final_history
-            
+
             # Show statistics
             original_count = len(original_history)
             merged_count = len(merged_history)
             new_count = len(new_messages)
-            console.print(f"[dim]  Original: {original_count} messages, Merged total: {merged_count} messages, New: {new_count} messages[/dim]")
-        
+            console.print(
+                f"[dim]  Original: {original_count} messages, Merged total: {merged_count} messages, New: {new_count} messages[/dim]"
+            )
+
         console.print(
             f"[dim]Note: All {len(source_agents)} source agents now have the combined history[/dim]"
         )
-    
-    def _get_message_signature(self, msg: dict) -> Optional[str]:
+
+    def _get_message_signature(self, msg: dict) -> str | None:
         """Get a unique signature for a message to detect duplicates.
-        
+
         Args:
             msg: The message dictionary
-            
+
         Returns:
             A unique signature string or None if message is invalid
         """
         role = msg.get("role")
         if not role:
             return None
-        
+
         # For user and system messages, use role + content
         if role in ["user", "system"]:
             content = msg.get("content", "")
             # Normalize whitespace for better matching
             normalized_content = " ".join(content.split()) if content else ""
             return f"{role}:{normalized_content}"
-        
+
         # For assistant messages with tool calls
         elif role == "assistant":
             content = msg.get("content", "") or ""
@@ -1471,7 +1537,7 @@ class ParallelCommand(Command):
                 return f"{role}:{normalized_content}:tools:[{';'.join(sorted(tool_sigs))}]"
             else:
                 return f"{role}:{normalized_content}"
-        
+
         # For tool messages
         elif role == "tool":
             tool_call_id = msg.get("tool_call_id", "")
@@ -1481,7 +1547,7 @@ class ParallelCommand(Command):
             # Use first 200 chars instead of 100 for better discrimination
             content_preview = normalized_content[:200] if normalized_content else ""
             return f"{role}:{tool_call_id}:{content_preview}"
-        
+
         return None
 
     def _parse_agent_names(self, args: list[str], all_histories: dict[str, list]) -> list[str]:
@@ -1499,7 +1565,7 @@ class ParallelCommand(Command):
 
         # Get all available agent names
         available_agents = list(all_histories.keys())
-        
+
         # Create a case-insensitive lookup dictionary
         agent_lookup = {name.lower(): name for name in available_agents}
 
@@ -1513,7 +1579,7 @@ class ParallelCommand(Command):
                 # First, check if any available agent has this ID in brackets
                 found_by_id = False
                 target_id = args[i].upper()
-                
+
                 # Look for agents with [ID] suffix in the available agents
                 for agent_name in available_agents:
                     if f"[{target_id}]" in agent_name:
@@ -1521,39 +1587,41 @@ class ParallelCommand(Command):
                         found_by_id = True
                         i += 1
                         break
-                
+
                 if found_by_id:
                     continue
-                
+
                 # If not found by bracket ID, try to find by PARALLEL_CONFIGS
                 for config in PARALLEL_CONFIGS:
                     if config.id and config.id.upper() == target_id:
                         # Get the actual agent name with instance number
                         _agent_counts = {}
                         instance_num = 0
-                        
+
                         # Count how many instances of this agent type exist
-                        total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
-                        
+                        total_count = sum(
+                            1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name
+                        )
+
                         # Count instances to find the right one
                         for idx, c in enumerate(PARALLEL_CONFIGS):
                             if c.agent_name == config.agent_name:
                                 instance_num += 1
                                 if c.id == config.id:
                                     break
-                        
+
                         # Get display name
                         available_agents_dict = get_available_agents()
                         if config.agent_name in available_agents_dict:
                             agent = available_agents_dict[config.agent_name]
                             display_name = getattr(agent, "name", config.agent_name)
-                            
+
                             # Add instance number if there are duplicates
                             if total_count > 1:
                                 full_name = f"{display_name} #{instance_num}"
                             else:
                                 full_name = display_name
-                            
+
                             # Look for this agent in the available histories
                             # The histories might be stored with [ID] suffix
                             found_match = False
@@ -1573,15 +1641,15 @@ class ParallelCommand(Command):
                                     parsed_agents.append(agent_name)
                                     found_match = True
                                     break
-                            
+
                             if found_match:
                                 found_by_id = True
                                 break
-                
+
                 if found_by_id:
                     i += 1
                     continue
-            
+
             # Try to match progressively longer combinations (for names with spaces)
             found_match = False
 
@@ -1613,13 +1681,13 @@ class ParallelCommand(Command):
                 i += 1
 
         return parsed_agents
-    
-    def handle_prompt(self, args: Optional[list[str]] = None) -> bool:
+
+    def handle_prompt(self, args: list[str] | None = None) -> bool:
         """Handle the prompt subcommand to set custom prompts for agents.
-        
+
         Args:
             args: Command arguments [agent_id/index] [prompt]
-            
+
         Returns:
             True if successful
         """
@@ -1629,14 +1697,14 @@ class ParallelCommand(Command):
             console.print("Example: /parallel prompt P1 Focus on SQL injection")
             console.print("Example: /parallel prompt 2 Look for authentication bypasses")
             return False
-        
+
         identifier = args[0]
         prompt = " ".join(args[1:])
-        
+
         # Find the config to update
         config_to_update = None
         _index_to_update = -1
-        
+
         # Try by ID first
         if identifier.upper().startswith("P"):
             for idx, config in enumerate(PARALLEL_CONFIGS):
@@ -1653,29 +1721,32 @@ class ParallelCommand(Command):
                     _index_to_update = idx
             except ValueError:
                 pass
-        
+
         if not config_to_update:
             console.print(f"[red]Error: No agent found with ID/index '{identifier}'[/red]")
             return False
-        
+
         # Update the prompt
         old_prompt = config_to_update.prompt
         config_to_update.prompt = prompt
-        
+
         # Get display name
         from cai.agents import get_available_agents
+
         available_agents = get_available_agents()
         if config_to_update.agent_name in available_agents:
             agent = available_agents[config_to_update.agent_name]
             display_name = getattr(agent, "name", config_to_update.agent_name)
         else:
             display_name = config_to_update.agent_name
-        
-        console.print(f"[green]Updated prompt for {display_name} (ID: {config_to_update.id})[/green]")
+
+        console.print(
+            f"[green]Updated prompt for {display_name} (ID: {config_to_update.id})[/green]"
+        )
         if old_prompt:
             console.print(f"[dim]Old prompt: {old_prompt}[/dim]")
         console.print(f"[cyan]New prompt: {prompt}[/cyan]")
-        
+
         return True
 
 

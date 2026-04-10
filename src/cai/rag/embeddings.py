@@ -11,6 +11,7 @@ provider is included as `OpenAIEmbeddingsProvider` and will be used
 when `CAI_EMBEDDINGS_PROVIDER` is set to `openai` and the runtime has
 an OpenAI key and package available.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -18,7 +19,7 @@ import math
 import os
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -39,17 +40,17 @@ class EmbeddingsProvider:
     numeric vectors (list[float]) for the corresponding input texts.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         cfg = config or {}
         if isinstance(cfg, EmbeddingsConfig):
             self.config = cfg
         else:
             self.config = EmbeddingsConfig(**cfg)
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         raise NotImplementedError()
 
-    def embed_text(self, text: str) -> List[float]:
+    def embed_text(self, text: str) -> list[float]:
         return self.embed_texts([text])[0]
 
 
@@ -62,14 +63,14 @@ class LocalDeterministicEmbeddingsProvider(EmbeddingsProvider):
     retrieval comparisons.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config=config)
-        self._cache: "OrderedDict[str, List[float]]" = OrderedDict()
+        self._cache: OrderedDict[str, list[float]] = OrderedDict()
 
-    def _make_vector(self, text: str) -> List[float]:
+    def _make_vector(self, text: str) -> list[float]:
         dim = int(self.config.vector_dim)
         seed = int(self.config.deterministic_seed)
-        out: List[float] = []
+        out: list[float] = []
         counter = 0
         text_bytes = text.encode("utf-8")
         seed_bytes = str(seed).encode("utf-8")
@@ -98,9 +99,9 @@ class LocalDeterministicEmbeddingsProvider(EmbeddingsProvider):
             out = [x / norm for x in out]
         return out
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         batch_size = max(1, int(self.config.batch_size))
-        results: List[List[float]] = []
+        results: list[list[float]] = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
             for t in batch:
@@ -129,7 +130,7 @@ class OpenAIEmbeddingsProvider(EmbeddingsProvider):
     `EmbeddingsConfig.batch_size`.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config=config)
         # lazy import of openai to avoid hard dependency at module import
         try:
@@ -144,11 +145,11 @@ class OpenAIEmbeddingsProvider(EmbeddingsProvider):
             # but make the error clear
             raise RuntimeError("OPENAI_API_KEY environment variable is not set")
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         # Use model name from config
         model = self.config.model_name
         batch_size = max(1, int(self.config.batch_size))
-        out: List[List[float]] = []
+        out: list[list[float]] = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
             # The OpenAI python client has changed shapes; use the v1 embeddings API
@@ -159,7 +160,7 @@ class OpenAIEmbeddingsProvider(EmbeddingsProvider):
         return out
 
 
-_PROVIDERS: Dict[str, Any] = {
+_PROVIDERS: dict[str, Any] = {
     "local": LocalDeterministicEmbeddingsProvider,
     "local-deterministic": LocalDeterministicEmbeddingsProvider,
     "deterministic": LocalDeterministicEmbeddingsProvider,
@@ -167,7 +168,9 @@ _PROVIDERS: Dict[str, Any] = {
 }
 
 
-def get_embeddings_provider(name: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> EmbeddingsProvider:
+def get_embeddings_provider(
+    name: str | None = None, config: dict[str, Any] | None = None
+) -> EmbeddingsProvider:
     """Factory that returns an `EmbeddingsProvider` instance.
 
     If `name` is not provided, the environment variable

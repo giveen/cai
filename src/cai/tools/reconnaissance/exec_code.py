@@ -1,13 +1,14 @@
 """
 Tool for executing code via LLM tool calls.
 """
-import os
-import uuid
-import shlex
-import base64
 
-from cai.tools.common import run_command  # pylint: disable=import-error
+import base64
+import os
+import shlex
+import uuid
+
 from cai.sdk.agents import function_tool
+from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.tools.validation import is_valid_filename  # pylint: disable=import-error
 
 
@@ -34,7 +35,7 @@ def execute_code(
         language: Programming language to use (default: python)
         filename: Base name for the file without extension (default: exploit)
         timeout: Timeout for the execution (default: 100 seconds)
-                Use high timeout for long running code 
+                Use high timeout for long running code
                 Use low timeout for short running code
     Returns:
         Command output or error message from execution
@@ -94,7 +95,9 @@ def execute_code(
     quoted_target = shlex.quote(target_path)
 
     # Prepare file creation command that decodes base64 into the target file
-    create_cmd = f"mkdir -p {shlex.quote(tmp_dir)} && echo {quoted_encoded} | base64 -d > {quoted_target}"
+    create_cmd = (
+        f"mkdir -p {shlex.quote(tmp_dir)} && echo {quoted_encoded} | base64 -d > {quoted_target}"
+    )
     res = run_command(create_cmd, stream=False, tool_name="_internal_file_creation")
     if isinstance(res, str) and "error" in res.lower():
         return f"Failed to create code file: {res}"
@@ -114,30 +117,62 @@ def execute_code(
     elif language in ["golang", "go"]:
         # Make sure file is main.go for `go run`
         run_command(f"mkdir -p {shlex.quote(tmp_dir)}", stream=False, tool_name="_internal_setup")
-        run_command(f"cp {quoted_target} {shlex.quote(os.path.join(tmp_dir, 'main.go'))}", stream=False, tool_name="_internal_setup")
-        run_command(f"cd {shlex.quote(tmp_dir)} && go mod init temp || true", stream=False, tool_name="_internal_setup")
+        run_command(
+            f"cp {quoted_target} {shlex.quote(os.path.join(tmp_dir, 'main.go'))}",
+            stream=False,
+            tool_name="_internal_setup",
+        )
+        run_command(
+            f"cd {shlex.quote(tmp_dir)} && go mod init temp || true",
+            stream=False,
+            tool_name="_internal_setup",
+        )
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && go run main.go"
     elif language in ["javascript", "js"]:
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && node {shlex.quote(full_filename)}"
     elif language in ["typescript", "ts"]:
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && ts-node {shlex.quote(full_filename)}"
     elif language in ["rust", "rs"]:
-        run_command(f"cd {shlex.quote(tmp_dir)} && rustc {shlex.quote(full_filename)} -o {shlex.quote(filename)}", stream=False, tool_name="_internal_setup")
+        run_command(
+            f"cd {shlex.quote(tmp_dir)} && rustc {shlex.quote(full_filename)} -o {shlex.quote(filename)}",
+            stream=False,
+            tool_name="_internal_setup",
+        )
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && ./{shlex.quote(filename)}"
     elif language in ["csharp", "cs"]:
-        run_command(f"cd {shlex.quote(tmp_dir)} && dotnet build {shlex.quote(full_filename)}", stream=False, tool_name="_internal_setup")
+        run_command(
+            f"cd {shlex.quote(tmp_dir)} && dotnet build {shlex.quote(full_filename)}",
+            stream=False,
+            tool_name="_internal_setup",
+        )
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && dotnet run {shlex.quote(full_filename)}"
     elif language in ["java"]:
-        run_command(f"cd {shlex.quote(tmp_dir)} && javac {shlex.quote(full_filename)}", stream=False, tool_name="_internal_setup")
+        run_command(
+            f"cd {shlex.quote(tmp_dir)} && javac {shlex.quote(full_filename)}",
+            stream=False,
+            tool_name="_internal_setup",
+        )
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && java {shlex.quote(filename)}"
     elif language in ["kotlin", "kt"]:
-        run_command(f"cd {shlex.quote(tmp_dir)} && kotlinc {shlex.quote(full_filename)} -include-runtime -d {shlex.quote(filename)}.jar", stream=False, tool_name="_internal_setup")
+        run_command(
+            f"cd {shlex.quote(tmp_dir)} && kotlinc {shlex.quote(full_filename)} -include-runtime -d {shlex.quote(filename)}.jar",
+            stream=False,
+            tool_name="_internal_setup",
+        )
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && java -jar {shlex.quote(filename)}.jar"
     elif language in ["c"]:
-        run_command(f"cd {shlex.quote(tmp_dir)} && gcc {shlex.quote(full_filename)} -o {shlex.quote(filename)}", stream=False, tool_name="_internal_setup")
+        run_command(
+            f"cd {shlex.quote(tmp_dir)} && gcc {shlex.quote(full_filename)} -o {shlex.quote(filename)}",
+            stream=False,
+            tool_name="_internal_setup",
+        )
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && ./{shlex.quote(filename)}"
     elif language in ["cpp"]:
-        run_command(f"cd {shlex.quote(tmp_dir)} && g++ {shlex.quote(full_filename)} -o {shlex.quote(filename)}", stream=False, tool_name="_internal_setup")
+        run_command(
+            f"cd {shlex.quote(tmp_dir)} && g++ {shlex.quote(full_filename)} -o {shlex.quote(filename)}",
+            stream=False,
+            tool_name="_internal_setup",
+        )
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && ./{shlex.quote(filename)}"
     else:
         # Should not hit due to earlier check
@@ -152,12 +187,16 @@ def execute_code(
     }
 
     try:
-        output = run_command(exec_cmd, timeout=timeout, stream=True, tool_name="execute_code", args=tool_args)
+        output = run_command(
+            exec_cmd, timeout=timeout, stream=True, tool_name="execute_code", args=tool_args
+        )
     finally:
         # Clean up temporary directory unless persistence requested
         if not persist:
             try:
-                run_command(f"rm -rf {shlex.quote(tmp_dir)}", stream=False, tool_name="_internal_cleanup")
+                run_command(
+                    f"rm -rf {shlex.quote(tmp_dir)}", stream=False, tool_name="_internal_cleanup"
+                )
             except Exception:
                 pass
 

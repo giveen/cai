@@ -3,12 +3,13 @@
 Provides a small helper to POST files with retries and exponential backoff
 for common transient errors (429, 503, network errors).
 """
+
 from __future__ import annotations
 
 import asyncio
 import os
 import random
-from typing import Optional, Dict, Any
+from typing import Any
 
 import httpx
 
@@ -17,7 +18,7 @@ async def post_file_with_retries(
     endpoint: str,
     file_path: str,
     field_name: str = "log",
-    data: Optional[Dict[str, Any]] = None,
+    data: dict[str, Any] | None = None,
     timeout: float = 15.0,
     max_retries: int = 5,
     base_delay: float = 1.0,
@@ -32,7 +33,18 @@ async def post_file_with_retries(
     while True:
         attempt += 1
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=5.0)) as client:
+            # Defensive: coerce boolean timeouts (often emitted by LLMs) to None
+            # since httpx explicitly rejects boolean values for Timeout.
+            _timeout_val = timeout
+            try:
+                if isinstance(_timeout_val, bool):
+                    _timeout_val = None
+                else:
+                    _timeout_val = float(_timeout_val) if _timeout_val is not None else None
+            except Exception:
+                _timeout_val = None
+
+            async with httpx.AsyncClient(timeout=httpx.Timeout(_timeout_val, connect=5.0)) as client:
                 with open(file_path, "rb") as f:
                     files = {field_name: (os.path.basename(file_path), f)}
                     resp = await client.post(endpoint, files=files, data=data)
@@ -54,7 +66,9 @@ async def post_file_with_retries(
                     delay = None
 
                 if delay is None:
-                    delay = min(max_delay, base_delay * (2 ** (attempt - 1))) + random.uniform(0, 0.1 * base_delay)
+                    delay = min(max_delay, base_delay * (2 ** (attempt - 1))) + random.uniform(
+                        0, 0.1 * base_delay
+                    )
 
                 if attempt >= max_retries:
                     return False
@@ -70,7 +84,9 @@ async def post_file_with_retries(
             if attempt >= max_retries:
                 return False
 
-            delay = min(max_delay, base_delay * (2 ** (attempt - 1))) + random.uniform(0, 0.1 * base_delay)
+            delay = min(max_delay, base_delay * (2 ** (attempt - 1))) + random.uniform(
+                0, 0.1 * base_delay
+            )
             await asyncio.sleep(delay)
             continue
         except Exception:

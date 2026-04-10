@@ -19,7 +19,10 @@ if TYPE_CHECKING:
         ResponseOutputText,
         ResponseStreamEvent,
     )
-    from openai.types.responses.response_input_item_param import ComputerCallOutput, FunctionCallOutput
+    from openai.types.responses.response_input_item_param import (
+        ComputerCallOutput,
+        FunctionCallOutput,
+    )
     from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 else:
     # Fallback types when `openai` is not installed. These are only used at runtime
@@ -53,7 +56,9 @@ except Exception:
         @classmethod
         def model_json_schema(cls):
             return {}
-from typing_extensions import TypeAlias
+
+
+from typing import TypeAlias
 
 from .exceptions import AgentsException, ModelBehaviorError
 from .usage import Usage
@@ -241,9 +246,9 @@ class ItemHelpers:
 
         # object-style content (e.g., pydantic models)
         if hasattr(last_content, "text"):
-            return getattr(last_content, "text")
+            return last_content.text
         if hasattr(last_content, "refusal"):
-            return getattr(last_content, "refusal")
+            return last_content.refusal
 
         raise ModelBehaviorError(f"Unexpected content type: {type(last_content)}")
 
@@ -269,7 +274,7 @@ class ItemHelpers:
             return last_content.get("text")
 
         if hasattr(last_content, "text"):
-            return getattr(last_content, "text")
+            return last_content.text
 
         return None
 
@@ -316,7 +321,44 @@ class ItemHelpers:
             if isinstance(item, dict) and "text" in item:
                 text += item.get("text", "")
             elif hasattr(item, "text"):
-                text += getattr(item, "text")
+                text += item.text
+
+        return text
+
+    @classmethod
+    def text_reasoning_output(cls, reasoning: ReasoningItem) -> str:
+        """Extracts displayable text from a reasoning item."""
+        raw_item = getattr(reasoning, "raw_item", {}) or {}
+
+        try:
+            if hasattr(raw_item, "model_dump"):
+                data = raw_item.model_dump(exclude_unset=True)  # type: ignore[attr-defined]
+            elif isinstance(raw_item, dict):
+                data = raw_item
+            else:
+                data = {}
+        except Exception:
+            data = raw_item if isinstance(raw_item, dict) else {}
+
+        summary = data.get("summary", []) if isinstance(data, dict) else []
+        text = ""
+
+        for item in summary:
+            if isinstance(item, dict):
+                text += str(item.get("text", ""))
+            elif hasattr(item, "text"):
+                text += str(item.text)
+
+        if text:
+            return text
+
+        if isinstance(data, dict):
+            content = data.get("content", [])
+            for item in content:
+                if isinstance(item, dict):
+                    text += str(item.get("text", ""))
+                elif hasattr(item, "text"):
+                    text += str(item.text)
 
         return text
 

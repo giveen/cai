@@ -9,10 +9,13 @@ import numpy as np
 import pytest
 
 try:
-    from cai.sdk.agents.voice import OpenAISTTTranscriptionSession, StreamedAudioInput, STTModelSettings
+    from cai.sdk.agents.voice import (
+        OpenAISTTTranscriptionSession,
+        StreamedAudioInput,
+        STTModelSettings,
+    )
     from cai.sdk.agents.voice.exceptions import STTWebsocketConnectionError
     from cai.sdk.agents.voice.models.openai_stt import EVENT_INACTIVITY_TIMEOUT
-
     from tests.voice.fake_models import FakeStreamedAudioInput
 except ImportError:
     pass
@@ -117,9 +120,9 @@ async def test_session_connects_and_configures_successfully():
 
         # Check that we sent a 'transcription_session.update' message
         sent_messages = [call.args[0] for call in mock_ws.send.call_args_list]
-        assert any('"type": "transcription_session.update"' in msg for msg in sent_messages), (
-            f"Expected 'transcription_session.update' in {sent_messages}"
-        )
+        assert any(
+            '"type": "transcription_session.update"' in msg for msg in sent_messages
+        ), f"Expected 'transcription_session.update' in {sent_messages}"
 
         await session.close()
 

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import os
+
 import pytest
 
-import inspect
 from cai.sdk.agents.models import _openai_shared
 from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from cai.sdk.agents.models.openai_responses import OpenAIResponsesModel
-from unittest.mock import AsyncMock as _AsyncMock
 from cai.sdk.agents.tracing import set_trace_processors
 from cai.sdk.agents.tracing.setup import GLOBAL_TRACE_PROVIDER
-
 from tests.testing_processor import SPAN_PROCESSOR_TESTING
 
 
@@ -75,16 +73,6 @@ def skip_integration_agent_tests(request):
     if request.node.get_closest_marker("allow_call_model_methods"):
         enabled = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower()
         if enabled not in ("1", "true", "yes"):
-            pytest.skip("Skipping integration tests that call real model/methods by default. Set RUN_AGENT_INTEGRATION_TESTS=1 to run them.")
-
-
-@pytest.fixture(autouse=True)
-def ensure_guardrails_enabled(monkeypatch):
-    """Override CAI_GUARDRAILS to 'true' for every test.
-
-    The ambient shell environment may have CAI_GUARDRAILS=false for development
-    purposes.  Tests that specifically need it disabled call
-    monkeypatch.setenv("CAI_GUARDRAILS", "false") themselves, which overrides
-    this fixture's setting for that single test.
-    """
-    monkeypatch.setenv("CAI_GUARDRAILS", "true")
+            pytest.skip(
+                "Skipping integration tests that call real model/methods by default. Set RUN_AGENT_INTEGRATION_TESTS=1 to run them."
+            )

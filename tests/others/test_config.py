@@ -8,9 +8,8 @@ from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsMo
 from cai.sdk.agents.models.openai_provider import OpenAIProvider
 from cai.sdk.agents.models.openai_responses import OpenAIResponsesModel
 
+cai_model = os.getenv("CAI_MODEL", "qwen2.5:14b")
 
-import os
-cai_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
 
 def test_cc_no_default_key_errors(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -52,16 +51,16 @@ def test_resp_set_default_openai_client():
 
 
 def test_set_default_openai_api():
-    assert isinstance(OpenAIProvider().get_model(cai_model), OpenAIResponsesModel), (
-        "Default should be responses"
-    )
+    assert isinstance(
+        OpenAIProvider().get_model(cai_model), OpenAIResponsesModel
+    ), "Default should be responses"
 
     set_default_openai_api("chat_completions")
-    assert isinstance(OpenAIProvider().get_model(cai_model), OpenAIChatCompletionsModel), (
-        "Should be chat completions model"
-    )
+    assert isinstance(
+        OpenAIProvider().get_model(cai_model), OpenAIChatCompletionsModel
+    ), "Should be chat completions model"
 
     set_default_openai_api("responses")
-    assert isinstance(OpenAIProvider().get_model(cai_model), OpenAIResponsesModel), (
-        "Should be responses model"
-    )
+    assert isinstance(
+        OpenAIProvider().get_model(cai_model), OpenAIResponsesModel
+    ), "Should be responses model"

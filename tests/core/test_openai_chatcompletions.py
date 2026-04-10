@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -31,8 +32,9 @@ from cai.sdk.agents import (
     generation_span,
 )
 from cai.sdk.agents.models.fake_id import FAKE_RESPONSES_ID
-import os
-cai_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+
+cai_model = os.getenv("CAI_MODEL", "qwen2.5:14b")
+
 
 @pytest.mark.allow_call_model_methods
 @pytest.mark.asyncio
@@ -174,6 +176,7 @@ async def test_get_response_with_tool_call(monkeypatch) -> None:
     assert fn_call_item.name == "do_thing"
     assert fn_call_item.arguments == "{'x':1}"
 
+
 @pytest.mark.asyncio
 async def test_fetch_response_non_stream(monkeypatch) -> None:
     """
@@ -211,7 +214,7 @@ async def test_fetch_response_non_stream(monkeypatch) -> None:
     model = OpenAIChatCompletionsModel(model=cai_model, openai_client=dummy_client)  # type: ignore
     # Execute the private fetch with a system instruction and simple string input.
     with generation_span(disabled=True) as span:
-        result = await model._fetch_response(
+        _ = await model._fetch_response(
             system_instructions="sys",
             input="hi",
             model_settings=ModelSettings(),
@@ -222,11 +225,13 @@ async def test_fetch_response_non_stream(monkeypatch) -> None:
             tracing=ModelTracing.DISABLED,
             stream=False,
         )
-   
+
     # Ensure expected args were passed through to OpenAI client.
     kwargs = completions.kwargs
     assert kwargs["stream"] is False
-    assert kwargs["store"] is True
+    # `store` is omitted by default to avoid triggering remote proxy DB writes;
+    # only include it when explicitly configured on ModelSettings.
+    assert "store" not in kwargs
     assert kwargs["model"] == cai_model
     assert kwargs["messages"][0]["role"] == "system"
     assert kwargs["messages"][0]["content"] == "sys"
@@ -245,7 +250,8 @@ async def test_fetch_response_stream(monkeypatch) -> None:
     object along with the underlying async stream. The OpenAI client call
     should include `stream_options` to request usage-delimited chunks.
     """
-    os.environ['CAI_STREAM'] = 'true'
+    os.environ["CAI_STREAM"] = "true"
+
     async def event_stream() -> AsyncIterator[ChatCompletionChunk]:
         if False:  # pragma: no cover
             yield  # pragma: no cover
@@ -280,7 +286,9 @@ async def test_fetch_response_stream(monkeypatch) -> None:
         )
     # Check OpenAI client was called for streaming
     assert completions.kwargs["stream"] is True
-    assert completions.kwargs["store"] is True
+    # `store` is omitted by default; proxy DB writes should only occur when
+    # ModelSettings.store is explicitly set.
+    assert "store" not in completions.kwargs
     assert completions.kwargs["stream_options"] == {"include_usage": True}
     # Response is a proper openai Response
     assert isinstance(response, Response)
@@ -306,9 +314,9 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
         function=Function(name="do_thing", arguments='{"x":1}'),
     )
     msg = ChatCompletionMessage(
-        role="assistant", 
-        content="I'll help you with that. Let me use a tool.", 
-        tool_calls=[tool_call]
+        role="assistant",
+        content="I'll help you with that. Let me use a tool.",
+        tool_calls=[tool_call],
     )
     choice = Choice(index=0, finish_reason="stop", message=msg)
     chat = ChatCompletion(
@@ -325,10 +333,10 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
 
     monkeypatch.setattr(OpenAIChatCompletionsModel, "_fetch_response", patched_fetch_response)
     model = OpenAIProvider(use_responses=False).get_model(cai_model)
-    
+
     # Initial counter should be 0
     assert model.interaction_counter == 0
-    
+
     # Make the request
     resp: ModelResponse = await model.get_response(
         system_instructions="You are a helpful assistant",
@@ -339,17 +347,17 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
         handoffs=[],
         tracing=ModelTracing.DISABLED,
     )
-    
+
     # Counter should be incremented only once for the entire turn
     assert model.interaction_counter == 1
-    
+
     # Verify response contains both message and tool call
     assert len(resp.output) == 2  # One message item, one tool call item
     assert isinstance(resp.output[0], ResponseOutputMessage)
     assert isinstance(resp.output[1], ResponseFunctionToolCall)
-    
+
     # Make another request to ensure counter increments properly
-    resp2: ModelResponse = await model.get_response(
+    _ = await model.get_response(
         system_instructions="You are a helpful assistant",
         input="Another request",
         model_settings=ModelSettings(),
@@ -358,6 +366,6 @@ async def test_interaction_counter_single_turn_with_tool_calls(monkeypatch) -> N
         handoffs=[],
         tracing=ModelTracing.DISABLED,
     )
-    
+
     # Counter should now be 2 (one increment per turn, not per item)
     assert model.interaction_counter == 2

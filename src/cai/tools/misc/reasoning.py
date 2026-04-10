@@ -3,13 +3,19 @@ Reasoning tools module for tracking thoughts, findings and analysis
 Provides utilities for recording and retrieving key information discovered
 during CTF progression.
 """
+
 from cai.sdk.agents import function_tool
 
 
 @function_tool
-def thought(breakdowns: str = "", reflection: str = "",  # pylint: disable=too-many-arguments  # noqa: E501
-            action: str = "", next_step: str = "", key_clues: str = "",
-            ctf=None) -> str:  # pylint: disable=unused-argument  # noqa: E501
+def thought(
+    breakdowns: str = "",
+    reflection: str = "",  # pylint: disable=too-many-arguments  # noqa: E501
+    action: str = "",
+    next_step: str = "",
+    key_clues: str = "",
+    ctf=None,
+) -> str:  # pylint: disable=unused-argument  # noqa: E501
     """
     Tool used to express detailed thoughts and analysis during boot2root CTF.
 
@@ -36,6 +42,7 @@ def thought(breakdowns: str = "", reflection: str = "",  # pylint: disable=too-m
         output.append(f"Key Clues: {key_clues}")
     return "\n".join(output)
 
+
 @function_tool
 def write_key_findings(findings: str) -> str:
     """
@@ -59,6 +66,7 @@ def write_key_findings(findings: str) -> str:
         return f"Successfully wrote findings to state.txt:\n{findings}"
     except OSError as e:
         return f"Error writing to state.txt: {str(e)}"
+
 
 @function_tool
 def read_key_findings() -> str:
@@ -85,16 +93,15 @@ def read_key_findings() -> str:
         return f"Error reading state.txt: {str(e)}"
 
 
-
 @function_tool
 def think(thought: str) -> str:  # pylint: disable=unused-argument
     """
     Use the tool to think about something.
-    
+
     It will not obtain new information or change the database, but just append
     the thought to the log. Use it when complex reasoning or some cache memory
     is needed.
-    
+
     Args:
         thought: A thought to think about.
     Returns:

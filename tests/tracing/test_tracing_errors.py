@@ -18,8 +18,6 @@ from cai.sdk.agents import (
     Runner,
     TResponseInputItem,
 )
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
@@ -27,6 +25,7 @@ from tests.core.test_responses import (
     get_handoff_tool_call,
     get_text_message,
 )
+from tests.fake_model import FakeModel
 from tests.testing_processor import fetch_normalized_spans
 
 
@@ -244,9 +243,10 @@ async def test_multiple_handoff_doesnt_error():
                                 },
                             },
                             {"type": "generation"},
-                            {"type": "handoff",
-                             "data": {"from_agent": "test", "to_agent": "test"},
-                             "error": {
+                            {
+                                "type": "handoff",
+                                "data": {"from_agent": "test", "to_agent": "test"},
+                                "error": {
                                     "data": {
                                         "requested_agents": [
                                             "test",
@@ -255,7 +255,7 @@ async def test_multiple_handoff_doesnt_error():
                                     },
                                     "message": "Multiple handoffs requested",
                                 },
-                             },
+                            },
                         ],
                     },
                     {
@@ -353,9 +353,9 @@ async def test_handoffs_lead_to_correct_agent_spans():
     )
     result = await Runner.run(agent_3, input="user_message")
 
-    assert result.last_agent == agent_3, (
-        f"should have ended on the third agent, got {result.last_agent.name}"
-    )
+    assert (
+        result.last_agent == agent_3
+    ), f"should have ended on the third agent, got {result.last_agent.name}"
 
     assert fetch_normalized_spans() == snapshot(
         [
@@ -383,10 +383,7 @@ async def test_handoffs_lead_to_correct_agent_spans():
                             {"type": "generation"},
                             {
                                 "type": "handoff",
-                                "data": {
-                                    "from_agent": "test_agent_3",
-                                    "to_agent": "test_agent_1"
-                                },
+                                "data": {"from_agent": "test_agent_3", "to_agent": "test_agent_1"},
                                 "error": {
                                     "data": {
                                         "requested_agents": [

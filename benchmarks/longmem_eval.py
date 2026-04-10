@@ -8,15 +8,15 @@ and reports Recall@K for several pipeline variants: dense-only,
 sparse-only, combiner, and combiner+rerank. Results are reproducible
 when using the default `LocalDeterministicEmbeddingsProvider`.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-from typing import List, Dict, Any
 
-from cai.rag.vector_db_adapter import LocalFallbackAdapter
 from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
-from cai.rag.retriever_pipeline import DenseRetriever, SimpleBM25, RetrieverCombiner, Reranker
+from cai.rag.retriever_pipeline import DenseRetriever, Reranker, RetrieverCombiner, SimpleBM25
+from cai.rag.vector_db_adapter import LocalFallbackAdapter
 
 
 def build_dataset(num_docs: int, num_topics: int, vector_dim: int):
@@ -66,11 +66,19 @@ def evaluate(adapter, docs, queries, gt_ids, provider, top_ks=(1, 3, 5)):
     pipelines = {
         "dense": lambda q: dense.retrieve(q, top_k=max_k),
         "sparse": lambda q: sparse.retrieve(q, top_k=max_k),
-        "combiner": lambda q: combiner.combine([dense.retrieve(q, top_k=max_k), sparse.retrieve(q, top_k=max_k)], top_k=max_k),
-        "combiner_rerank": lambda q: reranker.rerank(q, combiner.combine([dense.retrieve(q, top_k=max_k), sparse.retrieve(q, top_k=max_k)], top_k=max_k), top_k=max_k),
+        "combiner": lambda q: combiner.combine(
+            [dense.retrieve(q, top_k=max_k), sparse.retrieve(q, top_k=max_k)], top_k=max_k
+        ),
+        "combiner_rerank": lambda q: reranker.rerank(
+            q,
+            combiner.combine(
+                [dense.retrieve(q, top_k=max_k), sparse.retrieve(q, top_k=max_k)], top_k=max_k
+            ),
+            top_k=max_k,
+        ),
     }
 
-    results: Dict[str, List[float]] = {name: [0.0 for _ in top_ks] for name in pipelines.keys()}
+    results: dict[str, list[float]] = {name: [0.0 for _ in top_ks] for name in pipelines.keys()}
     total = len(queries)
 
     for q, gt in zip(queries, gt_ids):
@@ -96,7 +104,9 @@ def main():
     parser.add_argument("--out", type=str, default=None, help="Write JSON results to file")
     args = parser.parse_args()
 
-    adapter, docs, queries, gt_ids, provider = build_dataset(args.num_docs, args.num_topics, args.vector_dim)
+    adapter, docs, queries, gt_ids, provider = build_dataset(
+        args.num_docs, args.num_topics, args.vector_dim
+    )
     res = evaluate(adapter, docs, queries, gt_ids, provider, top_ks=tuple(args.top_ks))
 
     print("Retrieval Recall@K results")

@@ -111,174 +111,16 @@ Usage Examples:
         CAI_MODEL="alias1" CAI_PARALLEL="3" cai
 """
 
-# Load environment variables from .env file FIRST, before any imports
+from cai.bootstrap import initialize_env
+import asyncio
+import logging
 import os
+import shlex
+import sys
+import time
 
-from dotenv import load_dotenv
-
-# Load .env file from current working directory with override
-# This ensures env vars from .env take precedence over system env vars
-load_dotenv(override=True)
-
-# Configure Python warnings BEFORE any other imports
-import warnings  # noqa: E402
-import sys  # noqa: E402
-
-# Custom warning handler to suppress specific warnings
-def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
-    # Only show warnings in debug mode
-    if os.getenv("CAI_DEBUG", "1") == "2":
-        # Format and print the warning
-        warnings.showwarning(message, category, filename, lineno, file, line)
-    # Otherwise, silently ignore
-
-# Set custom warning handler
-warnings.showwarning = custom_warning_handler
-
-# Suppress ALL warnings in production mode (unless CAI_DEBUG=2)
-if os.getenv("CAI_DEBUG", "1") != "2":
-    warnings.filterwarnings("ignore")
-    # Also set environment variable to prevent warnings from subprocesses
-    os.environ["PYTHONWARNINGS"] = "ignore"
-
-import asyncio  # noqa: E402
-import logging  # noqa: E402
-import shlex  # noqa: E402
-import time  # noqa: E402
-
-# Configure comprehensive error filtering
-class ComprehensiveErrorFilter(logging.Filter):
-    """Filter to suppress various expected errors and warnings."""
-    def filter(self, record):
-        msg = record.getMessage().lower()
-        
-        # List of patterns to suppress completely
-        suppress_patterns = [
-            "asynchronous generator",
-            "asyncgen",
-            "closedresourceerror",
-            "didn't stop after athrow",
-            "didnt stop after athrow",
-            "didn't stop after athrow",
-            "generator didn't stop",
-            "generator didn't stop",
-            "cancel scope",
-            "unhandled errors in a taskgroup",
-            "error in post_writer",
-            "was never awaited",
-            "connection error while setting up",
-            "error closing",
-            "anyio._backends",
-            "httpx_sse",
-            "connection reset by peer",
-            "broken pipe", 
-            "connection aborted",
-            "runtime warning",
-            "runtimewarning",
-            "coroutine",
-            "task was destroyed",
-            "event loop is closed",
-            "session is closed",
-            # Add specific aiohttp session warnings
-            "unclosed client session",
-            "unclosed connector",
-            "client_session:",
-            "connector:",
-            "connections:",
-        ]
-        
-        # Check if any suppress pattern matches
-        for pattern in suppress_patterns:
-            if pattern in msg:
-                return False
-        
-        # SSE connection errors during cleanup
-        if "sse" in msg and any(word in msg for word in ["cleanup", "closing", "shutdown", "closed"]):
-            return False
-            
-        # MCP connection errors that we handle
-        if "error invoking mcp tool" in msg and "closedresourceerror" in msg:
-            return False
-            
-        # MCP reconnection messages - change to DEBUG level
-        if "mcp server session not found" in msg or "successfully reconnected to mcp server" in msg:
-            record.levelno = logging.DEBUG
-            record.levelname = "DEBUG"
-            
-        return True
-
-# Apply comprehensive filter to all relevant loggers
-comprehensive_filter = ComprehensiveErrorFilter()
-
-# List of loggers to configure
-loggers_to_configure = [
-    "openai.agents",
-    "mcp.client.sse", 
-    "httpx",
-    "httpx_sse",
-    "mcp",
-    "asyncio",
-    "anyio",
-    "anyio._backends._asyncio",
-    "cai.sdk.agents",
-    "aiohttp",  # Add aiohttp logger to suppress session warnings
-]
-
-for logger_name in loggers_to_configure:
-    logger = logging.getLogger(logger_name)
-    logger.addFilter(comprehensive_filter)
-    # Set appropriate level - ERROR for most, WARNING for critical ones
-    if logger_name in ["asyncio", "anyio", "anyio._backends._asyncio"]:
-        logger.setLevel(logging.ERROR)  # Only show critical errors
-    else:
-        logger.setLevel(logging.WARNING)
-
-# Suppress various warnings globally with more comprehensive patterns
-warnings.filterwarnings("ignore", category=RuntimeWarning)  # Ignore ALL RuntimeWarnings
-warnings.filterwarnings("ignore", category=ResourceWarning)  # Ignore ResourceWarnings (aiohttp sessions)
-warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
-warnings.filterwarnings("ignore", message=".*was never awaited.*")
-warnings.filterwarnings("ignore", message=".*didn't stop after athrow.*")
-warnings.filterwarnings("ignore", message=".*didn't stop after athrow.*")
-warnings.filterwarnings("ignore", message=".*cancel scope.*")
-warnings.filterwarnings("ignore", message=".*coroutine.*was never awaited.*")
-warnings.filterwarnings("ignore", message=".*generator.*didn't stop.*")
-warnings.filterwarnings("ignore", message=".*Task was destroyed.*")
-warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
-# Add specific aiohttp session warnings
-warnings.filterwarnings("ignore", message=".*Unclosed client session.*")
-warnings.filterwarnings("ignore", message=".*Unclosed connector.*")
-warnings.filterwarnings("ignore", message=".*client_session:.*")
-warnings.filterwarnings("ignore", message=".*connector:.*")
-warnings.filterwarnings("ignore", message=".*connections:.*")
-
-# Also configure Python's warning system to be less verbose
-if not sys.warnoptions:
-    warnings.simplefilter("ignore", RuntimeWarning)
-    warnings.simplefilter("ignore", ResourceWarning)  # Also ignore ResourceWarnings
-
-# Additional aiohttp warning suppression
-def suppress_aiohttp_warnings():
-    """Suppress aiohttp specific warnings about unclosed sessions."""
-    try:
-        # Suppress aiohttp warnings about unclosed sessions
-        aiohttp_logger = logging.getLogger("aiohttp")
-        aiohttp_logger.setLevel(logging.ERROR)  # Only show errors, not warnings
-        
-        # Also suppress aiohttp.client warnings
-        aiohttp_client_logger = logging.getLogger("aiohttp.client")
-        aiohttp_client_logger.setLevel(logging.ERROR)
-        
-        # Suppress aiohttp.connector warnings
-        aiohttp_connector_logger = logging.getLogger("aiohttp.connector")
-        aiohttp_connector_logger.setLevel(logging.ERROR)
-        
-    except ImportError:
-        # aiohttp not installed, skip
-        pass
-
-# Call the function to suppress aiohttp warnings
-suppress_aiohttp_warnings()
+# Initialize environment early (load .env, configure warnings and logging filters)
+initialize_env()
 
 # OpenAI imports
 from rich.console import Console  # noqa: E402
@@ -286,44 +128,26 @@ from rich.console import Console  # noqa: E402
 from cai import is_pentestperf_available  # noqa: E402
 
 # CAI agents imports
-from cai.agents import get_agent_by_name
+from cai.agents import get_agent_by_name  # noqa: E402
 
 # CAI REPL imports
-from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command  # noqa: E402
+from cai.repl.commands import handle_command as commands_handle_command  # noqa: E402
 
-# Add import for parallel configs at the top of the file
-from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig, PARALLEL_AGENT_INSTANCES  # noqa: E402
+# Import parallel config list used to gate the parallel execution path
+from cai.repl.commands.parallel import PARALLEL_CONFIGS  # noqa: E402
 
 # Global storage for shared message histories (keyed by a unique identifier)
 UNIFIED_MESSAGE_HISTORIES = {}
-from cai.repl.ui.banner import display_banner, display_quick_guide  # noqa: E402
-from cai.repl.ui.keybindings import create_key_bindings  # noqa: E402
-from cai.repl.ui.logging import setup_session_logging  # noqa: E402
-from cai.repl.ui.prompt import get_user_input  # noqa: E402
-from cai.repl.ui.toolbar import get_toolbar_with_refresh  # noqa: E402
 
 # CAI SDK imports
-from cai.sdk.agents import Runner, set_tracing_disabled  # noqa: E402
-from cai.sdk.agents.items import ToolCallOutputItem  # noqa: E402
-from cai.sdk.agents.exceptions import OutputGuardrailTripwireTriggered, InputGuardrailTripwireTriggered  # noqa: E402
-from cai.sdk.agents.models.openai_chatcompletions import (  # noqa: E402
-    ContextCompactedError,
-)
-# Import handled where needed to avoid circular imports
-from cai.sdk.agents.run_to_jsonl import get_session_recorder  # noqa: E402
-from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER  # noqa: E402
-from cai.sdk.agents.stream_events import RunItemStreamEvent  # noqa: E402
-from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION  # noqa: E402
+from cai.sdk.agents import set_tracing_disabled  # noqa: E402
 
 # CAI utility imports
 from cai.util import (  # noqa: E402
-    color,
     fix_litellm_transcription_annotations,
     setup_ctf,
-    start_active_timer,
     start_idle_timer,
     stop_active_timer,
-    stop_idle_timer,
 )
 
 ctf_global = None
@@ -348,75 +172,18 @@ global START_TIME
 START_TIME = time.time()
 
 
-def update_agent_models_recursively(agent, new_model, visited=None):
-    """
-    Recursively update the model for an agent and all agents in its handoffs.
-
-    Args:
-        agent: The agent to update
-        new_model: The new model string to set
-        visited: Set of agent names already visited to prevent infinite loops
-    """
-    if visited is None:
-        visited = set()
-
-    # Avoid infinite loops by tracking visited agents
-    if agent.name in visited:
-        return
-    visited.add(agent.name)
-
-    # Update the main agent's model
-    if hasattr(agent, "model") and hasattr(agent.model, "model"):
-        agent.model.model = new_model
-        # Also ensure the agent name is set correctly in the model
-        if hasattr(agent.model, "agent_name"):
-            agent.model.agent_name = agent.name
-        
-        # IMPORTANT: Clear any cached state in the model that might be model-specific
-        # This ensures the model doesn't have stale state from the previous model
-        if hasattr(agent.model, "_client"):
-            # Force recreation of the client on next use
-            agent.model._client = None
-        if hasattr(agent.model, "_converter"):
-            # Reset the converter's state
-            if hasattr(agent.model._converter, "recent_tool_calls"):
-                agent.model._converter.recent_tool_calls.clear()
-            if hasattr(agent.model._converter, "tool_outputs"):
-                agent.model._converter.tool_outputs.clear()
-
-    # Update models for all handoff agents
-    if hasattr(agent, "handoffs"):
-        for handoff_item in agent.handoffs:
-            # Handle both direct Agent references and Handoff objects
-            if hasattr(handoff_item, "on_invoke_handoff"):
-                # This is a Handoff object
-                # For handoffs created with the handoff() function, the agent is stored
-                # in the closure of the on_invoke_handoff function
-                # We can try to extract it from the function's closure
-                try:
-                    # Get the closure variables of the handoff function
-                    if (
-                        hasattr(handoff_item.on_invoke_handoff, "__closure__")
-                        and handoff_item.on_invoke_handoff.__closure__
-                    ):
-                        for cell in handoff_item.on_invoke_handoff.__closure__:
-                            if hasattr(cell.cell_contents, "model") and hasattr(
-                                cell.cell_contents, "name"
-                            ):
-                                # This looks like an agent
-                                handoff_agent = cell.cell_contents
-                                update_agent_models_recursively(handoff_agent, new_model, visited)
-                                break
-                except Exception:
-                    # If we can't extract the agent from closure, skip it
-                    pass
-            elif hasattr(handoff_item, "model"):
-                # This is a direct Agent reference
-                update_agent_models_recursively(handoff_item, new_model, visited)
+# model-syncing is handled by the AgentManager.sync_models method
+# ``update_agent_models_recursively`` lives in cai.repl.loop.agent_sync and is
+# imported here so existing call-sites in this module keep working unchanged.
+from cai.repl.loop.agent_sync import update_agent_models_recursively  # noqa: E402
 
 
-def run_cai_cli(
-    starting_agent, context_variables=None, max_turns=float("inf"), force_until_flag=False, initial_prompt=None
+def _run_cai_cli_impl(
+    starting_agent,
+    context_variables=None,
+    max_turns=float("inf"),
+    force_until_flag=False,
+    initial_prompt=None,
 ):
     """
     Run a simple interactive CLI loop for CAI.
@@ -439,9 +206,6 @@ def run_cai_cli(
     # Holds a user message to replay on the next iteration without prompting
     # the user — set by auto-compact so the agent continues its current task.
     _post_compact_input: str | None = None
-    # Last raw user input captured so auto-compact replay and ContextCompactedError
-    # handlers can reference it reliably even in parallel mode.
-    _last_user_input: str = ""
     # When a user interrupts execution (KeyboardInterrupt), set this flag so
     # the subsequent loop iteration will not auto-compact immediately
     # (avoids losing data when a user pauses/resumes the session).
@@ -451,119 +215,18 @@ def run_cai_cli(
     last_agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
     parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
     use_initial_prompt = initial_prompt is not None
-    
-    # Reset cost tracking at the start
-    from cai.util import COST_TRACKER
-    COST_TRACKER.reset_agent_costs()
-    
-    # Reset simple agent manager for clean start
-    from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-    AGENT_MANAGER.reset_registry()
-    
-    # Register the starting agent with AGENT_MANAGER
-    starting_agent_name = getattr(starting_agent, "name", last_agent_type)
-    AGENT_MANAGER.switch_to_single_agent(starting_agent, starting_agent_name)
 
-    # Initialize command completer and key bindings
-    command_completer = FuzzyCommandCompleter()
-    current_text = [""]
-    kb = create_key_bindings(current_text)
+    # One-time session startup: reset trackers, build UI kit, pre-load data, display banner.
+    from cai.repl.loop.session import initialize_session
 
-    # Setup session logging
-    history_file = setup_session_logging()
-
-    # Initialize session logger and display the filename
-    session_logger = get_session_recorder()
-    
-    # Start global usage tracking session
-    GLOBAL_USAGE_TRACKER.start_session(
-        session_id=session_logger.session_id,
-        agent_name=None  # Will be updated when agent is selected
+    command_completer, current_text, kb, history_file, session_logger = initialize_session(
+        starting_agent, console, last_agent_type
     )
-
-    # Initialize global WakeupIndex and load persisted wake-up summaries
-    try:
-        from cai.rag.wakeup_store import get_global_wakeup_index
-        from cai.rag.summaries import load_summaries_for_session
-
-        wakeup_idx = get_global_wakeup_index()
-        # Load persisted summaries only (do not attempt regeneration here)
-        try:
-            count = load_summaries_for_session(
-                session_id=session_logger.session_id,
-                palace_texts=None,
-                wakeup_index=wakeup_idx,
-                regenerate_if_missing=False,
-            )
-        except Exception:
-            count = 0
-
-        if os.getenv("CAI_DEBUG", "1") == "2":
-            print(f"Loaded {count} wakeup summaries into WakeupIndex for session {session_logger.session_id}")
-    except Exception:
-        # Best-effort: don't fail session startup if wakeup loading fails
-        pass
-
-    # Initialize TripleStore and run a best-effort contradiction check
-    try:
-        from cai.rag.triplestore_store import get_global_triplestore
-
-        ts = get_global_triplestore()
-        try:
-            window_sec = int(os.getenv("CAI_TRIPLESTORE_CONTRADICTION_WINDOW_SECONDS", str(24 * 3600)))
-        except Exception:
-            window_sec = 24 * 3600
-        try:
-            contradictions = ts.detect_contradictions(window_seconds=window_sec)
-            n = len(contradictions)
-            if os.getenv("CAI_DEBUG", "1") == "2":
-                print(f"TripleStore: detected {n} contradictions in last {window_sec} seconds")
-            logging.getLogger(__name__).info("TripleStore startup contradictions=%d", n)
-        except Exception:
-            # Best-effort: do not fail startup for triple-store checks
-            pass
-    except Exception:
-        # Best-effort: do not fail session startup if triplestore init fails
-        pass
-
-    # Display banner
-    display_banner(console)
-    print("\n")
-    display_quick_guide(console)
-
-    # Notify user if auto-compact is active so they can confirm the vars loaded.
-    _sc_model_startup = os.getenv("CAI_SUPPORT_MODEL")
-    _sc_interval_startup = os.getenv("CAI_SUPPORT_INTERVAL")
-    if _sc_model_startup and _sc_interval_startup:
-        try:
-            console.print(
-                f"[bold cyan]🗜  Auto-compact enabled: every {int(_sc_interval_startup)} LLM responses "
-                f"using {_sc_model_startup}[/bold cyan]"
-            )
-        except ValueError:
-            pass
-
-    # Function to get the short name of the agent for display
-    def get_agent_short_name(agent):
-        if hasattr(agent, "name"):
-            # Return the full agent name instead of just the first word
-            return agent.name
-        return "Agent"
-
-    # Prevent the model from using its own rich streaming to avoid conflicts
-    # but allow final output message to ensure all agent responses are shown
-    if hasattr(agent, "model"):
-        if hasattr(agent.model, "disable_rich_streaming"):
-            agent.model.disable_rich_streaming = False  # Now True as the model handles streaming
-        if hasattr(agent.model, "suppress_final_output"):
-            agent.model.suppress_final_output = False  # Changed to False to show all agent messages
-
-        # Set the agent name in the model for proper display in streaming panel
-        if hasattr(agent.model, "set_agent_name"):
-            agent.model.set_agent_name(get_agent_short_name(agent))
 
     prev_max_turns = max_turns
     turn_limit_reached = False
+    # Ensure this exists for KeyboardInterrupt handling before try-body sets it
+    idle_start_time = 0
 
     while True:
         # Check if the ctf name has changed and instanciate the ctf
@@ -608,171 +271,44 @@ def run_cai_cli(
         try:
             # Start measuring user idle time
             start_idle_timer()
-            import time
+
+            # Capture idle start timestamp
             idle_start_time = time.time()
 
-            # Check if model has changed and update if needed
-            current_model = os.getenv("CAI_MODEL", "alias1")
-            # Check for agent-specific model override
-            agent_specific_model = os.getenv(f"CAI_{last_agent_type.upper()}_MODEL")
-            if agent_specific_model:
-                current_model = agent_specific_model
+            # Sync model and switch agent type if environment variables changed.
+            from cai.repl.loop.agent_sync import switch_agent_if_needed, sync_model
 
-            if current_model != last_model and hasattr(agent, "model"):
-                # Update the model recursively for the agent and all handoff agents
-                update_agent_models_recursively(agent, current_model)
-                last_model = current_model
-
-            # Check if agent type has changed and recreate agent if needed
-            current_agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
-            # Update parallel_count to reflect changes from /parallel command
+            current_model, last_model = sync_model(agent, last_model, last_agent_type)
             parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
-            
-            
-            if current_agent_type != last_agent_type:
-                # Check if the /agent command already handled the switch
-                if os.environ.get("CAI_AGENT_SWITCH_HANDLED") == "1":
-                    os.environ["CAI_AGENT_SWITCH_HANDLED"] = "0"  # Reset flag
-                    
-                    # Just get the existing agent that was already switched
-                    from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-                    
-                    # First try to get the strong reference if available
-                    if hasattr(AGENT_MANAGER, '_current_agent_strong_ref'):
-                        agent = AGENT_MANAGER._current_agent_strong_ref
-                        # Clear the strong reference after using it
-                        delattr(AGENT_MANAGER, '_current_agent_strong_ref')
-                    else:
-                        agent = AGENT_MANAGER.get_active_agent()
-                    
-                    if agent:
-                        last_agent_type = current_agent_type
-                    else:
-                        # If the agent is None (weak reference expired), recreate it
-                        agent = get_agent_by_name(current_agent_type, agent_id="P1")
-                        last_agent_type = current_agent_type
-                        # Re-register with AGENT_MANAGER
-                        agent_name = agent.name if hasattr(agent, "name") else current_agent_type
-                        AGENT_MANAGER.set_active_agent(agent, agent_name, "P1")
-                    continue
-                
-                try:
-                    # CRITICAL: Set up history transfer BEFORE creating the new agent
-                    from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-                    
-                    # Get the current agent's history before switching
-                    if hasattr(agent, "name"):
-                        current_agent_name = agent.name
-                        current_history = AGENT_MANAGER.get_message_history(current_agent_name)
-                        if current_history:
-                            AGENT_MANAGER._pending_history_transfer = list(current_history)  # Make a copy
-                    
-                    # Now create the new agent
-                    agent = get_agent_by_name(current_agent_type, agent_id="P1")
-                    last_agent_type = current_agent_type
-                    
-                    # Reset cost tracking for the new agent
-                    from cai.util import COST_TRACKER
-                    COST_TRACKER.reset_agent_costs()
-                    
-                    # Use the new switch_to_single_agent method for proper cleanup
-                    # IMPORTANT: Always use the agent's proper name, not the agent key
-                    agent_name = agent.name if hasattr(agent, "name") else current_agent_type
-                    
-                    # Check if this agent has already been switched to by /agent command
-                    # If so, don't switch again to avoid clearing the history
-                    current_active_agent = AGENT_MANAGER.get_active_agent()
-                    current_active_name = AGENT_MANAGER._active_agent_name
-                    
-                    if current_active_name == agent_name:
-                        # Just update the agent reference
-                        agent = current_active_agent
-                    else:
-                        # Switch to the new agent
-                        AGENT_MANAGER.switch_to_single_agent(agent, agent_name)
-                    
-                    # Sync the model's history with AGENT_MANAGER's history
-                    # This ensures the model has its own history from AGENT_MANAGER
-                    if hasattr(agent, "model") and hasattr(agent.model, "message_history"):
-                        agent_history = AGENT_MANAGER.get_message_history(agent_name)
-                        # Clear model's history and sync with AGENT_MANAGER
-                        agent.model.message_history.clear()
-                        if agent_history:
-                            # Use extend() to avoid circular addition
-                            agent.model.message_history.extend(agent_history)
+            agent, last_model, last_agent_type, _agent_switch_continue = switch_agent_if_needed(
+                agent, last_model, last_agent_type, current_model, console
+            )
+            if _agent_switch_continue:
+                continue
 
-                    # Configure the new agent's model flags
-                    if hasattr(agent, "model"):
-                        if hasattr(agent.model, "disable_rich_streaming"):
-                            agent.model.disable_rich_streaming = (
-                                False  # Now False to let model handle streaming
-                            )
-                        if hasattr(agent.model, "suppress_final_output"):
-                            agent.model.suppress_final_output = (
-                                False  # Changed to False to show all agent messages
-                            )
+            # Acquire user input, update idle timing and CTF state.
+            from cai.repl.loop.input_handler import get_next_input as _get_next_input
 
-                        # Apply current model to the new agent and all its handoff agents
-                        # Check for agent-specific model override
-                        agent_specific_model = os.getenv(f"CAI_{current_agent_type.upper()}_MODEL")
-                        model_to_apply = (
-                            agent_specific_model if agent_specific_model else current_model
-                        )
-                        update_agent_models_recursively(agent, model_to_apply)
-                        last_model = model_to_apply
-
-                        # Set agent name in the model for streaming display
-                        if hasattr(agent.model, "set_agent_name"):
-                            agent.model.set_agent_name(get_agent_short_name(agent))
-                        
-                        # Clear any asyncio tasks that might be lingering from the previous agent
-                        # This helps prevent event loop issues after agent switching
-                        try:
-                            # Get all running tasks
-                            all_tasks = asyncio.all_tasks() if hasattr(asyncio, 'all_tasks') else asyncio.Task.all_tasks()
-                            # Cancel tasks that aren't the current task
-                            current_task = asyncio.current_task() if hasattr(asyncio, 'current_task') else asyncio.Task.current_task()
-                            for task in all_tasks:
-                                if task != current_task and not task.done():
-                                    task.cancel()
-                        except RuntimeError:
-                            # Not in an async context, which is fine
-                            pass
-                            
-                except Exception as e:
-                    # Log the error but don't display it unless in debug mode
-                    logger = logging.getLogger(__name__)
-                    logger.debug(f"Error switching agent: {str(e)}")
-                    if os.getenv("CAI_DEBUG", "1") == "2":
-                        console.print(f"[red]Error switching agent: {str(e)}[/red]")
-
-            if not force_until_flag and ctf_init != 0:
-                # Use initial prompt on first iteration if provided
-                if use_initial_prompt:
-                    user_input = initial_prompt
-                    use_initial_prompt = False  # Only use it once
-                elif _post_compact_input is not None:
-                    # Auto-compact just ran — replay the last task so the agent
-                    # continues working without waiting for human input.
-                    user_input = _post_compact_input
-                    _post_compact_input = None
-                else:
-                    # Get user input with command completion and history
-                    user_input = get_user_input(
-                        command_completer, kb, history_file, get_toolbar_with_refresh, current_text
-                    )
-
-            else:
-                user_input = messages_ctf
-                ctf_init = 1
-            idle_time += time.time() - idle_start_time
-
-            # Stop measuring user idle time and start measuring active time
-            stop_idle_timer()
-            start_active_timer()
-            
-            if not user_input.strip():
-                user_input = "User input is empty, maybe wants to continue"  # Set a default message to continue the conversation
+            (
+                user_input,
+                use_initial_prompt,
+                _post_compact_input,
+                ctf_init,
+                idle_time,
+            ) = _get_next_input(
+                force_until_flag,
+                ctf_init,
+                use_initial_prompt,
+                initial_prompt,
+                _post_compact_input,
+                command_completer,
+                kb,
+                history_file,
+                current_text,
+                messages_ctf,
+                idle_time,
+                idle_start_time,
+            )
 
             # In parallel mode, all configured agents will run automatically
             # No agent selection menu - just run all agents
@@ -784,232 +320,34 @@ def run_cai_cli(
             # Mark that the user interrupted execution so we skip the next
             # automatic compaction cycle to avoid losing data.
             _skip_auto_compact_after_interrupt = True
-            # Mark that the user interrupted execution so we skip the next
-            # automatic compaction cycle to avoid losing data.
-            _skip_auto_compact_after_interrupt = True
 
-            def format_time(seconds):
-                mins, secs = divmod(int(seconds), 60)
-                hours, mins = divmod(mins, 60)
-                return f"{hours:02d}:{mins:02d}:{secs:02d}"
-
-            Total = time.time() - START_TIME
-            idle_time += time.time() - idle_start_time
-
-            # Save parallel agents' histories if we were in parallel mode
+            # Compute the most recent idle accumulation (best-effort)
             try:
-                if PARALLEL_CONFIGS and PARALLEL_ISOLATION.is_parallel_mode():
-                    # Save each parallel agent's history
-                    saved_count = 0
-                    for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                        instance_key = (config.agent_name, idx)
-                        if instance_key in PARALLEL_AGENT_INSTANCES:
-                            instance_agent = PARALLEL_AGENT_INSTANCES[instance_key]
-                            if hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
-                                # The agent's message history should already be updated in PARALLEL_ISOLATION
-                                # via the add_to_message_history method, but let's make sure
-                                agent_id = config.id or f"P{idx}"
-                                if instance_agent.model.message_history:
-                                    PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
-                                    saved_count += 1
-                    
-                    if saved_count > 0:
-                        # Sync isolated histories with AGENT_MANAGER for display
-                        for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                            agent_id = config.id or f"P{idx}"
-                            isolated_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-                            if isolated_history:
-                                # Get the agent display name
-                                from cai.agents import get_available_agents
-                                available_agents = get_available_agents()
-                                if config.agent_name in available_agents:
-                                    agent = available_agents[config.agent_name]
-                                    agent_display_name = getattr(agent, "name", config.agent_name)
-                                    
-                                    # Add instance number if needed
-                                    total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
-                                    if total_count > 1:
-                                        instance_num = 0
-                                        for c in PARALLEL_CONFIGS:
-                                            if c.agent_name == config.agent_name:
-                                                instance_num += 1
-                                                if c.id == config.id:
-                                                    break
-                                        agent_display_name = f"{agent_display_name} #{instance_num}"
-                                    
-                                    # Clear and replace the history in AGENT_MANAGER
-                                    AGENT_MANAGER.clear_history(agent_display_name)
-                                    for msg in isolated_history:
-                                        AGENT_MANAGER.add_to_history(agent_display_name, msg)
-            except Exception as e:
-                # Only log this error in debug mode
-                logger = logging.getLogger(__name__)
-                logger.debug(f"Error saving parallel agents' histories: {str(e)}")
-
-            # Clean up any pending tool calls before exiting
-            try:
-                # Access the converter directly to clean up any pending tool calls
-                # converter is instance-based, access via agent.model._converter
-
-                # Check if any tool calls are pending (have been issued but don't have responses)
-                pending_calls = []
-                if hasattr(agent.model, "_converter") and hasattr(
-                    agent.model._converter, "recent_tool_calls"
-                ):
-                    for call_id, call_info in list(
-                        agent.model._converter.recent_tool_calls.items()
-                    ):
-                        # Check if this tool call has a corresponding response in message_history
-                        tool_response_exists = False
-                        for msg in agent.model.message_history:
-                            if msg.get("role") == "tool" and msg.get("tool_call_id") == call_id:
-                                tool_response_exists = True
-                                break
-
-                        # If no tool response exists, create a synthetic one
-                        if not tool_response_exists:
-                            # First ensure there's a matching assistant message with this tool call
-                            assistant_exists = False
-                            for msg in agent.model.message_history:
-                                if (
-                                    msg.get("role") == "assistant"
-                                    and msg.get("tool_calls")
-                                    and any(
-                                        tc.get("id") == call_id for tc in msg.get("tool_calls", [])
-                                    )
-                                ):
-                                    assistant_exists = True
-                                    break
-
-                            # Add assistant message if needed
-                            if not assistant_exists:
-                                tool_call_msg = {
-                                    "role": "assistant",
-                                    "content": None,
-                                    "tool_calls": [
-                                        {
-                                            "id": call_id,
-                                            "type": "function",
-                                            "function": {
-                                                "name": call_info.get("name", "unknown_function"),
-                                                "arguments": call_info.get("arguments", "{}"),
-                                            },
-                                        }
-                                    ],
-                                }
-                                agent.model.add_to_message_history(tool_call_msg)
-
-                            # Add a synthetic tool response
-                            tool_msg = {
-                                "role": "tool",
-                                "tool_call_id": call_id,
-                                "content": "Operation interrupted by user (Keyboard Interrupt during shutdown)",
-                            }
-                            agent.model.add_to_message_history(tool_msg)
-                            pending_calls.append(call_info.get("name", "unknown"))
-
-                # Apply message list fixes to ensure consistency
-                if pending_calls:
-                    from cai.util import fix_message_list
-
-                    agent.model.message_history[:] = fix_message_list(agent.model.message_history)
+                additional_idle = time.time() - idle_start_time
             except Exception:
-                pass
+                additional_idle = 0
 
             try:
-                # Get more accurate active and idle time measurements from the timer functions
-                from cai.util import COST_TRACKER, get_active_time_seconds, get_idle_time_seconds
+                from cai.repl.ui.metrics import finalize_session
 
-                # Use the precise measurements from our timers
-                active_time_seconds = get_active_time_seconds()
-                idle_time_seconds = get_idle_time_seconds()
+                try:
+                    finalize_session(session_logger, START_TIME, idle_time + (additional_idle or 0))
+                except Exception:
+                    # If finalize_session fails, fall back to the simpler handler
+                    try:
+                        from cai.repl.ui.metrics import handle_keyboard_interrupt
 
-                # Format for display
-                active_time_formatted = format_time(active_time_seconds)
-                idle_time_formatted = format_time(idle_time_seconds)
-
-                # Get session cost from the global cost tracker
-                session_cost = COST_TRACKER.session_total_cost
-
-                metrics = {
-                    "session_time": format_time(Total),
-                    "active_time": active_time_formatted,
-                    "idle_time": idle_time_formatted,
-                    "llm_time": format_time(active_time_seconds),  # Using active time as LLM time
-                    "llm_percentage": round((active_time_seconds / Total) * 100, 1)
-                    if Total > 0
-                    else 0.0,
-                    "session_cost": f"${session_cost:.6f}",  # Add formatted session cost
-                }
-                logging_path = (
-                    session_logger.filename if hasattr(session_logger, "filename") else None
-                )
-
-                content = []
-                content.append(f"Session Time: {metrics['session_time']}")
-                content.append(
-                    f"Active Time: {metrics['active_time']} ({metrics['llm_percentage']}%)"
-                )
-                content.append(f"Idle Time: {metrics['idle_time']}")
-                content.append(
-                    f"Total Session Cost: {metrics['session_cost']}"
-                )  # Add cost to display
-                if logging_path:
-                    content.append(f"Log available at: {logging_path}")
-
-                def print_session_summary(console, metrics, logging_path=None):
-                    """
-                    Print a session summary panel using Rich.
-                    """
-                    from rich.box import ROUNDED
-                    from rich.console import Group
-                    from rich.panel import Panel
-                    from rich.text import Text
-
-                    # Create Rich Text objects for each line
-                    text_content = []
-                    for i, line in enumerate(content):
-                        if "Total Session Cost" in line:
-                            # Format cost line with special styling
-                            cost_text = Text()
-                            parts = line.split(":")
-                            cost_text.append(parts[0] + ":", style="bold")
-                            cost_text.append(parts[1], style="bold green")
-                            text_content.append(cost_text)
-                        else:
-                            text_content.append(Text(line))
-
-                    time_panel = Panel(
-                        Group(*text_content),
-                        border_style="blue",
-                        box=ROUNDED,
-                        padding=(0, 1),
-                        title="[bold]Session Summary[/bold]",
-                        title_align="left",
-                    )
-                    console.print(time_panel, end="")
-
-                print_session_summary(console, metrics, logging_path)
-
-                # Log session end
-                if session_logger:
-                    session_logger.log_session_end()
-                
-                # End global usage tracking session
-                GLOBAL_USAGE_TRACKER.end_session(final_cost=COST_TRACKER.session_total_cost)
-
-                # Create symlink to the last log file
-                if session_logger and hasattr(session_logger, "filename"):
-                    create_last_log_symlink(session_logger.filename)
-
-                # Prevent duplicate cost display from the COST_TRACKER exit handler
-                os.environ["CAI_COST_DISPLAYED"] = "true"
-
-                if is_pentestperf_available() and os.getenv("CTF_NAME", None):
-                    ctf.stop_ctf()
-
+                        handle_keyboard_interrupt(session_logger, console=console)
+                    except Exception:
+                        pass
             except Exception:
-                pass
+                # Last resort: attempt to use the simple keyboard interrupt handler
+                try:
+                    from cai.repl.ui.metrics import handle_keyboard_interrupt
+
+                    handle_keyboard_interrupt(session_logger, console=console)
+                except Exception:
+                    pass
             break
 
         try:
@@ -1036,321 +374,9 @@ def run_cai_cli(
                 and not user_input.startswith("/")
                 and not user_input.startswith("$")
             ):
-                # Use parallel configurations instead of normal processing
-                
-                # Show which agents have custom prompts
-                _agents_with_prompts = [(idx, config) for idx, config in enumerate(PARALLEL_CONFIGS, 1) if config.prompt]
-                
-                # First ensure ALL parallel configs have agent instances (not just selected ones)
-                # This prevents agents from disappearing from history when not selected
-                from cai.agents import get_available_agents
-                
-                # Setup parallel isolation for these agents
-                # (PARALLEL_ISOLATION already imported at module level)
-                
-                # Get agent IDs
-                agent_ids = [config.id or f"P{idx}" for idx, config in enumerate(PARALLEL_CONFIGS, 1)]
-                
-                # Check if we already have isolated histories (e.g., from /load parallel)
-                # If not, transfer the current agent's history to all parallel agents
-                already_has_histories = False
-                if PARALLEL_ISOLATION.is_parallel_mode():
-                    # Check if at least one agent has a non-empty isolated history
-                    for agent_id in agent_ids:
-                        isolated_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-                        if isolated_history:
-                            already_has_histories = True
-                            break
-                
-                if not already_has_histories:
-                    # Get the current agent's history to transfer
-                    current_history = []
-                    if hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
-                        current_history = agent.model.message_history
-                    elif hasattr(agent, 'name'):
-                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-                        current_history = AGENT_MANAGER.get_message_history(agent.name)
-                    
-                    # Check if we should transfer history to all agents or just the first one
-                    # Pattern 17 (Red/Blue team with different contexts) should only transfer to P1
-                    transfer_to_all = True
-                    
-                    # Check if this is a pattern that requires different contexts
-                    # This is typically pattern 17 or similar patterns with "different contexts" in the description
-                    pattern_description = os.getenv("CAI_PATTERN_DESCRIPTION", "")
-                    if "different contexts" in pattern_description.lower():
-                        transfer_to_all = False
-                    
-                    if transfer_to_all:
-                        # Transfer to parallel mode - creates isolated copies for each agent
-                        PARALLEL_ISOLATION.transfer_to_parallel(current_history, len(PARALLEL_CONFIGS), agent_ids)
-                    else:
-                        # Only transfer to the first agent (P1)
-                        PARALLEL_ISOLATION._parallel_mode = True
-                        if current_history and agent_ids:
-                            # Clear any existing histories first
-                            PARALLEL_ISOLATION.clear_all_histories()
-                            # Set history only for the first agent
-                            PARALLEL_ISOLATION.replace_isolated_history(agent_ids[0], current_history.copy())
-                            # Initialize empty histories for other agents
-                            for agent_id in agent_ids[1:]:
-                                PARALLEL_ISOLATION.replace_isolated_history(agent_id, [])
-                else:
-                    # Already have isolated histories, just ensure we're in parallel mode
-                    PARALLEL_ISOLATION._parallel_mode = True
-                
-                for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                    instance_key = (config.agent_name, idx)
-                    if instance_key not in PARALLEL_AGENT_INSTANCES:
-                        # Create instance for this config
-                        base_agent = get_available_agents().get(config.agent_name.lower())
-                        if base_agent:
-                            agent_display_name = getattr(base_agent, "name", config.agent_name)
-                            custom_name = f"{agent_display_name} #{idx}"
-                            
-                            # Determine model
-                            model_to_use = config.model or os.getenv("CAI_MODEL", "alias1")
-                            
-                            # Create and store the instance
-                            # No shared_message_history - each agent gets its own isolated copy
-                            instance_agent = get_agent_by_name(
-                                config.agent_name, custom_name=custom_name, model_override=model_to_use,
-                                agent_id=config.id
-                            )
-                            PARALLEL_AGENT_INSTANCES[instance_key] = instance_agent
+                from cai.repl.loop.parallel_exec import run_parallel_configs
 
-                # Build conversation history context before parallel execution
-                # Each agent will get its own isolated history to prevent mixing
-                
-
-                async def run_agent_instance(
-                    config: ParallelConfig, input_text: str
-                ):
-                    """Run a single agent instance with its own configuration."""
-                    instance_agent = None
-                    agent_id = None
-                    try:
-                        # Get instance number based on position in PARALLEL_CONFIGS
-                        # Use all PARALLEL_CONFIGS to ensure consistent numbering
-                        instance_number = PARALLEL_CONFIGS.index(config) + 1
-                        agent_id = config.id or f"P{instance_number}"
-                        
-                        # Get the existing instance from PARALLEL_AGENT_INSTANCES
-                        instance_key = (config.agent_name, instance_number)
-                        instance_agent = PARALLEL_AGENT_INSTANCES.get(instance_key)
-                        
-                        
-                        if not instance_agent:
-                            # Fallback: create instance if not found (shouldn't happen normally)
-                            from cai.agents import get_available_agents
-                            from cai.agents.patterns import get_pattern
-                            
-                            # Check if this is a pattern
-                            agent_display_name = None
-                            actual_agent_name = config.agent_name
-                            
-                            if config.agent_name.endswith("_pattern"):
-                                # This is a pattern, get the entry agent
-                                pattern = get_pattern(config.agent_name)
-                                if pattern and hasattr(pattern, 'entry_agent'):
-                                    agent_display_name = getattr(pattern.entry_agent, "name", config.agent_name)
-                                    # For patterns, we create the pattern itself, not individual agents
-                                    actual_agent_name = config.agent_name
-                            else:
-                                base_agent = get_available_agents().get(config.agent_name.lower())
-                                agent_display_name = base_agent.name if base_agent else config.agent_name
-                            
-                            # For display, we don't add instance number to pattern entry agents
-                            # since they already have unique names like "Red team manager"
-                            if not config.agent_name.endswith("_pattern"):
-                                custom_name = f"{agent_display_name} #{instance_number}"
-                            else:
-                                custom_name = agent_display_name
-                            
-                            # Determine which model to use
-                            model_to_use = config.model or os.getenv("CAI_MODEL", "alias1")
-                            
-                            # Create agent instance with the determined model
-                            # Each agent gets its own isolated history from PARALLEL_ISOLATION
-                            instance_agent = get_agent_by_name(
-                                actual_agent_name, custom_name=custom_name, model_override=model_to_use,
-                                agent_id=config.id
-                            )
-                            
-                            # Store a strong reference to prevent garbage collection
-                            PARALLEL_AGENT_INSTANCES[instance_key] = instance_agent
-                        
-                        # Register the agent with AGENT_MANAGER for parallel mode
-                        # This ensures it shows up in /history
-                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-                        agent_display_name = getattr(instance_agent, 'name', config.agent_name)
-                        AGENT_MANAGER.set_parallel_agent(agent_id, instance_agent, agent_display_name)
-
-                        # Ensure the model is properly set for the agent and all handoff agents
-                        model_to_use = config.model or os.getenv("CAI_MODEL", "alias1")
-                        if model_to_use:
-                            update_agent_models_recursively(instance_agent, model_to_use)
-
-                        # For parallel agents, the history is already loaded in the model instance
-                        # Check if there's a custom prompt for this config
-                        if config.prompt:
-                            # Use the custom prompt instead of regular user input
-                            instance_input = config.prompt
-                        else:
-                            # Just pass the user input as a string
-                            instance_input = input_text
-                        
-                        # Run the agent with its own isolated context
-                        result = await Runner.run(instance_agent, instance_input)
-                        
-                        # Clean up any streaming resources created by this agent's tools
-                        try:
-                            from cai.util import finish_tool_streaming, cli_print_tool_output
-                            
-                            # In parallel mode, we need to update the final status of panels
-                            if hasattr(cli_print_tool_output, "_streaming_sessions"):
-                                agent_display_name = getattr(instance_agent, 'name', config.agent_name)
-                                
-                                # Find sessions belonging to this agent
-                                for session_id, session_info in list(cli_print_tool_output._streaming_sessions.items()):
-                                    if (session_info.get("agent_name") == agent_display_name and 
-                                        not session_info.get("is_complete", False)):
-                                        # Properly finish the streaming session
-                                        finish_tool_streaming(
-                                            tool_name=session_info.get("tool_name", "unknown"),
-                                            args=session_info.get("args", {}),
-                                            output=session_info.get("current_output", "Tool execution completed"),
-                                            call_id=session_id,
-                                            execution_info={
-                                                "status": "completed",
-                                                "is_final": True
-                                            },
-                                            token_info={
-                                                "agent_name": agent_display_name,
-                                                "agent_id": getattr(instance_agent.model, "agent_id", None) if hasattr(instance_agent, 'model') else None
-                                            }
-                                        )
-                                        
-                        except Exception:
-                            # Silently ignore cleanup errors
-                            pass
-                        
-                        # Save the agent's history after successful completion
-                        if instance_agent and agent_id:
-                            if hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
-                                PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
-
-                        return (config, result)
-                    except asyncio.CancelledError:
-                        # Task was cancelled (e.g., by Ctrl+C)
-                        # Clean up any streaming resources before propagating cancellation
-                        try:
-                            from cai.util import cleanup_agent_streaming_resources
-                            
-                            # Clean up streaming sessions for this specific agent
-                            if instance_agent:
-                                agent_display_name = getattr(instance_agent, 'name', config.agent_name)
-                                cleanup_agent_streaming_resources(agent_display_name)
-                        except Exception:
-                            pass
-                            
-                        # Save the agent's history before propagating the cancellation
-                        if instance_agent and agent_id:
-                            if hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
-                                PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
-                        raise
-                    except Exception as e:
-                        # Clean up any streaming resources before handling exception
-                        try:
-                            from cai.util import cleanup_agent_streaming_resources
-                            
-                            # Clean up streaming sessions for this specific agent
-                            if instance_agent:
-                                agent_display_name = getattr(instance_agent, 'name', config.agent_name)
-                                cleanup_agent_streaming_resources(agent_display_name)
-                        except Exception:
-                            pass
-                            
-                        # Also save history on other exceptions
-                        if instance_agent and agent_id:
-                            if hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
-                                PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
-                        
-                        # Log error details for debugging
-                        logger = logging.getLogger(__name__)
-                        error_details = f"Error in {config.agent_name}"
-                        if config.model:
-                            error_details += f" (model: {config.model})"
-                        error_details += f": {str(e)}"
-                        logger.error(error_details, exc_info=True)
-                        
-                        # Only show error in debug mode
-                        if os.getenv("CAI_DEBUG", "1") == "2":
-                            console.print(f"[bold red]{error_details}[/bold red]")
-                        return (config, None)
-
-                async def run_parallel_agents():
-                    """Run all configured agents in parallel."""
-                    # Create tasks for each agent with their own isolated contexts
-                    # Note: If a config has a custom prompt, it will be used instead of user_input
-                    tasks = []
-                    for config in PARALLEL_CONFIGS:
-                        # Determine what input to use for this config
-                        input_for_config = config.prompt if config.prompt else user_input
-                        tasks.append(run_agent_instance(config, input_for_config))
-
-                    # Wait for all to complete
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                    # Filter out exceptions and failed results
-                    valid_results = []
-                    for item in results:
-                        if isinstance(item, tuple) and len(item) == 2 and item[1] is not None:
-                            valid_results.append(item)
-
-                    return valid_results
-
-                # Run in asyncio event loop
-                try:
-                    results = asyncio.run(run_parallel_agents())
-                except KeyboardInterrupt:
-                    # When interrupted during parallel execution, ensure all agent histories are saved
-                    # Force save all parallel agent histories to PARALLEL_ISOLATION
-                    for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                        instance_key = (config.agent_name, idx)
-                        if instance_key in PARALLEL_AGENT_INSTANCES:
-                            instance_agent = PARALLEL_AGENT_INSTANCES[instance_key]
-                            if hasattr(instance_agent, 'model') and hasattr(instance_agent.model, 'message_history'):
-                                agent_id = config.id or f"P{idx}"
-                                # Force update the isolated history
-                                PARALLEL_ISOLATION.replace_isolated_history(agent_id, instance_agent.model.message_history)
-                                
-                                # Also sync with AGENT_MANAGER for display
-                                from cai.agents import get_available_agents
-                                available_agents = get_available_agents()
-                                if config.agent_name in available_agents:
-                                    agent = available_agents[config.agent_name]
-                                    agent_display_name = getattr(agent, "name", config.agent_name)
-                                    
-                                    # Add instance number if needed
-                                    total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
-                                    if total_count > 1:
-                                        instance_num = 0
-                                        for c in PARALLEL_CONFIGS:
-                                            if c.agent_name == config.agent_name:
-                                                instance_num += 1
-                                                if c.id == config.id:
-                                                    break
-                                        agent_display_name = f"{agent_display_name} #{instance_num}"
-                                    
-                                    # Clear and replace the history in AGENT_MANAGER
-                                    AGENT_MANAGER.clear_history(agent_display_name)
-                                    for msg in instance_agent.model.message_history:
-                                        AGENT_MANAGER.add_to_history(agent_display_name, msg)
-                    
-                    # Re-raise to trigger the main KeyboardInterrupt handler
-                    raise
-                    
+                run_parallel_configs(user_input, agent, console)
                 turn_count += 1
                 stop_active_timer()
                 start_idle_timer()
@@ -1359,7 +385,7 @@ def run_cai_cli(
             # Handle special commands
             if user_input.startswith("/") or user_input.startswith("$"):
                 # Remove newlines from pasted input
-                cleaned_input = user_input.strip().replace('\n', '').replace('\r', '')
+                cleaned_input = user_input.strip().replace("\n", "").replace("\r", "")
 
                 try:
                     # Parse with shell-like quoting support
@@ -1382,543 +408,55 @@ def run_cai_cli(
                 if command not in ("/shell", "/s"):
                     console.print(f"[red]Command failed or unknown: {command}[/red]")
                 continue
-            from rich.text import Text
 
-            log_text = Text(
-                f"Log file: {session_logger.filename}",
-                style="yellow on black",
-            )
-            console.print(log_text)
+            from cai.repl.loop.response_handler import build_conversation_input
 
-            # Build conversation context from previous turns to give the
-            # model short-term memory. We only keep messages that have plain
-            # text content and ignore tool call entries to prevent schema
-            # mismatches when converting to OpenAI chat format.
-            history_context = []
-            # Use the agent's model's message history directly instead of AGENT_MANAGER
-            # This ensures compaction actually clears the history
-            if hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
-                for msg in agent.model.message_history:
-                    role = msg.get("role")
-                    content = msg.get("content")
-                    tool_calls = msg.get("tool_calls")
+            conversation_input = build_conversation_input(agent, user_input, messages_ctf)
 
-                    if role == "user":
-                        history_context.append({"role": "user", "content": content or ""})
-                    elif role == "system":
-                        history_context.append({"role": "system", "content": content or ""})
-                    elif role == "assistant":
-                        if tool_calls:
-                            history_context.append(
-                                {
-                                    "role": "assistant",
-                                    "content": content,  # Can be None
-                                    "tool_calls": tool_calls,
-                                }
-                            )
-                        elif content is not None:
-                            history_context.append({"role": "assistant", "content": content})
-                        elif (
-                            content is None and not tool_calls
-                        ):  # Explicitly handle empty assistant message
-                            history_context.append({"role": "assistant", "content": None})
-                    elif role == "tool":
-                        history_context.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": msg.get("tool_call_id"),
-                                "content": msg.get("content"),  # Tool output
-                            }
-                        )
+            # Debug trace: confirm the runner is being invoked.
+            # Visible in the terminal even when the TUI is active because it
+            # goes to stderr, which bypasses the Rich/prompt_toolkit buffer.
+            if os.getenv("CAI_DEBUG", "1") == "2":
+                import sys as _sys
 
-            # Fix message list structure BEFORE sending to the model to prevent errors
-            try:
-                from cai.util import fix_message_list
-
-                history_context = fix_message_list(history_context)
-            except Exception:
-                pass
-
-            # Append the current user input as the last message in the list.
-            conversation_input: list | str
-            if history_context:
-                history_context.append({"role": "user", "content": user_input})
-                conversation_input = history_context
-            else:
-                conversation_input = messages_ctf + user_input
+                _sys.stderr.write(
+                    f"[CAI DEBUG] runner invoked: agent={getattr(agent, 'name', '?')!r} "
+                    f"input_len={len(str(conversation_input))}\n"
+                )
+                _sys.stderr.flush()
 
             # Process the conversation with the agent - with parallel execution if enabled
             if parallel_count > 1:
-                # Parallel execution mode (always non-streaming)
-                async def _run_simple_parallel_agent(instance_number, conversation_context):
-                    """Run a single agent instance with its own complete context"""
-                    try:
-                        # Create a fresh agent instance with unique name to ensure complete isolation
-                        from cai.agents import get_available_agents
+                from cai.repl.loop.parallel_exec import run_simple_parallel
 
-                        base_agent = get_available_agents().get(last_agent_type.lower())
-                        agent_display_name = base_agent.name if base_agent else last_agent_type
-                        custom_name = f"{agent_display_name} #{instance_number + 1}"
-                        instance_agent = get_agent_by_name(last_agent_type, custom_name=custom_name, agent_id=f"P{instance_number + 1}")
-
-                        # Configure agent instance to match main agent settings
-                        if hasattr(instance_agent, "model") and hasattr(agent, "model"):
-                            if hasattr(instance_agent.model, "model") and hasattr(
-                                agent.model, "model"
-                            ):
-                                # Check for instance-specific model override first
-                                instance_specific_model = os.getenv(
-                                    f"CAI_{last_agent_type.upper()}_{instance_number + 1}_MODEL"
-                                )
-
-                                if instance_specific_model:
-                                    # Use instance-specific model (e.g., CAI_BUG_BOUNTER_1_MODEL)
-                                    model_to_use = instance_specific_model
-                                else:
-                                    # Check for agent-specific model override
-                                    agent_specific_model = os.getenv(
-                                        f"CAI_{last_agent_type.upper()}_MODEL"
-                                    )
-                                    model_to_use = (
-                                        agent_specific_model
-                                        if agent_specific_model
-                                        else agent.model.model
-                                    )
-
-                                update_agent_models_recursively(instance_agent, model_to_use)
-
-                        # Use the full conversation context including history
-                        instance_input = conversation_context
-
-                        # Run the agent with its own isolated context
-                        result = await Runner.run(instance_agent, instance_input)
-
-                        return (instance_number, result)
-                    except Exception as e:
-                        # Log error for debugging
-                        logger = logging.getLogger(__name__)
-                        logger.error(f"Error in instance {instance_number}: {str(e)}", exc_info=True)
-                        
-                        # Only show error in debug mode
-                        if os.getenv("CAI_DEBUG", "1") == "2":
-                            console.print(
-                                f"[bold red]Error in instance {instance_number}: {str(e)}[/bold red]"
-                            )
-                        return (instance_number, None)
-
-                async def process_parallel_responses():
-                    """Process multiple parallel agent executions"""
-                    # Create tasks for each instance
-                    tasks = [
-                        _run_simple_parallel_agent(i, conversation_input) for i in range(parallel_count)
-                    ]
-
-                    # Wait for all to complete, no matter if some fail
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                    # Filter out exceptions and failed results
-                    valid_results = []
-                    for result in results:
-                        if isinstance(result, tuple) and len(result) == 2:
-                            idx, res = result
-                            if res is not None and not isinstance(res, Exception):
-                                valid_results.append((idx, res))
-
-                    return valid_results
-
-                # Execute all parallel instances
-                results = asyncio.run(process_parallel_responses())
-
-                # Print summary info about the results
-
-                # Display the results
-                for idx, result in results:
-                    if result and hasattr(result, "final_output") and result.final_output:
-                        # Add to main message history for context
-                        agent.model.add_to_message_history(
-                            {"role": "assistant", "content": f"{result.final_output}"}
-                        )
+                run_simple_parallel(
+                    conversation_input, agent, console, last_agent_type, parallel_count
+                )
             else:
-                # Capture user_input before runner calls so ContextCompactedError
-                # handlers can reference it even on the very first iteration.
-                _last_user_input = user_input if isinstance(user_input, str) else ""
+                from cai.repl.loop.response_handler import run_single_response
 
-                # Disable streaming by default, unless specifically enabled
-                cai_stream = os.getenv("CAI_STREAM", "false")
-                # Handle empty string or None values
-                if not cai_stream or cai_stream.strip() == "":
-                    cai_stream = "false"
-                stream = cai_stream.lower() == "true"
+                (
+                    agent,
+                    _post_compact_input,
+                    _skip_auto_compact_after_interrupt,
+                    _should_continue,
+                ) = run_single_response(
+                    agent,
+                    conversation_input,
+                    user_input,
+                    _post_compact_input,
+                    _skip_auto_compact_after_interrupt,
+                    messages_ctf,
+                    console,
+                    session_logger,
+                    parallel_count,
+                    idle_time,
+                    START_TIME,
+                )
+                if _should_continue:
+                    continue
 
-                # Single agent execution (original behavior)
-                if stream:
-
-                    async def process_streamed_response(agent, conversation_input):
-                        tool_calls_seen = {}  # Track tool calls by their ID
-                        tool_results_seen = set()  # Track tool results by call_id
-                        result = None
-                        stream_iterator = None
-                        
-                        try:
-                            result = Runner.run_streamed(agent, conversation_input)
-                            stream_iterator = result.stream_events()
-
-                            # Consume events so the async generator is executed.
-                            async for event in stream_iterator:
-                                if isinstance(event, RunItemStreamEvent):
-                                    if event.name == "tool_called":
-                                        # Track tool calls that were issued
-                                        if hasattr(event.item, 'raw_item'):
-                                            # For ToolCallItem, raw_item is a ResponseFunctionToolCall (or similar)
-                                            # which has a direct call_id attribute
-                                            call_id = getattr(event.item.raw_item, 'call_id', None)
-                                            if call_id:
-                                                tool_calls_seen[call_id] = event.item
-                                    elif event.name == "tool_output":
-                                        # Ensure item is a ToolCallOutputItem before accessing attributes
-                                        if isinstance(event.item, ToolCallOutputItem):
-                                            call_id = event.item.raw_item["call_id"]
-                                            tool_results_seen.add(call_id)
-                                            tool_msg = {
-                                                "role": "tool",
-                                                "tool_call_id": call_id,
-                                                "content": event.item.output,
-                                            }
-                                            agent.model.add_to_message_history(tool_msg)
-
-                            return result
-                        except OutputGuardrailTripwireTriggered:
-                            # Handle guardrail exception specifically - MUST come before broad Exception handler
-                            # Clean up streaming display before showing error
-                            try:
-                                from cai.util import cleanup_all_streaming_resources
-                                cleanup_all_streaming_resources()
-                            except Exception:
-                                pass
-                            
-                            # Clean up the async generator
-                            if stream_iterator is not None:
-                                try:
-                                    await stream_iterator.aclose()
-                                except Exception:
-                                    pass
-                            
-                            # Clean up the result object if it has cleanup methods
-                            if result is not None and hasattr(result, '_cleanup_tasks'):
-                                try:
-                                    result._cleanup_tasks()
-                                except Exception:
-                                    pass
-                            
-                            # Re-raise to be caught by outer handler which shows user-friendly message
-                            raise
-                        except (KeyboardInterrupt, asyncio.CancelledError) as e:
-                            # Handle interruption specifically
-                            
-                            # Clean up the async generator
-                            if stream_iterator is not None:
-                                try:
-                                    await stream_iterator.aclose()
-                                except Exception:
-                                    pass
-                            
-                            # Clean up the result object if it has cleanup methods
-                            if result is not None and hasattr(result, '_cleanup_tasks'):
-                                try:
-                                    result._cleanup_tasks()
-                                except Exception:
-                                    pass
-                            
-                            # Add synthetic results for any tool calls that don't have results
-                            try:
-                                for call_id, tool_item in tool_calls_seen.items():
-                                    if call_id not in tool_results_seen:
-                                        # This tool was called but no result was received
-                                        synthetic_msg = {
-                                            "role": "tool",
-                                            "tool_call_id": call_id,
-                                            "content": "Tool execution interrupted"
-                                        }
-                                        agent.model.add_to_message_history(synthetic_msg)
-                            except Exception:
-                                # Silently ignore cleanup errors during interrupt
-                                pass
-                            
-                            raise e
-                        except ContextCompactedError:
-                            # Propagate so the outer try block can handle the restart.
-                            raise
-                        except Exception as e:
-                            # Clean up on any other exception
-                            if stream_iterator is not None:
-                                try:
-                                    await stream_iterator.aclose()
-                                except Exception:
-                                    pass
-                                    
-                            if result is not None and hasattr(result, '_cleanup_tasks'):
-                                try:
-                                    result._cleanup_tasks()
-                                except Exception:
-                                    pass
-                            
-                            # Re-raise OutputGuardrailTripwireTriggered to be handled by outer handler
-                            if isinstance(e, OutputGuardrailTripwireTriggered):
-                                raise
-                                    
-                            # Log error for debugging (non-guardrail exceptions)
-                            logger = logging.getLogger(__name__)
-                            logger.error(f"Error occurred during streaming: {str(e)}", exc_info=True)
-                            
-                            # Only show error details in debug mode
-                            if os.getenv("CAI_DEBUG", "1") == "2":
-                                import traceback
-                                tb = traceback.format_exc()
-                                print(f"\n[Error occurred during streaming: {str(e)}]\nLocation: {tb}")
-                            return None
-
-                    try:
-                        asyncio.run(process_streamed_response(agent, conversation_input))
-                    except ContextCompactedError:
-                        # Auto-compact fired mid-runner; restart with fresh context.
-                        _base = _last_user_input or "Continue the current task."
-                        _post_compact_input = (
-                            f"{_base}\n\n"
-                            "IMPORTANT: Your context window was just compacted. "
-                            "Your session memory is already loaded above. "
-                            "Review the 'Exhausted Approaches' section in your memory and "
-                            "DO NOT repeat any technique, command, URL, port scan, or login "
-                            "attempt already listed there. "
-                            "Pick up exactly where you left off using only NEW approaches."
-                        )
-                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AM
-                        _reloaded = _AM.get_active_agent()
-                        if _reloaded is not None:
-                            agent = _reloaded
-                        console.print(
-                            "[bold green]✓ Context window reset — resuming task[/bold green]\n"
-                        )
-                        continue
-                    except OutputGuardrailTripwireTriggered as e:
-                        # Display a user-friendly warning instead of crashing (streaming mode)
-                        guardrail_name = e.guardrail_result.guardrail.get_name()
-                        reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
-                        
-                        # Use red color for the warning message
-                        print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
-                        print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
-                        print(f"\033[91mReason: {reason}\033[0m")
-                        print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                        print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
-                        
-                        # Continue the conversation loop instead of crashing
-                        continue
-                    except KeyboardInterrupt:
-                        # This will catch the re-raised KeyboardInterrupt from process_streamed_response
-                        # The cleanup will happen in the outer try-except block
-                        raise
-                    except RuntimeError as e:
-                        # Handle event loop issues gracefully
-                        if "This event loop is already running" in str(e) or "Cannot close a running event loop" in str(e):
-                            # Try to recover by creating a new event loop
-                            import sys
-                            if sys.platform.startswith('win'):
-                                # Windows specific event loop policy
-                                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-                            else:
-                                # Unix/Linux/Mac
-                                asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-                            
-                            # Create a fresh event loop
-                            new_loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(new_loop)
-                            try:
-                                new_loop.run_until_complete(process_streamed_response(agent, conversation_input))
-                            except OutputGuardrailTripwireTriggered as e:
-                                # Display a user-friendly warning instead of crashing (new event loop)
-                                guardrail_name = e.guardrail_result.guardrail.get_name()
-                                reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
-                                
-                                # Use red color for the warning message
-                                print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
-                                print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
-                                print(f"\033[91mReason: {reason}\033[0m")
-                                print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                                print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
-                                
-                                # Close the loop and continue the conversation loop
-                                new_loop.close()
-                                continue
-                            finally:
-                                if not new_loop.is_closed():
-                                    new_loop.close()
-                        else:
-                            raise
-                else:
-                    # Use non-streamed response
-                    try:
-                        response = asyncio.run(Runner.run(agent, conversation_input))
-                    except ContextCompactedError:
-                        # Auto-compact fired mid-runner; restart with fresh context.
-                        _base = _last_user_input or "Continue the current task."
-                        _post_compact_input = (
-                            f"{_base}\n\n"
-                            "IMPORTANT: Your context window was just compacted. "
-                            "Your session memory is already loaded above. "
-                            "Review the 'Exhausted Approaches' section in your memory and "
-                            "DO NOT repeat any technique, command, URL, port scan, or login "
-                            "attempt already listed there. "
-                            "Pick up exactly where you left off using only NEW approaches."
-                        )
-                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AM
-                        _reloaded = _AM.get_active_agent()
-                        if _reloaded is not None:
-                            agent = _reloaded
-                        console.print(
-                            "[bold green]✓ Context window reset — resuming task[/bold green]\n"
-                        )
-                        continue
-                    except InputGuardrailTripwireTriggered as e:
-                        # Display a user-friendly warning for input guardrails
-                        reason = "Potential security threat detected in input"
-                        if hasattr(e, 'guardrail_result') and e.guardrail_result:
-                            if hasattr(e.guardrail_result, 'output') and e.guardrail_result.output:
-                                reason = e.guardrail_result.output.output_info.get("reason", reason)
-                        
-                        # Use red color for the warning message
-                        print("\n\033[91m🛡️  INPUT SECURITY GUARDRAIL TRIGGERED\033[0m")
-                        print(f"\033[91mReason: {reason}\033[0m")
-                        print("\033[93mYour input was blocked for security reasons.\033[0m")
-                        
-                        # Check if this is likely due to conversation history
-                        if "base64" in reason.lower() or "pattern" in reason.lower():
-                            print("\n\033[96mThis may be due to malicious content in the conversation history.\033[0m")
-                            print("\033[96mOptions:\033[0m")
-                            print("  1. Type \033[92m/clear\033[0m to clear the conversation history")
-                            print("  2. Type \033[92m/config set 26 false\033[0m to temporarily disable guardrails")
-                            print("  3. Type \033[92m/exit\033[0m to exit CAI")
-                        else:
-                            print("\033[96mPlease rephrase your request or try a different approach.\033[0m\n")
-                        
-                        # Continue the conversation loop instead of crashing
-                        continue
-                    except OutputGuardrailTripwireTriggered as e:
-                        # Display a user-friendly warning instead of crashing
-                        guardrail_name = e.guardrail_result.guardrail.get_name()
-                        reason = e.guardrail_result.output.output_info.get("reason", "Security policy violation")
-                        
-                        # Use red color for the warning message
-                        print("\n\033[91m🛡️  SECURITY GUARDRAIL TRIGGERED\033[0m")
-                        print(f"\033[91mGuardrail: {guardrail_name}\033[0m")
-                        print(f"\033[91mReason: {reason}\033[0m")
-                        print("\033[93mThe agent's output was blocked for security reasons.\033[0m")
-                        print("\033[96mYou can continue the conversation with a different request.\033[0m\n")
-                        
-                        # Continue the conversation loop instead of crashing
-                        continue
-
-                    # En modo no-streaming, procesamos SOLO los tool outputs de response.new_items
-                    # Los tool calls (assistant messages) ya se añaden correctamente en openai_chatcompletions.py
-                    for item in response.new_items:
-                        # Handle ONLY tool call output items (tool results)
-                        if isinstance(item, ToolCallOutputItem):
-                            tool_call_id = item.raw_item["call_id"]
-
-                            # Verificar si ya existe este tool output en message_history para evitar duplicación
-                            tool_msg_exists = any(
-                                msg.get("role") == "tool"
-                                and msg.get("tool_call_id") == tool_call_id
-                                for msg in agent.model.message_history
-                            )
-
-                            if not tool_msg_exists:
-                                # Añadir solo el tool output al message_history
-                                tool_msg = {
-                                    "role": "tool",
-                                    "tool_call_id": tool_call_id,
-                                    "content": item.output,
-                                }
-                                agent.model.add_to_message_history(tool_msg)
-
-                # Final validation to ensure message history follows OpenAI's requirements
-                # Ensure every tool message has a preceding assistant message with matching tool_call_id
-                from cai.util import fix_message_list
-
-                agent.model.message_history[:] = fix_message_list(agent.model.message_history)
             turn_count += 1
-
-            # Auto-compact: when CAI_SUPPORT_MODEL + CAI_SUPPORT_INTERVAL are both set,
-            # compact the conversation every N LLM *responses* (assistant messages in
-            # history) using the support model.  Counting assistant messages rather
-            # than outer-loop turns means agentic sessions — where the agent makes
-            # many tool-call rounds per single user input — are handled correctly.
-            _support_model = os.getenv("CAI_SUPPORT_MODEL")
-            _support_interval_raw = os.getenv("CAI_SUPPORT_INTERVAL")
-            # Skip auto-compact when running multiple parallel agents to avoid
-            # queuing a single "last user input" for replay across many instances.
-            # Rely on model-level ContextCompactedError handling in parallel mode.
-            # Honor the CAI_AUTO_COMPACT flag so users can fully disable auto-compaction.
-            _auto_compact_enabled = os.getenv("CAI_AUTO_COMPACT", "true").lower() != "false"
-            if _auto_compact_enabled and not _skip_auto_compact_after_interrupt and parallel_count <= 1 and _support_model and _support_interval_raw:
-                try:
-                    _support_interval = int(_support_interval_raw)
-                    if _support_interval > 0:
-                        # Count assistant messages as a proxy for LLM API calls.
-                        _history = getattr(getattr(agent, 'model', None), 'message_history', [])
-                        _llm_call_count = sum(
-                            1 for m in _history
-                            if (m.get("role") if isinstance(m, dict) else getattr(m, "role", None))
-                            == "assistant"
-                        )
-                        if _llm_call_count > 0:
-                            _calls_until = max(0, _support_interval - _llm_call_count)
-                            if _calls_until > 0:
-                                console.print(
-                                    f"[dim cyan]  ↻ auto-compact in {_calls_until} LLM response(s) "
-                                    f"[{_llm_call_count}/{_support_interval}][/dim cyan]"
-                                )
-                            if _llm_call_count >= _support_interval:
-                                from cai.repl.commands.compact import COMPACT_COMMAND_INSTANCE
-                                console.print(
-                                    f"\n[bold yellow]⟳ Auto-compact: {_llm_call_count} LLM responses "
-                                    f"(threshold {_support_interval}) — "
-                                    f"summarising with {_support_model}[/bold yellow]"
-                                )
-                                COMPACT_COMMAND_INSTANCE._perform_compaction(
-                                    model_override=_support_model
-                                )
-                                # Re-sync the local agent reference so the loop continues
-                                # with the freshly reloaded agent (history cleared, memory
-                                # summary already injected into its system prompt).
-                                from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AM
-                                _reloaded = _AM.get_active_agent()
-                                if _reloaded is not None:
-                                    agent = _reloaded
-                                # Queue the last user task to be replayed on the next
-                                # iteration so the agent continues without human input.
-                                _post_compact_input = (
-                                    _last_user_input
-                                    if _last_user_input.strip()
-                                    else "Continue the current task."
-                                )
-                                console.print(
-                                    "[bold green]✓ Memory summary applied to agent system prompt — "
-                                    "context window reset — continuing task[/bold green]\n"
-                                )
-                except (ValueError, Exception) as _e:
-                    # Always show auto-compact errors so they are never silently lost.
-                    console.print(f"[red]Auto-compact error: {_e}[/red]")
-            elif _auto_compact_enabled and _skip_auto_compact_after_interrupt:
-                # Skip a single scheduled auto-compact immediately after a user
-                # KeyboardInterrupt to avoid losing data the user intended to
-                # inspect or pause for. Reset the flag and continue.
-                _skip_auto_compact_after_interrupt = False
-                try:
-                    console.print(
-                        "[dim yellow]Auto-compact skipped due to recent interrupt; resuming.[/dim yellow]"
-                    )
-                except Exception:
-                    pass
 
             # Stop measuring active time and start measuring idle time again
             stop_active_timer()
@@ -1931,61 +469,48 @@ def run_cai_cli(
             # Clean up any active streaming panels
             try:
                 from cai.util import cleanup_all_streaming_resources
+
                 cleanup_all_streaming_resources()
             except Exception:
                 pass
 
             # Handle pending tool calls to prevent errors on next iteration
             try:
-                # Look for orphaned tool calls in the message history
-                orphaned_tool_calls = []
-                for msg in agent.model.message_history:
-                    if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                        for tool_call in msg["tool_calls"]:
-                            call_id = tool_call.get("id")
-                            if call_id:
-                                # Check if this tool call has a corresponding tool result
-                                has_result = any(
-                                    m.get("role") == "tool" and m.get("tool_call_id") == call_id
-                                    for m in agent.model.message_history
-                                )
-                                if not has_result:
-                                    orphaned_tool_calls.append((call_id, tool_call))
+                from cai.util.orchestration import handle_orphaned_tool_calls
 
-                # Add synthetic tool results for orphaned tool calls
-                if orphaned_tool_calls:
-                    for call_id, tool_call in orphaned_tool_calls:
-                        tool_response_msg = {
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": "Tool execution interrupted"
-                        }
-                        agent.model.add_to_message_history(tool_response_msg)
-
-                    # Apply message list fixes to ensure consistency
-                    from cai.util import fix_message_list
-
-                    agent.model.message_history[:] = fix_message_list(agent.model.message_history)
-                    
+                handle_orphaned_tool_calls(agent)
             except Exception:
                 pass
 
             # Add a small delay to allow the system to settle after interruption
-            import time
             time.sleep(0.1)
-            
+
             # Clear any asyncio event loop state to ensure clean restart
             try:
                 # Get the current event loop if it exists
                 loop = asyncio.get_event_loop()
                 if loop and loop.is_running():
                     # Can't close a running loop, but we can clear pending tasks
-                    pending = asyncio.all_tasks(loop) if hasattr(asyncio, 'all_tasks') else asyncio.Task.all_tasks(loop)
-                    for task in pending:
-                        task.cancel()
+                    try:
+                        pending = asyncio.all_tasks(loop)
+                    except Exception:
+                        TaskType = getattr(asyncio, "Task", None)
+                        if TaskType is not None and getattr(TaskType, "all_tasks", None):
+                            try:
+                                pending = TaskType.all_tasks(loop)
+                            except Exception:
+                                pending = set()
+                        else:
+                            pending = set()
+
+                    for task in list(pending):
+                        try:
+                            task.cancel()
+                        except Exception:
+                            pass
             except Exception:
                 pass
-            
+
             # Reset the event loop policy to ensure fresh loops
             try:
                 asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
@@ -1995,7 +520,13 @@ def run_cai_cli(
             import sys
             import traceback
 
-            # Only show detailed errors in debug mode
+            # Always surface runner errors to stderr so they are visible even
+            # when the TUI is active and the Rich console may be paused.
+            _tb = traceback.format_exc()
+            sys.stderr.write(f"[CAI ERROR] main loop exception: {e}\n{_tb}\n")
+            sys.stderr.flush()
+
+            # Also show inline when debug mode is active
             if os.getenv("CAI_DEBUG", "1") == "2":
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 tb_info = traceback.extract_tb(exc_traceback)
@@ -2003,7 +534,7 @@ def run_cai_cli(
                 console.print(f"[bold red]Error: {str(e)}[/bold red]")
                 console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
             else:
-                # In normal mode, just log the error
+                # In normal mode, also log so it ends up in the .jsonl
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error in main loop: {str(e)}", exc_info=True)
 
@@ -2048,12 +579,8 @@ def main():
     # Apply litellm patch to fix the __annotations__ error
     patch_applied = fix_litellm_transcription_annotations()
     if not patch_applied:
-        print(
-            color(
-                "Something went wrong patching LiteLLM fix_litellm_transcription_annotations",
-                color="red",
-            )
-        )
+        # Avoid using wasabi color kwarg here to keep static checkers happy
+        print("Something went wrong patching LiteLLM fix_litellm_transcription_annotations")
 
     # Disable tracing for interactive CLI sessions. Do this at runtime
     # rather than at import time so importing this module (e.g. in tests)
@@ -2073,7 +600,9 @@ def main():
         initial_prompt = remaining_args[0]
 
     # Detect TUI activation via env or CLI flag (--tui)
-    tui_flag = os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false") or "--tui" in sys.argv
+    tui_flag = (
+        os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false") or "--tui" in sys.argv
+    )
 
     # Get agent type from environment variables or use default
     agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
@@ -2085,6 +614,11 @@ def main():
     if tui_flag:
         try:
             agent = get_agent_by_name(agent_type, agent_id="P1")
+            # Disable the CLI rich-streaming panel when running in TUI mode so
+            # update_agent_streaming_content doesn't write raw deltas to stdout
+            # (which would corrupt Textual's screen rendering).
+            if hasattr(agent, "model") and hasattr(agent.model, "disable_rich_streaming"):
+                agent.model.disable_rich_streaming = True
             try:
                 from cai.tui import run_tui
 
@@ -2104,9 +638,10 @@ def main():
     # Get the agent instance by name with default ID P1 when not using TUI
     if agent is None:
         agent = get_agent_by_name(agent_type, agent_id="P1")
-    
+
     # Use the switch_to_single_agent method for proper initialization
     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
     # IMPORTANT: Always use the agent's proper name, not the agent key
     agent_name = agent.name if hasattr(agent, "name") else agent_type
     AGENT_MANAGER.switch_to_single_agent(agent, agent_name)
@@ -2128,6 +663,7 @@ def main():
     if use_tui:
         try:
             from cai.tui import run_tui
+
             run_tui(agent=agent, initial_prompt=initial_prompt)
             return
         except Exception as tui_err:
@@ -2137,7 +673,33 @@ def main():
             )
 
     # Run the CLI with the selected agent and optional initial prompt
+    # Delegate to the orchestration entrypoint. We define a thin wrapper
+    # below so that callers (including the code above) use the refactored
+    # implementation in `cai.util.orchestration` while preserving the
+    # original public API `run_cai_cli`.
     run_cai_cli(agent, initial_prompt=initial_prompt)
+
+
+def run_cai_cli(
+    starting_agent,
+    context_variables=None,
+    max_turns=float("inf"),
+    force_until_flag=False,
+    initial_prompt=None,
+):
+    """Main entry point for the interactive CLI loop.
+
+    Delegates to ``_run_cai_cli_impl`` which contains the full working
+    implementation of the REPL loop.  Extracted helpers live under
+    ``cai.repl.loop`` as the refactor progresses.
+    """
+    return _run_cai_cli_impl(
+        starting_agent,
+        context_variables=context_variables,
+        max_turns=max_turns,
+        force_until_flag=force_until_flag,
+        initial_prompt=initial_prompt,
+    )
 
 
 if __name__ == "__main__":

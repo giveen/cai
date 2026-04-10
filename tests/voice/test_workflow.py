@@ -20,9 +20,12 @@ from cai.sdk.agents.items import (
 
 try:
     from cai.sdk.agents.voice import SingleAgentVoiceWorkflow
-
+    from tests.core.test_responses import (
+        get_function_tool,
+        get_function_tool_call,
+        get_text_message,
+    )
     from tests.fake_model import get_response_obj
-    from tests.core.test_responses import get_function_tool, get_function_tool_call, get_text_message
 except ImportError:
     pass
 

@@ -1,10 +1,14 @@
 """Retester Agent for vulnerability verification and triage"""
+
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
+
     def load_dotenv(*args, **kwargs):
         return False
+
 
 try:
     from openai import AsyncOpenAI
@@ -12,9 +16,8 @@ except Exception:
     AsyncOpenAI = None
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
-
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 load_dotenv()
 
@@ -37,7 +40,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:
@@ -52,7 +55,3 @@ retester_agent = Agent(
     tools=tools,
     model=_model_inst,
 )
-
-
-
-

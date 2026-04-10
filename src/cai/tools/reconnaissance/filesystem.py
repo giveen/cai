@@ -1,19 +1,28 @@
 """
 Here are the CLI tools for executing commands.
 """
+
 import shlex
-from typing import List
-from cai.tools.common import run_command  # pylint: disable=E0401
+
 from cai.sdk.agents import function_tool
 from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=E0401
+from cai.tools.validation import contains_shell_metacharacters  # pylint: disable=import-error
 
 # Dangerous flags that enable RCE, file writes, or file deletion
 DANGEROUS_FIND_FLAGS = {
-    "-exec", "-execdir", "-ok", "-okdir",
+    "-exec",
+    "-execdir",
+    "-ok",
+    "-okdir",
     "-delete",
-    "-fprintf", "-fprint", "-fls", "-fprint0",
+    "-fprintf",
+    "-fprint",
+    "-fls",
+    "-fprint0",
     "-print0",
 }
+
 
 @function_tool
 def list_dir(path: str, args: str = "", ctf=None) -> str:
@@ -27,11 +36,14 @@ def list_dir(path: str, args: str = "", ctf=None) -> str:
     Returns:
         str: The output of running the ls command
     """
-    command = f'ls {path} {args}'
+    if contains_shell_metacharacters(path):
+        return f"Invalid path '{path}': shell metacharacters are not allowed."
+    command = f"ls {path} {args}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
     return run_command(command, ctf=ctf)
+
 
 @function_tool
 def cat_file(file_path: str, args: str = "", ctf=None) -> str:
@@ -45,7 +57,9 @@ def cat_file(file_path: str, args: str = "", ctf=None) -> str:
     Returns:
         str: The output of running the cat command
     """
-    command = f'cat {args} {file_path} '
+    if contains_shell_metacharacters(file_path):
+        return f"Invalid file_path '{file_path}': shell metacharacters are not allowed."
+    command = f"cat {args} {file_path}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
@@ -61,6 +75,7 @@ def cat_file(file_path: str, args: str = "", ctf=None) -> str:
 # FilePermissionsTool
 # FileCompressionTool
 
+
 @function_tool
 def pwd_command(ctf=None) -> str:
     """
@@ -69,11 +84,12 @@ def pwd_command(ctf=None) -> str:
     Returns:
         str: The absolute path of the current working directory
     """
-    command = 'pwd'
+    command = "pwd"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
     return run_command(command, ctf=ctf)
+
 
 @function_tool
 def find_file(file_path: str, args: str = "", ctf=None) -> str:
@@ -82,15 +98,18 @@ def find_file(file_path: str, args: str = "", ctf=None) -> str:
     """
     # Block dangerous flags that enable RCE, file writes, or deletion
     try:
-        args_tokens: List[str] = shlex.split(args) if args else []
+        args_tokens: list[str] = shlex.split(args) if args else []
     except Exception:
         args_tokens = [args]
 
     for flag in DANGEROUS_FIND_FLAGS:
         if flag in args_tokens:
             return f"Error: DANGEROUS flag '{flag}' is not allowed"
-    
-    command = f'find {file_path} {args}'
+
+    if contains_shell_metacharacters(file_path):
+        return f"Invalid file_path '{file_path}': shell metacharacters are not allowed."
+
+    command = f"find {file_path} {args}"
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err

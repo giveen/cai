@@ -7,21 +7,24 @@ analysis, parameter inspection, and security vulnerability detection.
 """
 
 from urllib.parse import urlparse
+
 import requests  # pylint: disable=E0401
+
 from cai.sdk.agents import function_tool
 
 
 @function_tool(strict_mode=False)
 def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,too-many-locals,too-many-branches
-                            url: str = "",
-                            method: str = "GET",
-                            headers: dict = None,
-                            data: dict = None,
-                            cookies: dict = None,
-                            params: dict = None,
-                            ctf=None,
-                            timeout: int = 15,
-                            verify_ssl: bool = True) -> str:  # pylint: disable=unused-argument  # noqa: E501
+    url: str = "",
+    method: str = "GET",
+    headers: dict = None,
+    data: dict = None,
+    cookies: dict = None,
+    params: dict = None,
+    ctf=None,
+    timeout: int = 15,
+    verify_ssl: bool = True,
+) -> str:  # pylint: disable=unused-argument  # noqa: E501
     """
     Analyze HTTP requests and responses in detail for security testing.
 
@@ -80,6 +83,27 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
             for key, value in data.items():
                 analysis.append(f"- {key}: {value}")
 
+        # Merge pinned session cookie (if any) with caller-supplied cookies.
+        # Caller-supplied values take precedence.
+        try:
+            from cai.util.orchestration import get_pinned_cookie
+
+            _pinned = get_pinned_cookie()
+            if _pinned:
+                pinned_dict = {}
+                for pair in _pinned.split(";"):
+                    pair = pair.strip()
+                    if "=" in pair:
+                        k, _, v = pair.partition("=")
+                        pinned_dict[k.strip()] = v.strip()
+                if cookies:
+                    merged = {**pinned_dict, **cookies}  # caller wins
+                else:
+                    merged = pinned_dict
+                cookies = merged
+        except Exception:
+            pass
+
         # Make the request and analyze response
         response = requests.request(
             method=method,
@@ -90,7 +114,7 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
             params=params,
             timeout=timeout,
             verify=verify_ssl,
-            allow_redirects=True
+            allow_redirects=True,
         )
 
         analysis.append("\n=== HTTP Response Analysis ===\n")
@@ -107,11 +131,11 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
 
         # Check security headers
         security_headers = [
-            'Strict-Transport-Security',
-            'Content-Security-Policy',
-            'X-Frame-Options',
-            'X-XSS-Protection',
-            'X-Content-Type-Options'
+            "Strict-Transport-Security",
+            "Content-Security-Policy",
+            "X-Frame-Options",
+            "X-XSS-Protection",
+            "X-Content-Type-Options",
         ]
 
         missing_headers = []
@@ -125,19 +149,11 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
                 analysis.append(f"- {header}")
 
         # Check for sensitive information
-        sensitive_patterns = [
-            'password',
-            'token',
-            'key',
-            'secret',
-            'admin',
-            'root'
-        ]
+        sensitive_patterns = ["password", "token", "key", "secret", "admin", "root"]
 
         for pattern in sensitive_patterns:
             if pattern in response.text.lower():
-                analysis.append(
-                    f"\nPotential sensitive information found: '{pattern}'")
+                analysis.append(f"\nPotential sensitive information found: '{pattern}'")
 
         return "\n".join(analysis)
 

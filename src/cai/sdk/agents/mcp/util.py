@@ -1,13 +1,14 @@
 import functools
 import json
+
+# Configure logging for MCP operations
+import logging
 from typing import TYPE_CHECKING, Any
 
 from .. import _debug
 from ..exceptions import AgentsException, ModelBehaviorError, UserError
 from ..logger import logger
 
-# Configure logging for MCP operations
-import logging
 mcp_logger = logging.getLogger("mcp.client")
 if mcp_logger.level == logging.NOTSET:
     mcp_logger.setLevel(logging.WARNING)
@@ -87,8 +88,10 @@ class MCPUtil:
 
         try:
             # Check if server session is still valid
-            if not hasattr(server, 'session') or server.session is None:
-                logger.warning(f"MCP server session not found for tool {tool.name}, attempting to reconnect...")
+            if not hasattr(server, "session") or server.session is None:
+                logger.warning(
+                    f"MCP server session not found for tool {tool.name}, attempting to reconnect..."
+                )
                 # Try to reconnect
                 try:
                     await server.connect()
@@ -100,10 +103,10 @@ class MCPUtil:
                         f"Please remove and re-add the MCP server. "
                         f"Reconnection error: {str(reconnect_error)}"
                     ) from reconnect_error
-            
+
             # Now try to call the tool
             result = await server.call_tool(tool.name, json_data)
-            
+
         except AttributeError as ae:
             # This often happens when the server object is not properly initialized
             logger.error(f"MCP server not properly initialized for tool {tool.name}: {ae}")
@@ -118,20 +121,25 @@ class MCPUtil:
             # Log the full exception details
             logger.error(f"Error invoking MCP tool {tool.name}: {type(e).__name__}: {str(e)}")
             logger.error(f"Full exception details: {repr(e)}")
-            
+
             # Check if it's a ClosedResourceError or connection issue
             error_type = type(e).__name__
             error_str = str(e).lower()
-            
+
             # Also check for ExceptionGroup which wraps SSE errors
-            if (error_type in ("ClosedResourceError", "ExceptionGroup") or 
-                "closedresourceerror" in error_str or
-                "taskgroup" in error_str):
+            if (
+                error_type in ("ClosedResourceError", "ExceptionGroup")
+                or "closedresourceerror" in error_str
+                or "taskgroup" in error_str
+            ):
                 # Connection was closed, attempt to reconnect
-                logger.debug(f"MCP connection issue for tool {tool.name}, attempting to reconnect...")
+                logger.debug(
+                    f"MCP connection issue for tool {tool.name}, attempting to reconnect..."
+                )
                 try:
                     # Suppress warnings during reconnection
                     import warnings
+
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", category=RuntimeWarning)
                         # Force reconnection
@@ -161,7 +169,7 @@ class MCPUtil:
 
         # Log and format the result
         return await cls._format_tool_result(result, tool, server)
-    
+
     @classmethod
     async def _format_tool_result(cls, result, tool: "MCPTool", server: "MCPServer") -> str:
         """Format the MCP tool result into a string."""

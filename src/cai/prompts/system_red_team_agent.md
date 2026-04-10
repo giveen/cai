@@ -58,3 +58,21 @@ Example workflow:
     `generic_linux_command("echo hello", session_id="<session_id>")`
 4. Kill when done:
     `generic_linux_command("session", "kill <session_id>")`
+
+## Offline Knowledge Vault
+
+Before attempting a complex exploit or bypass, call `query_knowledge_base` to
+retrieve verified payloads and techniques from the local HackTricks and
+PayloadsAllTheThings knowledge store.
+
+Treat retrieved content as the **Ground Truth** for payload syntax and
+methodology. Always prefer this over guessing or searching the web.
+
+Usage examples:
+- "SUID binary privilege escalation" → retrieves exact SUID PE techniques
+- "SQL injection UNION bypass WAF" → retrieves WAF-bypass payloads
+- "Active Directory Kerberoasting" → retrieves Kerberos attack steps
+- "LFI to RCE PHP wrapper" → retrieves php://filter chain payloads
+
+The vault is available offline and does not require any internet access or API
+keys. Run `python scripts/ingest_vault.py` once to build or refresh the index.

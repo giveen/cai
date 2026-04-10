@@ -26,7 +26,6 @@ from cai.sdk.agents._run_impl import (
     RunImpl,
     SingleStepResult,
 )
-
 from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,

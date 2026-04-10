@@ -5,7 +5,6 @@ Provides a shortcut to merge agent message histories without
 typing the full /parallel merge command.
 """
 
-from typing import List, Optional
 
 from rich.console import Console
 
@@ -28,30 +27,30 @@ class MergeCommand(Command):
         # Create a ParallelCommand instance to delegate to
         self._parallel_cmd = ParallelCommand()
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the merge command by delegating to /parallel merge.
-        
+
         Args:
             args: Arguments to pass to the merge subcommand
-            
+
         Returns:
             True if successful
         """
         if not args:
             # No arguments - merge all by default
             return self.handle_no_args()
-        
+
         # Delegate to ParallelCommand's handle_merge method
         return self._parallel_cmd.handle_merge(args)
 
     def handle_no_args(self) -> bool:
         """Handle command with no arguments - merge all agents and show help."""
         from rich.panel import Panel
-        
+
         # First, perform the merge all operation
         console.print("[cyan]Merging all agents by default...[/cyan]\n")
         merge_result = self._parallel_cmd.handle_merge(["all"])
-        
+
         # Then show the help menu
         console.print("\n")
         help_text = """[bold cyan]Merge Command Help[/bold cyan]
@@ -87,9 +86,9 @@ class MergeCommand(Command):
 Agent names with spaces are automatically detected[/dim]
 
 [yellow]This is an alias for /parallel merge[/yellow]"""
-        
+
         console.print(Panel(help_text, border_style="blue", padding=(1, 2)))
-        
+
         return merge_result
 
 

@@ -118,10 +118,12 @@ class _MCPServerWithClientSession(MCPServer, abc.ABC):
                 # Only log connection errors at debug level
                 error_str = str(e).lower()
                 error_type = type(e).__name__
-                if ("connection" in error_str or 
-                    "refused" in error_str or 
-                    "taskgroup" in error_str or
-                    error_type == "ExceptionGroup"):
+                if (
+                    "connection" in error_str
+                    or "refused" in error_str
+                    or "taskgroup" in error_str
+                    or error_type == "ExceptionGroup"
+                ):
                     logger.debug(f"Expected connection error during MCP server init: {e}")
                 else:
                     logger.error(f"Error initializing MCP server: {e}")
@@ -166,8 +168,12 @@ class _MCPServerWithClientSession(MCPServer, abc.ABC):
             try:
                 # Suppress async generator warnings during cleanup
                 with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*asynchronous generator.*")
-                    warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*was never awaited.*")
+                    warnings.filterwarnings(
+                        "ignore", category=RuntimeWarning, message=".*asynchronous generator.*"
+                    )
+                    warnings.filterwarnings(
+                        "ignore", category=RuntimeWarning, message=".*was never awaited.*"
+                    )
                     await self.exit_stack.aclose()
                     self.session = None
             except Exception as e:
@@ -333,7 +339,7 @@ class MCPServerSse(_MCPServerWithClientSession):
     def name(self) -> str:
         """A readable name for the server."""
         return self._name
-    
+
     async def cleanup(self):
         """Cleanup the SSE server with special handling for async generators."""
         async with self._cleanup_lock:
@@ -344,7 +350,7 @@ class MCPServerSse(_MCPServerWithClientSession):
                     warnings.filterwarnings("ignore", category=RuntimeWarning)
                     warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
                     warnings.filterwarnings("ignore", message=".*was never awaited.*")
-                    
+
                     # Try a quick cleanup with a short timeout
                     try:
                         await asyncio.wait_for(self.exit_stack.aclose(), timeout=0.5)

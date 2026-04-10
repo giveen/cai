@@ -14,9 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 from cai.sdk.agents.models.openai_chatcompletions import (
-    get_agent_message_history,
-    get_all_agent_histories,
     ACTIVE_MODEL_INSTANCES,
+    get_all_agent_histories,
 )
 
 
@@ -36,7 +35,7 @@ class TestCLIStreaming(unittest.TestCase):
         # Import here to avoid circular imports
         from cai.sdk.agents.models.openai_chatcompletions import PERSISTENT_MESSAGE_HISTORIES
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        
+
         # Clear all active model instances
         ACTIVE_MODEL_INSTANCES.clear()
         # Clear persistent message histories
@@ -52,33 +51,32 @@ class TestCLIStreaming(unittest.TestCase):
         ACTIVE_MODEL_INSTANCES.clear()
         # Keep a strong reference to prevent garbage collection
         self._test_model = None
-        
+
         # Clear any existing message histories
         from cai.sdk.agents.models.openai_chatcompletions import (
-            OpenAIChatCompletionsModel,
-            PERSISTENT_MESSAGE_HISTORIES
+            PERSISTENT_MESSAGE_HISTORIES,
         )
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        
+
         # Clear persistent message histories to ensure clean state
         PERSISTENT_MESSAGE_HISTORIES.clear()
-        
+
         # Clear AGENT_MANAGER state
         AGENT_MANAGER.clear_all_histories()
         AGENT_MANAGER.reset_registry()
-        
+
         # Ensure we start with clean histories for each test
-        for (name, instance_id), model_ref in list(ACTIVE_MODEL_INSTANCES.items()):
+        for (name, _instance_id), model_ref in list(ACTIVE_MODEL_INSTANCES.items()):
             model = model_ref() if model_ref else None
-            if model and hasattr(model, 'message_history'):
+            if model and hasattr(model, "message_history"):
                 model.message_history.clear()
-    
+
     def tearDown(self):
         """Clean up after each test."""
         # Import here to avoid circular imports
         from cai.sdk.agents.models.openai_chatcompletions import PERSISTENT_MESSAGE_HISTORIES
         from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        
+
         # Clear all active model instances
         ACTIVE_MODEL_INSTANCES.clear()
         # Clear persistent message histories
@@ -100,21 +98,22 @@ class TestCLIStreaming(unittest.TestCase):
     def add_to_test_message_history(self, msg):
         """Add a message to the test agent's history."""
         # Create a mock model instance for testing
-        from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        from openai import AsyncOpenAI
         import os
-        
+
+        from openai import AsyncOpenAI
+
+        from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+
         test_agent_name = "test_agent"
         # Check if we already have a test model instance
         test_model = None
-        for (name, instance_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
+        for (name, _instance_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
             if name == test_agent_name:
                 model = model_ref() if model_ref else None
                 if model:
                     test_model = model
                     break
-        
+
         # Create one if it doesn't exist
         if not test_model:
             client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", "test-key"))
@@ -122,7 +121,7 @@ class TestCLIStreaming(unittest.TestCase):
             test_model = OpenAIChatCompletionsModel("gpt-4", client, test_agent_name, agent_id="P1")
             # Store a strong reference to prevent garbage collection
             self._test_model = test_model
-        
+
         # Add the message to the model's history
         # This will automatically add to AGENT_MANAGER via add_to_message_history
         test_model.add_to_message_history(msg)
@@ -165,7 +164,7 @@ class TestCLIStreaming(unittest.TestCase):
         # This is where the real cleanup logic would kick in
         def simulate_ctrl_c_cleanup():
             """Simulate the exact cleanup logic from cli.py"""
-            
+
             # Get the test model instance
             test_model = None
             for (name, instance_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
@@ -174,10 +173,10 @@ class TestCLIStreaming(unittest.TestCase):
                     if model:
                         test_model = model
                         break
-            
+
             if not test_model:
                 return 0
-            
+
             # Simulate a tool call that was started but interrupted
             test_model._converter.recent_tool_calls[tool_call_id] = {
                 "name": "generic_linux_command",
@@ -234,7 +233,7 @@ class TestCLIStreaming(unittest.TestCase):
             from cai.util import fix_message_list
 
             try:
-                fixed_messages = fix_message_list(
+                _ = fix_message_list(
                     self.get_combined_message_history()
                 )  # TODO: Fix message_history.extend(fixed_messages)
                 return len(pending_calls)
@@ -252,9 +251,9 @@ class TestCLIStreaming(unittest.TestCase):
         self.verify_message_history_openai_compliance()
 
         # Verify we have the expected sequence
-        assert len(self.get_combined_message_history()) >= 3, (
-            "Should have user, assistant, tool messages"
-        )
+        assert (
+            len(self.get_combined_message_history()) >= 3
+        ), "Should have user, assistant, tool messages"
 
         # Check message roles in order
         roles = [msg["role"] for msg in self.get_combined_message_history()]
@@ -266,12 +265,12 @@ class TestCLIStreaming(unittest.TestCase):
         assistant_msg = self.get_combined_message_history()[1]
         tool_msg = self.get_combined_message_history()[2]
         assert assistant_msg.get("tool_calls"), "Assistant message should have tool calls"
-        assert tool_msg["tool_call_id"] == assistant_msg["tool_calls"][0]["id"], (
-            "Tool call ID should match"
-        )
-        assert "interrupted" in tool_msg["content"].lower(), (
-            "Tool result should indicate interruption"
-        )
+        assert (
+            tool_msg["tool_call_id"] == assistant_msg["tool_calls"][0]["id"]
+        ), "Tool call ID should match"
+        assert (
+            "interrupted" in tool_msg["content"].lower()
+        ), "Tool result should indicate interruption"
 
         print("✅ CTRL+C cleanup message consistency test passed!")
 
@@ -280,7 +279,7 @@ class TestCLIStreaming(unittest.TestCase):
     def test_fix_message_list_with_interrupted_tools(self):
         """Test fix_message_list handles interrupted tool sequences correctly."""
         from cai.util import fix_message_list
-        
+
         # No need for _Converter cleanup since it's now instance-based
 
         # Create an incomplete sequence (tool call without result)
@@ -310,9 +309,9 @@ class TestCLIStreaming(unittest.TestCase):
             fixed_messages = fix_message_list(incomplete_messages)
 
             # Verify fix_message_list added the missing tool result
-            assert len(fixed_messages) > len(incomplete_messages), (
-                "fix_message_list should add missing tool result"
-            )
+            assert len(fixed_messages) > len(
+                incomplete_messages
+            ), "fix_message_list should add missing tool result"
 
             # Find the added tool message
             tool_msg = None
@@ -326,9 +325,12 @@ class TestCLIStreaming(unittest.TestCase):
             # Verify the fixed messages comply with OpenAI format
             for i, msg in enumerate(fixed_messages):
                 assert "role" in msg, f"Fixed message {i} missing role"
-                assert msg["role"] in ["user", "assistant", "system", "tool"], (
-                    f"Fixed message {i} has invalid role"
-                )
+                assert msg["role"] in [
+                    "user",
+                    "assistant",
+                    "system",
+                    "tool",
+                ], f"Fixed message {i} has invalid role"
 
             print("✅ fix_message_list with interrupted tools test passed!")
 
@@ -377,7 +379,7 @@ class TestCLIStreaming(unittest.TestCase):
         if initial_messages:
             for i, msg in enumerate(initial_messages):
                 print(f"  Unexpected initial message {i}: {msg}")
-        
+
         # Test various message types that should maintain OpenAI format
         test_messages = [
             # User message
@@ -411,9 +413,9 @@ class TestCLIStreaming(unittest.TestCase):
 
         # Verify OpenAI format compliance
         final_messages = self.get_combined_message_history()
-        assert len(final_messages) == len(test_messages), (
-            f"Expected {len(test_messages)} messages, got {len(final_messages)}"
-        )
+        assert len(final_messages) == len(
+            test_messages
+        ), f"Expected {len(test_messages)} messages, got {len(final_messages)}"
 
         for i, msg in enumerate(self.get_combined_message_history()):
             # Required fields
@@ -421,9 +423,9 @@ class TestCLIStreaming(unittest.TestCase):
 
             # Valid roles
             valid_roles = ["user", "assistant", "system", "tool", "developer"]
-            assert msg["role"] in valid_roles, (
-                f"Message {i} has invalid role '{msg['role']}', must be one of {valid_roles}"
-            )
+            assert (
+                msg["role"] in valid_roles
+            ), f"Message {i} has invalid role '{msg['role']}', must be one of {valid_roles}"
 
             # Role-specific validation
             if msg["role"] == "tool":
@@ -431,19 +433,19 @@ class TestCLIStreaming(unittest.TestCase):
                 assert "content" in msg, f"Tool message {i} missing 'content'"
 
             if msg["role"] == "assistant" and msg.get("tool_calls"):
-                assert isinstance(msg["tool_calls"], list), (
-                    f"Assistant message {i} tool_calls must be a list"
-                )
+                assert isinstance(
+                    msg["tool_calls"], list
+                ), f"Assistant message {i} tool_calls must be a list"
                 for j, tc in enumerate(msg["tool_calls"]):
                     assert "id" in tc, f"Tool call {j} in message {i} missing 'id'"
                     assert "type" in tc, f"Tool call {j} in message {i} missing 'type'"
                     assert "function" in tc, f"Tool call {j} in message {i} missing 'function'"
-                    assert "name" in tc["function"], (
-                        f"Tool call {j} function in message {i} missing 'name'"
-                    )
-                    assert "arguments" in tc["function"], (
-                        f"Tool call {j} function in message {i} missing 'arguments'"
-                    )
+                    assert (
+                        "name" in tc["function"]
+                    ), f"Tool call {j} function in message {i} missing 'name'"
+                    assert (
+                        "arguments" in tc["function"]
+                    ), f"Tool call {j} function in message {i} missing 'arguments'"
 
         print("✅ Message history OpenAI format compliance test passed!")
 
@@ -512,9 +514,9 @@ class TestCLIStreaming(unittest.TestCase):
 
             # Role validation
             valid_roles = ["user", "assistant", "system", "tool", "developer"]
-            assert msg["role"] in valid_roles, (
-                f"Message {i} role '{msg['role']}' not in valid roles {valid_roles}"
-            )
+            assert (
+                msg["role"] in valid_roles
+            ), f"Message {i} role '{msg['role']}' not in valid roles {valid_roles}"
 
             # Content or tool_calls must exist for most roles
             if msg["role"] in ["user", "system", "developer"]:
@@ -524,9 +526,9 @@ class TestCLIStreaming(unittest.TestCase):
                 # Assistant must have content OR tool_calls
                 has_content = "content" in msg and msg["content"] is not None
                 has_tool_calls = "tool_calls" in msg and msg["tool_calls"]
-                assert has_content or has_tool_calls, (
-                    f"Assistant message {i} must have content or tool_calls"
-                )
+                assert (
+                    has_content or has_tool_calls
+                ), f"Assistant message {i} must have content or tool_calls"
 
             elif msg["role"] == "tool":
                 assert "tool_call_id" in msg, f"Tool message {i} missing tool_call_id"
@@ -561,16 +563,16 @@ class TestCLIStreaming(unittest.TestCase):
         # 3. Simulate CTRL+C cleanup behavior from cli.py
         # Get the test model instance
         test_model = None
-        for (name, instance_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
+        for (name, _instance_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
             if name == "test_agent":
                 model = model_ref() if model_ref else None
                 if model:
                     test_model = model
                     break
-        
+
         if not test_model:
             self.fail("Could not find test model instance")
-        
+
         # Add ONLY our specific tool call to recent_tool_calls
         test_model._converter.recent_tool_calls[call_id] = {
             "name": tool_name,
@@ -609,7 +611,9 @@ class TestCLIStreaming(unittest.TestCase):
             print(f"  {i}: {msg.get('role')} - {msg}")
 
         # Assertions
-        self.assertEqual(len(messages), 3, f"Expected 3 messages, got {len(messages)}: {messages}")  # user + assistant + tool
+        self.assertEqual(
+            len(messages), 3, f"Expected 3 messages, got {len(messages)}: {messages}"
+        )  # user + assistant + tool
 
         # Check user message
         self.assertEqual(self.get_combined_message_history()[0]["role"], "user")

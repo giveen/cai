@@ -4,10 +4,9 @@ Provides `_get_agent_token_info()` which returns a dict of lightweight
 agent display and accounting information. Kept as a thin compatibility
 helper so callers in `common` can import it.
 """
-from typing import Dict
 
 
-def _get_agent_token_info() -> Dict:
+def _get_agent_token_info() -> dict:
     """Get current agent's token information from the active model instance.
 
     Returns a dict with keys matching the previous implementation in
@@ -21,16 +20,16 @@ def _get_agent_token_info() -> Dict:
 
         if model:
             # Get display name with ID (e.g., "Red Team Agent [P1]")
-            if hasattr(model, 'get_full_display_name'):
+            if hasattr(model, "get_full_display_name"):
                 display_name = model.get_full_display_name()
-            elif hasattr(model, 'agent_name'):
+            elif hasattr(model, "agent_name"):
                 # Include [P1] only if we have a valid agent_id
-                if hasattr(model, 'agent_id') and model.agent_id:
+                if hasattr(model, "agent_id") and model.agent_id:
                     display_name = f"{model.agent_name} [{model.agent_id}]"
                 else:
                     display_name = model.agent_name
             else:
-                display_name = 'Agent'
+                display_name = "Agent"
 
             return {
                 "agent_name": display_name,
@@ -51,15 +50,15 @@ def _get_agent_token_info() -> Dict:
             model = model_ref() if model_ref else None
 
             if model:
-                if hasattr(model, 'get_full_display_name'):
+                if hasattr(model, "get_full_display_name"):
                     display_name = model.get_full_display_name()
-                elif hasattr(model, 'agent_name'):
-                    if hasattr(model, 'agent_id') and model.agent_id:
+                elif hasattr(model, "agent_name"):
+                    if hasattr(model, "agent_id") and model.agent_id:
                         display_name = f"{model.agent_name} [{model.agent_id}]"
                     else:
                         display_name = model.agent_name
                 else:
-                    display_name = 'Agent'
+                    display_name = "Agent"
 
                 return {
                     "agent_name": display_name,

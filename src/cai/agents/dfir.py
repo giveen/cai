@@ -11,16 +11,18 @@ and analyzing digital evidence. This agent specializes in:
 - Incident response: Coordinating investigation and remediation activities
 - Threat hunting: Proactively searching for indicators of compromise
 """
+
 import os
+
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 
+
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from cai.util import load_prompt_template, create_system_prompt_renderer
-from dotenv import load_dotenv
 from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 # Prompts
 dfir_agent_system_prompt = load_prompt_template("prompts/system_dfir_agent.md")
@@ -38,7 +40,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:
@@ -51,5 +53,4 @@ dfir_agent = Agent(
                    Expert in investigation and analysis of digital evidence.""",
     model=_model_inst,
     tools=tools,
-
 )

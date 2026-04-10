@@ -5,16 +5,17 @@ should be prioritized ahead of longer-term retrieval results. Facts are
 stored with optional TTLs and priority scores; searches return the most
 relevant wake-up facts for a given session.
 """
+
 from __future__ import annotations
 
-import math
-import hashlib
 import datetime as _dt
-from typing import Any, Dict, List, Optional
+import hashlib
+import math
+from typing import Any
 
 from cai.rag.embeddings import (
-    get_embeddings_provider,
     LocalDeterministicEmbeddingsProvider,
+    get_embeddings_provider,
 )
 
 
@@ -22,14 +23,14 @@ class WakeupIndex:
     def __init__(
         self,
         max_facts_per_session: int = 200,
-        embeddings_provider: Optional[Any] = None,
+        embeddings_provider: Any | None = None,
     ):
         # `use_faiss` was a dead flag here; removed to keep WakeupIndex
         # focused on in-memory session facts only (source-of-truth).
         self.max_facts_per_session = int(max_facts_per_session)
         self.embeddings_provider = embeddings_provider
         # session_id -> { key -> entry }
-        self._sessions: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self._sessions: dict[str, dict[str, dict[str, Any]]] = {}
 
     # Timestamps are stored as ISO8601 strings (UTC, timezone-aware).
 
@@ -46,7 +47,7 @@ class WakeupIndex:
         entries = self._sessions.get(session_id)
         if not entries:
             return
-        to_delete: List[str] = []
+        to_delete: list[str] = []
         for k, v in entries.items():
             exp = v.get("expires_at")
             if not exp:
@@ -78,8 +79,8 @@ class WakeupIndex:
         session_id: str,
         key: str,
         text: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        ttl: Optional[float] = None,
+        metadata: dict[str, Any] | None = None,
+        ttl: float | None = None,
         priority: float = 0.0,
     ) -> bool:
         """Add or replace a fact for a session.
@@ -112,7 +113,9 @@ class WakeupIndex:
         # Use timezone-aware ISO8601 timestamps for created/expires fields
         now_dt = _dt.datetime.now(_dt.timezone.utc)
         created_at = now_dt.isoformat()
-        expires_at = (now_dt + _dt.timedelta(seconds=float(ttl))).isoformat() if ttl is not None else None
+        expires_at = (
+            (now_dt + _dt.timedelta(seconds=float(ttl))).isoformat() if ttl is not None else None
+        )
 
         # Ensure provenance in metadata for auditing and deletion
         md = metadata or {}
@@ -147,7 +150,9 @@ class WakeupIndex:
         # enforce size limits: evict lowest priority then oldest
         if key not in entries and len(entries) + 1 > self.max_facts_per_session:
             # choose victim: lowest priority, then oldest created_at (ISO strings sort lexicographically)
-            victim = min(entries.values(), key=lambda e: (e.get("priority", 0.0), e.get("created_at", "")))
+            victim = min(
+                entries.values(), key=lambda e: (e.get("priority", 0.0), e.get("created_at", ""))
+            )
             victim_key = victim.get("key")
             if victim_key in entries:
                 del entries[victim_key]
@@ -155,7 +160,7 @@ class WakeupIndex:
         entries[key] = entry
         return True
 
-    def search_facts(self, session_id: str, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+    def search_facts(self, session_id: str, query: str, top_k: int = 3) -> list[dict[str, Any]]:
         """Return top-k wake-up facts for `session_id` most relevant to `query`.
 
         The ranking combines vector similarity (if available) and the
@@ -212,14 +217,16 @@ class WakeupIndex:
         scored.sort(key=lambda s: s[0], reverse=True)
         out = []
         for score, entry in scored[:top_k]:
-            out.append({
-                "key": entry.get("key"),
-                "text": entry.get("text"),
-                "metadata": entry.get("metadata"),
-                "score": float(score),
-                "priority": float(entry.get("priority", 0.0)),
-                "expires_at": entry.get("expires_at"),
-            })
+            out.append(
+                {
+                    "key": entry.get("key"),
+                    "text": entry.get("text"),
+                    "metadata": entry.get("metadata"),
+                    "score": float(score),
+                    "priority": float(entry.get("priority", 0.0)),
+                    "expires_at": entry.get("expires_at"),
+                }
+            )
         return out
 
     def purge_session(self, session_id: str) -> bool:
@@ -227,7 +234,7 @@ class WakeupIndex:
             del self._sessions[session_id]
         return True
 
-    def list_sessions(self) -> List[str]:
+    def list_sessions(self) -> list[str]:
         return list(self._sessions.keys())
 
 

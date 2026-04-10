@@ -7,6 +7,7 @@ Usage:
 
 This tool wraps asciinema recording and agg to create GIF animations.
 """
+
 import argparse
 import os
 import subprocess
@@ -23,24 +24,14 @@ def parse_arguments():
 Examples:
   cai-gif path/to/file.jsonl 0.5 output.gif
   cai-gif conversation.jsonl 1.0 demo.gif
-"""
+""",
     )
 
-    parser.add_argument(
-        "jsonl_file",
-        help="Path to the JSONL file containing conversation history"
-    )
+    parser.add_argument("jsonl_file", help="Path to the JSONL file containing conversation history")
 
-    parser.add_argument(
-        "replay_delay",
-        type=float,
-        help="Time in seconds to wait between actions"
-    )
+    parser.add_argument("replay_delay", type=float, help="Time in seconds to wait between actions")
 
-    parser.add_argument(
-        "output_gif",
-        help="Output GIF file path"
-    )
+    parser.add_argument("output_gif", help="Output GIF file path")
 
     return parser.parse_args()
 
@@ -51,28 +42,22 @@ def check_dependencies():
 
     # Check for asciinema
     try:
-        subprocess.run(["asciinema", "--version"], 
-                     check=True, 
-                     capture_output=True)
+        subprocess.run(["asciinema", "--version"], check=True, capture_output=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         missing_deps.append("asciinema")
 
     # Check for agg
     try:
-        subprocess.run(["agg", "--version"], 
-                     check=True, 
-                     capture_output=True)
+        subprocess.run(["agg", "--version"], check=True, capture_output=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         missing_deps.append("agg")
 
     if missing_deps:
         print("Error: Missing required dependencies:", file=sys.stderr)
         if "asciinema" in missing_deps:
-            print("  - asciinema: Install with 'pip install asciinema'", 
-                  file=sys.stderr)
+            print("  - asciinema: Install with 'pip install asciinema'", file=sys.stderr)
         if "agg" in missing_deps:
-            print("  - agg: Install with 'npm install -g @asciinema/agg'", 
-                  file=sys.stderr)
+            print("  - agg: Install with 'npm install -g @asciinema/agg'", file=sys.stderr)
         sys.exit(1)
 
 
@@ -87,7 +72,7 @@ def main():
         sys.exit(1)
 
     # Create a temporary file for the asciinema cast
-    with tempfile.NamedTemporaryFile(suffix='.cast', delete=False) as temp_cast:
+    with tempfile.NamedTemporaryFile(suffix=".cast", delete=False) as temp_cast:
         temp_cast_path = temp_cast.name
 
     try:
@@ -96,13 +81,16 @@ def main():
 
         # Build asciinema command
         asciinema_cmd = [
-            "asciinema", "rec",
+            "asciinema",
+            "rec",
             f"--command={replay_command}",
             "--overwrite",
-            temp_cast_path
+            temp_cast_path,
         ]
 
-        print(f"Recording asciinema session for {args.jsonl_file} with delay {args.replay_delay}s...")
+        print(
+            f"Recording asciinema session for {args.jsonl_file} with delay {args.replay_delay}s..."
+        )
         print(f"Running: {' '.join(asciinema_cmd)}")
 
         # Execute the asciinema command
@@ -117,8 +105,7 @@ def main():
         return 0
 
     except subprocess.CalledProcessError as e:
-        print(f"Error: Command failed with exit code {e.returncode}", 
-              file=sys.stderr)
+        print(f"Error: Command failed with exit code {e.returncode}", file=sys.stderr)
         return e.returncode
     except Exception as e:  # pylint: disable=broad-except
         print(f"Error: {str(e)}", file=sys.stderr)
@@ -132,4 +119,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

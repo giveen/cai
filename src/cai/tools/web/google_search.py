@@ -5,10 +5,14 @@ This module provides functions to perform Google searches in two modes:
 1. Regular search - Returns URLs from standard Google search results
 2. Google dorking - Returns URLs from searches using advanced Google search operators
 """
+
 import os
+
 import requests
-from typing import List, Dict
 from dotenv import load_dotenv
+
+from cai.agents.guardrails import sanitize_external_content
+from cai.sdk.agents import function_tool
 
 
 def google_search(query: str, num_results: int = 10) -> str:
@@ -20,7 +24,7 @@ def google_search(query: str, num_results: int = 10) -> str:
         num_results (int): Maximum number of results to return. Default is 10.
 
     Returns:
-        str: A formatted string containing URLs, titles, and snippets from 
+        str: A formatted string containing URLs, titles, and snippets from
         the search results.
     """
     try:
@@ -39,7 +43,7 @@ def google_search(query: str, num_results: int = 10) -> str:
 def google_dork_search(dork_query: str, num_results: int = 100) -> str:
     """
     Perform a Google dork search and return a formatted string with URLs.
-    
+
     Google dorking uses advanced search operators to find specific information.
     Examples of operators: site:, filetype:, inurl:, intitle:, etc.
 
@@ -60,8 +64,10 @@ def google_dork_search(dork_query: str, num_results: int = 100) -> str:
         formatted_results += f"{result['url']}\n"
     return formatted_results
 
-def _perform_search(query: str, num_results: int = 10, 
-                   is_dork: bool = False) -> List[Dict[str, str]]:
+
+def _perform_search(
+    query: str, num_results: int = 10, is_dork: bool = False
+) -> list[dict[str, str]]:
     """
     Helper function to perform Google searches.
 
@@ -71,66 +77,87 @@ def _perform_search(query: str, num_results: int = 10,
         is_dork (bool): Whether this is a dork search.
 
     Returns:
-        List[Dict[str, str]]: For regular searches, returns a list of dictionaries 
-        with URLs, titles, and snippets. For dork searches, returns a list of 
+        List[Dict[str, str]]: For regular searches, returns a list of dictionaries
+        with URLs, titles, and snippets. For dork searches, returns a list of
         dictionaries with only URLs.
     """
     load_dotenv()
-    api_key = os.getenv("GOOGLE_SEARCH_API_KEY") 
+    api_key = os.getenv("GOOGLE_SEARCH_API_KEY")
     cx = os.getenv("GOOGLE_SEARCH_CX")
-    
+
     if not api_key or not cx:
         raise ValueError(
             "Google Search API key (GOOGLE_SEARCH_API_KEY) and Custom Search "
             "Engine ID (GOOGLE_SEARCH_CX) must be set in environment variables."
         )
-    
+
     base_url = "https://www.googleapis.com/customsearch/v1"
-    
+
     params = {
         "key": api_key,
         "cx": cx,
         "q": query,
-        "num": min(num_results, 10)  # API limits to 10 results per request
+        "num": min(num_results, 10),  # API limits to 10 results per request
     }
-    
+
     results = []
-    
+
     # Google API returns max 10 results per request, so we need to make multiple
     # requests with different start indices to get more results
-    for start_index in range(1, min(num_results + 1, 101), 10):  # Google API limits to 100 results total
+    for start_index in range(
+        1, min(num_results + 1, 101), 10
+    ):  # Google API limits to 100 results total
         if start_index > 1:
             params["start"] = start_index
-            
+
         response = requests.get(base_url, params=params, timeout=15)
-        
+
         if response.status_code != 200:
             try:
                 detail = response.json().get("error", {}).get("message", response.text[:200])
             except Exception:  # pylint: disable=broad-except
                 detail = response.text[:200]
-            raise RuntimeError(
-                f"Google API request failed (HTTP {response.status_code}): {detail}"
-            )
-            
+            raise RuntimeError(f"Google API request failed (HTTP {response.status_code}): {detail}")
+
         data = response.json()
-        
+
         if "items" not in data:
             break
-            
+
         for item in data["items"]:
             if len(results) >= num_results:
                 break
-                
+
             if is_dork:
-                results.append({
-                    "url": item["link"]
-                })
+                results.append({"url": item["link"]})
             else:
-                results.append({
-                    "url": item["link"],
-                    "title": item.get("title", ""),
-                    "snippet": item.get("snippet", "")
-                })
-    
+                results.append(
+                    {
+                        "url": item["link"],
+                        "title": item.get("title", ""),
+                        "snippet": item.get("snippet", ""),
+                    }
+                )
+
     return results
+
+
+@function_tool
+def make_google_search(query: str, dorks: bool = False) -> str:
+    """Search Google for information. Set dorks=True to use advanced Google dork operators.
+
+    Args:
+        query: The search query or dork expression.
+        dorks: Whether to use Google dork operators (site:, filetype:, inurl:, etc.).
+
+    Returns:
+        A formatted string of URLs, titles, and snippets.
+    """
+    if dorks:
+        result = google_dork_search(query)
+    else:
+        result = google_search(query)
+
+    if isinstance(result, str):
+        return sanitize_external_content(result)
+    return result

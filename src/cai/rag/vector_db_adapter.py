@@ -9,27 +9,26 @@ implements best-effort read/search via the `mempalace` Python API or
 CLI. Add/ingest operations for MemPalace are intentionally not implemented
 here to avoid accidental data migration.
 """
+
 from __future__ import annotations
 
-import os
-import shlex
-import subprocess
-import time
+import atexit
+import concurrent.futures
+import datetime as _dt
+import errno
+import fcntl
 import hashlib
 import json
-import datetime as _dt
+import os
+import re
+import subprocess
+import threading
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
+
 from cai.rag.metrics import collector
-import concurrent.futures
-import threading
-import fcntl
-import tempfile
-import shutil
-import errno
-import re
-import atexit
 
 
 @dataclass
@@ -39,10 +38,10 @@ class VectorDBConfig:
     Backends may read provider-specific options from `options`.
     """
 
-    name: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    options: Dict[str, Any] = field(default_factory=dict)
+    name: str | None = None
+    host: str | None = None
+    port: int | None = None
+    options: dict[str, Any] = field(default_factory=dict)
 
 
 def with_retries(retries: int = 3, base_delay: float = 0.2, backoff: float = 2.0):
@@ -54,7 +53,7 @@ def with_retries(retries: int = 3, base_delay: float = 0.2, backoff: float = 2.0
 
     def decorator(fn):
         def wrapper(*args, **kwargs):
-            last_exc: Optional[BaseException] = None
+            last_exc: BaseException | None = None
             delay = base_delay
             for attempt in range(retries):
                 try:
@@ -74,7 +73,7 @@ def with_retries(retries: int = 3, base_delay: float = 0.2, backoff: float = 2.0
     return decorator
 
 
-def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str, Any]]:
+def _canonicalize_search_results(results: Any, limit: int = 3) -> list[dict[str, Any]]:
     """Normalize heterogeneous backend search outputs into a canonical
     list of dicts with keys: `id`, `text`, `metadata`, `score`.
 
@@ -82,7 +81,7 @@ def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str,
     output), single dicts, lists/tuples of various shapes, and best-effort
     converts them into the canonical shape expected by the RAG callers.
     """
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     if results is None:
         return out
 
@@ -91,19 +90,33 @@ def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str,
         s = results.strip()
         if not s:
             return out
-        if (s.startswith("[") or s.startswith("{")):
+        if s.startswith("[") or s.startswith("{"):
             try:
                 parsed = json.loads(s)
                 results = parsed
             except Exception:
-                lines = [l.strip() for l in s.splitlines() if l.strip()]
+                lines = [ln.strip() for ln in s.splitlines() if ln.strip()]
                 for i, line in enumerate(lines[:limit]):
-                    out.append({"id": hashlib.sha256(line.encode()).hexdigest()[:12], "text": line, "metadata": {}, "score": 1.0})
+                    out.append(
+                        {
+                            "id": hashlib.sha256(line.encode()).hexdigest()[:12],
+                            "text": line,
+                            "metadata": {},
+                            "score": 1.0,
+                        }
+                    )
                 return out
         else:
-            lines = [l.strip() for l in s.splitlines() if l.strip()]
+            lines = [ln.strip() for ln in s.splitlines() if ln.strip()]
             for i, line in enumerate(lines[:limit]):
-                out.append({"id": hashlib.sha256(line.encode()).hexdigest()[:12], "text": line, "metadata": {}, "score": 1.0})
+                out.append(
+                    {
+                        "id": hashlib.sha256(line.encode()).hexdigest()[:12],
+                        "text": line,
+                        "metadata": {},
+                        "score": 1.0,
+                    }
+                )
             return out
 
     # Single dict -> list
@@ -165,14 +178,27 @@ def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str,
                 if not isinstance(metadata, dict):
                     metadata = {"value": metadata}
 
-                out.append({"id": str(id_val), "text": text, "metadata": metadata, "score": float(score)})
+                out.append(
+                    {"id": str(id_val), "text": text, "metadata": metadata, "score": float(score)}
+                )
             else:
                 # tuples/lists or primitive values
                 if isinstance(item, (list, tuple)) and len(item) >= 1:
                     text = item[0]
-                    id_val = item[1] if len(item) > 1 else hashlib.sha256(str(text).encode()).hexdigest()[:12]
+                    id_val = (
+                        item[1]
+                        if len(item) > 1
+                        else hashlib.sha256(str(text).encode()).hexdigest()[:12]
+                    )
                     score = float(item[2]) if len(item) > 2 else 1.0
-                    out.append({"id": str(id_val), "text": str(text), "metadata": {}, "score": float(score)})
+                    out.append(
+                        {
+                            "id": str(id_val),
+                            "text": str(text),
+                            "metadata": {},
+                            "score": float(score),
+                        }
+                    )
                 else:
                     text = str(item)
                     id_val = hashlib.sha256(text.encode()).hexdigest()[:12]
@@ -183,7 +209,9 @@ def _canonicalize_search_results(results: Any, limit: int = 3) -> List[Dict[str,
     s = str(results)
     if not s:
         return []
-    return [{"id": hashlib.sha256(s.encode()).hexdigest()[:12], "text": s, "metadata": {}, "score": 1.0}]
+    return [
+        {"id": hashlib.sha256(s.encode()).hexdigest()[:12], "text": s, "metadata": {}, "score": 1.0}
+    ]
 
 
 class VectorDBAdapter(ABC):
@@ -194,7 +222,9 @@ class VectorDBAdapter(ABC):
     structures where practical (e.g. list-of-dicts for `search`).
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None):
+    def __init__(
+        self, config: dict[str, Any] | None = None, embeddings_provider: Any | None = None
+    ):
         self.config = VectorDBConfig(**(config or {})) if config is not None else VectorDBConfig()
         # Optional embeddings provider instance. If not provided, a
         # provider will be lazily created by `embed_texts()` using the
@@ -210,18 +240,20 @@ class VectorDBAdapter(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def add_points(self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]) -> bool:
+    def add_points(
+        self, id_point: Any, collection_name: str, texts: list[str], metadata: list[dict]
+    ) -> bool:
         raise NotImplementedError()
 
     @abstractmethod
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Return a health dictionary like {'ok': bool, 'details': str|dict}.
 
         Implementations should try to be non-destructive and fast.
         """
         raise NotImplementedError()
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Return embeddings for the provided texts using the configured
         embeddings provider. If no provider was supplied at construction
         time, a default provider is created lazily.
@@ -241,7 +273,7 @@ class VectorDBAdapter(ABC):
         return self.embeddings_provider.embed_texts(texts)
 
 
-def get_vector_db_adapter(name: Optional[str] = None, **kwargs) -> VectorDBAdapter:
+def get_vector_db_adapter(name: str | None = None, **kwargs) -> VectorDBAdapter:
     """Factory to get an adapter by name or environment `CAI_VECTOR_DB`.
 
     Behavior:
@@ -305,7 +337,12 @@ class QdrantAdapter(VectorDBAdapter):
     that environments without the connector won't fail import-time.
     """
 
-    def __init__(self, client: Optional[Any] = None, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None):
+    def __init__(
+        self,
+        client: Any | None = None,
+        config: dict[str, Any] | None = None,
+        embeddings_provider: Any | None = None,
+    ):
         super().__init__(config=config, embeddings_provider=embeddings_provider)
         self._client = client
 
@@ -355,7 +392,9 @@ class QdrantAdapter(VectorDBAdapter):
         return client.create_collection(collection_name)
 
     @with_retries(retries=2)
-    def add_points(self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]) -> bool:
+    def add_points(
+        self, id_point: Any, collection_name: str, texts: list[str], metadata: list[dict]
+    ) -> bool:
         self._ensure_client()
         # Attempt to compute embeddings and pass them to the client if the
         # client's `add_points` supports an explicit `vectors` argument.
@@ -371,15 +410,21 @@ class QdrantAdapter(VectorDBAdapter):
         if vectors is not None:
             try:
                 return client.add_points(
-                    id_point=id_point, collection_name=collection_name, texts=texts, metadata=metadata, vectors=vectors
+                    id_point=id_point,
+                    collection_name=collection_name,
+                    texts=texts,
+                    metadata=metadata,
+                    vectors=vectors,
                 )
             except TypeError:
                 # Client does not accept `vectors`; fall back to original call
                 pass
 
-        return client.add_points(id_point=id_point, collection_name=collection_name, texts=texts, metadata=metadata)
+        return client.add_points(
+            id_point=id_point, collection_name=collection_name, texts=texts, metadata=metadata
+        )
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Lightweight health check for Qdrant connector.
 
         Attempts to ensure the client can be instantiated, then looks for
@@ -395,7 +440,7 @@ class QdrantAdapter(VectorDBAdapter):
         if client is None:
             return {"ok": False, "error": "Qdrant client not initialized"}
         # Prefer explicit health_check
-        if hasattr(client, "health_check") and callable(getattr(client, "health_check")):
+        if hasattr(client, "health_check") and callable(client.health_check):
             try:
                 res = client.health_check()
                 return {"ok": True, "details": res}
@@ -403,7 +448,7 @@ class QdrantAdapter(VectorDBAdapter):
                 return {"ok": False, "error": str(exc)}
 
         # Try ping
-        if hasattr(client, "ping") and callable(getattr(client, "ping")):
+        if hasattr(client, "ping") and callable(client.ping):
             try:
                 res = client.ping()
                 return {"ok": True, "details": getattr(res, "__dict__", str(res))}
@@ -423,7 +468,10 @@ class QdrantAdapter(VectorDBAdapter):
             except Exception as exc:  # pragma: no cover - environment dependent
                 return {"ok": False, "error": f"HTTP check failed: {exc}"}
 
-        return {"ok": True, "details": "client instantiated (no explicit health endpoint available)"}
+        return {
+            "ok": True,
+            "details": "client instantiated (no explicit health endpoint available)",
+        }
 
 
 class MemPalaceAdapter(VectorDBAdapter):
@@ -437,7 +485,12 @@ class MemPalaceAdapter(VectorDBAdapter):
       then CLI via the `mempalace` command.
     """
 
-    def __init__(self, palace_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None):
+    def __init__(
+        self,
+        palace_path: str | None = None,
+        config: dict[str, Any] | None = None,
+        embeddings_provider: Any | None = None,
+    ):
         super().__init__(config=config, embeddings_provider=embeddings_provider)
         # Allow palace_path to be provided via explicit arg, config options, or env
         self.palace_path = (
@@ -466,21 +519,27 @@ class MemPalaceAdapter(VectorDBAdapter):
                 proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 return _canonicalize_search_results(proc.stdout.strip(), limit=limit)
             except Exception as exc:  # pragma: no cover - runtime dependent
-                raise RuntimeError("Failed to query MemPalace: ensure mempalace is installed") from exc
+                raise RuntimeError(
+                    "Failed to query MemPalace: ensure mempalace is installed"
+                ) from exc
 
     def create_collection(self, collection_name: str) -> bool:
         # Not applicable for MemPalace (file/closet based) — treat as no-op
         return True
+
     # MemPalaceAdapter intentionally focuses on search; FAISS helpers
     # belong to the LocalFallbackAdapter implementation and are not
     # provided here.
 
-
-    def add_points(self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]) -> bool:
+    def add_points(
+        self, id_point: Any, collection_name: str, texts: list[str], metadata: list[dict]
+    ) -> bool:
         # Intentionally not implemented to avoid accidental writes; use mempalace CLI or API
-        raise NotImplementedError("MemPalaceAdapter.add_points is not implemented. Use mempalace CLI/API for ingestion.")
+        raise NotImplementedError(
+            "MemPalaceAdapter.add_points is not implemented. Use mempalace CLI/API for ingestion."
+        )
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         # Check palace path existence first
         try:
             path = os.path.expanduser(self.palace_path)
@@ -491,7 +550,9 @@ class MemPalaceAdapter(VectorDBAdapter):
 
         # Try CLI
         try:
-            proc = subprocess.run(["mempalace", "--version"], capture_output=True, text=True, timeout=3)
+            proc = subprocess.run(
+                ["mempalace", "--version"], capture_output=True, text=True, timeout=3
+            )
             if proc.returncode == 0:
                 return {"ok": True, "details": proc.stdout.strip()}
         except Exception:
@@ -508,10 +569,10 @@ class MemPalaceAdapter(VectorDBAdapter):
 
 
 # Backend registry so new adapters can be registered at runtime
-_BACKEND_REGISTRY: Dict[str, Type[VectorDBAdapter]] = {}
+_BACKEND_REGISTRY: dict[str, type[VectorDBAdapter]] = {}
 
 
-def register_vector_db_backend(name: str, cls: Type[VectorDBAdapter]) -> None:
+def register_vector_db_backend(name: str, cls: type[VectorDBAdapter]) -> None:
     """Register a backend adapter class under a short name."""
     _BACKEND_REGISTRY[name.lower()] = cls
 
@@ -524,12 +585,12 @@ register_vector_db_backend("palace", MemPalaceAdapter)
 register_vector_db_backend("mp", MemPalaceAdapter)
 
 
-def list_registered_backends() -> List[str]:
+def list_registered_backends() -> list[str]:
     """Return names of currently registered vector DB backends."""
     return list(_BACKEND_REGISTRY.keys())
 
 
-def get_rag_status() -> Dict[str, Any]:
+def get_rag_status() -> dict[str, Any]:
     """Return a lightweight snapshot of RAG-related metrics and adapter state.
 
     This function is intentionally conservative: it returns the global
@@ -544,7 +605,7 @@ def get_rag_status() -> Dict[str, Any]:
     # Provide a best-effort summary of adapter cache state; avoid
     # importing adapters or relying on runtime instances here to keep
     # this function side-effect free at import time.
-    adapters_summary: Dict[str, Any] = {k: {"registered": True} for k in _BACKEND_REGISTRY.keys()}
+    adapters_summary: dict[str, Any] = {k: {"registered": True} for k in _BACKEND_REGISTRY.keys()}
 
     return {"metrics": metrics_snapshot, "adapters": adapters_summary}
 
@@ -559,7 +620,9 @@ class LocalFallbackAdapter(VectorDBAdapter):
     will use FAISS for speed.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, embeddings_provider: Optional[Any] = None):
+    def __init__(
+        self, config: dict[str, Any] | None = None, embeddings_provider: Any | None = None
+    ):
         super().__init__(config=config, embeddings_provider=embeddings_provider)
         opts = self.config.options or {}
         env_use = os.getenv("CAI_USE_FAISS", "").strip()
@@ -578,15 +641,17 @@ class LocalFallbackAdapter(VectorDBAdapter):
             except Exception:
                 self._faiss_available = False
         # collections: name -> {'ids':[], 'texts':[], 'metadata':[], 'vectors':[]}
-        self._collections: Dict[str, Dict[str, List[Any]]] = {}
+        self._collections: dict[str, dict[str, list[Any]]] = {}
         # Cached FAISS indexes per collection (when faiss is available).
         # _faiss_indexes[collection_name] -> faiss.Index or None
         # _faiss_maps[collection_name] -> list mapping faiss index position -> original collection index
-        self._faiss_indexes: Dict[str, Any] = {}
-        self._faiss_maps: Dict[str, List[int]] = {}
+        self._faiss_indexes: dict[str, Any] = {}
+        self._faiss_maps: dict[str, list[int]] = {}
 
         # Persistence / background IO
-        self._persist_dir = os.path.expanduser(os.getenv("CAI_LOCAL_PERSIST_DIR", "~/.cai/memory/local/"))
+        self._persist_dir = os.path.expanduser(
+            os.getenv("CAI_LOCAL_PERSIST_DIR", "~/.cai/memory/local/")
+        )
         try:
             os.makedirs(self._persist_dir, exist_ok=True)
         except Exception:
@@ -597,7 +662,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
         self._io_lock = threading.Lock()
         self._pending_persist_collections = set()
         # per-collection held lock fds (if we claimed exclusive ownership)
-        self._locks: Dict[str, int] = {}
+        self._locks: dict[str, int] = {}
 
         # Ensure graceful shutdown to flush pending writes and release locks
         try:
@@ -606,7 +671,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
             pass
 
     # FAISS helpers (moved here from MemPalaceAdapter) ------------------
-    def _build_faiss_index(self, collection_name: str, dim: Optional[int] = None) -> None:
+    def _build_faiss_index(self, collection_name: str, dim: int | None = None) -> None:
         """Build or rebuild a FAISS Index for the given collection.
 
         If `dim` is provided, only vectors with matching dimensionality
@@ -754,7 +819,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
         claimed = self._claim_collection_lock(collection_name, timeout=0.1)
 
         try:
-            with open(json_path, "r") as fh:
+            with open(json_path) as fh:
                 data = json.load(fh)
             # restore collection structure
             ids = data.get("ids", [])
@@ -766,7 +831,12 @@ class LocalFallbackAdapter(VectorDBAdapter):
             # ensure lists
             vectors = [v if v is None else list(v) for v in vectors]
 
-            self._collections[collection_name] = {"ids": ids, "texts": texts, "metadata": metadata, "vectors": vectors}
+            self._collections[collection_name] = {
+                "ids": ids,
+                "texts": texts,
+                "metadata": metadata,
+                "vectors": vectors,
+            }
 
             if self._faiss_available and self._faiss is not None:
                 try:
@@ -833,7 +903,9 @@ class LocalFallbackAdapter(VectorDBAdapter):
                 "ids": col.get("ids", []),
                 "texts": col.get("texts", []),
                 "metadata": col.get("metadata", []),
-                "vectors": [None if v is None else [float(x) for x in v] for v in col.get("vectors", [])],
+                "vectors": [
+                    None if v is None else [float(x) for x in v] for v in col.get("vectors", [])
+                ],
                 "faiss_map": self._faiss_maps.get(collection_name, []),
             }
 
@@ -879,12 +951,14 @@ class LocalFallbackAdapter(VectorDBAdapter):
             if collection_name in self._pending_persist_collections:
                 return
             self._pending_persist_collections.add(collection_name)
+
         def _worker(name: str):
             try:
                 self._save_persisted_collection(name)
             finally:
                 with self._io_lock:
                     self._pending_persist_collections.discard(name)
+
         try:
             self._io_executor.submit(_worker, collection_name)
         except Exception:
@@ -925,14 +999,17 @@ class LocalFallbackAdapter(VectorDBAdapter):
         self._faiss_maps[collection_name] = []
         return True
 
-    def add_points(self, id_point: Any, collection_name: str, texts: List[str], metadata: List[dict]) -> bool:
+    def add_points(
+        self, id_point: Any, collection_name: str, texts: list[str], metadata: list[dict]
+    ) -> bool:
         # Ensure collection
         self.create_collection(collection_name)
         col = self._collections[collection_name]
 
         # helper imports and defaults
         import uuid
-        metadata_list: List[Dict[str, Any]] = []
+
+        metadata_list: list[dict[str, Any]] = []
 
         # Normalize ids and metadata lists to match texts length
         if isinstance(id_point, (list, tuple)) and len(id_point) == len(texts):
@@ -955,13 +1032,16 @@ class LocalFallbackAdapter(VectorDBAdapter):
             metadata_list = [metadata for _ in texts]
         else:
             # Fallback: try to coerce
-            metadata_list = [m if isinstance(m, dict) else {} for m in (metadata if isinstance(metadata, list) else [metadata])]
+            metadata_list = [
+                m if isinstance(m, dict) else {}
+                for m in (metadata if isinstance(metadata, list) else [metadata])
+            ]
             if len(metadata_list) < len(texts):
                 metadata_list = metadata_list * (len(texts) // len(metadata_list) + 1)
             metadata_list = metadata_list[: len(texts)]
 
         # Ensure metadata_list variable exists
-        if 'metadata_list' not in locals():
+        if "metadata_list" not in locals():
             metadata_list = [{} for _ in texts]
 
         # Ensure provenance metadata exists for each text (best-effort)
@@ -1041,11 +1121,15 @@ class LocalFallbackAdapter(VectorDBAdapter):
                                     # missing dependencies -> rebuild index instead
                                     self._build_faiss_index(collection_name)
                                 else:
-                                    arr = np_mod.array([v for (_i, v) in new_items], dtype="float32")
+                                    arr = np_mod.array(
+                                        [v for (_i, v) in new_items], dtype="float32"
+                                    )
                                     idx.add(arr)
                                 # extend mapping
                                 self._faiss_maps.setdefault(collection_name, [])
-                                self._faiss_maps[collection_name].extend([_i for (_i, _v) in new_items])
+                                self._faiss_maps[collection_name].extend(
+                                    [_i for (_i, _v) in new_items]
+                                )
                             else:
                                 # Incompatible dimensions; rebuild index using a consistent dim
                                 self._build_faiss_index(collection_name)
@@ -1065,7 +1149,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
 
         return True
 
-    def export_collection(self, collection_name: str) -> List[Dict[str, Any]]:
+    def export_collection(self, collection_name: str) -> list[dict[str, Any]]:
         """Return a list of documents for the collection with optional vectors.
 
         Each document is a dict: {id, text, metadata, vector}
@@ -1073,17 +1157,19 @@ class LocalFallbackAdapter(VectorDBAdapter):
         if collection_name not in self._collections:
             return []
         col = self._collections[collection_name]
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for i in range(len(col["ids"])):
-            out.append({
-                "id": col["ids"][i],
-                "text": col["texts"][i],
-                "metadata": col["metadata"][i],
-                "vector": col["vectors"][i],
-            })
+            out.append(
+                {
+                    "id": col["ids"][i],
+                    "text": col["texts"][i],
+                    "metadata": col["metadata"][i],
+                    "vector": col["vectors"][i],
+                }
+            )
         return out
 
-    def delete_points(self, collection_name: str, ids: List[str]) -> bool:
+    def delete_points(self, collection_name: str, ids: list[str]) -> bool:
         """Delete points by id from the local collection. Returns True if any removed."""
         if collection_name not in self._collections:
             return False
@@ -1118,7 +1204,7 @@ class LocalFallbackAdapter(VectorDBAdapter):
                     pass
         return removed
 
-    def list_collections(self) -> List[str]:
+    def list_collections(self) -> list[str]:
         return list(self._collections.keys())
 
     def purge_older_than(self, cutoff_ts: float) -> int:
@@ -1230,21 +1316,23 @@ class LocalFallbackAdapter(VectorDBAdapter):
                         raise RuntimeError("numpy/faiss unavailable")
                     qarr = np_mod.array([qvec], dtype="float32")
                     k = min(limit, int(getattr(idx, "ntotal", 0)))
-                    D, I = idx.search(qarr, k)
+                    distances, indices = idx.search(qarr, k)
                     results = []
                     fmap = self._faiss_maps.get(collection_name, [])
-                    for score, pos in zip(D[0], I[0]):
+                    for score, pos in zip(distances[0], indices[0]):
                         if int(pos) < 0:
                             continue
                         orig_i = fmap[int(pos)] if int(pos) < len(fmap) else None
                         if orig_i is None:
                             continue
-                        results.append({
-                            "id": col["ids"][orig_i],
-                            "text": col["texts"][orig_i],
-                            "metadata": col["metadata"][orig_i],
-                            "score": float(score),
-                        })
+                        results.append(
+                            {
+                                "id": col["ids"][orig_i],
+                                "text": col["texts"][orig_i],
+                                "metadata": col["metadata"][orig_i],
+                                "score": float(score),
+                            }
+                        )
                     try:
                         collector().incr("search_hits", len(results))
                     except Exception:
@@ -1268,19 +1356,21 @@ class LocalFallbackAdapter(VectorDBAdapter):
         scores.sort(key=lambda x: x[0], reverse=True)
         results = []
         for score, i in scores[:limit]:
-            results.append({
-                "id": col["ids"][i],
-                "text": col["texts"][i],
-                "metadata": col["metadata"][i],
-                "score": float(score),
-            })
+            results.append(
+                {
+                    "id": col["ids"][i],
+                    "text": col["texts"][i],
+                    "metadata": col["metadata"][i],
+                    "score": float(score),
+                }
+            )
         try:
             collector().incr("search_hits", len(results))
         except Exception:
             pass
         return results
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         return {
             "ok": True,
             "details": {

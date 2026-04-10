@@ -48,13 +48,14 @@ where:
 import importlib
 import os
 import pkgutil
-from typing import Dict
 
 try:
     from dotenv import load_dotenv  # pylint: disable=import-error # noqa: E501
 except Exception:
+
     def load_dotenv(*args, **kwargs):  # noop when python-dotenv is not installed
         return False
+
 
 # Load .env file from current directory before importing agents
 # This ensures that .env files in the user's working directory are loaded
@@ -92,7 +93,7 @@ model = os.environ.get("CAI_MODEL", "alias1")
 PATTERNS = ["hierarchical", "swarm", "chain_of_thought", "auction_based", "recursive"]
 
 
-def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
+def get_available_agents() -> dict[str, Agent]:  # pylint: disable=R0912  # noqa
     """
     Get a dictionary of all available agents compiled
     from the cai/agents folder.
@@ -120,7 +121,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
         except Exception as e:
             # Handle missing API key errors gracefully
             error_str = str(e)
-            module_short_name = name.split('.')[-1]
+            module_short_name = name.split(".")[-1]
             if (
                 "OPENAI_API_KEY" in error_str
                 or "Missing OpenAI API Key" in error_str
@@ -138,14 +139,20 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
 
     # Also check the patterns subdirectory
     patterns_path = os.path.join(os.path.dirname(__file__), "patterns")
-    if os.path.exists(patterns_path) and os.path.isdir(patterns_path):  # pylint: disable=R1702  # noqa
+    if os.path.exists(patterns_path) and os.path.isdir(
+        patterns_path
+    ):  # pylint: disable=R1702  # noqa
         for _, name, _ in pkgutil.iter_modules([patterns_path], __name__ + ".patterns."):
             try:
                 module = importlib.import_module(name)
                 # Look for Agent instances in the patterns module
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
-                    if Agent is not None and isinstance(attr, Agent) and not attr_name.startswith("_"):
+                    if (
+                        Agent is not None
+                        and isinstance(attr, Agent)
+                        and not attr_name.startswith("_")
+                    ):
                         # Only include agents that have a .pattern attribute (swarm patterns)
                         # Skip regular agents without pattern attribute
                         if not hasattr(attr, "pattern"):
@@ -156,7 +163,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                             agents_to_display[agent_name] = attr
             except Exception as e:
                 # Handle missing API key errors gracefully
-                module_short_name = name.split('.')[-1]
+                module_short_name = name.split(".")[-1]
                 error_str = str(e)
                 if (
                     "OPENAI_API_KEY" in error_str
@@ -190,11 +197,11 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
         import re
 
         for fname in os.listdir(agents_dir):
-            if not fname.endswith('.py') or fname == '__init__.py':
+            if not fname.endswith(".py") or fname == "__init__.py":
                 continue
             path = os.path.join(agents_dir, fname)
             try:
-                with open(path, 'r', encoding='utf-8') as f:
+                with open(path, encoding="utf-8") as f:
                     text = f.read()
             except Exception:
                 continue
@@ -207,7 +214,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
 
             # Also look for pattern dicts with a "name" key
             for match in re.finditer(r"['\"]name['\"]\s*:\s*['\"]([a-zA-Z0-9_\- ]+)['\"]", text):
-                pattern_name = match.group(1).replace(' ', '_')
+                pattern_name = match.group(1).replace(" ", "_")
                 if pattern_name not in agents_to_display:
                     agents_to_display[pattern_name] = _PseudoAgent(pattern_name)
 
@@ -225,7 +232,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                 self.name = pattern.name
                 self.description = pattern.description
                 # Get the string value of the enum
-                if hasattr(pattern.type, 'value'):
+                if hasattr(pattern.type, "value"):
                     self.pattern_type = pattern.type.value
                 else:
                     self.pattern_type = str(pattern.type)
@@ -236,7 +243,7 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
                 self.handoffs = []
                 self.model = None
                 self.output_type = None
-        
+
         pseudo_agent = PatternAgent(pattern_obj)
         agents_to_display[pattern_name] = pseudo_agent
 
@@ -262,7 +269,11 @@ def get_agent_module(agent_name: str) -> str:
             # Look for Agent instances in the module
             for attr_name in dir(module):
                 # Try both with and without _agent suffix
-                if Agent is not None and (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
+                if (
+                    Agent is not None
+                    and (attr_name == agent_name)
+                    and isinstance(getattr(module, attr_name), Agent)
+                ):
                     return name
         except (ImportError, AttributeError, Exception):
             # If a module fails to load (e.g. API key missing), just skip it
@@ -277,7 +288,11 @@ def get_agent_module(agent_name: str) -> str:
                 # Look for Agent instances in the patterns module
                 for attr_name in dir(module):
                     # Try both with and without _agent suffix
-                    if Agent is not None and (attr_name == agent_name) and isinstance(getattr(module, attr_name), Agent):
+                    if (
+                        Agent is not None
+                        and (attr_name == agent_name)
+                        and isinstance(getattr(module, attr_name), Agent)
+                    ):
                         return name
             except (ImportError, AttributeError, Exception):
                 # If a module fails to load (e.g. API key missing), just skip it
@@ -286,7 +301,9 @@ def get_agent_module(agent_name: str) -> str:
     return "unknown"
 
 
-def get_agent_by_name(agent_name: str, custom_name: str = None, model_override: str = None, agent_id: str = None) -> Agent:
+def get_agent_by_name(
+    agent_name: str, custom_name: str = None, model_override: str = None, agent_id: str = None
+) -> Agent:
     """
     Get a NEW agent instance by name using the dynamic factory system.
 
@@ -351,28 +368,30 @@ def get_agent_by_name(agent_name: str, custom_name: str = None, model_override: 
                 # Update the agent's name if custom name provided
                 if custom_name:
                     cloned_agent.name = custom_name
-                    
+
                 # Check if this agent has any MCP tools configured
                 try:
                     from cai.repl.commands.mcp import get_mcp_tools_for_agent
-                    
+
                     # Get MCP tools for this agent and add them
                     mcp_tools = get_mcp_tools_for_agent(agent_name_lower)
                     if mcp_tools:
                         # Ensure the agent has tools list
-                        if not hasattr(cloned_agent, 'tools'):
+                        if not hasattr(cloned_agent, "tools"):
                             cloned_agent.tools = []
-                        
+
                         # Remove any existing tools with the same names to avoid duplicates
                         existing_tool_names = {t.name for t in mcp_tools}
-                        cloned_agent.tools = [t for t in cloned_agent.tools if t.name not in existing_tool_names]
-                        
+                        cloned_agent.tools = [
+                            t for t in cloned_agent.tools if t.name not in existing_tool_names
+                        ]
+
                         # Add the MCP tools
                         cloned_agent.tools.extend(mcp_tools)
                 except ImportError:
                     # MCP command not available, skip
                     pass
-                    
+
                 return cloned_agent
         except Exception:
             # If cloning fails, return the original
@@ -381,22 +400,22 @@ def get_agent_by_name(agent_name: str, custom_name: str = None, model_override: 
     # For singleton agents without cloning, still check for MCP tools
     try:
         from cai.repl.commands.mcp import get_mcp_tools_for_agent
-        
+
         # Get MCP tools for this agent and add them
         mcp_tools = get_mcp_tools_for_agent(agent_name_lower)
         if mcp_tools:
             # Ensure the agent has tools list
-            if not hasattr(agent, 'tools'):
+            if not hasattr(agent, "tools"):
                 agent.tools = []
-            
+
             # Remove any existing tools with the same names to avoid duplicates
             existing_tool_names = {t.name for t in mcp_tools}
             agent.tools = [t for t in agent.tools if t.name not in existing_tool_names]
-            
+
             # Add the MCP tools
             agent.tools.extend(mcp_tools)
     except ImportError:
         # MCP command not available, skip
         pass
-    
+
     return agent

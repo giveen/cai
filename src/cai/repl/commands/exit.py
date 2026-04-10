@@ -2,8 +2,8 @@
 Exit command for CAI REPL.
 This module provides the command to exit the REPL.
 """
+
 import sys
-from typing import List, Optional
 
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
@@ -15,13 +15,9 @@ class ExitCommand(Command):
 
     def __init__(self):
         """Initialize the exit command."""
-        super().__init__(
-            name="/exit",
-            description="Exit the CAI REPL",
-            aliases=["/q", "/quit"]
-        )
+        super().__init__(name="/exit", description="Exit the CAI REPL", aliases=["/q", "/quit"])
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         """Handle the exit command.
 
         Args:
@@ -32,7 +28,7 @@ class ExitCommand(Command):
         """
         # End global usage tracking session before exit
         GLOBAL_USAGE_TRACKER.end_session(final_cost=COST_TRACKER.session_total_cost)
-        
+
         sys.exit(0)
 
 

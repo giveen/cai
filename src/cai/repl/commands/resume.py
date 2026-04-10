@@ -4,10 +4,10 @@ Provides a small `/resume last` command to resume the most recently interrupted
 stream for the active agent. This is a lightweight helper that delegates to
 `Runner.run_streamed` and prints streaming text deltas to the console.
 """
+
 from __future__ import annotations
 
 import asyncio
-from typing import List, Optional
 
 from rich.console import Console
 
@@ -24,7 +24,7 @@ class ResumeCommand(Command):
             aliases=["/r"],
         )
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
+    def handle(self, args: list[str] | None = None) -> bool:
         if not args or args[0] == "last":
             return self.handle_resume_last()
 
@@ -33,8 +33,8 @@ class ResumeCommand(Command):
 
     def handle_resume_last(self) -> bool:
         try:
-            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
             from cai.sdk.agents.run import Runner
+            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
             agent = AGENT_MANAGER.get_active_agent()
             if agent is None:
@@ -67,7 +67,9 @@ class ResumeCommand(Command):
                         if hasattr(ev, "data"):
                             raw = ev.data
                             # Try to extract a text delta field
-                            delta = getattr(raw, "delta", None) or (raw.get("delta") if isinstance(raw, dict) else None)
+                            delta = getattr(raw, "delta", None) or (
+                                raw.get("delta") if isinstance(raw, dict) else None
+                            )
                             if delta:
                                 # Print without newline so streaming looks natural
                                 print(delta, end="", flush=True)

@@ -3,7 +3,6 @@ Help command for CAI REPL.
 This module provides commands for displaying help information.
 """
 
-from typing import List, Optional
 
 try:
     from rich.console import Console
@@ -28,7 +27,7 @@ console = Console()
 
 
 def create_styled_table(
-    title: str, headers: List[tuple[str, str]], header_style: str = "bold white"
+    title: str, headers: list[tuple[str, str]], header_style: str = "bold white"
 ) -> Table:
     """Create a styled table with consistent formatting.
 
@@ -47,7 +46,7 @@ def create_styled_table(
 
 
 def create_notes_panel(
-    notes: List[str], title: str = "Notes", border_style: str = "yellow"
+    notes: list[str], title: str = "Notes", border_style: str = "yellow"
 ) -> Panel:
     """Create a notes panel with consistent formatting.
 
@@ -79,38 +78,48 @@ class HelpCommand(Command):
         self.add_subcommand("agent", "Display help for agent commands", self.handle_agent)
         self.add_subcommand("parallel", "Display help for parallel execution", self.handle_parallel)
         self.add_subcommand("run", "Display help for queued execution", self.handle_run)
-        
+
         # Memory & History
         self.add_subcommand("memory", "Display help for memory persistence", self.handle_memory)
         self.add_subcommand("history", "Display help for conversation history", self.handle_history)
-        self.add_subcommand("compact", "Display help for conversation compaction", self.handle_compact)
+        self.add_subcommand(
+            "compact", "Display help for conversation compaction", self.handle_compact
+        )
         self.add_subcommand("flush", "Display help for clearing histories", self.handle_flush)
         self.add_subcommand("load", "Display help for loading JSONL files", self.handle_load)
-        self.add_subcommand("merge", "Display help for merging agent histories", self.handle_merge_help)
-        
+        self.add_subcommand(
+            "merge", "Display help for merging agent histories", self.handle_merge_help
+        )
+
         # Environment & Config
         self.add_subcommand("config", "Display help for configuration", self.handle_config)
         self.add_subcommand("env", "Display help for environment variables", self.handle_env)
-        self.add_subcommand("workspace", "Display help for workspace management", self.handle_workspace)
-        self.add_subcommand("virtualization", "Display help for Docker containers", self.handle_virtualization)
-        
+        self.add_subcommand(
+            "workspace", "Display help for workspace management", self.handle_workspace
+        )
+        self.add_subcommand(
+            "virtualization", "Display help for Docker containers", self.handle_virtualization
+        )
+
         # Tools & Integration
         self.add_subcommand("mcp", "Display help for Model Context Protocol", self.handle_mcp)
         self.add_subcommand("platform", "Display help for platform commands", self.handle_platform)
         self.add_subcommand("shell", "Display help for shell commands", self.handle_shell)
-        
+
         # Utilities
         self.add_subcommand("model", "Display help for model selection", self.handle_model)
         self.add_subcommand("graph", "Display help for visualization", self.handle_graph)
         self.add_subcommand("aliases", "Display all command aliases", self.handle_aliases)
         self.add_subcommand("kill", "Display help for process management", self.handle_kill)
-        
+
         # General
         self.add_subcommand("commands", "List all available commands", self.handle_commands)
         self.add_subcommand("quick", "Quick reference guide", self.handle_quick)
-        self.add_subcommand("quickstart", "Show quickstart guide for new users", self.handle_quickstart)
+        self.add_subcommand(
+            "quickstart", "Show quickstart guide for new users", self.handle_quickstart
+        )
 
-    def handle_memory(self, _: Optional[List[str]] = None) -> bool:
+    def handle_memory(self, _: list[str] | None = None) -> bool:
         """Show help for memory commands."""
         # Get the memory command and show its help
         memory_cmd = next((cmd for cmd in COMMANDS.values() if cmd.name == "/memory"), None)
@@ -122,7 +131,7 @@ class HelpCommand(Command):
         self.handle_help_memory()
         return True
 
-    def handle_agent(self, _: Optional[List[str]] = None) -> bool:
+    def handle_agent(self, _: list[str] | None = None) -> bool:
         """Show help for agent management."""
         console.print(
             Panel(
@@ -156,7 +165,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_graph(self, _: Optional[List[str]] = None) -> bool:
+    def handle_graph(self, _: list[str] | None = None) -> bool:
         """Show help for graph visualization."""
         console.print(
             Panel(
@@ -196,7 +205,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_platform(self, _: Optional[List[str]] = None) -> bool:
+    def handle_platform(self, _: list[str] | None = None) -> bool:
         """Show help for platform-specific features."""
         platform_cmd = next((cmd for cmd in COMMANDS.values() if cmd.name == "/platform"), None)
 
@@ -221,7 +230,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_shell(self, _: Optional[List[str]] = None) -> bool:
+    def handle_shell(self, _: list[str] | None = None) -> bool:
         """Show help for shell command execution."""
         console.print(
             Panel(
@@ -245,7 +254,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_env(self, _: Optional[List[str]] = None) -> bool:
+    def handle_env(self, _: list[str] | None = None) -> bool:
         """Show help for environment variables."""
         console.print(
             Panel(
@@ -276,19 +285,19 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_aliases(self, _: Optional[List[str]] = None) -> bool:
+    def handle_aliases(self, _: list[str] | None = None) -> bool:
         """Show all command aliases."""
         return self.handle_help_aliases()
 
-    def handle_model(self, _: Optional[List[str]] = None) -> bool:
+    def handle_model(self, _: list[str] | None = None) -> bool:
         """Show help for model selection."""
         return self.handle_help_model()
 
-    def handle_turns(self, _: Optional[List[str]] = None) -> bool:
+    def handle_turns(self, _: list[str] | None = None) -> bool:
         """Show help for managing turns."""
         return self.handle_help_turns()
 
-    def handle_config(self, _: Optional[List[str]] = None) -> bool:
+    def handle_config(self, _: list[str] | None = None) -> bool:
         """Display help for config commands.
 
         Args:
@@ -306,7 +315,7 @@ class HelpCommand(Command):
     def _print_command_table(
         self,
         title: str,
-        commands: List[tuple[str, str, str]],
+        commands: list[tuple[str, str, str]],
         header_style: str = "bold yellow",
         command_style: str = "yellow",
     ) -> None:
@@ -346,36 +355,51 @@ class HelpCommand(Command):
 
         # Command Categories
         categories = [
-            ("[bold yellow]Agent Management[/bold yellow]", [
-                ("[cyan]/agent[/cyan]", "Manage and switch between agents"),
-                ("[cyan]/parallel[/cyan]", "Configure parallel agent execution"),
-                ("[cyan]/run[/cyan]", "Queue prompts for execution"),
-            ]),
-            ("[bold green]Memory & History[/bold green]", [
-                ("[cyan]/memory[/cyan]", "Persistent memory management"),
-                ("[cyan]/history[/cyan]", "View conversation history"),
-                ("[cyan]/compact[/cyan]", "Compact conversations with AI"),
-                ("[cyan]/flush[/cyan]", "Clear agent histories"),
-                ("[cyan]/load[/cyan]", "Load JSONL conversation files"),
-                ("[cyan]/merge[/cyan]", "Merge agent histories"),
-            ]),
-            ("[bold blue]Environment & Config[/bold blue]", [
-                ("[cyan]/config[/cyan]", "Manage environment variables"),
-                ("[cyan]/env[/cyan]", "Display current environment"),
-                ("[cyan]/workspace[/cyan]", "Manage working directories"),
-                ("[cyan]/virtualization[/cyan]", "Docker container management"),
-            ]),
-            ("[bold magenta]Tools & Integration[/bold magenta]", [
-                ("[cyan]/mcp[/cyan]", "Model Context Protocol servers"),
-                ("[cyan]/platform[/cyan]", "Platform-specific features"),
-                ("[cyan]/shell[/cyan]", "Execute shell commands"),
-            ]),
-            ("[bold red]Utilities[/bold red]", [
-                ("[cyan]/model[/cyan]", "Change AI models"),
-                ("[cyan]/graph[/cyan]", "Visualize agent interactions"),
-                ("[cyan]/kill[/cyan]", "Terminate active processes"),
-                ("[cyan]/exit[/cyan]", "Exit CAI"),
-            ]),
+            (
+                "[bold yellow]Agent Management[/bold yellow]",
+                [
+                    ("[cyan]/agent[/cyan]", "Manage and switch between agents"),
+                    ("[cyan]/parallel[/cyan]", "Configure parallel agent execution"),
+                    ("[cyan]/run[/cyan]", "Queue prompts for execution"),
+                ],
+            ),
+            (
+                "[bold green]Memory & History[/bold green]",
+                [
+                    ("[cyan]/memory[/cyan]", "Persistent memory management"),
+                    ("[cyan]/history[/cyan]", "View conversation history"),
+                    ("[cyan]/compact[/cyan]", "Compact conversations with AI"),
+                    ("[cyan]/flush[/cyan]", "Clear agent histories"),
+                    ("[cyan]/load[/cyan]", "Load JSONL conversation files"),
+                    ("[cyan]/merge[/cyan]", "Merge agent histories"),
+                ],
+            ),
+            (
+                "[bold blue]Environment & Config[/bold blue]",
+                [
+                    ("[cyan]/config[/cyan]", "Manage environment variables"),
+                    ("[cyan]/env[/cyan]", "Display current environment"),
+                    ("[cyan]/workspace[/cyan]", "Manage working directories"),
+                    ("[cyan]/virtualization[/cyan]", "Docker container management"),
+                ],
+            ),
+            (
+                "[bold magenta]Tools & Integration[/bold magenta]",
+                [
+                    ("[cyan]/mcp[/cyan]", "Model Context Protocol servers"),
+                    ("[cyan]/platform[/cyan]", "Platform-specific features"),
+                    ("[cyan]/shell[/cyan]", "Execute shell commands"),
+                ],
+            ),
+            (
+                "[bold red]Utilities[/bold red]",
+                [
+                    ("[cyan]/model[/cyan]", "Change AI models"),
+                    ("[cyan]/graph[/cyan]", "Visualize agent interactions"),
+                    ("[cyan]/kill[/cyan]", "Terminate active processes"),
+                    ("[cyan]/exit[/cyan]", "Exit CAI"),
+                ],
+            ),
         ]
 
         for category_name, commands in categories:
@@ -545,7 +569,9 @@ class HelpCommand(Command):
         # Model information
         console.print("\n[bold green]Model Information:[/bold green]\n")
         console.print("CAI supports hundreds of models through various providers.")
-        console.print("Use [yellow]/model[/yellow] to see available models for your configured API keys.")
+        console.print(
+            "Use [yellow]/model[/yellow] to see available models for your configured API keys."
+        )
         console.print("\nModel categories include:")
         console.print("• Fast inference models for quick responses")
         console.print("• Reasoning models for complex analysis")
@@ -716,7 +742,7 @@ class HelpCommand(Command):
 
         return True
 
-    def handle_parallel(self, _: Optional[List[str]] = None) -> bool:
+    def handle_parallel(self, _: list[str] | None = None) -> bool:
         """Show help for parallel execution."""
         console.print(
             Panel(
@@ -733,7 +759,7 @@ class HelpCommand(Command):
                 "• [yellow]/parallel prompt <index> <text>[/yellow] - Set custom prompt\n\n"
                 "[bold cyan]Examples:[/bold cyan]\n"
                 "• [green]/parallel add red_teamer[/green] - Add red team agent\n"
-                "• [green]/parallel add bug_bounter custom_prompt=\"Find SQLi\"[/green]\n"
+                '• [green]/parallel add bug_bounter custom_prompt="Find SQLi"[/green]\n'
                 "• [green]/parallel merge 1,2[/green] - Merge histories of P1 and P2\n"
                 "• [green]/p list[/green] - Show all configured agents\n\n"
                 "[bold]Notes:[/bold]\n"
@@ -748,7 +774,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_run(self, _: Optional[List[str]] = None) -> bool:
+    def handle_run(self, _: list[str] | None = None) -> bool:
         """Show help for queued execution."""
         console.print(
             Panel(
@@ -760,8 +786,8 @@ class HelpCommand(Command):
                 "• [yellow]/run clear[/yellow] - Clear all queued prompts\n"
                 "• [yellow]/run remove <index>[/yellow] - Remove specific prompt\n\n"
                 "[bold cyan]Examples:[/bold cyan]\n"
-                "• [green]/run queue P1 \"Scan port 80\"[/green] - Queue for agent P1\n"
-                "• [green]/run queue P2 \"Check for SQL injection\"[/green]\n"
+                '• [green]/run queue P1 "Scan port 80"[/green] - Queue for agent P1\n'
+                '• [green]/run queue P2 "Check for SQL injection"[/green]\n'
                 "• [green]/run list[/green] - See all queued prompts\n"
                 "• [green]/r clear[/green] - Clear the queue\n\n"
                 "[bold]Notes:[/bold]\n"
@@ -775,7 +801,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_history(self, _: Optional[List[str]] = None) -> bool:
+    def handle_history(self, _: list[str] | None = None) -> bool:
         """Show help for conversation history."""
         console.print(
             Panel(
@@ -791,7 +817,7 @@ class HelpCommand(Command):
                 "[bold cyan]Examples:[/bold cyan]\n"
                 "• [green]/history[/green] - View control panel\n"
                 "• [green]/history P1[/green] - Show P1's conversation\n"
-                "• [green]/history search \"password\"[/green] - Search for term\n"
+                '• [green]/history search "password"[/green] - Search for term\n'
                 "• [green]/his red_teamer 5[/green] - Show message #5\n\n"
                 "[bold]Features:[/bold]\n"
                 "• Token count and cost tracking\n"
@@ -805,7 +831,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_compact(self, _: Optional[List[str]] = None) -> bool:
+    def handle_compact(self, _: list[str] | None = None) -> bool:
         """Show help for conversation compaction."""
         console.print(
             Panel(
@@ -819,7 +845,7 @@ class HelpCommand(Command):
                 "[bold cyan]Examples:[/bold cyan]\n"
                 "• [green]/compact[/green] - Compact with default settings\n"
                 "• [green]/compact model o3-mini[/green] - Use O3 Mini model\n"
-                "• [green]/compact prompt \"Focus on vulnerabilities\"[/green]\n"
+                '• [green]/compact prompt "Focus on vulnerabilities"[/green]\n'
                 "• [green]/cmp status[/green] - Check configuration\n\n"
                 "[bold]Features:[/bold]\n"
                 "• Preserves important context\n"
@@ -833,7 +859,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_flush(self, _: Optional[List[str]] = None) -> bool:
+    def handle_flush(self, _: list[str] | None = None) -> bool:
         """Show help for clearing histories."""
         console.print(
             Panel(
@@ -861,7 +887,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_load(self, _: Optional[List[str]] = None) -> bool:
+    def handle_load(self, _: list[str] | None = None) -> bool:
         """Show help for loading JSONL files."""
         console.print(
             Panel(
@@ -888,7 +914,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_workspace(self, _: Optional[List[str]] = None) -> bool:
+    def handle_workspace(self, _: list[str] | None = None) -> bool:
         """Show help for workspace management."""
         console.print(
             Panel(
@@ -917,7 +943,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_virtualization(self, _: Optional[List[str]] = None) -> bool:
+    def handle_virtualization(self, _: list[str] | None = None) -> bool:
         """Show help for Docker container management."""
         console.print(
             Panel(
@@ -947,7 +973,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_mcp(self, _: Optional[List[str]] = None) -> bool:
+    def handle_mcp(self, _: list[str] | None = None) -> bool:
         """Show help for Model Context Protocol."""
         console.print(
             Panel(
@@ -967,7 +993,7 @@ class HelpCommand(Command):
                 "• [green]stdio[/green] - Standard I/O (Process)\n\n"
                 "[bold cyan]Examples:[/bold cyan]\n"
                 "• [green]/mcp load sse http://localhost:3000[/green]\n"
-                "• [green]/mcp load stdio \"npx @modelcontextprotocol/server-sqlite\"[/green]\n"
+                '• [green]/mcp load stdio "npx @modelcontextprotocol/server-sqlite"[/green]\n'
                 "• [green]/mcp add filesystem red_teamer[/green]\n"
                 "• [green]/mcp tools filesystem[/green]\n\n"
                 "[bold]Notes:[/bold]\n"
@@ -981,7 +1007,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_kill(self, _: Optional[List[str]] = None) -> bool:
+    def handle_kill(self, _: list[str] | None = None) -> bool:
         """Show help for process management."""
         console.print(
             Panel(
@@ -1008,7 +1034,7 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_commands(self, _: Optional[List[str]] = None) -> bool:
+    def handle_commands(self, _: list[str] | None = None) -> bool:
         """List all available commands."""
         console.print(
             Panel(
@@ -1021,41 +1047,61 @@ class HelpCommand(Command):
         # Create comprehensive command table
         all_commands = [
             # Agent Management
-            ("Agent Management", "yellow", [
-                ("/agent", "/a", "Manage and switch agents"),
-                ("/parallel", "/par, /p", "Configure parallel execution"),
-                ("/run", "/r", "Queue prompts for agents"),
-            ]),
+            (
+                "Agent Management",
+                "yellow",
+                [
+                    ("/agent", "/a", "Manage and switch agents"),
+                    ("/parallel", "/par, /p", "Configure parallel execution"),
+                    ("/run", "/r", "Queue prompts for agents"),
+                ],
+            ),
             # Memory & History
-            ("Memory & History", "green", [
-                ("/memory", "/mem", "Persistent memory management"),
-                ("/history", "/his", "View conversation history"),
-                ("/compact", "/cmp", "Compact conversations"),
-                ("/flush", "/clear", "Clear histories"),
-                ("/load", "/l", "Load JSONL files"),
-                ("/merge", "/mrg", "Merge agent histories"),
-            ]),
+            (
+                "Memory & History",
+                "green",
+                [
+                    ("/memory", "/mem", "Persistent memory management"),
+                    ("/history", "/his", "View conversation history"),
+                    ("/compact", "/cmp", "Compact conversations"),
+                    ("/flush", "/clear", "Clear histories"),
+                    ("/load", "/l", "Load JSONL files"),
+                    ("/merge", "/mrg", "Merge agent histories"),
+                ],
+            ),
             # Environment & Config
-            ("Environment & Config", "blue", [
-                ("/config", "/cfg", "Manage environment variables"),
-                ("/env", "/e", "Display environment"),
-                ("/workspace", "/ws", "Manage workspaces"),
-                ("/virtualization", "/virt", "Docker containers"),
-            ]),
+            (
+                "Environment & Config",
+                "blue",
+                [
+                    ("/config", "/cfg", "Manage environment variables"),
+                    ("/env", "/e", "Display environment"),
+                    ("/workspace", "/ws", "Manage workspaces"),
+                    ("/virtualization", "/virt", "Docker containers"),
+                ],
+            ),
             # Tools & Integration
-            ("Tools & Integration", "magenta", [
-                ("/mcp", "/m", "Model Context Protocol"),
-                ("/platform", "/p", "Platform features (conflicts with /parallel)"),
-                ("/shell", "/s, /$", "Execute shell commands"),
-            ]),
+            (
+                "Tools & Integration",
+                "magenta",
+                [
+                    ("/mcp", "/m", "Model Context Protocol"),
+                    ("/platform", "/p", "Platform features (conflicts with /parallel)"),
+                    ("/shell", "/s, /$", "Execute shell commands"),
+                ],
+            ),
             # Utilities
-            ("Utilities", "cyan", [
-                ("/model", "/mod", "Change AI models"),
-                ("/graph", "/g", "Visualize interactions"),
-                ("/help", "/h, /?", "Show help"),
-                ("/kill", "/k", "Terminate processes"),
-                ("/exit", "/quit, /q", "Exit CAI"),
-            ]),
+            (
+                "Utilities",
+                "cyan",
+                [
+                    ("/model", "/mod", "Change AI models"),
+                    ("/graph", "/g", "Visualize interactions"),
+                    ("/help", "/h, /?", "Show help"),
+                    ("/kill", "/k", "Terminate processes"),
+                    ("/exit", "/quit, /q", "Exit CAI"),
+                ],
+            ),
         ]
 
         for category, color, commands in all_commands:
@@ -1064,16 +1110,18 @@ class HelpCommand(Command):
             table.add_column("Command", style="cyan")
             table.add_column("Aliases", style="green")
             table.add_column("Description", style="white")
-            
+
             for cmd, aliases, desc in commands:
                 table.add_row(cmd, aliases, desc)
-            
+
             console.print(table)
 
-        console.print("\n[dim]Use /help <command> for detailed information about any command.[/dim]")
+        console.print(
+            "\n[dim]Use /help <command> for detailed information about any command.[/dim]"
+        )
         return True
 
-    def handle_quick(self, _: Optional[List[str]] = None) -> bool:
+    def handle_quick(self, _: list[str] | None = None) -> bool:
         """Show quick reference guide."""
         console.print(
             Panel(
@@ -1093,7 +1141,7 @@ class HelpCommand(Command):
             ("[cyan]/config[/cyan]", "View all settings"),
             ("[cyan]/help <topic>[/cyan]", "Get detailed help"),
         ]
-        
+
         table = Table(show_header=False, box=None)
         table.add_column(width=35)
         table.add_column()
@@ -1104,23 +1152,32 @@ class HelpCommand(Command):
         # Common workflows
         console.print("\n[bold green]Common Workflows:[/bold green]")
         workflows = [
-            ("[bold]Start a CTF:[/bold]", [
-                "/agent select one_tool_agent",
-                "/workspace set ctf_name",
-                "Describe the challenge...",
-            ]),
-            ("[bold]Bug Bounty:[/bold]", [
-                "/agent select bug_bounter",
-                "/model claude-3-7-sonnet-20250219",
-                "Test https://example.com for vulnerabilities",
-            ]),
-            ("[bold]Parallel Recon:[/bold]", [
-                "/parallel add red_teamer",
-                "/parallel add network_traffic_analyzer",
-                "Scan 192.168.1.0/24",
-            ]),
+            (
+                "[bold]Start a CTF:[/bold]",
+                [
+                    "/agent select one_tool_agent",
+                    "/workspace set ctf_name",
+                    "Describe the challenge...",
+                ],
+            ),
+            (
+                "[bold]Bug Bounty:[/bold]",
+                [
+                    "/agent select bug_bounter",
+                    "/model claude-3-7-sonnet-20250219",
+                    "Test https://example.com for vulnerabilities",
+                ],
+            ),
+            (
+                "[bold]Parallel Recon:[/bold]",
+                [
+                    "/parallel add red_teamer",
+                    "/parallel add network_traffic_analyzer",
+                    "Scan 192.168.1.0/24",
+                ],
+            ),
         ]
-        
+
         for title, steps in workflows:
             console.print(f"\n  {title}")
             for step in steps:
@@ -1135,7 +1192,7 @@ class HelpCommand(Command):
             ("[cyan]Ctrl+L[/cyan]", "Clear screen"),
             ("[cyan]Ctrl+D[/cyan]", "Exit CAI"),
         ]
-        
+
         table = Table(show_header=False, box=None)
         table.add_column(width=20)
         table.add_column()
@@ -1150,13 +1207,13 @@ class HelpCommand(Command):
             "Set CAI_PARALLEL=3 to always run 3 agents",
             "Check /mcp for external tool integration",
         ]
-        
+
         console.print("\n")
         console.print(create_notes_panel(tips, "💡 Pro Tips", "cyan"))
-        
+
         return True
 
-    def handle_merge_help(self, _: Optional[List[str]] = None) -> bool:
+    def handle_merge_help(self, _: list[str] | None = None) -> bool:
         """Show help for merge command."""
         console.print(
             Panel(
@@ -1196,9 +1253,10 @@ class HelpCommand(Command):
         )
         return True
 
-    def handle_quickstart(self, _: Optional[List[str]] = None) -> bool:
+    def handle_quickstart(self, _: list[str] | None = None) -> bool:
         """Show quickstart guide by calling the quickstart command."""
         from cai.repl.commands.base import handle_command
+
         return handle_command("/quickstart")
 
 

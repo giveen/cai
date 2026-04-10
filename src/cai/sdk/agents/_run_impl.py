@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import hashlib
 import inspect
 import os
+from collections import deque
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
@@ -64,8 +66,6 @@ from .tracing import (
     trace,
 )
 from .util import _coro, _error_tracing
-import hashlib
-from collections import deque
 
 if TYPE_CHECKING:
     from .run import RunConfig
@@ -87,13 +87,13 @@ _SCREENSHOT_ORDER = deque(maxlen=200)
 
 def truncate_output(output: Any, max_length: int = 10000) -> str:
     """Truncate tool output if it exceeds max_length characters.
-    
+
     Shows first 5000 and last 5000 characters with TRUNCATED in the middle.
     """
     output_str = str(output)
     if len(output_str) <= max_length:
         return output_str
-    
+
     # Show first 5000 and last 5000 characters
     first_part = output_str[:5000]
     last_part = output_str[-5000:]
@@ -249,18 +249,16 @@ class RunImpl:
                 config=run_config,
             )
         )
-        
+
         function_results = []
         computer_results = []
         interrupt_exception = None
-        
+
         try:
-            function_results, computer_results = await asyncio.gather(
-                function_task, computer_task
-            )
+            function_results, computer_results = await asyncio.gather(function_task, computer_task)
         except (KeyboardInterrupt, asyncio.CancelledError) as e:
             interrupt_exception = e
-            
+
             # Try to get partial results from the tasks
             if function_task.done() and not function_task.cancelled():
                 try:
@@ -297,7 +295,7 @@ class RunImpl:
                         ),
                     )
                     function_results.append(result)
-                    
+
             if computer_task.done() and not computer_task.cancelled():
                 try:
                     computer_results = computer_task.result()
@@ -305,10 +303,10 @@ class RunImpl:
                     computer_results = []
             else:
                 computer_results = []
-            
+
         new_step_items.extend([result.run_item for result in function_results])
         new_step_items.extend(computer_results)
-        
+
         # Re-raise the interruption after ensuring results are added
         if interrupt_exception:
             raise interrupt_exception
@@ -359,10 +357,16 @@ class RunImpl:
 
         # Now we can check if the model also produced a final output
         message_items = [item for item in new_step_items if isinstance(item, MessageOutputItem)]
+        reasoning_items = [item for item in new_step_items if isinstance(item, ReasoningItem)]
 
         # We'll use the last content output as the final output
         potential_final_output_text = (
             ItemHelpers.extract_last_text(message_items[-1].raw_item) if message_items else None
+        )
+        potential_reasoning_output_text = (
+            ItemHelpers.text_reasoning_output(reasoning_items[-1]).strip()
+            if reasoning_items
+            else ""
         )
 
         # There are two possibilities that lead to a final output:
@@ -389,7 +393,7 @@ class RunImpl:
                 new_response=new_response,
                 pre_step_items=pre_step_items,
                 new_step_items=new_step_items,
-                final_output=potential_final_output_text or "",
+                final_output=potential_final_output_text or potential_reasoning_output_text,
                 hooks=hooks,
                 context_wrapper=context_wrapper,
             )
@@ -574,7 +578,7 @@ class RunImpl:
                         results.append("Tool execution interrupted")
                 else:
                     results.append("Tool execution interrupted")
-            
+
             # Re-raise the exception after collecting results
             raise e
 
@@ -584,7 +588,9 @@ class RunImpl:
                 output=result,
                 run_item=ToolCallOutputItem(
                     output=result,
-                    raw_item=ItemHelpers.tool_call_output_item(tool_run.tool_call, truncate_output(result)),
+                    raw_item=ItemHelpers.tool_call_output_item(
+                        tool_run.tool_call, truncate_output(result)
+                    ),
                     agent=agent,
                 ),
             )

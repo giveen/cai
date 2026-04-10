@@ -4,9 +4,11 @@ Provides helper functions to compute host and container workspace
 paths based on `CAI_WORKSPACE` and `CAI_WORKSPACE_DIR` environment
 variables. Behaves identically to the original implementations.
 """
+
 from __future__ import annotations
 
 import os
+
 from wasabi import color  # pylint: disable=import-error
 
 
@@ -26,7 +28,7 @@ def _get_workspace_dir() -> str:
 
     # If a workspace name is provided, append it to the base directory
     if workspace_name:
-        if not all(c.isalnum() or c in ['_', '-'] for c in workspace_name):
+        if not all(c.isalnum() or c in ["_", "-"] for c in workspace_name):
             print(
                 color(
                     f"Invalid CAI_WORKSPACE name '{workspace_name}'. Using directory '{base_dir}' instead.",
@@ -59,7 +61,7 @@ def _get_container_workspace_path() -> str:
     """Determines the target workspace path inside the container."""
     workspace_name = os.getenv("CAI_WORKSPACE")
     if workspace_name:
-        if not all(c.isalnum() or c in ['_', '-'] for c in workspace_name):
+        if not all(c.isalnum() or c in ["_", "-"] for c in workspace_name):
             print(
                 color(
                     f"Invalid CAI_WORKSPACE name '{workspace_name}' for container. Using '/workspace'.",

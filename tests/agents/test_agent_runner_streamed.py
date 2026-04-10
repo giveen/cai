@@ -23,8 +23,6 @@ from cai.sdk.agents import (
 from cai.sdk.agents.items import RunItem
 from cai.sdk.agents.run import RunConfig
 from cai.sdk.agents.stream_events import AgentUpdatedStreamEvent
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
@@ -33,6 +31,7 @@ from tests.core.test_responses import (
     get_text_input_item,
     get_text_message,
 )
+from tests.fake_model import FakeModel
 
 
 @pytest.mark.asyncio
@@ -274,9 +273,9 @@ async def test_handoff_filters():
 
     assert result.final_output == "last"
     assert len(result.raw_responses) == 2, "should have two model responses"
-    assert len(result.to_input_list()) == 2, (
-        "should only have 2 inputs: orig input and last message"
-    )
+    assert (
+        len(result.to_input_list()) == 2
+    ), "should only have 2 inputs: orig input and last message"
 
 
 @pytest.mark.asyncio
@@ -678,9 +677,9 @@ async def test_streaming_events():
         f"Expected events were: {expected_item_type_map}, got {event_counts}"
     )
 
-    assert len(item_data) == total_expected_item_count, (
-        f"should have {total_expected_item_count} run items"
-    )
+    assert (
+        len(item_data) == total_expected_item_count
+    ), f"should have {total_expected_item_count} run items"
     assert len(agent_data) == 2, "should have 2 agent updated events"
     assert agent_data[0].new_agent == agent_2, "should have started with agent_2"
     assert agent_data[1].new_agent == agent_1, "should have handed off to agent_1"

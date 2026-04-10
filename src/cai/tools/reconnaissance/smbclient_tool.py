@@ -5,9 +5,8 @@ This module wraps the implementations in
 three function tools backed by the same safe helpers (guardrails,
 temporary auth file support, etc.).
 """
-from __future__ import annotations
 
-from typing import List, Optional
+from __future__ import annotations
 
 from cai.sdk.agents import function_tool
 from cai.tools.reconnaissance.data_exfiltration import smbclient as _smb_impl
@@ -15,9 +14,9 @@ from cai.tools.reconnaissance.data_exfiltration import smbclient as _smb_impl
 
 async def _list_shares_impl(
     host: str,
-    username: Optional[str] = None,
-    password: Optional[str] = None,
-    domain: Optional[str] = None,
+    username: str | None = None,
+    password: str | None = None,
+    domain: str | None = None,
     port: int = 445,
     use_auth_file: bool = False,
     timeout: int = 30,
@@ -40,13 +39,13 @@ async def _list_shares_impl(
 async def _run_smbclient_impl(
     host: str,
     share: str,
-    username: Optional[str] = None,
-    password: Optional[str] = None,
-    domain: Optional[str] = None,
+    username: str | None = None,
+    password: str | None = None,
+    domain: str | None = None,
     port: int = 445,
-    commands: Optional[str] = None,
+    commands: str | None = None,
     use_auth_file: bool = False,
-    extra_args: Optional[List[str]] = None,
+    extra_args: list[str] | None = None,
     timeout: int = 60,
 ) -> str:
     """Run `smbclient` commands against a host/share.
@@ -73,9 +72,9 @@ async def _download_file_impl(
     share: str,
     remote_path: str,
     local_path: str,
-    username: Optional[str] = None,
-    password: Optional[str] = None,
-    domain: Optional[str] = None,
+    username: str | None = None,
+    password: str | None = None,
+    domain: str | None = None,
     port: int = 445,
     use_auth_file: bool = False,
     timeout: int = 120,

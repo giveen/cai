@@ -1,20 +1,32 @@
 #!/usr/bin/env python3
-import paramiko
-import tempfile
 import os
+import re
 import shutil
-import time
-import socket
 import sys
+import tempfile
 import threading
+import time
 from contextlib import contextmanager
+
+import paramiko
+
 from cai.sdk.agents import function_tool
+
+# Network interface names: letters, digits, hyphens, dots, and colon for VLANs
+# e.g. eth0, ens3, wlan0, bond0.1, eth0:0
+_INTERFACE_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9@.\-:]{0,15}$")
+
+# tcpdump BPF filter: allow only printable ASCII, no shell metacharacters
+_FILTER_METACHAR_RE = re.compile(r"[;&|`$<>()\{\}\[\]\n\r\\]")
 
 # Stores (tmp_dir, pipe_thread) for active captures, keyed by fifo_path
 _CAPTURE_STATE: dict = {}
 
+
 @function_tool
-def capture_remote_traffic(ip, username, password, interface, capture_filter="", port=22, timeout=10):
+def capture_remote_traffic(
+    ip, username, password, interface, capture_filter="", port=22, timeout=10
+):
     """
     Captures network traffic from a remote VM via tcpdump over SSH.
 
@@ -38,6 +50,18 @@ def capture_remote_traffic(ip, username, password, interface, capture_filter="",
         ConnectionError: If the SSH connection fails.
         RuntimeError: If traffic capture cannot be started.
     """
+    # Validate interface name to prevent remote shell injection
+    if not interface or not _INTERFACE_RE.match(interface):
+        raise ValueError(
+            f"Invalid interface name '{interface}': only alphanumeric, hyphens, "
+            "dots, and colons are allowed (e.g. eth0, ens3, bond0.1)."
+        )
+    # Validate BPF filter expression — no shell metacharacters
+    if capture_filter and _FILTER_METACHAR_RE.search(capture_filter):
+        raise ValueError(
+            f"Invalid capture_filter '{capture_filter}': shell metacharacters are not allowed."
+        )
+
     client = None
     tmp_dir = None
     fifo_path = None
@@ -49,7 +73,7 @@ def capture_remote_traffic(ip, username, password, interface, capture_filter="",
         print(f"Connecting to {ip}:{port} as {username}...")
         client.connect(ip, port=port, username=username, password=password, timeout=timeout)
 
-        # Verify interface exists
+        # Verify interface exists — interface name already validated above
         _, stdout, stderr = client.exec_command(f"ip link show {interface}")
         if stdout.channel.recv_exit_status() != 0:
             error = stderr.read().decode().strip()
@@ -86,7 +110,7 @@ def capture_remote_traffic(ip, username, password, interface, capture_filter="",
 
         def pipe_ssh_to_fifo():
             try:
-                with open(fifo_path, 'wb') as fifo:
+                with open(fifo_path, "wb") as fifo:
                     while True:
                         data = stdout.read(4096)
                         if not data:
@@ -116,7 +140,7 @@ def capture_remote_traffic(ip, username, password, interface, capture_filter="",
         raise ConnectionError("Authentication failed. Check username and password.")
     except paramiko.SSHException as e:
         raise ConnectionError(f"SSH connection error: {str(e)}")
-    except socket.timeout:
+    except TimeoutError:
         raise ConnectionError(f"Connection timed out after {timeout} seconds")
     except Exception as e:
         raise RuntimeError(f"Unexpected error: {str(e)}")
@@ -143,8 +167,9 @@ def remote_capture_session(ip, username, password, interface, capture_filter="",
     """
     fifo_path = None
     try:
-        fifo_path = capture_remote_traffic(ip, username, password, interface,
-                                           capture_filter=capture_filter, port=port)
+        fifo_path = capture_remote_traffic(
+            ip, username, password, interface, capture_filter=capture_filter, port=port
+        )
         yield fifo_path
     finally:
         if fifo_path:
@@ -172,20 +197,23 @@ def remote_capture_session_tool(ip, username, password, interface, capture_filte
     """
     # Delegate to the existing capture_remote_traffic helper which is itself
     # a tool-friendly function and returns the FIFO path when successful.
-    return capture_remote_traffic(ip, username, password, interface, capture_filter=capture_filter, port=port)
+    return capture_remote_traffic(
+        ip, username, password, interface, capture_filter=capture_filter, port=port
+    )
+
 
 if __name__ == "__main__":
     # Example usage
     if len(sys.argv) < 5:
         print("Usage: capture_traffic.py <ip> <username> <password> <interface> [filter]")
         sys.exit(1)
-    
+
     ip = sys.argv[1]
     username = sys.argv[2]
     password = sys.argv[3]
     interface = sys.argv[4]
     capture_filter = sys.argv[5] if len(sys.argv) > 5 else ""
-    
+
     try:
         with remote_capture_session(ip, username, password, interface, capture_filter) as fifo_path:
             # Keep the script running until interrupted

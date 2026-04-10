@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeAlias, cast
 
-from typing_extensions import TypeAlias, TypedDict
-
+from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
     from .guardrail import InputGuardrail, OutputGuardrail

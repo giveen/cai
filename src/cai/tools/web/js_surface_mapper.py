@@ -17,13 +17,11 @@ import re
 import time
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests  # type: ignore
 
 from cai.sdk.agents import function_tool
-
 
 _FULL_URL_RE = re.compile(r"https?://[^\s\"'<>\\)]+")
 _WS_URL_RE = re.compile(r"wss?://[^\s\"'<>\\)]+")
@@ -47,34 +45,52 @@ _PATH_ENDPOINT_RE = re.compile(
 _SOURCE_MAP_RE = re.compile(r"^\s*//#\s*sourceMappingURL\s*=\s*(\S+)\s*$", re.MULTILINE)
 
 _HIGH_VALUE_STRINGS = [
-    "admin", "entitlement", "featureflag", "feature_flag", "flag", "debug",
-    "internal", "staging", "preview", "billing", "invoice", "payment", "export",
-    "report", "impersonate", "impersonation", "role", "permission", "rbac",
-    "tenant", "organization", "workspace",
+    "admin",
+    "entitlement",
+    "featureflag",
+    "feature_flag",
+    "flag",
+    "debug",
+    "internal",
+    "staging",
+    "preview",
+    "billing",
+    "invoice",
+    "payment",
+    "export",
+    "report",
+    "impersonate",
+    "impersonation",
+    "role",
+    "permission",
+    "rbac",
+    "tenant",
+    "organization",
+    "workspace",
 ]
 
 
 @dataclass
 class _ExtractionResult:
-    origins: Set[str] = field(default_factory=set)
-    endpoints: Set[str] = field(default_factory=set)
-    graphql_endpoints: Set[str] = field(default_factory=set)
-    graphql_ops: Set[str] = field(default_factory=set)
-    persisted_hashes: Set[str] = field(default_factory=set)
-    ws_endpoints: Set[str] = field(default_factory=set)
-    high_value: Set[str] = field(default_factory=set)
+    origins: set[str] = field(default_factory=set)
+    endpoints: set[str] = field(default_factory=set)
+    graphql_endpoints: set[str] = field(default_factory=set)
+    graphql_ops: set[str] = field(default_factory=set)
+    persisted_hashes: set[str] = field(default_factory=set)
+    ws_endpoints: set[str] = field(default_factory=set)
+    high_value: set[str] = field(default_factory=set)
 
 
 class _AssetHTMLParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
-        self.script_srcs: List[str] = []
-        self.inline_scripts: List[str] = []
+        self.script_srcs: list[str] = []
+        self.inline_scripts: list[str] = []
         self._in_script: bool = False
-        self._current_inline: List[str] = []
-        self.link_hrefs: List[str] = []
+        self._current_inline: list[str] = []
+        self.link_hrefs: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {k.lower(): (v or "") for k, v in attrs}
         if tag.lower() == "script":
             src = attrs_dict.get("src", "").strip()
@@ -122,12 +138,12 @@ def _origin(url: str) -> str:
 
 def _fetch_text(
     url: str,
-    headers: Optional[Dict[str, str]],
-    cookies: Optional[Dict[str, str]],
+    headers: dict[str, str] | None,
+    cookies: dict[str, str] | None,
     timeout: int,
     max_bytes: int,
     verify: bool = True,
-) -> Tuple[str, Optional[str]]:
+) -> tuple[str, str | None]:
     """Fetch URL content, bounded by *max_bytes* and a total wall-clock deadline.
 
     Returns (text, None) on success, or ('', error_string) on failure.
@@ -136,8 +152,12 @@ def _fetch_text(
     deadline = time.monotonic() + timeout
     try:
         resp = requests.get(
-            url, headers=headers, cookies=cookies,
-            timeout=timeout, verify=verify, stream=True,
+            url,
+            headers=headers,
+            cookies=cookies,
+            timeout=timeout,
+            verify=verify,
+            stream=True,
         )
         resp.raise_for_status()
         data = bytearray()
@@ -212,9 +232,9 @@ def _merge_result(target: _ExtractionResult, src: _ExtractionResult) -> None:
 @function_tool(strict_mode=False)
 def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
     base_url: str,
-    entry_paths: Optional[List[str]] = None,
-    headers: Optional[Dict[str, str]] = None,
-    cookies: Optional[Dict[str, str]] = None,
+    entry_paths: list[str] | None = None,
+    headers: dict[str, str] | None = None,
+    cookies: dict[str, str] | None = None,
     same_origin_only: bool = True,
     max_assets: int = 30,
     max_bytes_per_asset: int = 2_000_000,
@@ -247,16 +267,18 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
     base_origin = _origin(base_url)
     entry_paths = entry_paths or ["/"]
 
-    assets: List[str] = []
-    inline_sources: List[Tuple[str, str]] = []
-    errors: List[str] = []
-    evidence: Dict[str, Set[str]] = {}
-    sourcemaps_info: List[Dict[str, object]] = []
+    assets: list[str] = []
+    inline_sources: list[tuple[str, str]] = []
+    errors: list[str] = []
+    evidence: dict[str, set[str]] = {}
+    sourcemaps_info: list[dict[str, object]] = []
 
     # Fetch entry HTML pages
     for path in entry_paths:
         entry_url = path if path.startswith("http") else urljoin(base_url + "/", path.lstrip("/"))
-        html, err = _fetch_text(entry_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
+        html, err = _fetch_text(
+            entry_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl
+        )
         if err:
             errors.append(err)
             continue
@@ -265,7 +287,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
 
         # Inline script content
         for idx, script in enumerate(parser.inline_scripts):
-            inline_sources.append((f"{entry_url}#inline{idx+1}", script))
+            inline_sources.append((f"{entry_url}#inline{idx + 1}", script))
 
         # External JS assets
         for src in parser.script_srcs + parser.link_hrefs:
@@ -273,8 +295,8 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
             assets.append(full)
 
     # De-dup assets and apply limits
-    seen: Set[str] = set()
-    dedup_assets: List[str] = []
+    seen: set[str] = set()
+    dedup_assets: list[str] = []
     for a in assets:
         if a in seen:
             continue
@@ -294,7 +316,9 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
 
     # Fetch JS assets and extract
     for asset_url in dedup_assets:
-        js, err = _fetch_text(asset_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
+        js, err = _fetch_text(
+            asset_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl
+        )
         if err:
             errors.append(err)
             continue
@@ -315,21 +339,27 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
         if include_sourcemaps:
             for sm in _SOURCE_MAP_RE.findall(js):
                 sm_url = sm if sm.startswith("http") else urljoin(asset_url, sm)
-                sm_text, sm_err = _fetch_text(sm_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl)
+                sm_text, sm_err = _fetch_text(
+                    sm_url, headers, cookies, timeout, max_bytes_per_asset, verify=verify_ssl
+                )
                 if sm_err:
                     errors.append(sm_err)
                     continue
                 try:
                     sm_json = json.loads(sm_text)
                     sources_content = sm_json.get("sourcesContent") or []
-                    sourcemaps_info.append({
-                        "url": sm_url,
-                        "sourcesContent": bool(sources_content),
-                        "source_count": len(sm_json.get("sources", []) or []),
-                    })
+                    sourcemaps_info.append(
+                        {
+                            "url": sm_url,
+                            "sourcesContent": bool(sources_content),
+                            "source_count": len(sm_json.get("sources", []) or []),
+                        }
+                    )
                     # Extract from sourcesContent (bounded)
                     for idx, src in enumerate(sources_content[:50]):
-                        res_map = _extract_from_text(src or "", f"{sm_url}#src{idx+1}", base_origin)
+                        res_map = _extract_from_text(
+                            src or "", f"{sm_url}#src{idx + 1}", base_origin
+                        )
                         _merge_result(extraction, res_map)
                         for ep in res_map.endpoints:
                             evidence.setdefault(ep, set()).add(sm_url)
@@ -337,7 +367,7 @@ def js_surface_mapper(  # pylint: disable=too-many-arguments,too-many-locals
                     errors.append(f"{sm_url} -> sourcemap parse error: {exc}")
 
     # Build output
-    endpoints_by_origin: Dict[str, List[str]] = {}
+    endpoints_by_origin: dict[str, list[str]] = {}
     for ep in sorted(extraction.endpoints):
         endpoints_by_origin.setdefault(base_origin, []).append(ep)
 

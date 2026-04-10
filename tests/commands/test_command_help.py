@@ -270,9 +270,7 @@ class TestHelpCommand:
         mock_platform_manager.get_platform.return_value = mock_platform
 
         with patch("cai.repl.commands.help.HAS_PLATFORM_EXTENSIONS", True):
-            with patch(
-                "cai.is_caiextensions_platform_available", return_value=True
-            ):
+            with patch("cai.is_caiextensions_platform_available", return_value=True):
                 # Mock the platform manager without importing caiextensions
                 with patch(
                     "sys.modules",
@@ -355,9 +353,7 @@ class TestHelpCommand:
     def test_handle_platform_with_import_error(self, help_command, mock_console):
         """Test platform help with import errors."""
         with patch("cai.repl.commands.help.HAS_PLATFORM_EXTENSIONS", True):
-            with patch(
-                "cai.is_caiextensions_platform_available", return_value=False
-            ):
+            with patch("cai.is_caiextensions_platform_available", return_value=False):
                 result = help_command.handle_help_platform_manager()
 
         assert result is True
@@ -369,9 +365,7 @@ class TestHelpCommand:
         mock_platform_manager.list_platforms.return_value = []
 
         with patch("cai.repl.commands.help.HAS_PLATFORM_EXTENSIONS", True):
-            with patch(
-                "cai.is_caiextensions_platform_available", return_value=True
-            ):
+            with patch("cai.is_caiextensions_platform_available", return_value=True):
                 with patch(
                     "sys.modules",
                     {"caiextensions.platform.base": Mock(platform_manager=mock_platform_manager)},
@@ -381,14 +375,12 @@ class TestHelpCommand:
         assert result is True
         assert mock_console.print.call_count >= 1
         # Check that one of the print calls contains the expected message
-        found_message = False
         all_content = []
         for call in mock_console.print.call_args_list:
             call_args = call[0][0]
             content = str(call_args.renderable if hasattr(call_args, "renderable") else call_args)
             all_content.append(content)
             if "No platforms registered" in content or "no platforms" in content.lower():
-                found_message = True
                 break
         # The implementation might have changed, so let's just check that it printed something reasonable
         assert len(all_content) > 0, "No content was printed"

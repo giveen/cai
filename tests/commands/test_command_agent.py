@@ -67,7 +67,7 @@ class TestAgentCommand:
             # Configure properties that need len() to work
             mock_agent.functions = []  # Empty list instead of Mock
             mock_agent.handoffs = []  # Empty list instead of Mock
-            
+
             # Explicitly set _pattern to None to avoid mock pattern issues
             mock_agent._pattern = None
             mock_agent.tools = []  # Empty list instead of Mock
@@ -182,7 +182,7 @@ class TestAgentCommand:
             del os.environ["CAI_AGENT_TYPE"]
 
         result = agent_command.handle_select(["2"])
-        
+
         # The command may fail due to the locals() check in the source code
         # If it fails, that's actually the current behavior we're testing
         if result is False:
@@ -262,7 +262,7 @@ class TestAgentCommand:
         mock_get_agents.return_value = mock_agents
         os.environ["CAI_AGENT_TYPE"] = "blueteam_agent"
         os.environ["CAI_PARALLEL"] = "1"  # Ensure single agent mode
-        
+
         result = agent_command.handle_current([])
         assert result is True
 
@@ -272,19 +272,19 @@ class TestAgentCommand:
         mock_get_agents.return_value = mock_agents
         os.environ["CAI_AGENT_TYPE"] = "nonexistent_agent"
         os.environ["CAI_PARALLEL"] = "1"
-        
+
         result = agent_command.handle_current([])
         assert result is False
 
     @patch("cai.repl.commands.agent.get_available_agents")
     def test_handle_current_parallel_mode(self, mock_get_agents, agent_command):
         """Test handle_current for parallel mode."""
-        from cai.repl.commands.parallel import ParallelConfig, PARALLEL_CONFIGS
-        
+        from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
+
         # Save original configs
         original_configs = PARALLEL_CONFIGS[:]
         PARALLEL_CONFIGS.clear()
-        
+
         try:
             # Set up parallel configs
             config1 = ParallelConfig("agent1", "gpt-4")
@@ -292,35 +292,35 @@ class TestAgentCommand:
             config2 = ParallelConfig("agent2", "claude")
             config2.id = "P2"
             PARALLEL_CONFIGS.extend([config1, config2])
-            
+
             # Create mock agents with proper attributes
             agent1_mock = Mock()
             agent1_mock.name = "Agent One"
             agent1_mock.model = "default"
-            
+
             agent2_mock = Mock()
             agent2_mock.name = "Agent Two"
             agent2_mock.model = "default"
-            
+
             # Create pattern pseudo-agent with proper structure
             mock_pattern = Mock()
             mock_pattern.pattern_type = "parallel"
             mock_pattern.description = "Test Pattern"
             mock_pattern.configs = [config1, config2]  # Use actual list
-            
+
             mock_pattern_agent = Mock()
             mock_pattern_agent._pattern = mock_pattern
-            
+
             mock_agents = {
                 "agent1": agent1_mock,
                 "agent2": agent2_mock,
-                "test_pattern": mock_pattern_agent
+                "test_pattern": mock_pattern_agent,
             }
             mock_get_agents.return_value = mock_agents
-            
+
             # Set parallel mode
             os.environ["CAI_PARALLEL"] = "2"
-            
+
             result = agent_command.handle_current([])
             assert result is True
         finally:
@@ -469,7 +469,9 @@ class TestAgentCommandIntegration:
     @patch("cai.repl.commands.agent.get_agent_module")
     @patch("cai.repl.commands.agent.visualize_agent_graph")
     @patch("cai.agents.get_agent_by_name")
-    def test_full_workflow(self, mock_get_agent_by_name, mock_visualize, mock_get_module, mock_get_agents):
+    def test_full_workflow(
+        self, mock_get_agent_by_name, mock_visualize, mock_get_module, mock_get_agents
+    ):
         """Test a complete workflow of listing, selecting, and getting info."""
         # Setup mock agents
         agents = {}
@@ -496,13 +498,13 @@ class TestAgentCommandIntegration:
 
         mock_get_agents.return_value = agents
         mock_get_module.return_value = "test_module"
-        
+
         # Configure get_agent_by_name to return the appropriate mock agent
         def get_agent_side_effect(name, agent_id=None):
             if name in agents:
                 return agents[name]
             raise ValueError(f"Invalid agent type: {name}")
-        
+
         mock_get_agent_by_name.side_effect = get_agent_side_effect
 
         cmd = AgentCommand()

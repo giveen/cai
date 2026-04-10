@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, Union, overload
+from typing import TYPE_CHECKING, Any, Generic, Union, overload
 
 from typing_extensions import TypeVar
 
 from .exceptions import UserError
+
 if TYPE_CHECKING:
     from .items import TResponseInputItem
 else:
@@ -199,13 +200,15 @@ _InputGuardrailFuncAsync = Callable[
 @overload
 def input_guardrail(
     func: _InputGuardrailFuncSync[TContext_co],
-) -> InputGuardrail[TContext_co]: ...
+) -> InputGuardrail[TContext_co]:
+    ...
 
 
 @overload
 def input_guardrail(
     func: _InputGuardrailFuncAsync[TContext_co],
-) -> InputGuardrail[TContext_co]: ...
+) -> InputGuardrail[TContext_co]:
+    ...
 
 
 @overload
@@ -215,7 +218,8 @@ def input_guardrail(
 ) -> Callable[
     [_InputGuardrailFuncSync[TContext_co] | _InputGuardrailFuncAsync[TContext_co]],
     InputGuardrail[TContext_co],
-]: ...
+]:
+    ...
 
 
 def input_guardrail(
@@ -268,13 +272,15 @@ _OutputGuardrailFuncAsync = Callable[
 @overload
 def output_guardrail(
     func: _OutputGuardrailFuncSync[TContext_co],
-) -> OutputGuardrail[TContext_co]: ...
+) -> OutputGuardrail[TContext_co]:
+    ...
 
 
 @overload
 def output_guardrail(
     func: _OutputGuardrailFuncAsync[TContext_co],
-) -> OutputGuardrail[TContext_co]: ...
+) -> OutputGuardrail[TContext_co]:
+    ...
 
 
 @overload
@@ -284,7 +290,8 @@ def output_guardrail(
 ) -> Callable[
     [_OutputGuardrailFuncSync[TContext_co] | _OutputGuardrailFuncAsync[TContext_co]],
     OutputGuardrail[TContext_co],
-]: ...
+]:
+    ...
 
 
 def output_guardrail(

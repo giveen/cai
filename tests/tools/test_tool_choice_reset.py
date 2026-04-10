@@ -2,9 +2,8 @@ import pytest
 
 from cai.sdk.agents import Agent, ModelSettings, Runner
 from cai.sdk.agents._run_impl import AgentToolUseTracker, RunImpl
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import get_function_tool, get_function_tool_call, get_text_message
+from tests.fake_model import FakeModel
 
 
 class TestToolChoiceReset:
@@ -86,16 +85,16 @@ class TestToolChoiceReset:
         # First run should work correctly and preserve tool_choice
         result1 = await Runner.run(agent, "first run")
         assert result1.final_output == "First run response"
-        assert fake_model.last_turn_args["model_settings"].tool_choice == "required", (
-            "tool_choice should stay required"
-        )
+        assert (
+            fake_model.last_turn_args["model_settings"].tool_choice == "required"
+        ), "tool_choice should stay required"
 
         # Second run should also work correctly with tool_choice still required
         result2 = await Runner.run(agent, "second run")
         assert result2.final_output == "Second run response"
-        assert fake_model.last_turn_args["model_settings"].tool_choice == "required", (
-            "tool_choice should stay required"
-        )
+        assert (
+            fake_model.last_turn_args["model_settings"].tool_choice == "required"
+        ), "tool_choice should stay required"
 
     @pytest.mark.asyncio
     async def test_required_with_stop_at_tool_name(self):

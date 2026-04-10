@@ -1,17 +1,18 @@
 """
- Here are the tools for netcat command
+Here are the tools for netcat command
 """
-import tempfile
-import os
 
-from cai.tools.common import run_command   # pylint: disable=import-error
+import os
+import tempfile
+
 from cai.sdk.agents import function_tool
+from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.tools.validation import (
     contains_shell_metacharacters,
-    is_valid_host,
     has_disallowed_nc_flags,
+    is_valid_host,
 )  # pylint: disable=import-error
-from cai.tools import validation  # pylint: disable=import-error
 
 
 def _validate_netcat_input(args: str, host: str, port: int, data: str):
@@ -43,7 +44,7 @@ def _validate_netcat_input(args: str, host: str, port: int, data: str):
 
 
 @function_tool
-def netcat(host: str, port: int, data: str = '', args: str = '', timeout: int = 10) -> str:
+def netcat(host: str, port: int, data: str = "", args: str = "", timeout: int = 10) -> str:
     """
     Connect to a host:port using netcat (nc) with input validation.
 
@@ -74,15 +75,15 @@ def netcat(host: str, port: int, data: str = '', args: str = '', timeout: int = 
     try:
         if data:
             # Write payload to a temporary file in a safe manner
-            with tempfile.NamedTemporaryFile(delete=False, prefix='cai_nc_', mode='wb') as tf:
+            with tempfile.NamedTemporaryFile(delete=False, prefix="cai_nc_", mode="wb") as tf:
                 tmp_path = tf.name
-                tf.write(data.encode('utf-8', errors='replace'))
+                tf.write(data.encode("utf-8", errors="replace"))
 
             # Use input redirection from the temporary file (tmp_path is safe)
-            command = f'nc -w 3 {host_s} {port_i} {args} < {tmp_path}'
+            command = f"nc -w 3 {host_s} {port_i} {args} < {tmp_path}"
         else:
             # No data: ensure nc gets EOF immediately
-            command = f'nc -w 3 {host_s} {port_i} {args} < /dev/null'
+            command = f"nc -w 3 {host_s} {port_i} {args} < /dev/null"
 
         # Global guardrails
         guard_err = validation.validate_command_guardrails(command)

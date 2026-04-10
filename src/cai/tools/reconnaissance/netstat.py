@@ -3,23 +3,22 @@
 Netstat tool
 """
 
-from cai.tools.common import run_command   # pylint: disable=import-error
 from cai.sdk.agents import function_tool
-
-from cai.tools.validation import validate_args_no_injection  # pylint: disable=import-error
 from cai.tools import validation  # pylint: disable=import-error
+from cai.tools.common import run_command  # pylint: disable=import-error
+from cai.tools.validation import validate_args_no_injection  # pylint: disable=import-error
 
 
 def _validate_netstat_input(args: str):
     """Return an error string if inputs are unsafe, else None."""
-    err = validate_args_no_injection(args, 'args', max_length=256)
+    err = validate_args_no_injection(args, "args", max_length=256)
     if err:
         return err
     return None
 
 
 @function_tool
-def netstat(args: str = '', timeout: int = 5) -> str:
+def netstat(args: str = "", timeout: int = 5) -> str:
     """
     netstat tool to list listening ports and associated programs.
 
@@ -39,7 +38,7 @@ def netstat(args: str = '', timeout: int = 5) -> str:
     if err:
         return err
 
-    base = 'netstat -tuln'
+    base = "netstat -tuln"
     command = f"{base} {args.strip()}" if args else base
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:

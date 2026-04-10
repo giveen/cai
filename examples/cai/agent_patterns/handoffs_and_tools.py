@@ -1,16 +1,17 @@
-""" 
+"""
 This example demonstrates how to use handoffs and tools together
 
 """
 
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
-from cai.sdk.agents import handoff, function_tool, trace
-from cai.sdk.agents import Runner
-from cai.tools.common import run_command
-from cai.sdk.agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
-import os
 import asyncio
+import os
+
+from openai import AsyncOpenAI
+
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, Runner, function_tool, handoff, trace
+from cai.sdk.agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
+from cai.tools.common import run_command
+
 
 @function_tool
 def execute_cli_command(command: str) -> str:
@@ -27,9 +28,9 @@ flag_discriminator = Agent(
     handoff_description="Specialized agent in determining whether the content corresponds to the flag of the CTF challenge",
     handoffs=[],
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:72b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:72b"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )
 
 # Create the Bash Agent (can hand off to Flag Discriminator)
@@ -44,9 +45,9 @@ bash_agent = Agent(
     handoffs=[handoff(flag_discriminator)],
     handoff_description="Specialized agent in Bash commands and Linux operations",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )
 
 # Create the Crypto Agent
@@ -59,9 +60,9 @@ crypto_agent = Agent(
     handoffs=[],
     handoff_description="Specialized agent in cryptography and codebreaking",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )
 
 # Create the Cybersecurity Lead Agent (can hand off to both Bash and Crypto)
@@ -73,15 +74,12 @@ cybersecurity_lead = Agent(
     - Hand off to the Bash Agent when you need to execute Linux commands or navigate the file system.
     - Hand off to the Cryptography Agent when you encounter encrypted data or codes that need deciphering.""",
     tools=[execute_cli_command],
-    handoffs=[
-        handoff(bash_agent),
-        handoff(crypto_agent)
-    ],
+    handoffs=[handoff(bash_agent), handoff(crypto_agent)],
     handoff_description="Lead agent in cybersecurity operations",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv("CAI_MODEL", "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
-    )
+    ),
 )
 
 
@@ -92,6 +90,7 @@ async def main():
         result = await Runner.run(cybersecurity_lead, "List directories to find the flag")
 
     print(result.final_output)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

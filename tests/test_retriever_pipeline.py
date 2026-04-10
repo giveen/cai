@@ -1,11 +1,11 @@
-from cai.rag.vector_db_adapter import LocalFallbackAdapter
 from cai.rag.retriever_pipeline import (
     DenseRetriever,
-    SimpleBM25,
-    RetrieverCombiner,
     Reranker,
+    RetrieverCombiner,
     RetrieverPipeline,
+    SimpleBM25,
 )
+from cai.rag.vector_db_adapter import LocalFallbackAdapter
 
 
 def _make_adapter_and_docs():
@@ -39,7 +39,9 @@ def test_reranker_improves_order():
     sparse = SimpleBM25(docs=docs)
     from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
 
-    reranker = Reranker(embeddings_provider=LocalDeterministicEmbeddingsProvider({"vector_dim": 32}))
+    reranker = Reranker(
+        embeddings_provider=LocalDeterministicEmbeddingsProvider({"vector_dim": 32})
+    )
     pipeline = RetrieverPipeline(dense=dense, sparse=sparse, reranker=reranker)
 
     res = pipeline.retrieve("sql injection", top_k=3)
@@ -50,8 +52,8 @@ def test_reranker_improves_order():
 
 
 def test_wakeup_integration():
-    from cai.rag.wakeup_index import WakeupIndex
     from cai.rag.embeddings import LocalDeterministicEmbeddingsProvider
+    from cai.rag.wakeup_index import WakeupIndex
 
     ad, docs = _make_adapter_and_docs()
     dense = DenseRetriever(adapter=ad, collection_name="test")
@@ -61,7 +63,14 @@ def test_wakeup_integration():
     # Add a high-priority session fact
     wake.add_fact("sess-x", "wf1", "sql injection observed inside app", priority=10.0)
 
-    pipeline = RetrieverPipeline(dense=dense, sparse=sparse, combiner=RetrieverCombiner(), wakeup_index=wake, wakeup_k=2, wakeup_boost=5.0)
+    pipeline = RetrieverPipeline(
+        dense=dense,
+        sparse=sparse,
+        combiner=RetrieverCombiner(),
+        wakeup_index=wake,
+        wakeup_k=2,
+        wakeup_boost=5.0,
+    )
     res = pipeline.retrieve("sql", top_k=3, session_id="sess-x")
     texts = [r.get("text", "").lower() for r in res]
     assert any("sql" in t for t in texts)

@@ -17,23 +17,32 @@ Objectives:
 - Threat actor analysis: Analyzing network patterns to identify and profile potential threat actors
 - Vulnerability impact understanding: Assessing how vulnerabilities affect network security
 """
+
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
+
     def load_dotenv(*args, **kwargs):
         return False
+
 
 try:
     from openai import AsyncOpenAI
 except Exception:
     AsyncOpenAI = None
 
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff  # pylint: disable=import-error
-from cai.util import load_prompt_template, create_system_prompt_renderer
 from dotenv import load_dotenv
-from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+
 from cai.agents.dfir import dfir_agent
+from cai.sdk.agents import (  # pylint: disable=import-error
+    Agent,
+    OpenAIChatCompletionsModel,
+    handoff,
+)
+from cai.tools.all_tools import ALL_TOOLS  # noqa: E501
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 load_dotenv()
 
@@ -54,7 +63,7 @@ _model_inst = None
 if _openai_client is not None:
     try:
         _model_inst = OpenAIChatCompletionsModel(
-            model=os.getenv('CAI_MODEL', "alias1"),
+            model=os.getenv("CAI_MODEL", "alias1"),
             openai_client=_openai_client,
         )
     except Exception:
@@ -65,13 +74,13 @@ network_security_analyzer_agent = Agent(
     instructions=create_system_prompt_renderer(network_security_analyzer_prompt),
     description="""Agent that specializes in network security analysis.
                    Expert in monitoring, capturing, and analyzing network communications for security threats.""",
-        model=_model_inst,
+    model=_model_inst,
     tools=tools,
-    handoffs=[ # Handoff to DFIR agent for further analysis
+    handoffs=[  # Handoff to DFIR agent for further analysis
         handoff(
             agent=dfir_agent,
             tool_name_override="handoff_to_dfir_agent",
-            tool_description_override="Call the DFIR agent for deeper forensic analysis of security incidents"
+            tool_description_override="Call the DFIR agent for deeper forensic analysis of security incidents",
         )
-    ]
+    ],
 )

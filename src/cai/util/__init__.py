@@ -1,0 +1,1283 @@
+"""
+Compatibility shim for `cai.util`.
+
+This file provides a compact, well-scoped subset of the original
+`util.py` functionality that tests and other modules import at
+package-import time. It focuses on timers, a cost tracker, a few
+helpers (prompt/template rendering), and lightweight no-op streaming
+helpers to avoid import-time NameErrors. The goal is compatibility
+during the refactor while keeping behavior simple and safe.
+"""
+
+from __future__ import annotations
+
+import atexit
+import hashlib
+import importlib.resources
+import json
+import os
+import pathlib
+
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+from rich.console import Console
+from rich.theme import Theme
+from wasabi.util import color
+
+# Simple themed console for lightweight output used by some helpers
+theme = Theme({"dim": "#9E9E9E"})
+console = Console(theme=theme)
+
+# -------------------- Progress writer (TUI / CLI) --------------------
+# The TUI sets this to a callable(msg: str, style: str | None) so that
+# auto-compact progress messages are routed to the RichLog widget instead
+# of stdout.  When None, callers fall back to plain console.print().
+_progress_writer: Callable[[str, str | None], None] | None = None
+
+# The TUI sets this to a callable(renderable: Any) so that Rich Panels
+# (e.g. the "Intelligence Panel" from display_agent_analysis) are written
+# to the RichLog widget instead of stdout.  When None, callers fall back
+# to Console().print(renderable).
+_panel_writer: Callable[[Any], None] | None = None
+
+
+def set_panel_writer(writer: Callable[[Any], None] | None) -> None:
+    """Register (or clear) a global Rich-renderable panel writer.
+
+    The callable receives a single ``renderable`` argument (any Rich
+    ``RenderableType``).  Pass ``None`` to restore the default console output.
+    """
+    global _panel_writer
+    _panel_writer = writer
+
+
+def write_panel(renderable: Any) -> None:
+    """Write a Rich renderable via the registered panel writer or fallback console."""
+    global _panel_writer
+    if _panel_writer is not None:
+        try:
+            _panel_writer(renderable)
+        except Exception:
+            pass
+    else:
+        try:
+            console.print(renderable)
+        except Exception:
+            pass
+
+
+# The TUI sets this to a callable(visible: bool) so that long-running
+# tool calls (e.g. cewl wordlist generation) can display a LoadingIndicator
+# in the active terminal widget.  When None the callback is silently skipped.
+_tool_loading_writer: Callable[[bool], None] | None = None
+
+
+def set_tool_loading_writer(writer: Callable[[bool], None] | None) -> None:
+    """Register (or clear) a global tool-loading state notifier.
+
+    The callable receives a single ``visible: bool`` argument — ``True`` to
+    show the loading indicator, ``False`` to hide it.
+    Pass ``None`` to clear the registration.
+    """
+    global _tool_loading_writer
+    _tool_loading_writer = writer
+
+
+def notify_tool_loading(visible: bool) -> None:
+    """Notify the registered loading writer to show or hide the indicator."""
+    global _tool_loading_writer
+    if _tool_loading_writer is not None:
+        try:
+            _tool_loading_writer(visible)
+        except Exception:
+            pass
+
+
+def set_progress_writer(writer: Callable[[str, str | None], None] | None) -> None:
+    """Register (or clear) a global progress message writer.
+
+    The callable receives ``(msg, style)`` where *style* is an optional Rich
+    markup colour string.  Pass ``None`` to restore the default console output.
+    """
+    global _progress_writer
+    _progress_writer = writer
+
+
+def write_progress(msg: str, style: str | None = None) -> None:
+    """Write a progress message via the registered writer or fallback console."""
+    global _progress_writer
+    if _progress_writer is not None:
+        try:
+            _progress_writer(msg, style)
+        except Exception:
+            pass
+    else:
+        try:
+            if style:
+                console.print(f"[{style}]{msg}[/{style}]")
+            else:
+                console.print(msg)
+        except Exception:
+            pass
+
+
+# -------------------- Screenshot writer (TUI BrowserPreview) --------------------
+# The TUI sets this to a callable(path: str, interactive_map: Optional[list]) so that
+# browser screenshots and their associated interactive map can be routed to the
+# BrowserPreview widget. When None the notification is a no-op.
+_screenshot_writer: Callable[[str, object], None] | None = None
+
+
+def set_screenshot_writer(writer: Callable[[str, object], None] | None) -> None:
+    """Register (or clear) a global screenshot notifier.
+
+    The callable receives the absolute path to the latest screenshot PNG and an
+    optional ``interactive_map`` (list of dicts). Pass ``None`` to deregister.
+    """
+    global _screenshot_writer
+    _screenshot_writer = writer
+
+
+def notify_screenshot(path: str, interactive_map: object | None = None) -> None:
+    """Notify the registered screenshot writer of a new screenshot path.
+
+    ``interactive_map`` is an optional list of interactive node dicts produced by
+    the browser tool. Callers may pass ``None`` when no map is available.
+    """
+    global _screenshot_writer
+    if _screenshot_writer is not None:
+        try:
+            _screenshot_writer(path, interactive_map)
+        except Exception:
+            pass
+
+
+# -------------------- Timers (active / idle) --------------------
+_active_timer_start: float | None = None
+_active_time_total: float = 0.0
+_idle_timer_start: float | None = None
+_idle_time_total: float = 0.0
+_timing_lock = threading.Lock()
+
+
+def start_active_timer() -> None:
+    global _active_timer_start, _idle_timer_start, _idle_time_total
+    with _timing_lock:
+        if _idle_timer_start is not None:
+            _idle_time_total += time.time() - _idle_timer_start
+            _idle_timer_start = None
+        if _active_timer_start is None:
+            _active_timer_start = time.time()
+
+
+def stop_active_timer() -> None:
+    global _active_timer_start, _active_time_total, _idle_timer_start
+    with _timing_lock:
+        if _active_timer_start is not None:
+            _active_time_total += time.time() - _active_timer_start
+            _active_timer_start = None
+        if _idle_timer_start is None:
+            _idle_timer_start = time.time()
+
+
+def start_idle_timer() -> None:
+    global _idle_timer_start, _active_timer_start, _active_time_total
+    with _timing_lock:
+        if _active_timer_start is not None:
+            _active_time_total += time.time() - _active_timer_start
+            _active_timer_start = None
+        if _idle_timer_start is None:
+            _idle_timer_start = time.time()
+
+
+def stop_idle_timer() -> None:
+    global _idle_timer_start, _idle_time_total, _active_timer_start
+    with _timing_lock:
+        if _idle_timer_start is not None:
+            _idle_time_total += time.time() - _idle_timer_start
+            _idle_timer_start = None
+        if _active_timer_start is None:
+            _active_timer_start = time.time()
+
+
+def _format_seconds(sec: float) -> str:
+    sec = int(sec)
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m}m {s}s"
+    if m:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+
+def get_active_time_seconds() -> float:
+    with _timing_lock:
+        total = _active_time_total
+        if _active_timer_start is not None:
+            total += time.time() - _active_timer_start
+    return total
+
+
+def get_idle_time_seconds() -> float:
+    with _timing_lock:
+        total = _idle_time_total
+        if _idle_timer_start is not None:
+            total += time.time() - _idle_timer_start
+    return total
+
+
+def get_active_time() -> str:
+    return _format_seconds(get_active_time_seconds())
+
+
+def get_idle_time() -> str:
+    return _format_seconds(get_idle_time_seconds())
+
+
+# Start in idle state
+start_idle_timer()
+
+# -------------------- Cost tracking (minimal, test-friendly) --------------------
+LITELLM_URL = (
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+)
+
+
+@dataclass
+class CostTracker:
+    session_total_cost: float = 0.0
+    current_agent_total_cost: float = 0.0
+    model_pricing_cache: dict[str, tuple] = field(default_factory=dict)
+    calculated_costs_cache: dict[str, float] = field(default_factory=dict)
+    last_interaction_cost: float = 0.0
+
+    def log_final_cost(self) -> None:
+        if os.environ.get("CAI_COST_DISPLAYED", "").lower() == "true":
+            return
+        print(f"\nTotal CAI Session Cost: ${self.session_total_cost:.6f}")
+
+    def get_model_pricing(self, model_name: str) -> tuple:
+        model_key = model_name
+        if model_key in self.model_pricing_cache:
+            return self.model_pricing_cache[model_key]
+        try:
+            pricing_path = pathlib.Path("pricing.json")
+            if pricing_path.exists():
+                with pricing_path.open(encoding="utf-8") as fh:
+                    local = json.load(fh)
+                    if model_key in local:
+                        info = local[model_key]
+                        pricing = (
+                            float(info.get("input_cost_per_token", 0)),
+                            float(info.get("output_cost_per_token", 0)),
+                        )
+                        self.model_pricing_cache[model_key] = pricing
+                        return pricing
+        except Exception:
+            pass
+        # Fallback to LiteLLM mapping (best-effort)
+        try:
+            import requests
+
+            resp = requests.get(LITELLM_URL, timeout=2)
+            if resp.status_code == 200:
+                data = resp.json()
+                p = data.get(model_key) or data.get(model_key.lower())
+                if p:
+                    pricing = (
+                        float(p.get("input_cost_per_token", 0)),
+                        float(p.get("output_cost_per_token", 0)),
+                    )
+                    self.model_pricing_cache[model_key] = pricing
+                    return pricing
+        except Exception:
+            pass
+        self.model_pricing_cache[model_key] = (0.0, 0.0)
+        return (0.0, 0.0)
+
+    def calculate_cost(
+        self,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        label: str | None = None,
+        force_calculation: bool = False,
+    ) -> float:
+        key = f"{model}_{input_tokens}_{output_tokens}"
+        if key in self.calculated_costs_cache and not force_calculation:
+            return float(self.calculated_costs_cache[key])
+        in_cost, out_cost = self.get_model_pricing(model)
+        total = input_tokens * in_cost + output_tokens * out_cost
+        self.calculated_costs_cache[key] = total
+        return float(total)
+
+    def update_session_cost(self, new_cost: float) -> None:
+        if new_cost <= 0:
+            return
+        self.session_total_cost += float(new_cost)
+
+    def reset_cost_for_local_model(self, model_name: str) -> bool:
+        input_cost, output_cost = self.get_model_pricing(model_name)
+        if input_cost == 0.0 and output_cost == 0.0:
+            self.last_interaction_cost = 0.0
+            return True
+        return False
+
+    def reset_agent_costs(self) -> None:
+        self.current_agent_total_cost = 0.0
+
+
+# Single global tracker used around the codebase
+COST_TRACKER = CostTracker()
+atexit.register(COST_TRACKER.log_final_cost)
+
+
+def calculate_model_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    label: str | None = None,
+    force_calculation: bool = False,
+) -> float:
+    try:
+        return float(
+            COST_TRACKER.calculate_cost(
+                model, input_tokens, output_tokens, label=label, force_calculation=force_calculation
+            )
+        )
+    except Exception:
+        try:
+            in_cost, out_cost = COST_TRACKER.get_model_pricing(model)
+            return float(input_tokens * in_cost + output_tokens * out_cost)
+        except Exception:
+            return 0.0
+
+
+# -------------------- Message helpers (keeps behavior for tests) --------------------
+def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
+    sanitized_messages = []
+    for msg in messages:
+        msg_copy = msg.copy()
+        if msg_copy.get("role") == "tool" and msg_copy.get("tool_call_id"):
+            if len(msg_copy["tool_call_id"]) > 40:
+                msg_copy["tool_call_id"] = msg_copy["tool_call_id"][:40]
+        if msg_copy.get("role") == "assistant" and msg_copy.get("tool_calls"):
+            tc_copy = []
+            for tc in msg_copy.get("tool_calls", []):
+                tc_c = tc.copy()
+                if tc_c.get("id") and len(tc_c.get("id")) > 40:
+                    tc_c["id"] = tc_c["id"][:40]
+                tc_copy.append(tc_c)
+            msg_copy["tool_calls"] = tc_copy
+        sanitized_messages.append(msg_copy)
+
+    processed_messages = []
+    tool_call_map = {}
+
+    for i, msg in enumerate(sanitized_messages):
+        if msg.get("role") in ["user", "system"] and (
+            msg.get("content") is None or not str(msg.get("content", "")).strip()
+        ):
+            if msg.get("role") == "system":
+                msg["content"] = ""
+                processed_messages.append(msg)
+            continue
+        processed_messages.append(msg)
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                if tc.get("id"):
+                    tool_id = tc.get("id")
+                    if tool_id not in tool_call_map:
+                        tool_call_map[tool_id] = {
+                            "assistant_idx": len(processed_messages) - 1,
+                            "tool_idx": None,
+                        }
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            tool_id = msg.get("tool_call_id")
+            if tool_id in tool_call_map:
+                tool_call_map[tool_id]["tool_idx"] = len(processed_messages) - 1
+            else:
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {"name": "unknown_function", "arguments": "{}"},
+                        }
+                    ],
+                }
+                processed_messages.insert(len(processed_messages) - 1, assistant_msg)
+                tool_call_map[tool_id] = {
+                    "assistant_idx": len(processed_messages) - 2,
+                    "tool_idx": len(processed_messages) - 1,
+                }
+
+    # Re-order tool messages so they follow their assistant messages
+    i = 0
+    max_iter = max(10, len(processed_messages) * 3 + 10)
+    iter_count = 0
+    while i < len(processed_messages):
+        iter_count += 1
+        if iter_count > max_iter:
+            break
+        msg = processed_messages[i]
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            tool_id = msg.get("tool_call_id")
+            if i > 0:
+                j = i - 1
+                while j >= 0 and processed_messages[j].get("role") == "tool":
+                    j -= 1
+                prev_non_tool = processed_messages[j] if j >= 0 else None
+                is_valid = False
+                if (
+                    prev_non_tool
+                    and prev_non_tool.get("role") == "assistant"
+                    and prev_non_tool.get("tool_calls")
+                ):
+                    if any(tc.get("id") == tool_id for tc in prev_non_tool.get("tool_calls", [])):
+                        is_valid = True
+                if not is_valid:
+                    assistant_idx = None
+                    for k in range(i - 1, -1, -1):
+                        a = processed_messages[k]
+                        if (
+                            a.get("role") == "assistant"
+                            and a.get("tool_calls")
+                            and any(tc.get("id") == tool_id for tc in a.get("tool_calls", []))
+                        ):
+                            assistant_idx = k
+                            break
+                    if assistant_idx is not None:
+                        tool_msg = processed_messages.pop(i)
+                        insert_at = assistant_idx + 1
+                        while (
+                            insert_at < len(processed_messages)
+                            and processed_messages[insert_at].get("role") == "tool"
+                        ):
+                            insert_at += 1
+                        processed_messages.insert(insert_at, tool_msg)
+                        i = min(i, insert_at)
+                        continue
+                    else:
+                        assistant_msg = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": tool_id,
+                                    "type": "function",
+                                    "function": {"name": "unknown_function", "arguments": "{}"},
+                                }
+                            ],
+                        }
+                        processed_messages.insert(i, assistant_msg)
+                        i += 2
+                        continue
+        i += 1
+
+    # Ensure content not None
+    for msg in processed_messages:
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            pass
+        elif msg.get("role") != "tool" and msg.get("content") is None and not msg.get("tool_calls"):
+            msg["content"] = ""
+        if msg.get("role") == "tool":
+            if msg.get("content") is None or msg.get("content") == "":
+                msg["content"] = f"Tool response for {msg.get('tool_call_id', 'unknown')}"
+
+    # Claude interleaving simplification
+    i = 0
+    while i < len(processed_messages) - 1:
+        cur = processed_messages[i]
+        nxt = processed_messages[i + 1]
+        if (
+            cur.get("role") == "assistant"
+            and cur.get("tool_calls")
+            and (nxt.get("role") != "tool" or not nxt.get("tool_call_id"))
+        ):
+            tool_id = cur["tool_calls"][0].get("id", "unknown")
+            tool_name = cur["tool_calls"][0].get("function", {}).get("name", "unknown_function")
+            tool_msg = {
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": f"Auto-generated response for {tool_name}",
+            }
+            processed_messages.insert(i + 1, tool_msg)
+            i += 2
+        else:
+            i += 1
+    return processed_messages
+
+
+# -------------------- Lightweight streaming/CLI helpers (no-op / safe) --------------------
+# These are intentionally minimal so modules importing them don't fail.
+_STREAMING_SESSIONS: dict[str, dict[str, Any]] = {}
+_AGENT_STREAMING_CONTEXTS: dict[str, dict[str, Any]] = {}
+# Backwards-compatible name used by older modules
+_LIVE_STREAMING_PANELS = _STREAMING_SESSIONS
+
+# Track RunItems/messages that were already rendered to the terminal during
+# streaming so we can avoid printing them again at final-render time.
+# Keys are namespaced by agent name: '<agent_name>:content:<md5>' or
+# '<agent_name>:callid:<call_id>'
+_RENDERED_RUNITEM_KEYS: set[str] = set()
+
+
+def _make_content_key(agent_name: str, content: str) -> str:
+    h = hashlib.md5((content or "").strip().encode("utf-8", errors="replace")).hexdigest()
+    return f"{agent_name}:content:{h}"
+
+
+def _make_callid_key(agent_name: str, call_id: str) -> str:
+    return f"{agent_name}:callid:{call_id}"
+
+
+def mark_runitem_rendered(
+    agent_name: str, *, content: str | None = None, call_id: str | None = None
+) -> None:
+    try:
+        if content:
+            _RENDERED_RUNITEM_KEYS.add(_make_content_key(agent_name, content))
+        if call_id:
+            _RENDERED_RUNITEM_KEYS.add(_make_callid_key(agent_name, call_id))
+    except Exception:
+        pass
+
+
+def is_runitem_rendered(
+    agent_name: str, *, content: str | None = None, call_id: str | None = None
+) -> bool:
+    try:
+        if call_id and _make_callid_key(agent_name, call_id) in _RENDERED_RUNITEM_KEYS:
+            return True
+        if content and _make_content_key(agent_name, content) in _RENDERED_RUNITEM_KEYS:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def clear_rendered_runitems_for_agent(agent_name: str) -> None:
+    try:
+        prefix = f"{agent_name}:"
+        for k in list(_RENDERED_RUNITEM_KEYS):
+            if k.startswith(prefix):
+                _RENDERED_RUNITEM_KEYS.discard(k)
+    except Exception:
+        pass
+
+
+def cli_print_tool_output(
+    tool_name: str,
+    output: str,
+    call_id: str | None = None,
+    agent_name: str | None = None,
+    **_kwargs,
+) -> None:
+    # Always suppress empty output
+    if not output or not output.strip():
+        return
+
+    # Build a deduplication key from tool_name + command args + agent_id
+    args = _kwargs.get("args") or {}
+    if isinstance(args, dict):
+        cmd_arg = args.get("command", "") or str(args)
+    else:
+        cmd_arg = str(args)
+    token_info = _kwargs.get("token_info") or {}
+    agent_id = token_info.get("agent_id", "") if isinstance(token_info, dict) else ""
+    command_key = f"{tool_name}:{cmd_arg}:{agent_id}"
+
+    streaming_enabled = os.getenv("CAI_STREAM", "true").lower() not in ("false", "0", "no")
+
+    # Skip printing if this tool output was already rendered during streaming
+    try:
+        if agent_name and is_runitem_rendered(agent_name, call_id=call_id, content=output):
+            return
+    except Exception:
+        pass
+
+    if streaming_enabled:
+        # Content-based deduplication: suppress exact duplicates
+        seen = cli_print_tool_output._seen_calls  # type: ignore[attr-defined]
+        content_key = (command_key, output)
+        if content_key in seen:
+            return
+        seen.add(content_key)
+    else:
+        # Time-based deduplication: suppress if same key shown within threshold
+        display_times = cli_print_tool_output._command_display_times  # type: ignore[attr-defined]
+        threshold = 0.5
+        last = display_times.get(command_key)
+        if last is not None and (time.time() - last) < threshold:
+            return
+        display_times[command_key] = time.time()
+
+    # Register streaming session metadata if call_id provided
+    if call_id:
+        _STREAMING_SESSIONS[call_id] = {
+            "tool_name": tool_name,
+            "current_output": output,
+            "agent_name": agent_name,
+            "is_complete": True,
+        }
+
+    # Render using centralized helper; fall back to simple printing on error
+    try:
+        from cai.repl.ui.logging import render_tool_output
+
+        render_tool_output(tool_name or "tool", output, agent_name=agent_name, style="cyan")
+        # Mark as rendered for deduplication
+        try:
+            if agent_name:
+                mark_runitem_rendered(agent_name, call_id=call_id, content=str(output or ""))
+        except Exception:
+            pass
+    except Exception:
+        try:
+            # best-effort fallback
+            from rich.markup import escape as _escape
+
+            console.print(f"{_escape(tool_name)} {str(output)}")
+        except Exception:
+            try:
+                print(tool_name, str(output))
+            except Exception:
+                pass
+
+
+# Deduplication state attached to the function itself
+cli_print_tool_output._seen_calls: set = set()  # type: ignore[attr-defined]
+cli_print_tool_output._command_display_times: dict[str, float] = {}  # type: ignore[attr-defined]
+
+
+def cli_print_tool_call(
+    tool_name: str,
+    tool_args: dict | None = None,
+    tool_output: str | None = None,
+    call_id: str | None = None,
+    interaction_input_tokens: int = 0,
+    interaction_output_tokens: int = 0,
+    interaction_reasoning_tokens: int = 0,
+    total_input_tokens: int = 0,
+    total_output_tokens: int = 0,
+    total_reasoning_tokens: int = 0,
+    model: str | None = None,
+    agent_name: str | None = None,
+    debug: bool = False,
+    **_kwargs,
+) -> None:
+    """Minimal backward-compatible printer for tool calls used in templates."""
+    if call_id:
+        _STREAMING_SESSIONS[call_id] = {
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "current_output": str(tool_output) if tool_output is not None else "",
+            "agent_name": agent_name,
+            "is_complete": True,
+            "tokens": {
+                "interaction": {
+                    "input": interaction_input_tokens,
+                    "output": interaction_output_tokens,
+                    "reasoning": interaction_reasoning_tokens,
+                },
+                "total": {
+                    "input": total_input_tokens,
+                    "output": total_output_tokens,
+                    "reasoning": total_reasoning_tokens,
+                },
+                "model": model,
+            },
+        }
+    try:
+        # Use centralized renderer for consistent Panel styling
+        from cai.repl.ui.logging import render_tool_output
+
+        if tool_output is None:
+            render_tool_output(
+                tool_name or "tool", "(no output)", agent_name=agent_name, style="cyan"
+            )
+        else:
+            out = str(tool_output)
+            display = out if len(out) <= 500 else out[:500] + "…"
+            render_tool_output(tool_name or "tool", display, agent_name=agent_name, style="cyan")
+        if debug:
+            console.print(
+                f"[debug] tokens={total_input_tokens}+{total_output_tokens} model={model}"
+            )
+    except Exception:
+        try:
+            if tool_output is not None:
+                print(tool_output)
+        except Exception:
+            pass
+
+
+def cli_print_agent_messages(
+    agent_name: str, messages: list | None = None, *args, **_kwargs
+) -> None:
+    """Print agent messages for the CLI.
+
+    Backwards-compatible shim: callers sometimes pass a single ``message``
+    (keyword) or a ``messages`` list. Accept either and render message
+    contents to stdout. Additional kwargs are accepted for compatibility
+    (eg. ``suppress_empty``) and ignored here.
+    """
+    try:
+        # Support both `message=` (single dict) and `messages=` (list)
+        if messages is None:
+            maybe_msg = _kwargs.get("message") if isinstance(_kwargs, dict) else None
+            if maybe_msg is not None:
+                msgs = [maybe_msg]
+            else:
+                msgs = []
+        else:
+            msgs = list(messages)
+
+        suppress = (
+            bool(_kwargs.get("suppress_empty", False)) if isinstance(_kwargs, dict) else False
+        )
+
+        if suppress and not msgs:
+            return
+
+        # Filter out messages that were already rendered during streaming
+        filtered = []
+        for m in msgs:
+            try:
+                content = m.get("content") if isinstance(m, dict) else str(m)
+            except Exception:
+                try:
+                    content = str(m)
+                except Exception:
+                    content = None
+            if content is None:
+                continue
+            try:
+                if agent_name and is_runitem_rendered(agent_name, content=content):
+                    continue
+            except Exception:
+                pass
+            filtered.append((m, content))
+
+        if not filtered:
+            return
+
+        # Render messages. For single-message turns render the content in a
+        # dedicated analysis Panel; for multiple messages render each non-empty
+        # message in its own Panel. Skip empty contents (common when tools are
+        # used without accompanying assistant text).
+        try:
+            from cai.repl.ui.renderers import display_agent_analysis
+
+            if len(filtered) == 1:
+                m, content = filtered[0]
+                if content and str(content).strip():
+                    try:
+                        display_agent_analysis(content, agent_name)
+                    except Exception:
+                        console.print(content)
+                # if content empty, skip rendering entirely
+                return
+
+            # Multiple messages: print a small header then render each non-empty
+            # message as a Panel to maintain readability.
+            console.print(f"[agent]{agent_name}[/agent] {len(filtered)} messages")
+            for m, content in filtered:
+                try:
+                    if content and str(content).strip():
+                        try:
+                            display_agent_analysis(content, agent_name)
+                        except Exception:
+                            console.print(content)
+                    else:
+                        # Skip empty assistant/tool-only messages
+                        continue
+                except Exception:
+                    try:
+                        console.print(str(m))
+                    except Exception:
+                        pass
+        except Exception:
+            # Fallback: simple printing when the renderer isn't available
+            console.print(f"[agent]{agent_name}[/agent] {len(filtered)} messages")
+            for m, content in filtered:
+                try:
+                    console.print(content)
+                except Exception:
+                    try:
+                        console.print(str(m))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
+def start_tool_streaming(*args, **_kwargs) -> None:
+    """
+    Start a tool streaming session.
+
+    Supports multiple calling conventions for backwards compatibility:
+      - New: start_tool_streaming(call_id, tool_name, agent_name=None)
+      - Legacy: start_tool_streaming(tool_name, tool_args, call_id, token_info)
+      - Keyword: start_tool_streaming(call_id="...", tool_name="...", agent_name="...")
+    """
+    call_id = None
+    tool_name = None
+    agent_name = None
+
+    # Prefer explicit keyword form
+    if "call_id" in _kwargs and isinstance(_kwargs["call_id"], str):
+        call_id = _kwargs["call_id"]
+        tool_name = _kwargs.get("tool_name")
+        agent_name = _kwargs.get("agent_name")
+    else:
+        # Legacy positional: call_id as 4th arg
+        if len(args) >= 4 and isinstance(args[3], str):
+            tool_name = args[0] if isinstance(args[0], str) else None
+            call_id = args[3]
+        # New positional: call_id, tool_name, (agent_name)
+        elif len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
+            a0 = args[0]
+            # Heuristic: treat a UUID-like first arg (contains '-') as call_id
+            if "-" in a0 and len(a0) > 8:
+                call_id = a0
+                tool_name = args[1]
+                if len(args) >= 3 and isinstance(args[2], str):
+                    agent_name = args[2]
+            else:
+                # Fallback to legacy-ish: tool_name, tool_args, call_id
+                tool_name = args[0]
+                if len(args) >= 3 and isinstance(args[2], str):
+                    call_id = args[2]
+        elif len(args) == 1 and isinstance(args[0], str):
+            call_id = args[0]
+
+    if not call_id:
+        return
+
+    _STREAMING_SESSIONS[call_id] = {
+        "tool_name": tool_name,
+        "current_output": "",
+        "agent_name": agent_name,
+        "is_complete": False,
+    }
+
+
+def update_tool_streaming(*args, **_kwargs) -> None:
+    """
+    Update a tool streaming session's current output.
+
+    Supports multiple calling conventions for backward compatibility:
+      - New: update_tool_streaming(call_id, chunk)
+      - Legacy: update_tool_streaming(tool_name, tool_args, content, call_id, token_info)
+      - Keyword: update_tool_streaming(call_id="...", chunk="...")
+    """
+    call_id = None
+    chunk = None
+
+    # Prefer explicit keyword argument for call_id
+    if "call_id" in _kwargs and isinstance(_kwargs["call_id"], str):
+        call_id = _kwargs["call_id"]
+        chunk = _kwargs.get("chunk") or _kwargs.get("content") or _kwargs.get("current_output")
+
+    # Positional handling
+    if call_id is None and args:
+        # Legacy positional form: tool_name, tool_args, content, call_id, token_info
+        if len(args) >= 4 and isinstance(args[3], str):
+            call_id = args[3]
+            # content is the 3rd positional arg
+            if len(args) >= 3:
+                chunk = args[2]
+        # New positional form: call_id, chunk [, ...]
+        elif len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
+            a0 = args[0]
+            a1 = args[1]
+            # Heuristic: if first arg looks like an id (contains '-' and is reasonably long)
+            if "-" in a0 and len(a0) > 8:
+                call_id = a0
+                chunk = a1
+            # If second arg looks like an id, swap
+            elif "-" in a1 and len(a1) > 8:
+                call_id = a1
+                chunk = a0
+            else:
+                # Default to (call_id, chunk)
+                call_id = a0
+                chunk = a1
+        # Single-argument form where only call_id is provided
+        elif len(args) == 1 and isinstance(args[0], str):
+            call_id = args[0]
+
+    if not call_id:
+        return
+
+    # Fallbacks for chunk if still None
+    if chunk is None:
+        chunk = (
+            _kwargs.get("content") or _kwargs.get("current_output") or _kwargs.get("chunk") or ""
+        )
+
+    s = _STREAMING_SESSIONS.get(call_id)
+    if s is not None:
+        s["current_output"] = s.get("current_output", "") + str(chunk)
+
+
+def finish_tool_streaming(*args, **_kwargs) -> None:
+    """
+    Finish a tool streaming session.
+
+    Supports both legacy positional signature used across the codebase
+    (tool_name, tool_args, content, call_id, execution_info, token_info)
+    and the newer keyword-based form where `call_id` is provided.
+    """
+    call_id = None
+
+    # Prefer explicit keyword argument
+    if "call_id" in _kwargs and isinstance(_kwargs["call_id"], str):
+        call_id = _kwargs["call_id"]
+    # Legacy positional form: call_id is the 4th positional argument
+    elif args and len(args) >= 4 and isinstance(args[3], str):
+        call_id = args[3]
+    # Single-argument form where only call_id was provided
+    elif len(args) == 1 and isinstance(args[0], str):
+        call_id = args[0]
+
+    if not call_id:
+        return
+
+    s = _STREAMING_SESSIONS.get(call_id)
+    if s is not None:
+        s["is_complete"] = True
+
+
+def create_agent_streaming_context(
+    agent_name: str,
+    counter: int = 0,
+    model: str = "",
+    **_kwargs,
+) -> dict[str, Any]:
+    """Create and register a streaming context for *agent_name*.
+
+    Accepts the extra ``counter`` and ``model`` kwargs that
+    ``OpenAIChatCompletionsModel.stream_response`` passes so callers do not
+    need to be kept in sync with the stub signature.
+    """
+    ctx = {"agent_name": agent_name, "live": None, "is_started": False}
+    _AGENT_STREAMING_CONTEXTS[agent_name] = ctx
+    # Track active contexts on the function for legacy cleanup
+    if not hasattr(create_agent_streaming_context, "_active_streaming"):
+        create_agent_streaming_context._active_streaming = {}
+    create_agent_streaming_context._active_streaming[agent_name] = ctx
+    return ctx
+
+
+def update_agent_streaming_content(
+    agent_name_or_ctx,
+    content: str = "",
+    token_stats: dict[str, Any] | None = None,
+    **_kwargs,
+) -> None:
+    """Append *content* to the streaming context and print it to the terminal.
+
+    Accepts either the *agent_name* string or the context dict returned by
+    ``create_agent_streaming_context`` as the first argument, matching the
+    calling convention used in ``openai_chatcompletions.py``.
+    """
+    import sys
+
+    # Resolve agent name
+    if isinstance(agent_name_or_ctx, dict):
+        agent_name_or_ctx = agent_name_or_ctx.get("agent_name")
+    if not agent_name_or_ctx:
+        return
+
+    ctx = _AGENT_STREAMING_CONTEXTS.get(agent_name_or_ctx)
+    if ctx is not None:
+        ctx["last_content"] = content
+
+    # Write the text token directly to stdout so it appears on screen
+    # immediately — this is the primary rendering path when the full Rich
+    # Live panel is not in use.
+    if content:
+        try:
+            sys.stdout.write(content)
+            sys.stdout.flush()
+        except Exception:
+            pass
+
+
+def finish_agent_streaming(
+    agent_name_or_ctx,
+    token_stats: dict[str, Any] | None = None,
+    **_kwargs,
+) -> None:
+    """Finalise the streaming session for *agent_name_or_ctx*.
+
+    Accepts either the *agent_name* string or the context dict (as passed by
+    ``openai_chatcompletions.py``) and prints a trailing newline when the
+    streaming context indicates that content was actually printed.
+    """
+    import sys
+
+    if isinstance(agent_name_or_ctx, dict):
+        agent_name_or_ctx = agent_name_or_ctx.get("agent_name")
+    if not agent_name_or_ctx:
+        return
+
+    ctx = _AGENT_STREAMING_CONTEXTS.pop(agent_name_or_ctx, None)
+    if hasattr(create_agent_streaming_context, "_active_streaming"):
+        create_agent_streaming_context._active_streaming.pop(agent_name_or_ctx, None)
+
+    # Print a newline after the streamed content so the next prompt starts
+    # on a fresh line.
+    if ctx and ctx.get("last_content"):
+        try:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        except Exception:
+            pass
+
+
+def cleanup_all_streaming_resources() -> None:
+    _STREAMING_SESSIONS.clear()
+    _AGENT_STREAMING_CONTEXTS.clear()
+
+
+def cleanup_agent_streaming_resources(agent_name: str) -> None:
+    for k, v in list(_STREAMING_SESSIONS.items()):
+        if v.get("agent_name") == agent_name:
+            _STREAMING_SESSIONS.pop(k, None)
+    _AGENT_STREAMING_CONTEXTS.pop(agent_name, None)
+
+
+# -------------------- Claude thinking helpers (minimal) --------------------
+def start_claude_thinking_if_applicable(
+    agent_name: str | None = None, *_, **__
+) -> dict[str, Any] | None:
+    """Return a minimal thinking context when requested by callers.
+
+    The real implementation shows a live 'thinking' panel. Here we return
+    a small context dict that calling code can inspect and update.
+    """
+    if not agent_name:
+        return None
+    ctx = {
+        "agent_name": agent_name,
+        "is_started": False,
+        "live": None,
+    }
+    _AGENT_STREAMING_CONTEXTS.setdefault(agent_name, ctx)
+    return ctx
+
+
+def update_claude_thinking_content(agent_name_or_ctx, content: str) -> None:
+    """Update thinking content for the given agent.
+
+    Accepts either the *agent_name* string or the context dict returned by
+    ``start_claude_thinking_if_applicable`` (which is what call sites in
+    ``openai_chatcompletions.py`` pass as *thinking_context*).
+    """
+    if isinstance(agent_name_or_ctx, dict):
+        agent_name_or_ctx = agent_name_or_ctx.get("agent_name")
+    if not agent_name_or_ctx:
+        return
+    ctx = _AGENT_STREAMING_CONTEXTS.get(agent_name_or_ctx)
+    if ctx is not None:
+        ctx["thinking_content"] = content
+
+
+def finish_claude_thinking_display(agent_name_or_ctx) -> None:
+    """Finalise and remove the thinking context for the given agent.
+
+    Accepts either the *agent_name* string or the context dict returned by
+    ``start_claude_thinking_if_applicable``.
+    """
+    if isinstance(agent_name_or_ctx, dict):
+        agent_name_or_ctx = agent_name_or_ctx.get("agent_name")
+    if not agent_name_or_ctx:
+        return
+    _AGENT_STREAMING_CONTEXTS.pop(agent_name_or_ctx, None)
+
+
+def detect_claude_thinking_in_stream(model: str) -> bool:
+    """Return True if *model* is known to emit reasoning/thinking content.
+
+    Used by the streaming loop to decide whether to render the
+    ``print_claude_reasoning_simple`` fallback when no rich thinking
+    context is available (e.g. in the TUI).
+    """
+    m = (model or "").lower()
+    return "claude" in m or "deepseek" in m
+
+
+def print_claude_reasoning_simple(
+    reasoning_content: str,
+    agent_name: str = "",
+    model: str = "",
+) -> None:
+    """Print reasoning/thinking content to stdout in a minimal plain-text form.
+
+    This is the non-rich fallback used when the rich streaming context is
+    unavailable (e.g. inside the TUI's worker coroutine).
+    """
+    if not reasoning_content:
+        return
+    prefix = f"[{agent_name}] " if agent_name else ""
+    print(f"{prefix}<thinking> {reasoning_content.strip()} </thinking>")
+
+
+# -------------------- Prompt/template helpers --------------------
+def load_prompt_template(template_path: str) -> str:
+    try:
+        parts = template_path.split("/")
+        pkg = ".".join(["cai"] + parts[:-1])
+        fname = parts[-1]
+        try:
+            return importlib.resources.read_text(pkg, fname)
+        except Exception:
+            with importlib.resources.path(pkg, fname) as p:
+                return pathlib.Path(p).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def create_system_prompt_renderer(base_instructions: str) -> Callable[..., str]:
+    def render(run_context=None, agent=None):
+        if run_context is None and agent is None:
+            return base_instructions
+        return base_instructions
+
+    render._is_system_prompt_renderer = True
+    render._base_instructions = base_instructions
+    return render
+
+
+def append_instructions(agent: Any, additional_instructions: str) -> None:
+    if not agent.instructions:
+        return
+    if callable(agent.instructions) and getattr(
+        agent.instructions, "_is_system_prompt_renderer", False
+    ):
+        base = agent.instructions._base_instructions
+        agent.instructions = create_system_prompt_renderer(base + additional_instructions)
+    elif callable(agent.instructions):
+        orig = agent.instructions
+
+        def wrapped(*a, **k):
+            return orig(*a, **k) + additional_instructions
+
+        agent.instructions = wrapped
+    else:
+        agent.instructions = str(agent.instructions) + additional_instructions
+
+
+def visualize_agent_graph(start_agent: Any) -> None:
+    try:
+        console.print(f"Agent graph for {getattr(start_agent, 'name', '<unknown>')}")
+    except Exception:
+        pass
+
+
+# -------------------- Small utilities --------------------
+def fix_litellm_transcription_annotations() -> bool:
+    return False
+
+
+def setup_ctf():
+    """Minimal shim for CTF setup used by the CLI during startup.
+
+    Returns a tuple of (ctf_object_or_None, messages_ctf_str).
+    This is a lightweight no-op implementation intended only to satisfy
+    import-time usage in tests and simple CLI runs during the refactor.
+    """
+    return None, ""
+
+
+def get_ollama_api_base() -> str:
+    return (
+        os.environ.get("OLLAMA_API_BASE")
+        or os.environ.get("OPENAI_BASE_URL")
+        or "http://localhost:8000/v1"
+    )
+
+
+def get_ollama_auth_headers() -> dict[str, str]:
+    api_key = os.getenv("OLLAMA_API_KEY") or os.getenv("OPENAI_API_KEY")
+    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+
+def get_minimax_api_base() -> str:
+    return (
+        os.environ.get("MINIMAX_API_BASE")
+        or os.environ.get("OPENAI_BASE_URL")
+        or "http://localhost:8080/v1"
+    )
+
+
+def get_model_name(model: str) -> str:
+    return model
+
+
+def get_model_input_tokens(model: str) -> int | None:
+    # Best-effort mapping for UI; returns None when unknown
+    return None
+
+
+# Exported API
+__all__ = [
+    "console",
+    "color",
+    "set_progress_writer",
+    "write_progress",
+    "set_panel_writer",
+    "write_panel",
+    "set_tool_loading_writer",
+    "notify_tool_loading",
+    "set_screenshot_writer",
+    "notify_screenshot",
+    "COST_TRACKER",
+    "calculate_model_cost",
+    "start_active_timer",
+    "stop_active_timer",
+    "start_idle_timer",
+    "stop_idle_timer",
+    "get_active_time",
+    "get_idle_time",
+    "get_active_time_seconds",
+    "get_idle_time_seconds",
+    "fix_message_list",
+    "setup_ctf",
+    "cli_print_tool_output",
+    "cli_print_tool_call",
+    "cli_print_agent_messages",
+    "start_tool_streaming",
+    "update_tool_streaming",
+    "finish_tool_streaming",
+    "create_agent_streaming_context",
+    "update_agent_streaming_content",
+    "finish_agent_streaming",
+    "cleanup_all_streaming_resources",
+    "cleanup_agent_streaming_resources",
+    "start_claude_thinking_if_applicable",
+    "update_claude_thinking_content",
+    "finish_claude_thinking_display",
+    "detect_claude_thinking_in_stream",
+    "print_claude_reasoning_simple",
+    "load_prompt_template",
+    "create_system_prompt_renderer",
+    "append_instructions",
+    "visualize_agent_graph",
+    "get_ollama_api_base",
+    "get_ollama_auth_headers",
+    "get_minimax_api_base",
+    "get_model_name",
+    "get_model_input_tokens",
+]

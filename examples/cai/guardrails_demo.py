@@ -4,9 +4,9 @@ Demo script to demonstrate prompt injection guardrail protection
 """
 
 import asyncio
+
 from cai.agents.one_tool import one_tool_agent
-from cai.sdk.agents import Runner, InputGuardrailTripwireTriggered
-from cai.agents.guardrails import detect_injection_patterns, sanitize_external_content
+from cai.sdk.agents import InputGuardrailTripwireTriggered, Runner
 
 
 async def demo_guardrails():
@@ -17,7 +17,7 @@ async def demo_guardrails():
 
     safe_input = "Please check what files are in the current directory"
     try:
-        result = await Runner.run(one_tool_agent, safe_input)
+        _ = await Runner.run(one_tool_agent, safe_input)
         print(f"✅ Safe input accepted: {safe_input[:50]}...")
     except InputGuardrailTripwireTriggered:
         print(f"❌ Safe input wrongly blocked: {safe_input}")

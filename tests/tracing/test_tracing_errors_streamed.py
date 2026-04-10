@@ -21,8 +21,6 @@ from cai.sdk.agents import (
     Runner,
     TResponseInputItem,
 )
-
-from tests.fake_model import FakeModel
 from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
@@ -30,6 +28,7 @@ from tests.core.test_responses import (
     get_handoff_tool_call,
     get_text_message,
 )
+from tests.fake_model import FakeModel
 from tests.testing_processor import fetch_normalized_spans
 
 
@@ -110,7 +109,7 @@ async def test_multi_turn_no_handoffs():
                 "children": [
                     {
                         "type": "agent",
-                        "error": {"message": "Error in agent run", "data": {"error": 'test error'}},
+                        "error": {"message": "Error in agent run", "data": {"error": "test error"}},
                         "data": {
                             "name": "test_agent",
                             "handoffs": [],
@@ -118,23 +117,23 @@ async def test_multi_turn_no_handoffs():
                             "output_type": "str",
                         },
                         "children": [
-                                {"type": "generation"},
-                                {
-                                    "type": "function",
-                                    "data": {
-                                        "name": "foo",
-                                        "input": '{"a": "b"}',
-                                        "output": "tool_result",
-                                    },
+                            {"type": "generation"},
+                            {
+                                "type": "function",
+                                "data": {
+                                    "name": "foo",
+                                    "input": '{"a": "b"}',
+                                    "output": "tool_result",
                                 },
-                                {
-                                    "type": "generation",
-                                    "error": {
-                                        "message": "Error",
-                                        "data": {"name": "ValueError", "message": "test error"},
-                                    },
+                            },
+                            {
+                                "type": "generation",
+                                "error": {
+                                    "message": "Error",
+                                    "data": {"name": "ValueError", "message": "test error"},
                                 },
-                            ],
+                            },
+                        ],
                     }
                 ],
             }
@@ -373,9 +372,9 @@ async def test_handoffs_lead_to_correct_agent_spans():
     async for _ in result.stream_events():
         pass
 
-    assert result.last_agent == agent_3, (
-        f"should have ended on the third agent, got {result.last_agent.name}"
-    )
+    assert (
+        result.last_agent == agent_3
+    ), f"should have ended on the third agent, got {result.last_agent.name}"
 
     assert fetch_normalized_spans() == snapshot(
         [

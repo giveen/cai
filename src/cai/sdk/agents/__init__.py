@@ -17,10 +17,12 @@ from .agent_output import AgentOutputSchema
 from .computer import AsyncComputer, Button, Computer, Environment
 from .exceptions import (
     AgentsException,
+    ContextCompactedError,
     InputGuardrailTripwireTriggered,
     MaxTurnsExceeded,
     ModelBehaviorError,
     OutputGuardrailTripwireTriggered,
+    PriceLimitExceeded,
     UserError,
 )
 from .guardrail import (
@@ -33,6 +35,7 @@ from .guardrail import (
     output_guardrail,
 )
 from .handoffs import Handoff, HandoffInputData, HandoffInputFilter, handoff
+
 try:
     from .items import (
         HandoffCallItem,
@@ -60,6 +63,7 @@ except Exception:  # pragma: no cover - items may depend on optional OpenAI type
 from .lifecycle import AgentHooks, RunHooks
 from .model_settings import ModelSettings
 from .models.interface import Model, ModelProvider, ModelTracing
+
 try:
     from .models.openai_chatcompletions import OpenAIChatCompletionsModel
 except Exception:  # pragma: no cover - OpenAI models optional
@@ -83,6 +87,7 @@ from .stream_events import (
     RunItemStreamEvent,
     StreamEvent,
 )
+
 try:
     from .tool import (
         ComputerTool,
@@ -202,10 +207,12 @@ __all__ = [
     "Environment",
     "Button",
     "AgentsException",
+    "ContextCompactedError",
     "InputGuardrailTripwireTriggered",
     "OutputGuardrailTripwireTriggered",
     "MaxTurnsExceeded",
     "ModelBehaviorError",
+    "PriceLimitExceeded",
     "UserError",
     "InputGuardrail",
     "InputGuardrailResult",

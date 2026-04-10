@@ -1,10 +1,14 @@
 """Use Case Agent"""
+
 import os
+
 try:
     from dotenv import load_dotenv
 except Exception:
+
     def load_dotenv(*args, **kwargs):
         return False
+
 
 try:
     from openai import AsyncOpenAI
@@ -13,7 +17,7 @@ except Exception:
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.reconnaissance.generic_linux_command import null_tool
-from cai.util import load_prompt_template, create_system_prompt_renderer
+from cai.util import create_system_prompt_renderer, load_prompt_template
 
 load_dotenv()
 model_name = os.getenv("CAI_MODEL", "alias1")
@@ -64,9 +68,9 @@ use_case_agent = Agent(
     model=_model_inst,
 )
 
+
 # Transfer function
 def transfer_to_use_case_agent(**kwargs):  # pylint: disable=W0613
     """Transfer to use case agent.
     Accepts any keyword arguments but ignores them."""
     return use_case_agent
-
