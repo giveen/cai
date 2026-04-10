@@ -799,35 +799,70 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
 
                 # Extract summary and metadata
                 summary = ""
-                in_summary = False
                 agent_name = None
                 msg_count = 0
 
-                for line in content.split("\n"):
-                    if line.startswith("Agent: "):
-                        agent_name = line[7:]
-                        agent_names.add(agent_name)
-                    elif "Original messages: " in line:
-                        try:
-                            msg_count = int(line.split("Original messages: ")[1].split()[0])
-                            total_messages += msg_count
-                        except Exception:
-                            pass
-                    elif line.strip() == "## Summary":
-                        in_summary = True
-                        continue
-                    elif line.strip().startswith("## ") and in_summary:
-                        break
-                    elif in_summary:
-                        summary += line + "\n"
+                # 1) Prefer explicit "## Summary" section if present
+                if "## Summary" in content:
+                    in_summary = False
+                    for line in content.split("\n"):
+                        if line.startswith("Agent: "):
+                            agent_name = line[7:]
+                            agent_names.add(agent_name)
+                        elif "Original messages: " in line:
+                            try:
+                                msg_count = int(line.split("Original messages: ")[1].split()[0])
+                                total_messages += msg_count
+                            except Exception:
+                                pass
+                        elif line.strip() == "## Summary":
+                            in_summary = True
+                            continue
+                        elif line.strip().startswith("## ") and in_summary:
+                            break
+                        elif in_summary:
+                            summary += line + "\n"
+
+                else:
+                    # 2) Fallback: extract body between top metadata and "## Metadata" (or file end)
+                    meta_marker = "## Metadata"
+                    before_meta = content.split(meta_marker)[0] if meta_marker in content else content
+
+                    # Remove common header/meta lines and collect the remaining body
+                    body_lines = []
+                    for line in before_meta.split("\n"):
+                        if line.startswith("Agent: "):
+                            agent_name = line[7:]
+                            agent_names.add(agent_name)
+                            continue
+                        if "Original messages: " in line:
+                            try:
+                                msg_count = int(line.split("Original messages: ")[1].split()[0])
+                                total_messages += msg_count
+                            except Exception:
+                                pass
+                        # Skip obvious header/meta lines
+                        if line.startswith("#") or line.startswith("ID:") or line.startswith("Generated:") or line.startswith("Model:"):
+                            continue
+                        body_lines.append(line)
+
+                    # Join and trim
+                    summary = "\n".join(body_lines).strip()
+
+                    # Last resort: use the whole file minus top header/meta lines
+                    if not summary:
+                        alt_lines = []
+                        for line in content.split("\n"):
+                            if line.startswith("#") or line.startswith("ID:") or line.startswith("Generated:") or line.startswith("Model:"):
+                                continue
+                            alt_lines.append(line)
+                        summary = "\n".join(alt_lines).strip()
 
                 if summary.strip():
                     summaries.append(f"### Memory: {identifier}\n{summary.strip()}")
                     console.print(f"[green]✓ Loaded memory '{identifier}'[/green]")
                 else:
-                    console.print(
-                        f"[yellow]Warning: No summary found in memory '{identifier}'[/yellow]"
-                    )
+                    console.print(f"[yellow]Warning: No summary found in memory '{identifier}'[/yellow]")
 
             except Exception as e:
                 console.print(f"[red]Error loading memory '{identifier}': {e}[/red]")

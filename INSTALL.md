@@ -31,5 +31,5 @@ Troubleshooting
 
 
 Recommended Local LLM:
-HauhauCS/wen3.5-27B-Uncensored-HauhauCS-Aggressive-Q4_K_M for primary model
+HauhauCS/Qwen3.5-27B-Uncensored-HauhauCS-Aggressive-Q4_K_M for primary model
 Qwen/Qwen2.5-Coder-1.5B-Instruct for support model

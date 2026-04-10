@@ -4568,6 +4568,25 @@ class OpenAIChatCompletionsModel(Model):
                                         ),
                                     }
                                 )
+                                # Ensure manager & persistent stores reflect the
+                                # cleared/compacted history so older copies aren't
+                                # re-attached later and re-inflate the context.
+                                try:
+                                    if getattr(self, "agent_name", None):
+                                        try:
+                                            AGENT_MANAGER._message_history[self.agent_name] = (
+                                                self.message_history
+                                            )
+                                        except Exception:
+                                            pass
+                                        try:
+                                            if self.agent_name in PERSISTENT_MESSAGE_HISTORIES:
+                                                PERSISTENT_MESSAGE_HISTORIES[self.agent_name].clear()
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    pass
+
                                 os.environ["CAI_CONTEXT_USAGE"] = "0.0"
                                 write_progress(
                                     "✓ Memory summary applied — "
@@ -4654,6 +4673,23 @@ class OpenAIChatCompletionsModel(Model):
 
                 # Clear the message history and keep only essential messages
                 self.message_history.clear()
+                # Keep AGENT_MANAGER and persistent histories in sync so the
+                # cleared history isn't restored elsewhere (which would
+                # immediately re-inflate the context and re-trigger compaction).
+                try:
+                    if getattr(self, "agent_name", None):
+                        try:
+                            AGENT_MANAGER._message_history[self.agent_name] = self.message_history
+                        except Exception:
+                            pass
+                        try:
+                            if self.agent_name in PERSISTENT_MESSAGE_HISTORIES:
+                                PERSISTENT_MESSAGE_HISTORIES[self.agent_name].clear()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
                 # Reset context usage after clearing
                 os.environ["CAI_CONTEXT_USAGE"] = "0.0"
 

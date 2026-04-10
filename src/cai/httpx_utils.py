@@ -33,7 +33,18 @@ async def post_file_with_retries(
     while True:
         attempt += 1
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=5.0)) as client:
+            # Defensive: coerce boolean timeouts (often emitted by LLMs) to None
+            # since httpx explicitly rejects boolean values for Timeout.
+            _timeout_val = timeout
+            try:
+                if isinstance(_timeout_val, bool):
+                    _timeout_val = None
+                else:
+                    _timeout_val = float(_timeout_val) if _timeout_val is not None else None
+            except Exception:
+                _timeout_val = None
+
+            async with httpx.AsyncClient(timeout=httpx.Timeout(_timeout_val, connect=5.0)) as client:
                 with open(file_path, "rb") as f:
                     files = {field_name: (os.path.basename(file_path), f)}
                     resp = await client.post(endpoint, files=files, data=data)
