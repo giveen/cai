@@ -145,10 +145,21 @@ class _SentenceTransformerEmbeddingFn:
         self._model = SentenceTransformer(model_name)
         print(" done")
 
-    def __call__(self, input: Sequence[str]) -> list[list[float]]:  # noqa: A002
+    def _encode(self, texts: Sequence[str]) -> list[list[float]]:
         return self._model.encode(  # type: ignore[return-value]
-            list(input), convert_to_numpy=True, show_progress_bar=False
+            list(texts), convert_to_numpy=True, show_progress_bar=False
         ).tolist()
+
+    def __call__(self, input: Sequence[str]) -> list[list[float]]:  # noqa: A002
+        return self._encode(input)
+
+    def embed_documents(self, input: Sequence[str]) -> list[list[float]]:  # noqa: A002
+        """ChromaDB calls this when ingesting/upserting documents."""
+        return self._encode(input)
+
+    def embed_query(self, input: Sequence[str]) -> list[list[float]]:  # noqa: A002
+        """ChromaDB calls this when querying the collection."""
+        return self._encode(input)
 
     def name(self) -> str:
         """Return a stable name for this embedding function.

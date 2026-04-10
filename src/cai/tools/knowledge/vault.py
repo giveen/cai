@@ -74,12 +74,23 @@ def _ensure_loaded() -> str | None:
             _model = SentenceTransformer(_EMBED_MODEL)
 
             class _EmbedFn:
-                def __call__(self, input: list[str]) -> list[list[float]]:  # noqa: A002
+                def _encode(self, texts: list[str]) -> list[list[float]]:
                     return _model.encode(
-                        input,
+                        texts,
                         convert_to_numpy=True,
                         show_progress_bar=False,
                     ).tolist()
+
+                def __call__(self, input: list[str]) -> list[list[float]]:  # noqa: A002
+                    return self._encode(input)
+
+                def embed_documents(self, input: list[str]) -> list[list[float]]:  # noqa: A002
+                    """ChromaDB calls this when ingesting/upserting documents."""
+                    return self._encode(input)
+
+                def embed_query(self, input: list[str]) -> list[list[float]]:  # noqa: A002
+                    """ChromaDB calls this when querying the collection."""
+                    return self._encode(input)
 
                 def name(self) -> str:
                     """Return a stable name for this embedding function.
