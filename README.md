@@ -376,7 +376,7 @@ python -m playwright install chromium
 If you prefer to install Playwright manually instead of using extras, run:
 
 ```bash
-pip install playwright playwright-chromium
+pip install playwright
 python -m playwright install chromium
 ```
 
