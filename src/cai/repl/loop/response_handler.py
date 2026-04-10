@@ -311,15 +311,16 @@ def run_single_response(
 
                                         from cai.util import write_panel
 
-                                        write_panel(
-                                            _Panel(
-                                                body,
-                                                box=_box.HEAVY,
-                                                border_style="bold yellow",
-                                                title=f"[bold yellow]🛠  {agent_name}[/bold yellow]",
-                                                expand=False,
+                                            write_panel(
+                                                _Panel(
+                                                    body,
+                                                    box=_box.HEAVY,
+                                                    border_style="bold yellow",
+                                                    title=f"[bold yellow]🛠  {agent_name}[/bold yellow]",
+                                                    padding=(0, 1),
+                                                    expand=True,
+                                                )
                                             )
-                                        )
                                     except Exception:
                                         try:
                                             from cai.repl.ui.logging import render_tool_output
@@ -344,35 +345,39 @@ def run_single_response(
                                     except Exception:
                                         pass
 
-                                if call_id:
-                                    tool_calls_seen[call_id] = event.item
-                                    # Mark tool call as rendered (so we don't show it again)
+                                else:
+                                    # reasoning_item_created → render as a Thought Panel
                                     try:
-                                        from cai.util import mark_runitem_rendered
+                                        from cai.repl.ui.renderers import display_agent_thought
 
-                                        agent_name = (
-                                            getattr(agent, "name", None)
-                                            or getattr(
-                                                getattr(agent, "model", None), "agent_name", None
-                                            )
-                                            or "Agent"
-                                        )
-                                        mark_runitem_rendered(agent_name, call_id=call_id)
+                                        display_agent_thought(out_str, agent_name)
                                     except Exception:
-                                        pass
-                            except Exception:
-                                if hasattr(event.item, "raw_item"):
-                                    call_id = getattr(event.item.raw_item, "call_id", None)
-                                    if call_id:
-                                        tool_calls_seen[call_id] = event.item
-
-                        # TOOL OUTPUT: decode/filter and render in a Panel
-                        elif event.name == "tool_output":
-                            if isinstance(event.item, ToolCallOutputItem):
-                                try:
-                                    # Determine call_id if present
-                                    raw_item = getattr(event.item, "raw_item", {}) or {}
-                                    call_id = (
+                                        try:
+                                            # fallback to plain coloured lines if Panel render fails
+                                            for line in out_str.splitlines():
+                                                ls = line.strip()
+                                                try:
+                                                    width = console.size.width
+                                                except Exception:
+                                                    width = 120
+                                                wrap_width = max(40, int(width) - 20)
+                                                try:
+                                                    wrapped = textwrap.fill(line, width=wrap_width)
+                                                except Exception:
+                                                    wrapped = line
+                                                if ls.lower().startswith("thought"):
+                                                    console.print(f"[yellow]{_escape(wrapped)}[/yellow]")
+                                                elif ls.lower().startswith("reflection"):
+                                                    console.print(f"[blue]{_escape(wrapped)}[/blue]")
+                                                elif ls.lower().startswith("action"):
+                                                    console.print(f"[green]{_escape(wrapped)}[/green]")
+                                                else:
+                                                    console.print(_escape(wrapped))
+                                        except Exception:
+                                            try:
+                                                print(out_str)
+                                            except Exception:
+                                                pass
                                         raw_item.get("call_id")
                                         if isinstance(raw_item, dict)
                                         else getattr(raw_item, "call_id", None)

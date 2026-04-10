@@ -2802,9 +2802,28 @@ class TerminalPanel(Widget):
                         self._render_agent_message(content)
 
                 elif ev_name == "reasoning_item_created":
-                    self._write_system_message(
-                        "progress", "reasoning step created", style="#00cc88"
-                    )
+                    # Render reasoning / thought content as a panel (if available)
+                    try:
+                        from cai.sdk.agents.items import ItemHelpers
+
+                        content = ItemHelpers.text_message_output(cast(Any, item))
+                    except Exception:
+                        content = str(getattr(item, "content", "") or "")
+
+                    if content:
+                        try:
+                            from cai.repl.ui.renderers import display_agent_thought
+
+                            agent_name = getattr(self, "_agent_name", None)
+                            display_agent_thought(content, agent_name)
+                        except Exception:
+                            self._write_system_message(
+                                "progress", "reasoning step created", style="#00cc88"
+                            )
+                    else:
+                        self._write_system_message(
+                            "progress", "reasoning step created", style="#00cc88"
+                        )
 
                 elif ev_name == "tool_called":
                     raw = getattr(item, "raw_item", item)
@@ -2821,7 +2840,29 @@ class TerminalPanel(Widget):
                         "name": str(fn_name),
                         "args": fn_args,
                     }
-                    log.write(RichText(f"  ▶ {fn_name}({fn_args}) [running]", style="#006600"))
+                    try:
+                        from cai.util import write_panel
+                        from rich.panel import Panel as _Panel
+                        from rich import box as _box
+
+                        agent_name = getattr(self, "_agent_name", "Agent")
+                        fn_args_disp_safe = fn_args.replace("[", "\\[")
+                        body = (
+                            f"[bold bright_yellow]⚡ {fn_name}[/bold bright_yellow]  "
+                            f"[dim yellow]{fn_args_disp_safe}[/dim yellow]"
+                        )
+                        write_panel(
+                            _Panel(
+                                body,
+                                box=_box.HEAVY,
+                                border_style="bold yellow",
+                                title=f"[bold yellow]🛠  {agent_name}[/bold yellow]",
+                                padding=(0, 1),
+                                expand=True,
+                            )
+                        )
+                    except Exception:
+                        log.write(RichText(f"  ▶ {fn_name}({fn_args}) [running]", style="#006600"))
                     try:
                         getattr(
                             cast(Any, self.app), "_telemetry_tool_called", lambda *a, **k: None

@@ -1380,10 +1380,71 @@ This session is being continued from a previous conversation that ran out of con
                 max_turns=1,
             )
 
+            # Primary: prefer explicit final_output from the model
             if result.final_output:
                 return str(result.final_output)
-            else:
-                return None
+
+            # Fallbacks: some model/provider combos emit reasoning or message
+            # items but do not set a final_output. Try to extract useful text
+            # from those items so compaction doesn't silently fail.
+            try:
+                from cai.sdk.agents.items import (
+                    ItemHelpers,
+                    MessageOutputItem,
+                    ReasoningItem,
+                )
+
+                # 1) Message outputs (assistant messages)
+                msgs = [it for it in (result.new_items or []) if isinstance(it, MessageOutputItem)]
+                if msgs:
+                    text = ItemHelpers.text_message_outputs(msgs)
+                    if text and text.strip():
+                        write_progress(
+                            "Summary model returned no final output — using assistant message outputs as fallback",
+                            "yellow",
+                        )
+                        return text
+
+                # 2) Reasoning items (internal thought summaries)
+                thoughts = [it for it in (result.new_items or []) if isinstance(it, ReasoningItem)]
+                if thoughts:
+                    parts = []
+                    for r in thoughts:
+                        try:
+                            p = ItemHelpers.text_reasoning_output(r)
+                        except Exception:
+                            p = ""
+                        if p and p.strip():
+                            parts.append(p)
+                    if parts:
+                        write_progress(
+                            "Summary model returned no final output — using reasoning/thought items as fallback",
+                            "yellow",
+                        )
+                        return "\n\n".join(parts)
+
+                # 3) Raw model responses: try to pull any text fields from the raw outputs
+                raw_texts: list[str] = []
+                for mr in (result.raw_responses or []):
+                    for out in getattr(mr, "output", []) or []:
+                        try:
+                            t = ItemHelpers.extract_last_text(out)
+                        except Exception:
+                            t = None
+                        if t:
+                            raw_texts.append(t)
+                if raw_texts:
+                    write_progress(
+                        "Summary model returned no final output — using raw response outputs as fallback",
+                        "yellow",
+                    )
+                    return "\n\n".join(raw_texts)
+            except Exception:
+                # Best-effort: if any of the fallback extraction fails, fall through
+                # to the generic None return so the caller can handle it.
+                pass
+
+            return None
 
         except Exception as e:
             write_progress(f"Error generating summary: {e}", "red")

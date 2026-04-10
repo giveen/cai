@@ -67,3 +67,54 @@ def display_agent_analysis(
             Console().print(text)
         except Exception:
             pass
+
+
+def display_agent_thought(
+    content: str,
+    agent_name: str | None = None,
+    title: str = "Thought",
+) -> None:
+    """Render intermediate reasoning/thought content as a prominent Panel.
+
+    This mirrors ``display_agent_analysis`` but uses a yellow highlight and is
+    intended for intermediate "thought" or reasoning items.
+    """
+    if content is None:
+        return
+
+    text = str(content)
+    if not text.strip():
+        return
+
+    try:
+        md = Markdown(text)
+        subtitle = f"[dim yellow]{agent_name}[/dim yellow]" if agent_name else ""
+        logger.debug(
+            "display_agent_thought: rendering panel agent_name=%r title=%r len=%d",
+            agent_name,
+            title,
+            len(text),
+        )
+        panel = Panel(
+            md,
+            box=box.ROUNDED,
+            border_style="bold yellow",
+            title=f"[bold yellow]{title}[/bold yellow]",
+            subtitle=subtitle,
+            padding=(0, 1),
+        )
+        try:
+            from cai.util import write_panel
+
+            write_panel(panel)
+        except Exception:
+            Console().print(panel)
+    except Exception as _exc:
+        logger.debug(
+            "display_agent_thought: Panel render failed (%s), falling back to plain text",
+            _exc,
+        )
+        try:
+            Console().print(text)
+        except Exception:
+            pass

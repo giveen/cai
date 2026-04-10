@@ -90,6 +90,8 @@ def render_tool_output(
             border_style=border_style,
             title=f"[{title_colour}]{_escape(title)}[/{title_colour}]",
             subtitle=f"[dim {style}]{_escape(subtitle)}[/dim {style}]" if subtitle else "",
+            padding=(0, 1),
+            expand=True,
         )
         try:
             from cai.util import write_panel
