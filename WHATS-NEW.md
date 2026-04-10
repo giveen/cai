@@ -26,8 +26,8 @@ Category breakdown
 
 3) Tools & Integrations
 - Browser/Playwright: added a Playwright-based tool and BrowserPreview TUI widget (interactive ARIA element map, screenshots, and VLM sitrep).
-- Networking & exploitation tooling: added or improved `impacket` executor, `sqlmap` wrapper, ligolo/netexec helpers, and SMB/CIFS helpers.
-- Recon & crawling: new crawler, cewl wordlist generator, DDG-based search replacement for older services, and improved web reconnaissance tools.
+- Networking & exploitation tooling: added or improved `impacket` executor, `sqlmap` wrapper, `ligolo/netexec` helpers, and `SMB/CIFS` helpers.
+- Recon & crawling: new crawler, `cewl` wordlist generator, `DDG-based` search replacement for older services, and improved web reconnaissance tools.
 - Vulnerability tooling: `cve_search` integration and `github_poc_search` were added to aid discovery and PoC lookups.
 
 4) Agents & Runtime
@@ -63,12 +63,7 @@ How this fork improves the project
 - Reproducible local workflows: `LOCAL_API_BASE` and bootstrap changes make it easier to run and test the project locally without cloud dependencies.
 
 Next steps and caveats
-- This summary is derived from the branch diff and high-level commit messages. For a precise audit, review individual commits or run targeted `git diff`/`git log` for specific subsystems.
 - Some additions (new tools and scripts) may require additional runtime dependencies; consult the updated `pyproject.toml` and README changes for install notes.
-
-If you'd like, I can:
-- Expand the above into a per-module changelog (split by subsystem) — useful for release notes.
-- Produce a concise one-page release note for end-users.
 
 ---
 Generated on: (branch `cli-refractor`)
