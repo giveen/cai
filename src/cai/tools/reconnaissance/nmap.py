@@ -69,4 +69,9 @@ def nmap(target: str, args: str = "", timeout: int = 300) -> str:
     guard_err = validation.validate_command_guardrails(command)
     if guard_err:
         return guard_err
-    return run_command(command, timeout=timeout)
+    # Prefer streaming output for long-running nmap scans so the TUI can
+    # display progress. If a heavy version/script scan (e.g. "-sV -sC")
+    # times out or the network is flaky, agents should consider falling
+    # back to a lighter scan such as `-F` (top ports) or use a slower
+    # timing template (`-T3`) before retrying aggressive scans.
+    return run_command(command, timeout=timeout, stream=True)

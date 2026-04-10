@@ -29,6 +29,7 @@ async def run_local_async(
     This is a near-direct extraction of `_run_local_async` from `common.py`.
     """
     import asyncio
+    import shlex
 
     from cai.tools.agent_info import _get_agent_token_info
     from cai.tools.workspace import _get_workspace_dir
@@ -81,12 +82,25 @@ async def run_local_async(
             token_info = _get_agent_token_info()
             call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
 
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=target_dir,
-            )
+            # Prefer exec-style subprocess for streaming when possible
+            try:
+                exec_list = shlex.split(command)
+                process = await asyncio.create_subprocess_exec(
+                    *exec_list,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=target_dir,
+                )
+            except Exception:
+                # Fall back to shell mode for complex commands that require
+                # shell features (pipes, redirection, etc.). Streaming will
+                # still behave the same in that case.
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=target_dir,
+                )
 
             output_buffer = []
             buffer_size = 0
@@ -158,12 +172,22 @@ async def run_local_async(
 
         else:
             # Non-streaming async execution behaves like sync wrapper
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=target_dir,
-            )
+            # Non-streaming async execution: prefer exec-mode for safety
+            try:
+                exec_list = shlex.split(command)
+                process = await asyncio.create_subprocess_exec(
+                    *exec_list,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=target_dir,
+                )
+            except Exception:
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=target_dir,
+                )
 
             stdout_chunks, stderr_chunks = [], []
             last_output = time.time()
@@ -385,15 +409,28 @@ def run_local(
             token_info = _get_agent_token_info()
             call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
 
-            process = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                cwd=target_dir,
-            )
+            import shlex
+            try:
+                exec_list = shlex.split(command)
+                process = subprocess.Popen(
+                    exec_list,
+                    shell=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    cwd=target_dir,
+                )
+            except Exception:
+                process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    cwd=target_dir,
+                )
 
             output_buffer = []
             buffer_size = 0
