@@ -150,6 +150,15 @@ class _SentenceTransformerEmbeddingFn:
             list(input), convert_to_numpy=True, show_progress_bar=False
         ).tolist()
 
+    def name(self) -> str:
+        """Return a stable name for this embedding function.
+
+        ChromaDB expects an embedding function object to expose a `name()`
+        callable used for configuration validation. Provide a simple
+        model-based identifier here.
+        """
+        return f"sentence-transformers:{EMBED_MODEL}"
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(

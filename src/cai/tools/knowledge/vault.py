@@ -81,6 +81,15 @@ def _ensure_loaded() -> str | None:
                         show_progress_bar=False,
                     ).tolist()
 
+                def name(self) -> str:
+                    """Return a stable name for this embedding function.
+
+                    ChromaDB may call `name()` on embedding functions for
+                    configuration checks; provide a simple identifier so the
+                    client code is compatible with newer chromadb versions.
+                    """
+                    return f"sentence-transformers:{_EMBED_MODEL}"
+
             _embed_fn = _EmbedFn()
             _collection = _client.get_collection(
                 name=_COLLECTION_NAME,
