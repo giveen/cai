@@ -2978,6 +2978,36 @@ class OpenAIChatCompletionsModel(Model):
                 filtered_kwargs[_k] = NOT_GIVEN
         kwargs = filtered_kwargs
 
+        # Sanitize kwargs for local "reasoner" model groups that do not
+        # support reasoning/thinking parameters or assistant-prefill content.
+        # LiteLLM proxies sometimes expose custom model groups (e.g. "reasoner")
+        # which reject parameters like `reasoning_effort` or prefilled
+        # assistant messages. Detect that case proactively and remove
+        # incompatible fields to avoid hard 400 errors from the client.
+        try:
+            model_name_lower = str(kwargs.get("model", "")).lower()
+            if "reasoner" in model_name_lower:
+                kwargs.pop("reasoning_effort", None)
+                kwargs.pop("thinking", None)
+                kwargs.pop("enable_thinking", None)
+
+                msgs = kwargs.get("messages")
+                if isinstance(msgs, list):
+                    filtered = []
+                    for m in msgs:
+                        try:
+                            role = m.get("role") if isinstance(m, dict) else None
+                        except Exception:
+                            role = None
+                        # Drop assistant prefill messages unless they contain tool_calls
+                        if role == "assistant" and isinstance(m, dict) and not m.get("tool_calls"):
+                            continue
+                        filtered.append(m)
+                    kwargs["messages"] = filtered
+        except Exception:
+            # Best-effort only — do not fail the call if sanitization errors
+            pass
+
         # If a client was explicitly provided (for tests or caller-provided client), prefer using it.
         client = getattr(self, "_client", None)
         if client is not None:
