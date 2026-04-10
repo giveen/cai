@@ -1221,6 +1221,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
 
         # Use custom prompt if set, otherwise use default
         custom_prompt = get_custom_prompt()
+
         if custom_prompt:
             instructions = custom_prompt
         else:
@@ -1231,50 +1232,54 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
 When analyzing the conversation, focus on:
 
 1. **Primary Request and Intent**
-   - What was the user's original request or problem?
-   - What were they trying to achieve?
-   - Were there any specific requirements or constraints mentioned?
+    - What was the user's original request or problem?
+    - What were they trying to achieve?
+    - Were there any specific requirements or constraints mentioned?
 
 2. **Key Technical Concepts**
-   - What technical systems, frameworks, or concepts were discussed?
-   - What programming languages, tools, or technologies were involved?
-   - Were there any architectural patterns or design decisions made?
+    - What technical systems, frameworks, or concepts were discussed?
+    - What programming languages, tools, or technologies were involved?
+    - Were there any architectural patterns or design decisions made?
 
 3. **Files and Code Sections**
-   - List all files that were read, created, or modified
-   - Include file paths and brief descriptions of changes
-   - Highlight any critical code sections or functions
-   - Note any dependencies or relationships between files
+    - List all files that were read, created, or modified
+    - Include file paths and brief descriptions of changes
+    - Highlight any critical code sections or functions
+    - Note any dependencies or relationships between files
 
 4. **Errors and Solutions**
-   - Document all errors encountered with their exact error messages
-   - Describe the solutions or fixes that were applied
-   - Note any workarounds or temporary solutions
-   - Include any unresolved issues
+    - Document all errors encountered with their exact error messages
+    - Describe the solutions or fixes that were applied
+    - Note any workarounds or temporary solutions
+    - Include any unresolved issues
 
 5. **Problem Solving Progress**
-   - What steps were taken to solve the problem?
-   - What approaches were tried (both successful and unsuccessful)?
-   - What debugging or investigation was performed?
-   - What was the final state of the solution?
+    - What steps were taken to solve the problem?
+    - What approaches were tried (both successful and unsuccessful)?
+    - What debugging or investigation was performed?
+    - What was the final state of the solution?
 
 6. **Conversation Metadata**
-   - All user messages in chronological order (verbatim if critical)
-   - Key decisions made during the conversation
-   - Any context switches or topic changes
-   - Important clarifications or confirmations
+    - All user messages in chronological order (verbatim if critical)
+    - Key decisions made during the conversation
+    - Any context switches or topic changes
+    - Important clarifications or confirmations
 
 7. **Current State and Next Steps**
-   - What is the current state of the work?
-   - What tasks were completed successfully?
-   - What remains to be done?
-   - Are there any pending questions or blockers?
+    - What is the current state of the work?
+    - What tasks were completed successfully?
+    - What remains to be done?
+    - Are there any pending questions or blockers?
 
-8. **Technical Artifacts**
-   - Any URLs, IPs, credentials, or configuration values discovered
-   - Command outputs or tool results that are important
-   - Error logs or stack traces
-   - Performance metrics or test results
+8. **Technical Artifacts & Evidence**
+    - Any URLs, IPs, configuration values, or artifacts discovered
+    - Command outputs or tool results that are important
+    - Error logs or stack traces
+    - Performance metrics or test results
+
+9. **Credentials and Sensitive Data**
+    - If any usernames, passwords, API keys, or other secrets were discovered, list each item with: (a) type (username/password/API key), (b) how it was obtained (file path, command output, tool name and exact command or query), and (c) exact evidence (file and line numbers or output snippet).
+    - Include full secret values verbatim in the summary when available; do not redact unless explicitly instructed otherwise by the user. When including secrets, always provide the precise location where the secret was found (file path and line numbers or tool output snippet) and the method used to obtain it.
 
 ## Summary Structure
 
@@ -1297,14 +1302,23 @@ After the analysis, provide a structured summary with these sections:
 9. **Exhausted Approaches — DO NOT RETRY**: Every technique, command, path, or attack vector that was attempted and failed. Format each as a bullet starting with ❌. Be specific (include exact commands, URLs, usernames, ports). This section is CRITICAL — the agent will use it to avoid wasting time on dead ends.
 10. **Recommended Next Steps**: Concrete actions NOT yet tried, ordered by likelihood of success.
 
+## Evidence & Methods
+
+- For each key finding include a clear "how it was found" line: the tool or command used, any filters/regexes, the file path or tool output, and line numbers or exact output excerpt.
+- Where applicable, include the exact commands, search terms, or queries that produced the evidence so another engineer can reproduce the step.
+
+## Resume Plan
+
+- After the summary provide a concise, ordered "Resume Plan" of next actions (2–6 items) that the team or agent should execute to continue work immediately. Each item should be a single actionable step (e.g., "Run `pytest tests/unit/test_x.py` and fix failing assertion in `src/foo/bar.py:line 123`.").
+- End with a single-line instruction the agent can follow to continue (for example: "Proceed to: resume_todo: run-E501-reflow"), so automated workflows can programmatically pick up the next task.
+
 ## Important Guidelines
 
-- Be comprehensive but organized - include all important details but structure them clearly
+- Be comprehensive but organized — include all important details but structure them clearly
 - Preserve exact error messages, file paths, and technical specifications
 - Include the complete chronological flow to maintain context
 - If code snippets are critical to understanding, include them
-- Maintain technical accuracy - don't paraphrase technical terms
-- The summary will be used as the primary context for resuming work, so completeness is crucial
+- Maintain technical accuracy — don't paraphrase technical terms
 - When the conversation is resumed, it should feel like a natural continuation
 - Section 9 (Exhausted Approaches) is the most important section for offensive/hacking tasks: list every failed attempt so the agent doesn't loop.
 

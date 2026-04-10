@@ -2717,7 +2717,6 @@ class TerminalPanel(Widget):
             # final agent reply via _render_agent_message (message_output_created).
             stream_debug = False
             _stream_line_buf: str = ""
-            _had_tool_outputs: bool = False
 
             async for event in stream_iter:
                 try:
@@ -2837,7 +2836,6 @@ class TerminalPanel(Widget):
                         pass
 
                 elif ev_name == "tool_output":
-                    _had_tool_outputs = True
                     if isinstance(item, ToolCallOutputItem):
                         call_id = "unknown"
                         try:
@@ -2882,34 +2880,7 @@ class TerminalPanel(Widget):
                         if call_id in self._active_tool_calls:
                             self._active_tool_calls.pop(call_id, None)
 
-            # --- Empty-response recovery -------------------------------------------
-            # If the model completed without producing any text or follow-up tool
-            # calls (final_output == ""), but we did receive at least one tool
-            # output during this run, automatically re-submit.  This handles models
-            # that occasionally return a naked empty reply after a tool result
-            # instead of calling the next tool or writing their final answer.
-            try:
-                _fo = getattr(result, "final_output", None) if result is not None else None
-                _is_empty_response = (
-                    run_status == "completed" and _had_tool_outputs and (_fo == "" or _fo is None)
-                )
-            except Exception:
-                _is_empty_response = False
 
-            if _is_empty_response:
-                self._write_system_message(
-                    "progress",
-                    "⟳ Model returned empty response after tool output — continuing…",
-                    style="#ffaa00",
-                )
-                _empty_cont = (
-                    f"{self._last_prompt_text}\n\n"
-                    "NOTE: You just received tool output(s). Your previous response was "
-                    "empty — no text and no new tool calls. Please continue the task: "
-                    "analyse the tool output(s) above and proceed to the next step."
-                )
-                self._run_worker = self._run_agent(_empty_cont)
-                return  # skip error-state / ready-state transitions below
 
         except asyncio.CancelledError:
             run_status = "cancelled"
