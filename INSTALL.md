@@ -28,3 +28,8 @@ Troubleshooting
 ---------------
 - If pip fails to resolve an extra, ensure you are using a modern pip (>=23) and an activated virtual environment.
 - Playwright requires an extra step to install browser binaries (`python -m playwright install chromium`).
+
+
+Recommended Local LLM:
+HauhauCS/wen3.5-27B-Uncensored-HauhauCS-Aggressive-Q4_K_M for primary model
+Qwen/Qwen2.5-Coder-1.5B-Instruct for support model
