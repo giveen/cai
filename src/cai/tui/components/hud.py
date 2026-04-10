@@ -124,7 +124,7 @@ class HUDWidget(Widget):
         yield Static("Initialising…", id="hud-status", classes="hud-status")
 
     def on_mount(self) -> None:
-        if _PYNVML_AVAILABLE and _is_local_backend():
+        if pynvml is not None and _is_local_backend():
             try:
                 pynvml.nvmlInit()
                 self._nvml_init = True
@@ -133,7 +133,7 @@ class HUDWidget(Widget):
         self.set_interval(2.0, self._tick)
 
     def on_unmount(self) -> None:
-        if self._nvml_init:
+        if self._nvml_init and pynvml is not None:
             try:
                 pynvml.nvmlShutdown()
             except Exception:
@@ -181,6 +181,7 @@ class HUDWidget(Widget):
 
     def _gather_gpu_stats(self) -> dict:
         """Read VRAM and utilisation from the first NVML device."""
+        assert pynvml is not None
         try:
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             mem = pynvml.nvmlDeviceGetMemoryInfo(handle)

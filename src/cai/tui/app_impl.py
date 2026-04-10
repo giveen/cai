@@ -74,7 +74,7 @@ from cai.tui.components.header import Header, _pretty_name, _BANNER_LINES
 # attributes/methods are provided at runtime by the controller/screens.
 Header: Any = Header  # type: ignore
 from cai.tui.controller import TuiController
-from cai.tui.components.sidebar import Sidebar, SessionsTab, ToolsTab
+from cai.tui.components.sidebar import Sidebar, SessionsTab, ToolsTab, ConfigTab
 
 # Mark a few imported component symbols as `Any` for static analysis;
 # these objects are composed and augmented at runtime by the controller.
@@ -82,6 +82,7 @@ TuiController: Any = TuiController  # type: ignore
 Sidebar: Any = Sidebar  # type: ignore
 SessionsTab: Any = SessionsTab  # type: ignore
 ToolsTab: Any = ToolsTab  # type: ignore
+ConfigTab: Any = ConfigTab  # type: ignore
 
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,15 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
 
     CSS_PATH = str(Path(__file__).parent / "styles" / "matrix.tcss")
     TITLE = "CAI TUI"
+
+    BINDINGS = [
+        Binding("ctrl+p", "command_palette", "Palette", show=True),
+        Binding("ctrl+n", "new_agent", "New Agent", show=True),
+        Binding("ctrl+s", "toggle_sidebar", "Sidebar", show=True),
+        Binding("f11", "maximize_terminal", "Maximize", show=True),
+        Binding("ctrl+l", "clear_active", "Clear", show=True),
+        Binding("ctrl+q", "quit", "Quit", show=True),
+    ]
 
     # Class-level type annotations for static-analysis tools.
     _session_files: dict[int, Any] | None = None
@@ -381,22 +391,7 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
                                 classes="modal-btn modal-btn--cancel",
                             )
                 with TabPane("Config", id="tab-config"):
-                    with Vertical(id="config-pane"):
-                        yield Button("Providers", id="config-providers", classes="menu-btn")
-                        yield Button("Model Params", id="config-model-params", classes="menu-btn")
-                        yield Button("Memory / RAG", id="config-memory", classes="menu-btn")
-                        yield Button(
-                            "Export / Import", id="config-export-import", classes="menu-btn"
-                        )
-                        yield Button("Environment", id="config-env", classes="menu-btn")
-                        yield Button(
-                            "Toggle Session Recording",
-                            id="config-session-recording",
-                            classes="menu-btn",
-                        )
-                        yield Button(
-                            "Reset Defaults", id="config-reset-defaults", classes="menu-btn"
-                        )
+                    yield ConfigTab(id="config-tab-widget")
                 with TabPane("Tools", id="tab-tools"):
                     with Vertical(id="tools-pane"):
                         with ScrollableContainer(id="tools-list-scroll"):
@@ -1037,7 +1032,6 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             "config-memory",
             "config-export-import",
             "config-env",
-            "config-session-recording",
             "config-reset-defaults",
         ):
             try:
@@ -1890,6 +1884,14 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
 
     def action_command_palette(self) -> None:
         self._open_command_palette_worker()
+
+    def action_new_agent(self) -> None:
+        """Ctrl+N — open the add-agent modal (reuses the sidebar agent-add flow)."""
+        try:
+            # Focus the agents tab; the user can pick an agent from there
+            self._switch_top_tab("tab-agents")
+        except Exception:
+            pass
 
     def action_cycle_terminal_next(self) -> None:
         """Cycle focus to the next terminal panel (Tab / Ctrl+Right)."""

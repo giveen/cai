@@ -93,6 +93,38 @@ model = os.environ.get("CAI_MODEL", "alias1")
 PATTERNS = ["hierarchical", "swarm", "chain_of_thought", "auction_based", "recursive"]
 
 
+def _ensure_all_tools_on_agent(agent: object) -> object:
+    """Ensure *agent.tools* contains every tool in the global ALL_TOOLS registry.
+
+    This normalizes tool visibility so any selected agent has awareness of the
+    complete built-in tool catalog (plus any agent-specific extras).
+    """
+    try:
+        from cai.tools.all_tools import ALL_TOOLS
+    except Exception:
+        return agent
+
+    try:
+        existing_tools = list(getattr(agent, "tools", []) or [])
+    except Exception:
+        existing_tools = []
+
+    # Preserve existing tool order, then append missing global tools.
+    existing_names = {getattr(t, "name", "") for t in existing_tools}
+    merged_tools = list(existing_tools)
+    for tool in ALL_TOOLS:
+        name = getattr(tool, "name", "")
+        if name and name not in existing_names:
+            merged_tools.append(tool)
+            existing_names.add(name)
+
+    try:
+        setattr(agent, "tools", merged_tools)
+    except Exception:
+        pass
+    return agent
+
+
 def get_available_agents() -> dict[str, Agent]:  # pylint: disable=R0912  # noqa
     """
     Get a dictionary of all available agents compiled
@@ -245,6 +277,10 @@ def get_available_agents() -> dict[str, Agent]:  # pylint: disable=R0912  # noqa
         pseudo_agent = PatternAgent(pattern_obj)
         agents_to_display[pattern_name] = pseudo_agent
 
+    # Normalize tools so all agents expose the complete tool catalog.
+    for name, agent in list(agents_to_display.items()):
+        agents_to_display[name] = _ensure_all_tools_on_agent(agent)
+
     return agents_to_display
 
 
@@ -325,7 +361,7 @@ def get_agent_by_name(
         factory = get_agent_factory(agent_name)
         # Create and return a new instance with optional model override and custom name
         agent = factory(model_override=model_override, custom_name=custom_name, agent_id=agent_id)
-        return agent
+        return _ensure_all_tools_on_agent(agent)
     except ValueError:
         # If not found in factory, fall back to legacy method
         pass
@@ -390,7 +426,7 @@ def get_agent_by_name(
                     # MCP command not available, skip
                     pass
 
-                return cloned_agent
+                return _ensure_all_tools_on_agent(cloned_agent)
         except Exception:
             # If cloning fails, return the original
             pass
@@ -416,4 +452,4 @@ def get_agent_by_name(
         # MCP command not available, skip
         pass
 
-    return agent
+    return _ensure_all_tools_on_agent(agent)

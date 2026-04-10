@@ -786,9 +786,9 @@ ProvidersScreen {
 }
 
 #palette-wrap {
-    width: 80;
+    width: 100;
     height: auto;
-    max-height: 40;
+    max-height: 44;
     background: #001a00;
     border: tall #00ff00;
     padding: 1 2;
@@ -806,13 +806,37 @@ ProvidersScreen {
     border: tall #00ff00;
 }
 
+#palette-title {
+    height: 2;
+    color: #00ff00;
+    text-style: bold;
+    content-align: center middle;
+    border-bottom: solid #003300;
+    margin-bottom: 1;
+}
+
 #palette-results-scroll {
-    height: 22;
+    height: 26;
     border-top: solid #003300;
     border-bottom: solid #003300;
     background: #000000;
     scrollbar-background: #000000;
     scrollbar-color: #004400;
+}
+
+.palette-section-header {
+    width: 1fr;
+    height: 1;
+    background: #001800;
+    color: #005500;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+.palette-empty {
+    height: 1;
+    color: #004400;
+    padding: 0 2;
 }
 
 #palette-results {
@@ -861,6 +885,106 @@ ProvidersScreen {
     background: #001400;
     color: #00ff00;
     border-top: solid #003300;
+}
+
+/* ---- Config tab (two-column terminal overlay) ---- */
+#config-tab-widget {
+    height: 1fr;
+    background: #000000;
+    layout: vertical;
+}
+
+#cfg-header {
+    height: 2;
+    content-align: center middle;
+    border-bottom: solid #003300;
+    color: #00aa00;
+    background: #000900;
+}
+
+#cfg-body {
+    height: 1fr;
+    layout: horizontal;
+    background: #000000;
+}
+
+#cfg-left {
+    width: 40;
+    border-right: solid #003300;
+    border: solid #003300;
+    margin: 1 1 1 0;
+    padding: 0 1;
+    background: #000800;
+}
+
+.cfg-btn {
+    width: 1fr;
+    height: 2;
+    background: #000000;
+    color: #00cc00;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+.cfg-btn:hover {
+    background: #001400;
+    color: #00ff00;
+    border-left: solid #00aa00;
+}
+
+.cfg-btn--danger {
+    color: #99cc66;
+    border-top: solid #003300;
+}
+
+.cfg-sep {
+    height: 1;
+    color: #003300;
+    margin: 1 0;
+}
+
+#cfg-recording-row {
+    height: 3;
+    background: #000a00;
+    border: solid #003300;
+    padding: 0 1;
+    margin-bottom: 1;
+    align: left middle;
+}
+
+#cfg-recording-label {
+    width: 1fr;
+    color: #009944;
+}
+
+#cfg-recording-switch {
+    width: auto;
+    background: #001200;
+    color: #006633;
+}
+
+#cfg-recording-switch.-on {
+    background: #003300;
+    color: #00ff00;
+}
+
+#cfg-right {
+    width: 1fr;
+    border: solid #003300;
+    margin: 1 0 1 0;
+    background: #000800;
+    padding: 0 1;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+}
+
+#cfg-detail {
+    width: 1fr;
+    height: auto;
+    color: #00cc00;
+    padding: 1;
 }
 
 #tools-pane {
