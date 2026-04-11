@@ -1,24 +1,117 @@
 
+###############################################################################
+# Networking model
+# ────────────────
+# • cai-net  → bridge network for ALL backend services (qdrant, ollama, …).
+#              Services on cai-net reach each other by service name.
+#              All backend services ALSO publish ports so the cai container
+#              (host-networked) can reach them via localhost:<port>.
+#
+# • cai      → network_mode: host (raw-socket scanning with nmap/masscan).
+#              Reaches backends at localhost:<published-port>.
+#              Cannot use Docker service-name DNS.
+#
+# To add a new backend: add it to networks: [cai-net] + a ports: entry.
+###############################################################################
+
+networks:
+  cai-net:
+    name: cai-net
+    driver: bridge
+
 services:
+  # ── Qdrant vector database (persistent RAG / memory backend) ──────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cai-qdrant
+    restart: unless-stopped
+    networks:
+      - cai-net
+    ports:
+      - "6333:6333"   # HTTP REST  → cai reaches via localhost:6333
+      - "6334:6334"   # gRPC       → cai reaches via localhost:6334
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # qdrant image ships bash only (no curl/wget/nc).
+      # ':> /dev/tcp/host/port' is a bash builtin TCP connection check.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333' 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12        # wait up to ~60 s for qdrant to initialise
+      start_period: 10s
+
+  # ── (Optional) Ollama — local LLM inference ───────────────────────────────
+  # Uncomment to run a local model alongside or instead of a remote API.
+  # Once running, set LOCAL_API_BASE=http://localhost:11434/v1 in your .env
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: cai-ollama
+  #   restart: unless-stopped
+  #   networks:
+  #     - cai-net
+  #   ports:
+  #     - "11434:11434"    # → cai reaches via localhost:11434
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   # GPU support (NVIDIA — remove deploy block for CPU-only):
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]
+
   cai:
     build:
       context: ..
       dockerfile: dockerized/Dockerfile
     container_name: cai
+    depends_on:
+      qdrant:
+        condition: service_healthy
     
     # Host-Net for scanning (WSL should do that?)
     network_mode: host
-    
-    # nmap raw sockets
+
+    # ── Full network access ───────────────────────────────────────────────────
+    # network_mode: host   — container shares the host network stack; can reach
+    #                        every IP and every port the host machine can reach.
+    # privileged: true     — grants all Linux capabilities (NET_RAW, NET_ADMIN,
+    #                        etc.) so nmap/masscan/scapy raw sockets work.
+    # seccomp: unconfined  — removes the Docker default seccomp filter which can
+    #                        block AF_PACKET socket() calls even under privileged.
+    # ulimits.nofile       — raise open-file limit so parallel scanners (masscan,
+    #                        rustscan) can open thousands of sockets at once
+    #                        without hitting the OS default of 1024.
     privileged: true
+
+    security_opt:
+      - seccomp:unconfined
+
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
     
     # Volumes (map repo-root paths)
     volumes:
-      # .env file
-      - ../config/.env:/config/.env:ro
-      
+      # .env file: mount your repo-root .env read-only; start.sh copies it to
+      # /opt/cai/.env at startup so CAI picks it up.  Edit the file on the host
+      # and restart the container to apply changes.
+      - ../.env:/config/.env:ro
+
       # Logs persistence
       - ../logs:/opt/cai/logs
+
+      # Workspaces persistence
+      - ../workspaces:/opt/cai/workspaces
+
+      # TUI config persistence: agent/model selections, inject-mode, etc.
+      # The file is created automatically when you first save settings in the TUI.
+      - ../tui_config.json:/opt/cai/tui_config.json
       
       # Optional: Docker socket if cai should use docker should it though?
       # - /var/run/docker.sock:/var/run/docker.sock
@@ -32,13 +125,39 @@ services:
       - OLLAMA_API_BASE=${OLLAMA_API_BASE:-}
       - PROMPT_TOOLKIT_NO_CPR=1
       - CAI_STREAM=false
+      # RAG / memory backend (Qdrant running as a sibling service)
+      # network_mode: host means localhost:6333 is reachable directly
+      - QDRANT_URL=${QDRANT_URL:-http://localhost:6333}
+      - CAI_MEMORY=${CAI_MEMORY:-all}
+      - CAI_MEMORY_ONLINE=${CAI_MEMORY_ONLINE:-true}
+      - CAI_MEMORY_ONLINE_INTERVAL=${CAI_MEMORY_ONLINE_INTERVAL:-5}
+      # Embeddings backend — set to "openai" to use semantic embeddings
+      # (requires OPENAI_API_KEY); leave unset for hash-based local embeddings
+      - CAI_EMBEDDINGS_PROVIDER=${CAI_EMBEDDINGS_PROVIDER:-}
+      # ── Local LLM (Ollama) ──────────────────────────────────────────────
+      # Uncomment if the ollama service above is enabled:
+      # - LOCAL_API_BASE=http://localhost:11434/v1
+      # ── TUI ─────────────────────────────────────────────────────────────
+      # Set CAI_TUI=true in your shell or .env to launch the textual TUI.
+      # TERM + COLORTERM ensure Textual gets full 24-bit color inside Docker.
+      - CAI_TUI=${CAI_TUI:-false}
+      - TERM=${TERM:-xterm-256color}
+      - COLORTERM=${COLORTERM:-truecolor}
+      # Disable nss-wrapper in Docker — /etc/hosts already handles hostname
+      # resolution and libnss-wrapper wrapping of external binaries is not
+      # needed (set to 'true' only if you explicitly need virtual-hosts).
+      - CAI_VHOST_WRAP=${CAI_VHOST_WRAP:-false}
+      # Ensure Python output (logs, errors) is never buffered inside Docker.
+      - PYTHONUNBUFFERED=1
     
     # Interactive
     stdin_open: true
     tty: true
     
-    # Restart
-    restart: unless-stopped
+    # no: do not auto-restart — cai is an interactive session; if the user
+    # exits the TUI or completes a run the container should stop, not loop.
+    # Change to 'on-failure' if you run cai headlessly in CI.
+    restart: "no"
     
     # Resource Limits? Wsl doesnt like those? Mpf.
     deploy:
@@ -49,3 +168,9 @@ services:
         reservations:
           cpus: '1'
           memory: 2G
+
+volumes:
+  qdrant_data:
+    driver: local
+  # ollama_data:
+  #   driver: local

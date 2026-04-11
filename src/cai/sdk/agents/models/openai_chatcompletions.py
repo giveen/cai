@@ -3442,32 +3442,44 @@ class OpenAIChatCompletionsModel(Model):
                 filtered_kwargs[_k] = NOT_GIVEN
         kwargs = filtered_kwargs
 
-        # Sanitize kwargs for local "reasoner" model groups that do not
-        # support reasoning/thinking parameters or assistant-prefill content.
-        # LiteLLM proxies sometimes expose custom model groups (e.g. "reasoner")
-        # which reject parameters like `reasoning_effort` or prefilled
-        # assistant messages. Detect that case proactively and remove
-        # incompatible fields to avoid hard 400 errors from the client.
+        # Sanitize kwargs for model groups / endpoints that have thinking/reasoning
+        # enabled and therefore reject assistant-prefill content.
+        #
+        # Triggers when EITHER:
+        #   - the model name contains "reasoner" (explicit local LiteLLM group), OR
+        #   - `enable_thinking` is explicitly present in kwargs (Claude thinking mode)
+        #
+        # What we strip:
+        #   - reasoning_effort / thinking / enable_thinking parameters
+        #   - The LAST message when it is an assistant message without tool_calls
+        #     (i.e. the "prefill" pattern that thinking models reject)
+        #     NOTE: we only strip the tail, not all text-only assistant messages,
+        #     to preserve conversation history as much as possible.
         try:
             model_name_lower = str(kwargs.get("model", "")).lower()
-            if "reasoner" in model_name_lower:
+            _is_thinking_model = (
+                "reasoner" in model_name_lower
+                or kwargs.get("enable_thinking") is not None
+            )
+            if _is_thinking_model:
                 kwargs.pop("reasoning_effort", None)
                 kwargs.pop("thinking", None)
                 kwargs.pop("enable_thinking", None)
 
                 msgs = kwargs.get("messages")
-                if isinstance(msgs, list):
-                    filtered = []
-                    for m in msgs:
-                        try:
-                            role = m.get("role") if isinstance(m, dict) else None
-                        except Exception:
-                            role = None
-                        # Drop assistant prefill messages unless they contain tool_calls
-                        if role == "assistant" and isinstance(m, dict) and not m.get("tool_calls"):
-                            continue
-                        filtered.append(m)
-                    kwargs["messages"] = filtered
+                if isinstance(msgs, list) and msgs:
+                    last = msgs[-1]
+                    try:
+                        last_role = last.get("role") if isinstance(last, dict) else None
+                    except Exception:
+                        last_role = None
+                    # Strip only the trailing prefill: an assistant message with no tool_calls
+                    if (
+                        last_role == "assistant"
+                        and isinstance(last, dict)
+                        and not last.get("tool_calls")
+                    ):
+                        kwargs["messages"] = msgs[:-1]
         except Exception:
             # Best-effort only — do not fail the call if sanitization errors
             pass
@@ -3683,32 +3695,29 @@ class OpenAIChatCompletionsModel(Model):
                     or "incompatible with enable_thinking" in error_msg
                     or "Assistant response prefill is incompatible" in error_msg
                 ):
-                    # Retry without reasoning_effort
+                    # Retry: strip thinking-related kwargs and the trailing prefill
+                    # (a text-only assistant message at the END of the messages list).
                     retry_kwargs = kwargs.copy()
                     retry_kwargs.pop("reasoning_effort", None)
+                    retry_kwargs.pop("enable_thinking", None)
+                    retry_kwargs.pop("thinking", None)
 
-                    # Also remove any assistant-message prefill content which can
-                    # be incompatible with thinking-enabled models. Keep assistant
-                    # messages only if they contain tool_calls so we don't lose
-                    # important tool invocations.
                     try:
                         msgs = retry_kwargs.get("messages")
-                        if isinstance(msgs, list):
-                            filtered = []
-                            for m in msgs:
-                                try:
-                                    role = m.get("role") if isinstance(m, dict) else None
-                                except Exception:
-                                    role = None
-                                if role != "assistant":
-                                    filtered.append(m)
-                                else:
-                                    # Preserve assistant messages that include tool_calls
-                                    if isinstance(m, dict) and m.get("tool_calls"):
-                                        filtered.append(m)
-                            retry_kwargs["messages"] = filtered
+                        if isinstance(msgs, list) and msgs:
+                            last = msgs[-1]
+                            try:
+                                last_role = last.get("role") if isinstance(last, dict) else None
+                            except Exception:
+                                last_role = None
+                            # Strip only the trailing prefill: an assistant message with no tool_calls
+                            if (
+                                last_role == "assistant"
+                                and isinstance(last, dict)
+                                and not last.get("tool_calls")
+                            ):
+                                retry_kwargs["messages"] = msgs[:-1]
                     except Exception:
-                        # Best-effort only; fall back to retrying without reasoning_effort
                         pass
 
                     try:
@@ -3750,21 +3759,22 @@ class OpenAIChatCompletionsModel(Model):
                 ):
                     retry_kwargs = kwargs.copy()
                     retry_kwargs.pop("reasoning_effort", None)
+                    retry_kwargs.pop("enable_thinking", None)
+                    retry_kwargs.pop("thinking", None)
                     try:
                         msgs = retry_kwargs.get("messages")
-                        if isinstance(msgs, list):
-                            filtered = []
-                            for m in msgs:
-                                try:
-                                    role = m.get("role") if isinstance(m, dict) else None
-                                except Exception:
-                                    role = None
-                                if role != "assistant":
-                                    filtered.append(m)
-                                else:
-                                    if isinstance(m, dict) and m.get("tool_calls"):
-                                        filtered.append(m)
-                            retry_kwargs["messages"] = filtered
+                        if isinstance(msgs, list) and msgs:
+                            last = msgs[-1]
+                            try:
+                                last_role = last.get("role") if isinstance(last, dict) else None
+                            except Exception:
+                                last_role = None
+                            if (
+                                last_role == "assistant"
+                                and isinstance(last, dict)
+                                and not last.get("tool_calls")
+                            ):
+                                retry_kwargs["messages"] = msgs[:-1]
                     except Exception:
                         pass
 
@@ -4241,19 +4251,22 @@ class OpenAIChatCompletionsModel(Model):
             if any(sig in error_msg for sig in _thinking_signals):
                 retry_kwargs = dict(client_kwargs)
                 retry_kwargs.pop("reasoning_effort", None)
-                # Strip assistant-prefill messages that cause the conflict; keep
-                # any assistant messages that contain tool_calls.
+                retry_kwargs.pop("enable_thinking", None)
+                retry_kwargs.pop("thinking", None)
+                # Strip the trailing prefill: only the LAST message when it is an
+                # assistant message without tool_calls.  Stripping ALL such messages
+                # is too aggressive and corrupts multi-turn conversation history.
                 try:
                     msgs = retry_kwargs.get("messages")
-                    if isinstance(msgs, list):
-                        filtered = []
-                        for m in msgs:
-                            role = m.get("role") if isinstance(m, dict) else None
-                            if role != "assistant":
-                                filtered.append(m)
-                            elif isinstance(m, dict) and m.get("tool_calls"):
-                                filtered.append(m)
-                        retry_kwargs["messages"] = filtered
+                    if isinstance(msgs, list) and msgs:
+                        last = msgs[-1]
+                        last_role = last.get("role") if isinstance(last, dict) else None
+                        if (
+                            last_role == "assistant"
+                            and isinstance(last, dict)
+                            and not last.get("tool_calls")
+                        ):
+                            retry_kwargs["messages"] = msgs[:-1]
                 except Exception:
                     pass
                 try:

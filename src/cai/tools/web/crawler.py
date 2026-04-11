@@ -9,6 +9,7 @@ returns a consolidated report. Includes a `### Site Map` section.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
 import threading
@@ -292,7 +293,9 @@ def deep_crawl(
 
     The function shows a loading indicator via `notify_tool_loading` and
     streams progress via `write_progress`. The full report is saved to
-    `logs/recon/{domain}_{timestamp}.md` and returned as Markdown.
+    `{workspace}/recon/{domain}_{timestamp}.md` (workspace-relative when
+    ``CAI_WORKSPACE`` / ``CAI_WORKSPACE_DIR`` are set, otherwise ``logs/recon/``)
+    and returned as Markdown.
     """
     url = (url or "").strip()
     if not url:
@@ -313,7 +316,11 @@ def deep_crawl(
     start = time.time()
     domain = urlparse(url).netloc.replace(":", "_")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = Path("logs") / "recon"
+    if os.getenv("CAI_WORKSPACE") or os.getenv("CAI_WORKSPACE_DIR"):
+        from cai.tools.common import _get_workspace_dir
+        out_path = Path(_get_workspace_dir()) / "recon"
+    else:
+        out_path = Path("logs") / "recon"
     out_path.mkdir(parents=True, exist_ok=True)
     out_file = out_path / f"{domain}_{ts}.md"
 

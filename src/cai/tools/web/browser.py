@@ -50,7 +50,11 @@ _SELECTOR_REQUIRED = {"click", "fill", "type", "wait"}
 
 def _screenshots_dir() -> Path:
     """Return (and create) the screenshots output directory."""
-    d = Path("logs") / "screenshots"
+    if os.getenv("CAI_WORKSPACE") or os.getenv("CAI_WORKSPACE_DIR"):
+        from cai.tools.common import _get_workspace_dir
+        d = Path(_get_workspace_dir()) / "screenshots"
+    else:
+        d = Path("logs") / "screenshots"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

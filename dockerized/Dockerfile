@@ -37,6 +37,12 @@ RUN apt-get update && \
      /tmp/msfinstall && \
      rm /tmp/msfinstall
 
+# libnss-wrapper: lets CAI's virtual-hosts feature (dns_proxy) inject custom
+# hostname/IP mappings into nmap, curl, hydra, etc. via LD_PRELOAD.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libnss-wrapper && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # FIX: pip system-packages warning
 RUN mkdir -p /root/.pip && \
     echo "[global]" > /root/.pip/pip.conf && \
@@ -49,8 +55,8 @@ WORKDIR /opt/cai
 # Copy local repository into image (build context must be the repo root)
 COPY . /opt/cai
 
-# Install the local CAI package from source
-RUN pip3 install /opt/cai
+# Install the local CAI package from source, plus optional RAG + TUI deps
+RUN pip3 install "/opt/cai[rag,tui]"
 
 # .env Template (overwritten if .env file present in logs)
 RUN echo 'OPENAI_API_KEY="sk-1234"' > /opt/cai/.env && \
@@ -68,6 +74,13 @@ RUN echo '#!/bin/bash' > /opt/cai/start.sh && \
     echo 'if [ -f /config/.env ]; then' >> /opt/cai/start.sh && \
     echo '  echo "Loading .env from /config/.env"' >> /opt/cai/start.sh && \
     echo '  cp /config/.env /opt/cai/.env' >> /opt/cai/start.sh && \
+    echo 'fi' >> /opt/cai/start.sh && \
+    echo '# Ensure runtime dirs exist (workspaces/ may be gitignored on host)' >> /opt/cai/start.sh && \
+    echo 'mkdir -p /opt/cai/workspaces /opt/cai/logs' >> /opt/cai/start.sh && \
+    echo '# tui_config.json: if the bind-mount created a directory (gitignored on host)' >> /opt/cai/start.sh && \
+    echo '# replace it with a minimal valid JSON file so the TUI can write settings.' >> /opt/cai/start.sh && \
+    echo 'if [ -d /opt/cai/tui_config.json ]; then' >> /opt/cai/start.sh && \
+    echo '  rmdir /opt/cai/tui_config.json 2>/dev/null && echo '"'"'{"tools":{"inject_mode":"command"}}'"'"'' > /opt/cai/tui_config.json' >> /opt/cai/start.sh && \
     echo 'fi' >> /opt/cai/start.sh && \
     echo 'cd /opt/cai' >> /opt/cai/start.sh && \
     echo 'exec cai "$@"' >> /opt/cai/start.sh && \

@@ -80,6 +80,19 @@ vault = [
     "gitpython>=3.1",
 ]
 
+# Optional persistent RAG backend (Qdrant vector database)
+rag = [
+    "qdrant-client>=1.9",
+]
+
+# Optional TUI extras: inline image rendering (textual-image) + screenshot
+# overlay compositing (Pillow).  Both are silently skipped when absent, but
+# installing them gives the full BrowserPreview experience inside Docker.
+tui = [
+    "textual-image>=0.7",
+    "Pillow>=10.0",
+]
+
 # NOTE: the virtual-hosts nss-wrapper feature depends on the system C library
 # libnss-wrapper (libnss_wrapper.so).  This is NOT a Python package and cannot
 # be installed via pip.  Install it with your system package manager:
