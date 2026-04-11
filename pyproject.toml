@@ -80,6 +80,18 @@ vault = [
     "gitpython>=3.1",
 ]
 
+# NOTE: the virtual-hosts nss-wrapper feature depends on the system C library
+# libnss-wrapper (libnss_wrapper.so).  This is NOT a Python package and cannot
+# be installed via pip.  Install it with your system package manager:
+#
+#   Debian / Ubuntu:   sudo apt install libnss-wrapper -y
+#   Fedora / RHEL:     sudo dnf install nss-wrapper -y
+#   Arch Linux:        sudo pacman -S nss-wrapper
+#
+# CAI will detect the library at runtime via ctypes.util.find_library and
+# will silently skip wrapping when the library is absent.  You can verify
+# the status from inside CAI by calling the check_nss_wrapper() tool.
+
 [dependency-groups]
 dev = [
     "mypy",

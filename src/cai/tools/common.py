@@ -868,6 +868,17 @@ def run_command(
     except Exception:
         pass
 
+    # Wrap network tools with nss-wrapper when virtual hosts are configured.
+    try:
+        from cai.tools.network.dns_proxy import get_vhm
+
+        _wrapped = get_vhm().wrap_command(full_command)
+        if _wrapped != full_command:
+            command = _wrapped
+            exec_cmd, cmd_name, cmd_args, full_command = _normalize_command(command)
+    except Exception:
+        pass
+
     # Generate a call_id if we're streaming and one wasn't provided
     # Use a more specific format that includes the command name for easier tracking
     if not call_id and stream:
