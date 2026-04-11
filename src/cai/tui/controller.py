@@ -273,7 +273,7 @@ class TuiController:
                 if getattr(app, "_resume_skip_recon", False):
                     try:
                         params_use = params or {}
-                        if _should_skip_recon(tool_id, params_use, None):
+                        if _looks_like_recon_call(tool_id, meta, params_use):
                             try:
                                 app._log_to_active_terminal(
                                     f"[tool] Skipping {tool_id} due to resume-skip-recon flag (use force to override).",
@@ -408,7 +408,8 @@ class TuiController:
                 if getattr(app, "_resume_skip_recon", False):
                     try:
                         params_use_check = params_use or {}
-                        if _should_skip_recon(tool_id, params_use_check, None):
+                        replay_meta = (app._tool_registry or {}).get(tool_id, {}) or {}
+                        if _looks_like_recon_call(tool_id, replay_meta, params_use_check):
                             try:
                                 app._log_to_active_terminal(
                                     f"[tool] Replay skipped for {tool_id} due to resume-skip-recon flag (use force to override).",

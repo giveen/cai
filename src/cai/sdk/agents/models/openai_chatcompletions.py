@@ -1057,7 +1057,7 @@ class OpenAIChatCompletionsModel(Model):
             try:
                 response = await self._fetch_response(
                     system_instructions,
-                    input,
+                    self._warn_on_repeated_calls(converted_messages),
                     model_settings,
                     tools,
                     output_schema,
@@ -1791,7 +1791,7 @@ class OpenAIChatCompletionsModel(Model):
 
                 response, stream = await self._fetch_response(
                     system_instructions,
-                    input,
+                    self._warn_on_repeated_calls(converted_messages),
                     model_settings,
                     tools,
                     output_schema,
@@ -4228,6 +4228,55 @@ class OpenAIChatCompletionsModel(Model):
                 return ret
         except Exception as e:
             error_msg = str(e)
+
+            # Handle Claude thinking/prefill incompatibility raised by the direct OpenAI client.
+            # litellm raises a different error type (handled above); the direct AsyncOpenAI
+            # client raises openai.BadRequestError which hits this branch instead.
+            _thinking_signals = (
+                "incompatible with enable_thinking",
+                "Assistant response prefill is incompatible",
+                "Expected `thinking` or `redacted_thinking`, but found `text`",
+                "When `thinking` is enabled, a final `assistant` message must start with a thinking block",
+            )
+            if any(sig in error_msg for sig in _thinking_signals):
+                retry_kwargs = dict(client_kwargs)
+                retry_kwargs.pop("reasoning_effort", None)
+                # Strip assistant-prefill messages that cause the conflict; keep
+                # any assistant messages that contain tool_calls.
+                try:
+                    msgs = retry_kwargs.get("messages")
+                    if isinstance(msgs, list):
+                        filtered = []
+                        for m in msgs:
+                            role = m.get("role") if isinstance(m, dict) else None
+                            if role != "assistant":
+                                filtered.append(m)
+                            elif isinstance(m, dict) and m.get("tool_calls"):
+                                filtered.append(m)
+                        retry_kwargs["messages"] = filtered
+                except Exception:
+                    pass
+                try:
+                    if stream:
+                        stream_obj = await self._client.chat.completions.create(**retry_kwargs)
+                        response = Response(
+                            id=FAKE_RESPONSES_ID,
+                            created_at=time.time(),
+                            model=self.model,
+                            object="response",
+                            output=[],
+                            tool_choice=_sanitize_tool_choice_value(tool_choice),
+                            top_p=model_settings.top_p,
+                            temperature=model_settings.temperature,
+                            tools=[],
+                            parallel_tool_calls=parallel_tool_calls or False,
+                        )
+                        return response, stream_obj
+                    else:
+                        return await self._client.chat.completions.create(**retry_kwargs)
+                except Exception:
+                    raise e
+
             # Handle both OpenAI and Anthropic error messages for tool_call_id
             if (
                 "string too long" in error_msg
@@ -4778,6 +4827,54 @@ class OpenAIChatCompletionsModel(Model):
             self._compact_failed_tokens = estimated_tokens
 
         return input, system_instructions, False
+
+    def _warn_on_repeated_calls(self, converted_messages: list) -> list:
+        """Inject a user-role nudge when the model keeps calling the same tool
+        with identical arguments without making progress.
+
+        Scans the tail of *converted_messages* for consecutive assistant
+        messages that all carry the same (tool_name, arguments) signature.
+        When the count reaches CAI_MAX_TOOL_REPEATS (default: 2) the model is
+        about to make *another* identical call, so we append a synthetic
+        user message telling it to stop and try something different.
+        """
+        max_repeats = int(os.getenv("CAI_MAX_TOOL_REPEATS", "2"))
+        if max_repeats <= 0 or not converted_messages:
+            return converted_messages
+
+        # Walk backwards collecting the tool-call signature from each assistant
+        # message.  Stop at the first user/system message or text-only assistant
+        # message so we only consider the current agentic loop iteration.
+        signatures: list[tuple[str, str]] = []
+        for msg in reversed(converted_messages):
+            role = msg.get("role") if isinstance(msg, dict) else None
+            if role == "tool":
+                continue  # skip tool-response messages
+            elif role == "assistant":
+                tcs = msg.get("tool_calls") if isinstance(msg, dict) else None
+                if tcs:
+                    tc = tcs[0] if tcs else {}
+                    fn = (tc.get("function") or {}) if isinstance(tc, dict) else {}
+                    sig: tuple[str, str] = (fn.get("name", ""), fn.get("arguments", ""))
+                    signatures.append(sig)
+                else:
+                    break  # text-only assistant message – stop here
+            else:
+                break  # user / system boundary
+
+        if len(signatures) >= max_repeats and signatures:
+            first = signatures[0]
+            if all(s == first for s in signatures):
+                name = first[0]
+                nudge = (
+                    f"[System notice] You have called `{name}` with the same arguments "
+                    f"{len(signatures)} time(s) in a row without useful results. "
+                    f"Do NOT call `{name}` with these same arguments again. "
+                    f"Try a fundamentally different command, tool, or approach to make progress."
+                )
+                return list(converted_messages) + [{"role": "user", "content": nudge}]
+
+        return converted_messages
 
     def _intermediate_logs(self):
         """Intermediate logging placeholder (telemetry disabled)."""
