@@ -662,7 +662,8 @@ ModalScreen {
     /* backdrop-filter: blur(6px); */
     /* Subtle glow to emphasise the glass edge */
     box-shadow: 0 0 12px rgba(0, 255, 0, 0.06);
-    transition: transform 300ms ease-out, opacity 250ms ease-out;
+    /* Transform-based animations are not supported by TCSS; use opacity-only transitions */
+    transition: opacity 300ms ease-out;
 }
 
 /* Ensure inner elements don't use opaque backgrounds so glass shows through */
@@ -687,13 +688,13 @@ ProvidersScreen {
 
 /* ─── Config modal: slide-in from the right (adds -slide-in class to trigger) ─── */
 ConfigModal #modal-dialog {
-    /* start offset to the right; CSS transform used where supported */
-    transform: translateX(40%);
-    transition: transform 360ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 260ms ease-out;
+    /* Fallback: use opacity-based fade when transform isn't available in the terminal */
+    opacity: 0;
+    transition: opacity 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 ConfigModal #modal-dialog.-slide-in {
-    transform: translateX(0%);
+    opacity: 1;
 }
 
 #providers-body {
