@@ -258,6 +258,7 @@ from cai.tui.components.browser import BrowserPreview
 from cai.tui.components.terminal import TerminalPanel
 from cai.tui.components.terminal_grid import TerminalGrid
 from cai.tui.components.persistence_manager import PersistenceManager
+from cai.tui.components.sidebar import ConfigTab, SessionsTab, ToolsTab
 from cai.tui.telemetry import TelemetryMixin
 from cai.tui.layout import ResponsiveMixin
 from cai.tui.tools_mixin import ToolsMixin
