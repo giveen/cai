@@ -46,7 +46,7 @@ def _build_label(cmd: dict) -> str:
     if len(desc) > 52:
         desc = desc[:49] + "…"
     return (
-        f"[bold {color}]{name:<38}[/bold {color}]"
+        f"[bold {color}]{name:<24}[/bold {color}]"
         f" [dim #005500]{desc}[/dim #005500]"
     )
 

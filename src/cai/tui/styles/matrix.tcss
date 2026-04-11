@@ -420,13 +420,22 @@ Footer > .footer--description {
 
 #agents-columns {
     layout: horizontal;
+    width: 1fr;
+    height: auto;
+}
+
+.agents-col {
+    width: 1fr;
+    height: auto;
 }
 
 .agent-col-label {
+    width: 1fr;
     height: 1;
     color: #00cc00;
     background: #001200;
     padding: 0 1;
+    text-align: center;
     text-style: bold;
 }
 
@@ -442,7 +451,7 @@ Footer > .footer--description {
     background: #000000;
     color: #00cc00;
     border: none;
-    text-align: left;
+    text-align: center;
     padding: 0 1;
     margin: 0;
 }

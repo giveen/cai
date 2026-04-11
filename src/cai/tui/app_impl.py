@@ -565,7 +565,7 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
         cols = Horizontal(id="agents-columns")
         await scroll.mount(cols)
         for key, label in cats:
-            col = Vertical(id=f"agents-col-{key}")
+            col = Vertical(id=f"agents-col-{key}", classes="agents-col")
             await cols.mount(col)
             # Column header
             await col.mount(Static(f"{label}", classes="agent-col-label"))
