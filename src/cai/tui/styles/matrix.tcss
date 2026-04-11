@@ -420,7 +420,6 @@ Footer > .footer--description {
 
 #agents-columns {
     layout: horizontal;
-    gap: 1;
 }
 
 .agent-col-label {
@@ -456,7 +455,7 @@ Footer > .footer--description {
 #agent-intel-header {
     height: 1;
     color: #00ff00;
-    padding: 0 0.5;
+    padding: 0 1;
     text-style: bold;
 }
 
@@ -473,7 +472,7 @@ Footer > .footer--description {
     height: 6;
     background: #001000;
     color: #00cc00;
-    padding: 0.5;
+    padding: 1;
     margin-top: 1;
     border-top: solid #002200;
     overflow: auto;
@@ -660,10 +659,9 @@ ModalScreen {
     layout: vertical;
     /* Blur backdrop where supported by terminal rendering (unsupported in TCSS) */
     /* backdrop-filter: blur(6px); */
-    /* Subtle glow to emphasise the glass edge */
-    box-shadow: 0 0 12px rgba(0, 255, 0, 0.06);
+    /* box-shadow is not supported in TCSS */
     /* Transform-based animations are not supported by TCSS; use opacity-only transitions */
-    transition: opacity 300ms ease-out;
+    transition: opacity 300ms linear;
 }
 
 /* Ensure inner elements don't use opaque backgrounds so glass shows through */
@@ -690,7 +688,7 @@ ProvidersScreen {
 ConfigModal #modal-dialog {
     /* Fallback: use opacity-based fade when transform isn't available in the terminal */
     opacity: 0;
-    transition: opacity 360ms ease-out;
+    transition: opacity 360ms linear;
 }
 
 ConfigModal #modal-dialog.-slide-in {
