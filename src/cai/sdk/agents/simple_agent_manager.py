@@ -129,8 +129,20 @@ class SimpleAgentManager(AgentManager):
                 agent.model.message_history.clear()
 
     def clear_all_histories(self):
-        """Clear all message histories."""
+        """Clear all message histories.
+
+        Clears each individual history list in-place before removing the
+        dict entries.  This is critical because models hold direct references
+        to the same list objects; only clearing the dict would leave the
+        lists (and any model that points to them) with stale messages.
+        """
+        for hist in self._message_history.values():
+            if isinstance(hist, list):
+                hist.clear()
         self._message_history.clear()
+        # Also discard any pending transfer so a subsequent /agent switch
+        # cannot accidentally inject the cleared history into a new agent.
+        self._pending_history_transfer = None
 
     def get_all_histories(self) -> dict[str, list]:
         """Get all agent histories."""

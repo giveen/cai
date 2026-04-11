@@ -127,8 +127,16 @@ class FlushCommand(Command):
                     agent_count += 1
                     total_messages += len(history)
 
-        # Clear all histories from AGENT_MANAGER
+        # Clear all histories from AGENT_MANAGER (also nulls _pending_history_transfer)
         clear_all_histories()
+
+        # Ensure the pending history transfer on the manager is gone even if
+        # clear_all_histories() did not reach it (belt-and-suspenders).
+        try:
+            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AGENT_MANAGER
+            _AGENT_MANAGER._pending_history_transfer = None
+        except Exception:
+            pass
 
         # Clear parallel isolation histories
         PARALLEL_ISOLATION.clear_all_histories()
