@@ -39,6 +39,11 @@ from cai.tools.reconnaissance.ldap_search import ldap_search
 from cai.tools.reconnaissance.netcat import netcat
 from cai.tools.reconnaissance.netstat import netstat
 from cai.tools.reconnaissance.nmap import nmap
+from cai.tools.atomic_red_team import (
+    list_art_techniques,
+    get_art_technique,
+    generate_art_logs,
+)
 from cai.tools.reconnaissance.smbclient_tool import (  # noqa: E501
     smb_download_file,
     smb_list_shares,
@@ -132,6 +137,10 @@ ALL_TOOLS = [
     add_to_memory_episodic,
     add_to_memory_semantic,
     get_rag_status,
+    # Atomic Red Team tools
+    list_art_techniques,
+    get_art_technique,
+    generate_art_logs,
 ]
 
 # ── Conditional: OSINT / search ───────────────────────────────────────────────
