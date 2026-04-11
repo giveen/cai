@@ -50,13 +50,13 @@ class WorkspaceHUD(Widget):
     WorkspaceHUD #workspace-hud-summary {
         color: #00cc00;
         margin-top: 0;
-        margin-bottom: 0.5;
+        margin-bottom: 1;
     }
 
     WorkspaceHUD Button {
         width: auto;
         padding: 0 1;
-        margin-top: 0.3;
+        margin-top: 1;
     }
     """
 

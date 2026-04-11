@@ -44,19 +44,19 @@ class MemoryHUD(Widget):
 
     MemoryHUD #memory-hud-heatmap {
         color: #00cc00;
-        margin-top: 0.2;
-        margin-bottom: 0.2;
+        margin-top: 0;
+        margin-bottom: 0;
     }
 
     MemoryHUD #memory-hud-status {
         color: #00cc00;
-        margin-bottom: 0.3;
+        margin-bottom: 1;
     }
 
     MemoryHUD Button {
         width: auto;
         padding: 0 1;
-        margin-top: 0.3;
+        margin-top: 1;
     }
     """
 
