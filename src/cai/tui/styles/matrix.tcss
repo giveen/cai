@@ -658,8 +658,8 @@ ModalScreen {
     border: solid #00ff00;
     padding: 1 2;
     layout: vertical;
-    /* Blur backdrop where supported by terminal rendering */
-    backdrop-filter: blur(6px);
+    /* Blur backdrop where supported by terminal rendering (unsupported in TCSS) */
+    /* backdrop-filter: blur(6px); */
     /* Subtle glow to emphasise the glass edge */
     box-shadow: 0 0 12px rgba(0, 255, 0, 0.06);
     transition: transform 300ms ease-out, opacity 250ms ease-out;
