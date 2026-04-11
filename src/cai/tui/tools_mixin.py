@@ -17,6 +17,11 @@ from textual.widgets import Button, Static, RichLog, TextArea
 from rich.text import Text as RichText
 
 from cai.tui.components.terminal import TerminalPanel
+try:
+    from cai.memory.skills import register_tool_call
+except Exception:
+    def register_tool_call(*args, **kwargs):
+        return None
 from cai.tui.components.sidebar import Sidebar
 from cai.tui.screens.common import PromptModal
 
@@ -170,6 +175,11 @@ class ToolsMixin:
             "replayed": replayed,
         }
         self._tool_call_history.append(record)
+        # Notify SkillMiner/other consumers about the new tool call (best-effort)
+        try:
+            register_tool_call(record)
+        except Exception:
+            pass
         self._persist_tool_call_record(record)
         self._selected_tool_call_idx = len(self._tool_call_history) - 1
         return record

@@ -12,6 +12,7 @@ import time
 import uuid
 
 from wasabi import color
+from cai.tools.base import process_tool_output
 
 
 async def run_local_async(
@@ -79,11 +80,40 @@ async def run_local_async(
             if not call_id:
                 call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
 
+            # Check for recon-skip based on workspace state and tool heuristics.
+            try:
+                from cai.tools.common import _should_skip_recon
+
+                if _should_skip_recon(tool_name, tool_args, None):
+                    return {"status": "skipped", "reason": "resume_skip_recon", "tool": tool_name}
+            except Exception:
+                pass
+
             token_info = _get_agent_token_info()
             call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
 
             # Prefer exec-style subprocess for streaming when possible
             try:
+                # Before executing, honor recon-skip heuristics for non-stream mode.
+                try:
+                    from cai.tools.common import _should_skip_recon
+
+                    parts = command.strip().split(" ", 1)
+                    display_args = (
+                        custom_args
+                        if custom_args is not None
+                        else {
+                            "command": parts[0] if parts else command,
+                            "args": parts[1] if len(parts) > 1 else "",
+                            "full_command": command,
+                            "workspace": os.path.basename(target_dir),
+                        }
+                    )
+                    if _should_skip_recon(tool_name, display_args, None):
+                        return {"status": "skipped", "reason": "resume_skip_recon", "tool": tool_name}
+                except Exception:
+                    pass
+
                 exec_list = shlex.split(command)
                 process = await asyncio.create_subprocess_exec(
                     *exec_list,
@@ -168,7 +198,23 @@ async def run_local_async(
             finish_tool_streaming(
                 tool_name, tool_args, final_output, call_id, execution_info, token_info
             )
-            return final_output
+            try:
+                t0 = time.time()
+                res = process_tool_output(tool_name, final_output)
+                t1 = time.time()
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} LOCAL_STREAM processed tool={tool_name} dur={(t1-t0):.3f} size={len(final_output)}\n")
+                except Exception:
+                    pass
+                return res
+            except Exception:
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} LOCAL_STREAM process_tool_output FAILED tool={tool_name} size={len(final_output)}\n")
+                except Exception:
+                    pass
+                return final_output
 
         else:
             # Non-streaming async execution behaves like sync wrapper
@@ -283,7 +329,23 @@ async def run_local_async(
 
             stop_active_timer()
             start_idle_timer()
-            return output.strip()
+            try:
+                t0 = time.time()
+                res = process_tool_output(tool_name, output.strip())
+                t1 = time.time()
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} LOCAL_ASYNC processed tool={tool_name} dur={(t1-t0):.3f} size={len(output)}\n")
+                except Exception:
+                    pass
+                return res
+            except Exception:
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} LOCAL_ASYNC process_tool_output FAILED tool={tool_name} size={len(output)}\n")
+                except Exception:
+                    pass
+                return output.strip()
 
     except subprocess.TimeoutExpired as e:
         error_output = e.stdout if hasattr(e, "stdout") and e.stdout else str(e)
@@ -405,6 +467,14 @@ def run_local(
 
             if not call_id:
                 call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
+            # Check recon-skip before starting streaming
+            try:
+                from cai.tools.common import _should_skip_recon
+
+                if _should_skip_recon(tool_name, tool_args, None):
+                    return {"status": "skipped", "reason": "resume_skip_recon", "tool": tool_name}
+            except Exception:
+                pass
 
             token_info = _get_agent_token_info()
             call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
@@ -472,9 +542,32 @@ def run_local(
             finish_tool_streaming(
                 tool_name, tool_args, final_output, call_id, execution_info, token_info
             )
-            return final_output
+            try:
+                return process_tool_output(tool_name, final_output)
+            except Exception:
+                return final_output
 
         else:
+            # Non-streaming: check recon-skip heuristics before running
+            try:
+                from cai.tools.common import _should_skip_recon
+
+                parts = command.strip().split(" ", 1)
+                display_args = (
+                    custom_args
+                    if custom_args is not None
+                    else {
+                        "command": parts[0] if parts else command,
+                        "args": parts[1] if len(parts) > 1 else "",
+                        "full_command": command,
+                        "workspace": os.path.basename(target_dir),
+                    }
+                )
+                if _should_skip_recon(tool_name, display_args, None):
+                    return {"status": "skipped", "reason": "resume_skip_recon", "tool": tool_name}
+            except Exception:
+                pass
+
             result = subprocess.run(
                 command,
                 shell=True,
@@ -530,7 +623,10 @@ def run_local(
                     streaming=False,
                 )
 
-            return output.strip()
+            try:
+                return process_tool_output(tool_name, output.strip())
+            except Exception:
+                return output.strip()
     except subprocess.TimeoutExpired as e:
         error_output = e.stdout if hasattr(e, "stdout") and e.stdout else str(e)
         error_msg = f"Command timed out after {timeout} seconds\n{error_output}"

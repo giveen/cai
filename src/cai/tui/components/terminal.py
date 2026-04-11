@@ -33,6 +33,7 @@ from textual.widgets._text_area import TextArea
 from cai.tui.components.header import _pretty_name, _BANNER_LINES
 
 import logging
+from cai.tools.common import _should_skip_recon
 
 logger = logging.getLogger(__name__)
 
@@ -779,6 +780,30 @@ class TerminalPanel(Widget):
                 )
                 _sys.stderr.flush()
                 logger.debug("calling Runner.run_streamed for term=%s", self._term_id)
+            except Exception:
+                pass
+
+            # If we are resuming and resume-skip flag is set, avoid running
+            # automatic reconnaissance steps triggered by free-form prompts.
+            try:
+                if getattr(self.app, "_resume_skip_recon", False):
+                    txt = str(text or "").lower()
+                    # If the user typed 'force' in the prompt, treat it as an explicit override
+                    force_in_text = "force" in txt
+                    tool_args = {"_force": True} if force_in_text else None
+                    if _should_skip_recon(None, tool_args, txt):
+                        try:
+                            log.write(RichText("[dim]Resume: reconnaissance keywords detected and resume-skip is active — skipping automatic reconnaissance. Add 'force' to override.[/dim]"))
+                        except Exception:
+                            pass
+                        self._busy = False
+                        self._set_visual_state("ready")
+                        self._set_status(f"T{self._term_id}> reconnaissance skipped")
+                        try:
+                            self._write_system_message("progress", "recon skipped due to resume flag", style="#ffaa00")
+                        except Exception:
+                            pass
+                        return
             except Exception:
                 pass
 

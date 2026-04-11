@@ -136,10 +136,34 @@ class ConfigModal(ModalScreen):
         self._display = display_label
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="modal-dialog"):
+        # Mark this dialog as the config modal so we can animate it on mount
+        with Vertical(id="modal-dialog", classes="modal-config"):
             yield Static(f"Open config: [bold]{self._display}[/bold]", id="modal-agent-label")
             yield Button("Open", id="config-open", classes="modal-btn")
             yield Button("Cancel", id="config-cancel", classes="modal-btn modal-btn--cancel")
+
+    def on_mount(self) -> None:
+        """Trigger a slide-in transition from the right for the Config modal.
+
+        We add a transient class after mount so the CSS transition runs.
+        """
+        try:
+            dlg = self.query_one("#modal-dialog")
+
+            # Small call_later to allow the initial mount styles to be applied
+            def _add_slide() -> None:
+                try:
+                    dlg.add_class("-slide-in")
+                except Exception:
+                    pass
+
+            try:
+                # Use call_later so the transition occurs after layout
+                self.call_later(_add_slide)
+            except Exception:
+                _add_slide()
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#config-open")
     def on_config_open(self, event: Button.Pressed) -> None:

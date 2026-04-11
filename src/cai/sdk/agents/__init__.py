@@ -242,6 +242,7 @@ __all__ = [
     "TContext",
     "RunResult",
     "RunResultStreaming",
+    "Result",
     "RunConfig",
     "RawResponsesStreamEvent",
     "RunItemStreamEvent",
@@ -295,3 +296,6 @@ __all__ = [
     "gen_span_id",
     "default_tool_error_function",
 ]
+
+# Backwards-compatibility alias: some modules import `Result`
+Result = RunResult

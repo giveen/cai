@@ -1,0 +1,14 @@
+{
+  "targets": [],
+  "credentials": {
+    "admin": "newpass"
+  },
+  "milestones": [],
+  "current_objective": "",
+  "next_steps": [],
+  "vcm": {
+    "max_active_tokens": 393216,
+    "pages": {},
+    "gpu": []
+  }
+}

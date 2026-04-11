@@ -23,8 +23,60 @@ from typing import Any, Callable
 from rich.text import Text as RichText
 from textual.widgets import RichLog, Button
 from textual import work
+from cai.session import auto_commit_from_tool, commit_objective_state, _read_state
+from cai.tools.common import _should_skip_recon
+from cai.sdk.agents.shutdown_coordinator import SHUTDOWN_COORDINATOR
 
 logger = logging.getLogger(__name__)
+
+
+def _looks_like_recon_call(tool_id: str | None, meta: dict | None, params: dict | None, text: str | None = None) -> bool:
+    """Heuristic: detect whether a tool call or prompt appears reconnaissance-related.
+
+    This is intentionally conservative: it performs a simple substring check
+    against a short keyword list. Returns True if any keyword is present.
+    """
+    try:
+        parts: list[str] = []
+        if tool_id:
+            parts.append(str(tool_id))
+        if isinstance(meta, dict):
+            parts.append(str(meta.get("name", "")))
+            parts.append(str(meta.get("description", "")))
+        if params:
+            try:
+                parts.append(json.dumps(params, ensure_ascii=False))
+            except Exception:
+                parts.append(str(params))
+        if text:
+            parts.append(str(text))
+        combined = " ".join([p.lower() for p in parts if p])
+        if not combined:
+            return False
+        keywords = (
+            "nmap",
+            "masscan",
+            "linpeas",
+            "lin_peas",
+            "recon",
+            "scan",
+            "shodan",
+            "sqlmap",
+            "cewl",
+            "netcat",
+            "netstat",
+            "smb",
+            "ldap",
+            "curl",
+            "wget",
+            "smbclient",
+            "enum",
+            "enumerat",
+            "reconnaissance",
+        )
+        return any(k in combined for k in keywords)
+    except Exception:
+        return False
 
 
 class TuiController:
@@ -37,8 +89,29 @@ class TuiController:
 
     def __init__(self, app: Any) -> None:
         self.app = app
+        # Best-effort: import persisted VCM state from workspace on startup
+        try:
+            try:
+                from cai.session import import_vcm_state
+
+                import_vcm_state()
+            except Exception:
+                pass
+        except Exception:
+            pass
         # session_id -> Worker handle returned by a @work-decorated call
         self._workers: dict[str, Any] = {}
+        # Register shutdown hook to persist objective/next_steps
+        try:
+            SHUTDOWN_COORDINATOR.register(self._shutdown_commit_objective)
+        except Exception:
+            pass
+        # Start a periodic background committer for objectives (best-effort)
+        try:
+            worker = self.periodic_commit_objective(30)
+            self._workers["objective_committer"] = worker
+        except Exception:
+            pass
 
     def start_session(
         self, session_id: str, runner: Callable[..., Any] | None = None, **opts
@@ -104,6 +177,82 @@ class TuiController:
             except Exception:
                 pass
 
+    def _shutdown_commit_objective(self) -> None:
+        """Synchronous shutdown callback to persist objective/next_steps."""
+        try:
+            current_objective = ""
+            next_steps: list[str] = []
+            try:
+                from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
+                agent_name = AGENT_MANAGER._active_agent_name
+                if agent_name:
+                    history = AGENT_MANAGER.get_message_history(agent_name) or []
+                    for m in reversed(history):
+                        try:
+                            if isinstance(m, dict) and m.get("role") == "user":
+                                cur = m.get("content") or m.get("text") or ""
+                                current_objective = cur if isinstance(cur, str) else str(cur)
+                                break
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+            try:
+                commit_objective_state(current_objective, next_steps)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    @work(exclusive=False)
+    async def periodic_commit_objective(self, interval_seconds: int = 30) -> None:
+        """Background worker that periodically persists current objective and next steps.
+
+        This is best-effort: it tries to extract a sensible short objective from the
+        active agent message history or the app and writes it to `state.json`.
+        """
+        try:
+            while True:
+                try:
+                    current_objective = ""
+                    next_steps: list[str] = []
+                    try:
+                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
+                        agent_name = AGENT_MANAGER._active_agent_name
+                        if agent_name:
+                            history = AGENT_MANAGER.get_message_history(agent_name) or []
+                            for m in reversed(history):
+                                try:
+                                    if isinstance(m, dict) and m.get("role") == "user":
+                                        cur = m.get("content") or m.get("text") or ""
+                                        current_objective = cur if isinstance(cur, str) else str(cur)
+                                        break
+                                except Exception:
+                                    continue
+                    except Exception:
+                        # Fallback to app-level hints
+                        try:
+                            last = getattr(self.app, "_last_user_input", None)
+                            if last:
+                                current_objective = str(last)
+                        except Exception:
+                            pass
+
+                    try:
+                        commit_objective_state(current_objective or "", next_steps or [])
+                    except Exception:
+                        pass
+                except Exception:
+                    logger.exception("periodic_commit_objective error")
+                await asyncio.sleep(interval_seconds)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.exception("periodic_commit_objective crashed")
+
     # ------------------------------------------------------------------
     # Tool / queue / session orchestration moved from the App into the
     # controller so long-running work runs under @work and the App can
@@ -118,7 +267,49 @@ class TuiController:
             if not tool_id or not getattr(app, "_tool_registry", None):
                 return
             meta = (app._tool_registry or {}).get(tool_id, {}) or {}
+            # If we are resuming and resume-skip flag is set, avoid running
+            # reconnaissance-like tools by default.
+            try:
+                if getattr(app, "_resume_skip_recon", False):
+                    try:
+                        params_use = params or {}
+                        if _should_skip_recon(tool_id, params_use, None):
+                            try:
+                                app._log_to_active_terminal(
+                                    f"[tool] Skipping {tool_id} due to resume-skip-recon flag (use force to override).",
+                                    style="#ffaa00",
+                                )
+                            except Exception:
+                                pass
+                            return
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             runner = meta.get("runner")
+            try:
+                # If this looks like an aggressive tool, run the ToolTree planner
+                from cai.agents.tooltree import is_aggressive_tool, plan_and_select
+
+                try:
+                    if is_aggressive_tool(tool_id, meta, params, None):
+                        try:
+                            params_selected, plan_record = await plan_and_select(tool_id, params, None)
+                            params = params_selected or params
+                            try:
+                                app._log_to_active_terminal(
+                                    f"[tool-planner] Selected branch {plan_record.get('selected', {}).get('id')} (score={plan_record.get('selected', {}).get('score')})",
+                                    style="#88ff88",
+                                )
+                            except Exception:
+                                pass
+                        except Exception:
+                            logger.exception("ToolTree planning failed")
+                except Exception:
+                    pass
+            except Exception:
+                # best-effort: do not fail if planner import errors
+                pass
             if not callable(runner):
                 try:
                     app._log_to_active_terminal("[tool] Runner unavailable.", style="#ff4444")
@@ -150,6 +341,36 @@ class TuiController:
                 app._update_tools_preview()
             except Exception:
                 pass
+            try:
+                # Schedule an async state commit for significant tool findings.
+                # This runs under Textual's @work so it won't block the UI.
+                self.commit_state_worker(tool_id, output)
+            except Exception:
+                pass
+            async def commit_state_worker(self, tool_id: str, output: Any) -> None:
+                """Background worker that attempts to auto-commit findings to state.json.
+
+                Runs in a Textual worker thread and is best-effort; failures are logged
+                but do not propagate to the caller.
+                """
+                try:
+                    try:
+                        result = auto_commit_from_tool(tool_id, output)
+                    except Exception:
+                        result = {"status": "error"}
+
+                    # Log a short summary to the active terminal if available
+                    try:
+                        app = self.app
+                        if app and getattr(app, "_log_to_active_terminal", None):
+                            try:
+                                app._log_to_active_terminal(f"[auto-commit] {tool_id} -> {result.get('status')}")
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                except Exception:
+                    logger.exception("commit_state_worker failed for %s", tool_id)
         except Exception:
             try:
                 app._log_to_active_terminal("[tool] Execution failed", style="#ff4444")
@@ -182,6 +403,24 @@ class TuiController:
 
         try:
             params_use = params if params is not None else record.get("inputs", {})
+            # Replay-time recon-skip enforcement
+            try:
+                if getattr(app, "_resume_skip_recon", False):
+                    try:
+                        params_use_check = params_use or {}
+                        if _should_skip_recon(tool_id, params_use_check, None):
+                            try:
+                                app._log_to_active_terminal(
+                                    f"[tool] Replay skipped for {tool_id} due to resume-skip-recon flag (use force to override).",
+                                    style="#ffaa00",
+                                )
+                            except Exception:
+                                pass
+                            return
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             output_or_awaitable = runner(params_use or {})
             if inspect.isawaitable(output_or_awaitable):
                 output = await output_or_awaitable
@@ -573,6 +812,28 @@ class TuiController:
                     await app._session_open_worker(idx)
                 except Exception:
                     pass
+            # If we already have targets in state.json, avoid re-running reconnaissance by default.
+            try:
+                st = _read_state()
+                if st and st.get("targets"):
+                    try:
+                        app._resume_skip_recon = True
+                    except Exception:
+                        pass
+                    try:
+                        panel = app.query_one(f"#terminal-panel-{app._active_term_id}")
+                        try:
+                            panel.query_one(f"#term-log-{panel._term_id}", RichLog).write(
+                                RichText.from_markup(
+                                    f"[dim]Resume: {len(st.get('targets', []))} targets present — reconnaissance will be skipped unless forced[/dim]"
+                                )
+                            )
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -629,6 +890,20 @@ class TuiController:
         """
         logger.info("TuiController: starting nmap scan %s", target)
         try:
+            # Respect resume-skip flag to avoid re-running reconnaissance by default.
+            try:
+                app = self.app
+                if getattr(app, "_resume_skip_recon", False):
+                    try:
+                        app._log_to_active_terminal(
+                            f"[nmap] Skipping scan for {target} due to resume-skip-recon flag (use force to override).",
+                            style="#ffaa00",
+                        )
+                    except Exception:
+                        pass
+                    return {"target": target, "status": "skipped", "reason": "resume_skip_recon"}
+            except Exception:
+                pass
             # Placeholder implementation: simulate work
             await asyncio.sleep(min(timeout, 5))
             return {"target": target, "status": "ok"}

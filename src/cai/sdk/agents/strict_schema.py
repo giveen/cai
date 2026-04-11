@@ -56,12 +56,11 @@ def _ensure_strict_json_schema(
         and "additionalProperties" in json_schema
         and json_schema["additionalProperties"]
     ):
-        raise UserError(
-            "additionalProperties should not be set for object types. This could be because "
-            "you're using an older version of Pydantic, or because you configured additional "
-            "properties to be allowed. If you really need this, update the function or output tool "
-            "to not use a strict schema."
-        )
+        # Some pydantic-generated schemas include `additionalProperties: true`.
+        # Historically this raised an error to enforce strictness, but that causes
+        # import-time failures in some environments. Coerce the schema to strict
+        # by setting `additionalProperties` to False instead of raising.
+        json_schema["additionalProperties"] = False
 
     # object types
     # { 'type': 'object', 'properties': { 'a':  {...} } }

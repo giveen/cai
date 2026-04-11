@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "version": 1,
+    "updated_at": "2026-04-11T05:06:14.370490Z"
+  },
+  "entries": [
+    {
+      "id": "e-anchor-2",
+      "timestamp": "2026-04-11T05:06:14.368739Z",
+      "category": "credential",
+      "source": "test",
+      "source_tool": "test",
+      "confidence_score": 0.0,
+      "session_id": null,
+      "fact": {
+        "username": "admin",
+        "password": "pass123"
+      }
+    }
+  ]
+}

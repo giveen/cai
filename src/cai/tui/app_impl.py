@@ -13,7 +13,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Any, Tuple, cast
+from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.containers import (
@@ -22,6 +24,7 @@ from textual.containers import (
     ScrollableContainer,
 )
 import textual.containers as _containers
+from textual import events, on, work
 
 # TabbedContent/TabPane live in textual.widgets in modern Textual.
 try:
@@ -33,56 +36,23 @@ except ImportError:  # pragma: no cover - fallback for older Textual versions
     except Exception:
         TabbedContent = cast(Any, object)
         TabPane = cast(Any, object)
+from textual.binding import Binding
 from textual.widgets import (
     Static,
     Button,
     Input,
+    TextArea,
+    ProgressBar,
+    Sparkline,
+    Footer,
     ListView,
     ListItem,
-    Label,
-    TextArea,
-    RichLog,
-    Footer,
-    Sparkline,
-    ProgressBar,
 )
 from textual.widget import Widget
-from textual.reactive import reactive
-from textual import work
-from textual import events
-from textual.screen import ModalScreen
-from textual.binding import Binding
-from textual import on
 
-from rich.table import Table
-from rich.text import Text as RichText
-from pathlib import Path
-import time
-from datetime import datetime
-
-try:
-    from PIL import Image, ImageDraw, ImageFont
-except Exception:  # pragma: no cover - optional dependency
-    Image = None  # type: ignore
-    ImageDraw = None  # type: ignore
-    ImageFont = None  # type: ignore
-
-from cai.config import CAI_CTX_LIMIT
-from cai.tui.components.header import Header, _pretty_name, _BANNER_LINES
-
-# Treat the imported Header symbol as dynamic for static analysis: many
-# attributes/methods are provided at runtime by the controller/screens.
-Header: Any = Header  # type: ignore
-from cai.tui.controller import TuiController
-from cai.tui.components.sidebar import Sidebar, SessionsTab, ToolsTab, ConfigTab
-
-# Mark a few imported component symbols as `Any` for static analysis;
-# these objects are composed and augmented at runtime by the controller.
-TuiController: Any = TuiController  # type: ignore
-Sidebar: Any = Sidebar  # type: ignore
-SessionsTab: Any = SessionsTab  # type: ignore
-ToolsTab: Any = ToolsTab  # type: ignore
-ConfigTab: Any = ConfigTab  # type: ignore
+from cai.tui.components.header import _pretty_name, _BANNER_LINES
+from cai.tui.components.workspace_hud import WorkspaceHUD
+from cai.tui.components.memory_hud import MemoryHUD
 
 
 logger = logging.getLogger(__name__)
@@ -106,15 +76,94 @@ CONTEXT_SNAPSHOTS_MAX_BYTES = 1024 * 1024
 CONTEXT_SNAPSHOTS_MAX_BACKUPS = 5
 
 # Placeholder used by the ConfigOverview screen — populated later as needed.
-CONFIG_VARIABLES: list[dict] = []
+# Add core context / compaction variables so they appear in the TUI /config table.
+CONFIG_VARIABLES: list[dict] = [
+    {
+        "name": "CAI_AUTO_COMPACT",
+        "default": "false",
+        "description": "Enable background conversation history compaction.",
+        "category": "memory",
+    },
+    {
+        "name": "CAI_CTX_LIMIT",
+        "default": 393216,
+        "description": "Total context token limit for the local 5090 model.",
+        "category": "memory",
+    },
+    {
+        "name": "CAI_AUTO_COMPACT_THRESHOLD",
+        "default": 0.9,
+        "description": "Threshold (fraction or count) to trigger auto-compaction.",
+        "category": "memory",
+    },
+    {
+        "name": "CAI_CONTEXT_USAGE",
+        "default": 0.0,
+        "description": "Fraction of context allowed for memory budgeting (0.0-1.0).",
+        "category": "memory",
+    },
+]
 
 
 def _load_tui_config() -> dict:
+    # Load persisted JSON config (best-effort) then overlay env and cai.config
+    cfg: dict = {}
     try:
         with open(CONFIG_FILE) as f:
-            return json.load(f)
+            cfg = json.load(f) or {}
     except Exception:
-        return {}
+        cfg = {}
+
+    # Start from any persisted env mapping then prefer real ENV values
+    env_map = dict(cfg.get("env", {}) or {})
+
+    # Helpful defaults if not set in ENV or persisted config
+    defaults = {
+        "CAI_AUTO_COMPACT": "false",
+        "CAI_CTX_LIMIT": "393216",
+        "CAI_AUTO_COMPACT_THRESHOLD": "0.9",
+        "CAI_CONTEXT_USAGE": "0.0",
+    }
+
+    # Try to pull canonical values from cai.config for CTX and threshold
+    try:
+        import cai.config as _cconf
+
+        # Prefer explicit env if set; else use values derived from cai.config.
+        if os.environ.get("CAI_CTX_LIMIT", "") != "":
+            env_map["CAI_CTX_LIMIT"] = os.environ.get("CAI_CTX_LIMIT")
+        else:
+            try:
+                env_map["CAI_CTX_LIMIT"] = str(getattr(_cconf, "CAI_CTX_LIMIT", int(defaults["CAI_CTX_LIMIT"])))
+            except Exception:
+                env_map["CAI_CTX_LIMIT"] = defaults["CAI_CTX_LIMIT"]
+
+        if os.environ.get("CAI_AUTO_COMPACT_THRESHOLD", "") != "":
+            env_map["CAI_AUTO_COMPACT_THRESHOLD"] = os.environ.get("CAI_AUTO_COMPACT_THRESHOLD")
+        else:
+            try:
+                thr_tokens = getattr(_cconf, "CAI_AUTO_COMPACT_THRESHOLD", None)
+                ctx = getattr(_cconf, "CAI_CTX_LIMIT", int(defaults["CAI_CTX_LIMIT"]))
+                if thr_tokens is not None and float(ctx) > 0:
+                    frac = float(thr_tokens) / float(ctx)
+                    env_map["CAI_AUTO_COMPACT_THRESHOLD"] = str(frac)
+                else:
+                    env_map["CAI_AUTO_COMPACT_THRESHOLD"] = defaults["CAI_AUTO_COMPACT_THRESHOLD"]
+            except Exception:
+                env_map["CAI_AUTO_COMPACT_THRESHOLD"] = defaults["CAI_AUTO_COMPACT_THRESHOLD"]
+    except Exception:
+        # No cai.config available; fall back to environment or hard defaults
+        pass
+
+    # Ensure simple env-driven keys are captured (respect real OS env when present)
+    for k, d in defaults.items():
+        if os.environ.get(k, "") != "":
+            env_map[k] = os.environ.get(k)
+        else:
+            env_map.setdefault(k, env_map.get(k, d))
+
+    cfg["env"] = env_map
+    return cfg
 
 
 def _save_tui_config(cfg: dict) -> None:
@@ -208,11 +257,13 @@ from cai.tui.screens.config import (
 from cai.tui.components.browser import BrowserPreview
 from cai.tui.components.terminal import TerminalPanel
 from cai.tui.components.terminal_grid import TerminalGrid
+from cai.tui.components.persistence_manager import PersistenceManager
 from cai.tui.telemetry import TelemetryMixin
 from cai.tui.layout import ResponsiveMixin
 from cai.tui.tools_mixin import ToolsMixin
 from cai.tui.queue_mixin import QueueMixin
 from cai.tui.sessions_mixin import SessionsMixin
+from cai.tui.controller import TuiController
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +346,28 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
         self._ctx_history: list[float] = []
         self._active_progress_tools: dict[str, str] = {}  # call_id → tool name
         self.controller = TuiController(self)
+        # Start background skill miner and crystallizer (best-effort)
+        try:
+            from cai.memory.skills import start_skill_miner
+
+            try:
+                start_skill_miner()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        try:
+            from cai.skills.crystallizer import start_crystallizer
+
+            try:
+                start_crystallizer()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        # Swarm/shared-credential state: team_idx -> set(agent_names)
+        self._swarm_shared_flags: dict[int, set[str]] = {}
 
     def compose(self) -> ComposeResult:
         yield from self.compose_main()
@@ -332,22 +405,31 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
                     yield TerminalGrid(id="terminal-grid")
                     yield BrowserPreview(id="browser-preview")
                 with TabPane("Agents", id="tab-agents"):
-                    with Vertical(id="agents-pane"):
-                        with ScrollableContainer(id="agents-scroll"):
-                            pass  # populated in on_mount
-                        with Vertical(id="teams-section"):
-                            yield Static("Teams", id="teams-label")
-                            with ScrollableContainer(id="teams-scroll"):
-                                for i, (label, _) in enumerate(TEAM_PRESETS):
-                                    yield Button(
-                                        f"#{i + 1}: {label}",
-                                        id=f"team-{i}",
-                                        classes="team-btn",
-                                    )
-                            yield Static(
-                                "Select a team to see strategy hints.", id="team-playbook-preview"
-                            )
-                            yield Button("+ Create Team", id="new-team-btn")
+                    with Horizontal(id="agents-body"):
+                        with Vertical(id="agents-left"):
+                            with ScrollableContainer(id="agents-scroll"):
+                                pass  # populated in on_mount
+                            with Vertical(id="teams-section"):
+                                yield Static("Teams", id="teams-label")
+                                with ScrollableContainer(id="teams-scroll"):
+                                    for i, (label, _) in enumerate(TEAM_PRESETS):
+                                        yield Button(
+                                            f"#{i + 1}: {label}",
+                                            id=f"team-{i}",
+                                            classes="team-btn",
+                                        )
+                                yield Static(
+                                    "Select a team to see strategy hints.", id="team-playbook-preview"
+                                )
+                                yield Button("+ Create Team", id="new-team-btn")
+                        with Vertical(id="agents-right"):
+                            yield Static("Agent Intelligence Brief", id="agent-intel-header")
+                            yield Static("Hover or focus an agent to see details.", id="agent-intel-brief")
+                            # Active Swarm overlay: small connection map + sync status
+                            yield Static("No active swarm.", id="active-swarm-overlay")
+                            yield PersistenceManager(id="persistence-manager")
+                            yield WorkspaceHUD(id="workspace-hud")
+                            yield MemoryHUD(id="memory-hud")
                 with TabPane("Queue", id="tab-queue"):
                     with Vertical(id="queue-pane"):
                         yield ListView(id="queue-list")
@@ -447,9 +529,53 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             self._available_agents = {}
 
         scroll = self.query_one("#agents-scroll", ScrollableContainer)
-        for name in sorted(self._available_agents.keys()):
-            label = _pretty_name(name)
-            await scroll.mount(Button(label, id=f"agent-{name}", classes="agent-btn"))
+        # Clear any existing children and build a categorized grid HUD
+        try:
+            for child in list(scroll.children):
+                try:
+                    child.remove()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Build a categorized grid HUD in the agents scroll area
+        def _categorize_agent(aname: str, aobj: object) -> str:
+            txt = f"{aname} {(getattr(aobj, 'description', '') or '')} {(getattr(aobj, 'name', '') or '')}".lower()
+            if any(k in txt for k in ("red", "pentest", "exploit", "attack", "replay", "retester", "bug", "htb", "web_pentester")):
+                return "red"
+            if any(k in txt for k in ("blue", "dfir", "forensic", "defend", "monitor", "analyzer", "memory", "investig")):
+                return "blue"
+            if any(k in txt for k in ("intel", "recon", "threat", "osint", "enumerat", "traffic", "network")):
+                return "intel"
+            return "spec"
+
+        cats = [
+            ("red", "Offensive / Red"),
+            ("blue", "Defensive / Blue"),
+            ("intel", "Intelligence / Recon"),
+            ("spec", "Specialized"),
+        ]
+
+        buckets: dict[str, list[str]] = {k: [] for k, _ in cats}
+        for name, agent in sorted(self._available_agents.items()):
+            cat = _categorize_agent(name, agent)
+            buckets.setdefault(cat, []).append(name)
+
+        cols = Horizontal(id="agents-columns")
+        await scroll.mount(cols)
+        for key, label in cats:
+            col = Vertical(id=f"agents-col-{key}")
+            await cols.mount(col)
+            # Column header
+            await col.mount(Static(f"{label}", classes="agent-col-label"))
+            names = sorted(buckets.get(key, []))
+            if not names:
+                await col.mount(Static("(none)", classes="agent-col-empty"))
+            for name in names:
+                label = _pretty_name(name)
+                # Keep legacy id format so app-level handlers still work
+                await col.mount(Button(label, id=f"agent-{name}", classes="agent-btn agent-tile"))
+    
 
         self._inject_mode = self._load_inject_mode_pref()
         self._tool_call_history = self._load_tool_call_history()
@@ -520,6 +646,120 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
         # Start the background timer that feeds CPU/context sparklines (2s tick)
         self.set_interval(2.0, self._tick_sparklines)
 
+    def on_enter(self, event: events.Enter) -> None:
+        """Hover/focus handler: update intelligence brief when hovering agents."""
+        node = getattr(event, "node", None)
+        if not isinstance(node, Button):
+            return
+        bid = node.id or ""
+        if not bid.startswith("agent-"):
+            return
+        agent_name = bid[len("agent-") :]
+        try:
+            self._render_agent_intel(agent_name)
+        except Exception:
+            pass
+
+    def _render_agent_intel(self, agent_name: str) -> None:
+        """Render brief info for the given agent into the right-hand pane."""
+        try:
+            intel = self.query_one("#agent-intel-brief", Static)
+        except Exception:
+            return
+        agent = self._available_agents.get(agent_name)
+        if not agent:
+            intel.update("[dim]Unknown agent[/dim]")
+            return
+        try:
+            title = getattr(agent, "name", agent_name)
+            desc = (getattr(agent, "description", "") or "").strip()
+            # Short description first line
+            desc_line = desc.splitlines()[0] if desc else "No description."
+            tools = getattr(agent, "tools", []) or []
+            tool_names = [getattr(t, "name", getattr(t, "__name__", str(t))) for t in tools]
+            tool_sample = ", ".join(tool_names[:6]) or "—"
+            lines = [
+                f"[bold #00ff00]{title}[/bold #00ff00]",
+                "",
+                f"{desc_line}",
+                "",
+                f"Tools: [#00cc00]{tool_sample}[/#00cc00]",
+                "",
+                "[dim #005500]Press Enter to open agent details[/dim #005500]",
+            ]
+            intel.update("\n".join(lines))
+        except Exception:
+            try:
+                intel.update("[dim]Unable to render agent info[/dim]")
+            except Exception:
+                pass
+
+    def _render_active_swarm(self) -> None:
+        """Render the Active Swarm overlay showing a small connection map and Sync Status.
+
+        Uses `self._active_team` and `TEAM_PRESETS` as the source of truth and
+        `self._swarm_shared_flags` to show which agents have been marked as
+        having shared credentials.
+        """
+        try:
+            overlay = self.query_one("#active-swarm-overlay", Static)
+        except Exception:
+            return
+
+        if self._active_team is None:
+            try:
+                overlay.update("[dim]No active swarm.[/dim]")
+            except Exception:
+                pass
+            return
+
+        try:
+            label, composition = TEAM_PRESETS[self._active_team]
+        except Exception:
+            try:
+                overlay.update("[dim]Invalid team[/dim]")
+            except Exception:
+                pass
+            return
+
+        # Ensure we have four placeholders for the 2x2 layout
+        comp4 = list(composition[:4])
+        while len(comp4) < 4:
+            comp4.append("(empty)")
+
+        # Simple ASCII connection map (2x2)
+        try:
+            d0 = _pretty_name(comp4[0])
+            d1 = _pretty_name(comp4[1])
+            d2 = _pretty_name(comp4[2])
+            d3 = _pretty_name(comp4[3])
+        except Exception:
+            d0 = comp4[0]
+            d1 = comp4[1]
+            d2 = comp4[2]
+            d3 = comp4[3]
+
+        diagram = (
+            f" [{d0}] ── [{d1}]\n"
+            f"   │        │\n"
+            f" [{d2}] ── [{d3}]\n"
+        )
+
+        flags = self._swarm_shared_flags.get(self._active_team, set())
+        lines = [f"[bold]Active Swarm[/bold] #{self._active_team + 1}: {label}", "", diagram]
+        for i, name in enumerate(comp4, start=1):
+            shared = name in flags
+            status = "[bold #00ff00]● Shared[/bold #00ff00]" if shared else "[dim]—[/dim]"
+            try:
+                lines.append(f"T{i}: [#00cc00]{_pretty_name(name)}[/#00cc00] {status}")
+            except Exception:
+                lines.append(f"T{i}: {name} {status}")
+
+        try:
+            overlay.update("\n".join(lines))
+        except Exception:
+            pass
+
     def on_resize(self, event: events.Resize) -> None:
         self._apply_responsive_layout(int(event.size.width), int(event.size.height))
 
@@ -574,6 +814,10 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
         total_input = sum(
             int(s.get("input_tokens", 0) or 0) for s in self._telemetry_stats_by_term.values()
         )
+        try:
+            from cai.config import CAI_CTX_LIMIT
+        except Exception:
+            CAI_CTX_LIMIT = int(os.getenv("CAI_CTX_LIMIT", "393216"))
         ctx_pct = min(100.0, float(total_input) / max(float(CAI_CTX_LIMIT), 1.0) * 100.0)
         self._ctx_history.append(ctx_pct)
         if len(self._ctx_history) > 60:
@@ -650,6 +894,31 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
     ) -> None:
         """Extend base telemetry to parse progress from crawler/vault tool output."""
         super()._telemetry_tool_output(term_id, agent_name, call_id, output_preview)
+        # --- Active Swarm: detect credential findings and mark shared status ---
+        try:
+            import re as _re
+
+            if self._active_team is not None:
+                try:
+                    _, comp = TEAM_PRESETS[self._active_team]
+                except Exception:
+                    comp = []
+                # Only consider the first four team slots (T1-T4)
+                comp4 = comp[:4]
+                if agent_name in comp4 and output_preview:
+                    # Look for credential-like tokens in the preview
+                    if _re.search(r"\b(credentials?|username|user|password|passwd|creds)\b", output_preview, _re.I):
+                        s = self._swarm_shared_flags.setdefault(self._active_team, set())
+                        for member in comp4:
+                            if member != agent_name:
+                                s.add(member)
+                        try:
+                            self._render_active_swarm()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
         if call_id not in self._active_progress_tools:
             return
         self._active_progress_tools.pop(call_id, None)
@@ -1429,6 +1698,12 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
 
         if idx is None or idx < 0 or idx >= len(TEAM_PRESETS):
             preview.update("Select a team to see strategy hints.")
+            try:
+                # Clear overlay when no active team
+                overlay = self.query_one("#active-swarm-overlay", Static)
+                overlay.update("[dim]No active swarm.[/dim]")
+            except Exception:
+                pass
             return
 
         label, composition = TEAM_PRESETS[idx]
@@ -1438,6 +1713,12 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             preview.update(RichText.from_markup(text))
         except Exception:
             preview.update(text)
+        # Reset swarm shared state for this team and update overlay
+        try:
+            self._swarm_shared_flags.setdefault(idx, set())
+            self._render_active_swarm()
+        except Exception:
+            pass
 
     def _sync_team_buttons_metadata(self) -> None:
         for i, (label, agent_types) in enumerate(TEAM_PRESETS):
@@ -1482,6 +1763,7 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
         import io
 
         from rich.console import Console
+        from rich.table import Table
 
         cfg = _load_tui_config()
 
@@ -1496,9 +1778,74 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             name = str(v.get("name") or "")
             default = v.get("default", "")
             desc = v.get("description", "")
-            value = os.environ.get(name) or cfg.get("env", {}).get(name) or default
-            # Ensure strings
-            value_s = str(value) if value is not None else ""
+            raw = os.environ.get(name)
+            if raw is None:
+                raw = cfg.get("env", {}).get(name)
+            if raw is None:
+                raw = default
+
+            # Format values for specific variables
+            value_s = ""
+            try:
+                if name == "CAI_CTX_LIMIT":
+                    try:
+                        limit = int(float(raw))
+                    except Exception:
+                        limit = int(v.get("default", 393216))
+                    used_raw = (
+                        os.environ.get("CAI_CONTEXT_USAGE")
+                        or cfg.get("env", {}).get("CAI_CONTEXT_USAGE")
+                        or 0.0
+                    )
+                    try:
+                        used_frac = float(used_raw)
+                    except Exception:
+                        used_frac = 0.0
+                    pct = max(0.0, min(100.0, used_frac * 100.0))
+                    # small ascii bar (20 chars)
+                    filled = int(pct / 5)
+                    bar = "█" * filled + "░" * (20 - filled)
+                    value_s = f"{limit:,} {bar} {pct:.0f}%"
+
+                elif name == "CAI_AUTO_COMPACT_THRESHOLD":
+                    try:
+                        f = float(raw)
+                        if 0.0 < f <= 1.0:
+                            pct = f * 100.0
+                        else:
+                            ctx_raw = (
+                                os.environ.get("CAI_CTX_LIMIT")
+                                or cfg.get("env", {}).get("CAI_CTX_LIMIT")
+                                or v.get("default", 393216)
+                            )
+                            try:
+                                ctx = float(ctx_raw)
+                                pct = min(100.0, float(f) / max(1.0, ctx) * 100.0)
+                            except Exception:
+                                pct = float(v.get("default", 0.9)) * 100.0
+                    except Exception:
+                        pct = float(v.get("default", 0.9)) * 100.0
+                    value_s = f"{pct:.0f}%"
+
+                elif name == "CAI_CONTEXT_USAGE":
+                    try:
+                        used = float(raw)
+                    except Exception:
+                        used = float(v.get("default", 0.0))
+                    value_s = f"{used * 100.0:.1f}%"
+
+                elif name == "CAI_AUTO_COMPACT":
+                    sval = str(raw).strip().lower()
+                    if sval in {"1", "true", "yes", "on"}:
+                        value_s = "true"
+                    else:
+                        value_s = "false"
+
+                else:
+                    value_s = str(raw)
+            except Exception:
+                value_s = str(raw)
+
             table.add_row(str(idx + 1), name, value_s, str(default), desc)
 
         buf = io.StringIO()
