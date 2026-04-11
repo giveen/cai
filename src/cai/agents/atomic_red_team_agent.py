@@ -72,6 +72,11 @@ structured JSON (array of objects) where each object contains:
 
 When asked for multiple events, vary timestamps and choose plausible
 event_types for the technique but keep all data synthetic and harmless.
+
+Tools available to you:
+- `list_art_techniques(path="")`: enumerate techniques from a local Atomic Red Team clone.
+- `get_art_technique(technique_id, path="")`: retrieve a technique summary/snippet.
+- `generate_art_logs(techniques, count)`: generate synthetic, safe log events for given techniques.
 """
 
 # Guardrails
