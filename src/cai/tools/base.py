@@ -140,7 +140,33 @@ def _generic_summarizer(text: str, max_snippet: int = 500) -> Dict[str, Any]:
     creds_lines = [l for l in text.splitlines() if re.search(r"password|credential|passwd|root|admin|user", l, flags=re.I)]
     creds = creds_lines[:10]
     snippet = text[:max_snippet]
-    return {"hosts": hosts, "open_ports_count": open_count, "credentials": creds, "raw_snippet": snippet}
+    # Build a short human-readable summary so SitRep validation has a
+    # concise `summary` field to validate against. Keep it minimal and
+    # robust (fall back to a snippet when nothing else is present).
+    parts: List[str] = []
+    if hosts:
+        if len(hosts) <= 3:
+            parts.append(f"hosts: {', '.join(hosts)}")
+        else:
+            parts.append(f"{len(hosts)} hosts (examples: {', '.join(hosts[:3])})")
+    if open_count:
+        parts.append(f"{open_count} occurrences of 'open' found")
+    if creds:
+        parts.append(f"{len(creds)} credential-like lines")
+
+    if parts:
+        summary = "; ".join(parts)
+    else:
+        # Minimal fallback: single-line excerpt of the output
+        summary = snippet.replace("\n", " ")[:300].strip()
+
+    return {
+        "summary": summary,
+        "hosts": hosts,
+        "open_ports_count": open_count,
+        "credentials": creds,
+        "raw_snippet": snippet,
+    }
 
 
 # ------------------ Public process function ------------------
