@@ -46,8 +46,11 @@ RUN mkdir -p /root/.pip && \
 
 WORKDIR /opt/cai
 
-# Install CAI 
-RUN pip3 install  --ignore-installed cai-framework
+# Copy local repository into image (build context must be the repo root)
+COPY . /opt/cai
+
+# Install the local CAI package from source
+RUN pip3 install /opt/cai
 
 # .env Template (overwritten if .env file present in logs)
 RUN echo 'OPENAI_API_KEY="sk-1234"' > /opt/cai/.env && \

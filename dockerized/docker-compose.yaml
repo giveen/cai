@@ -2,8 +2,8 @@
 services:
   cai:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: dockerized/Dockerfile
     container_name: cai
     
     # Host-Net for scanning (WSL should do that?)
@@ -12,13 +12,13 @@ services:
     # nmap raw sockets
     privileged: true
     
-    # Volumes
+    # Volumes (map repo-root paths)
     volumes:
       # .env file
-      - ./config/.env:/config/.env:ro
+      - ../config/.env:/config/.env:ro
       
       # Logs persistence
-      - ./logs:/opt/cai/logs
+      - ../logs:/opt/cai/logs
       
       # Optional: Docker socket if cai should use docker should it though?
       # - /var/run/docker.sock:/var/run/docker.sock
