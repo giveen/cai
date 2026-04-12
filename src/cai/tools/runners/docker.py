@@ -14,11 +14,30 @@ import shlex
 from wasabi import color
 
 
+def _resolve_container_workspace() -> str:
+    """Resolve in-container workspace path from ProjectSpace session id."""
+    try:
+        from cai.tools.workspace import get_project_space
+        session_id = get_project_space().session_id
+        return f"/workspace/workspaces/{session_id}"
+    except Exception:
+        from cai.tools.workspace import _get_container_workspace_path
+        return _get_container_workspace_path()
+
+
+def _resolve_host_workspace_for_fallback() -> str:
+    """Resolve local fallback path using ProjectSpace when possible."""
+    try:
+        from cai.tools.workspace import get_project_space
+        return str(get_project_space().ensure_initialized())
+    except Exception:
+        return os.getcwd()
+
+
 async def run_docker_async(command, container_id, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, args=None):
     """Async version of Docker command execution (extracted from common.py).
     """
     import asyncio
-    from cai.tools.workspace import _get_container_workspace_path
     from cai.tools.agent_info import _get_agent_token_info
     from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
     from cai.util import stop_idle_timer, start_active_timer, start_idle_timer
@@ -27,7 +46,7 @@ async def run_docker_async(command, container_id, stdout=False, timeout=100, str
     start_active_timer()
 
     try:
-        container_workspace = _get_container_workspace_path()
+        container_workspace = _resolve_container_workspace()
 
         parts = command.strip().split(' ', 1)
         cmd_name = parts[0] if parts else ""
@@ -218,7 +237,6 @@ def run_docker(command, container_id, stdout=False, timeout=100, stream=False, c
     This function implements both streaming and non-streaming container
     execution and preserves the fallback-to-local behavior.
     """
-    from cai.tools.workspace import _get_container_workspace_path
     from cai.tools.agent_info import _get_agent_token_info
     from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
     from cai.util import stop_idle_timer, start_active_timer, start_idle_timer
@@ -227,7 +245,7 @@ def run_docker(command, container_id, stdout=False, timeout=100, stream=False, c
     stop_idle_timer()
     start_active_timer()
 
-    container_workspace = _get_container_workspace_path()
+    container_workspace = _resolve_container_workspace()
     context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
 
     # Streaming container execution
@@ -328,14 +346,14 @@ def run_docker(command, container_id, stdout=False, timeout=100, stream=False, c
             stop_active_timer()
             start_idle_timer()
             # Fallback to local execution
-            return _run_local(command, stdout, timeout, False, None, tool_name, os.getcwd(), args)
+            return _run_local(command, stdout, timeout, False, None, tool_name, _resolve_host_workspace_for_fallback(), args)
         except Exception as e:
             error_msg = f"Error executing command in container: {str(e)}"
             print(color(error_msg, fg="red"))
             print(color("Attempting execution on host instead.", fg="yellow"))
             stop_active_timer()
             start_idle_timer()
-            return _run_local(command, stdout, timeout, False, None, tool_name, os.getcwd(), args)
+            return _run_local(command, stdout, timeout, False, None, tool_name, _resolve_host_workspace_for_fallback(), args)
 
     # Handle synchronous execution in container (non-stream)
     try:
@@ -360,7 +378,7 @@ def run_docker(command, container_id, stdout=False, timeout=100, stream=False, c
             print(color(f"{context_msg} Container is not running. Attempting execution on host instead.", fg="yellow"))
             stop_active_timer()
             start_idle_timer()
-            return _run_local(command, stdout, timeout, stream, call_id, tool_name, os.getcwd(), args)
+            return _run_local(command, stdout, timeout, stream, call_id, tool_name, _resolve_host_workspace_for_fallback(), args)
 
         if not stream:
             token_info = _get_agent_token_info()
@@ -417,11 +435,11 @@ def run_docker(command, container_id, stdout=False, timeout=100, stream=False, c
             print(color("Attempting execution on host instead.", fg="yellow"))
         stop_active_timer()
         start_idle_timer()
-        return _run_local(command, stdout, timeout, stream, call_id, tool_name, os.getcwd(), args)
+        return _run_local(command, stdout, timeout, stream, call_id, tool_name, _resolve_host_workspace_for_fallback(), args)
     except Exception as e:
         error_msg = f"Error executing command in container: {str(e)}"
         print(color(f"{context_msg} {error_msg}", fg="red"))
         print(color("Attempting execution on host instead.", fg="yellow"))
         stop_active_timer()
         start_idle_timer()
-        return _run_local(command, stdout, timeout, stream, call_id, tool_name, os.getcwd(), args)
+        return _run_local(command, stdout, timeout, stream, call_id, tool_name, _resolve_host_workspace_for_fallback(), args)

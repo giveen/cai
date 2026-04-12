@@ -11,10 +11,14 @@ RUN apt-get update --allow-insecure-repositories && \
 # Core system + Python
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-dev \
+        python3 python3-pip python3-dev python3-venv \
+        nodejs npm \
         curl wget git ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Some Debian/Kali node packages expose `nodejs` without `node`.
+RUN if [ ! -x /usr/bin/node ] && [ -x /usr/bin/nodejs ]; then ln -s /usr/bin/nodejs /usr/bin/node; fi
 
 # Install kali-linux-headless (brings most pentesting tools + dependencies)
 # This includes: nmap, nikto, dirb, gobuster, sqlmap, netcat, ssh, etc.
@@ -43,8 +47,11 @@ RUN mkdir -p /root/.pip && \
 
 WORKDIR /opt/cai
 
-# Install CAI 
-RUN pip3 install  --ignore-installed cai-framework
+# Install CAI + browser automation dependencies in an isolated venv
+RUN python3 -m venv /opt/cai/.venv && \
+    /opt/cai/.venv/bin/pip install --upgrade pip && \
+    /opt/cai/.venv/bin/pip install "cai-framework[browser]" playwright && \
+    /opt/cai/.venv/bin/python -m playwright install chromium
 
 # .env Template (overwritten if .env file present in logs)
 RUN echo 'OPENAI_API_KEY="sk-1234"' > /opt/cai/.env && \
@@ -64,12 +71,12 @@ RUN echo '#!/bin/bash' > /opt/cai/start.sh && \
     echo '  cp /config/.env /opt/cai/.env' >> /opt/cai/start.sh && \
     echo 'fi' >> /opt/cai/start.sh && \
     echo 'cd /opt/cai' >> /opt/cai/start.sh && \
-    echo 'exec cai "$@"' >> /opt/cai/start.sh && \
+    echo 'exec /opt/cai/.venv/bin/cai "$@"' >> /opt/cai/start.sh && \
     chmod +x /opt/cai/start.sh
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python3 -c "import cai; print('OK')" || exit 1
+    CMD /opt/cai/.venv/bin/python -c "import cai; print('OK')" || exit 1
 
 ENTRYPOINT ["/opt/cai/start.sh"]
 CMD []

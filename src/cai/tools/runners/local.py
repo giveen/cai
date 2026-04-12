@@ -9,7 +9,21 @@ import os
 import subprocess
 import time
 import uuid
+from pathlib import Path
 from wasabi import color
+
+
+def _resolve_local_target(workspace_dir=None) -> str:
+    """Resolve execution directory using ProjectSpace with compatibility fallback."""
+    if workspace_dir:
+        return str(Path(workspace_dir).expanduser().resolve())
+
+    try:
+        from cai.tools.workspace import get_project_space
+        return str(get_project_space().ensure_initialized())
+    except Exception:
+        from cai.tools.workspace import _get_workspace_dir
+        return _get_workspace_dir()
 
 
 async def run_local_async(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None, custom_args=None):
@@ -22,7 +36,6 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
     # Import timers/utilities lazily to avoid import cycles
     from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
     from cai.tools.agent_info import _get_agent_token_info
-    from cai.tools.workspace import _get_workspace_dir
     from cai.util import stop_idle_timer, start_active_timer, start_idle_timer, stop_active_timer
 
     stop_idle_timer()
@@ -30,7 +43,7 @@ async def run_local_async(command, stdout=False, timeout=100, stream=False, call
 
     process_start_time = time.time()
     try:
-        target_dir = workspace_dir or _get_workspace_dir()
+        target_dir = _resolve_local_target(workspace_dir)
         original_cmd_for_msg = command
         context_msg = f"(local:{target_dir})"
 
@@ -277,7 +290,6 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
     """
     import subprocess
     from cai.tools.agent_info import _get_agent_token_info
-    from cai.tools.workspace import _get_workspace_dir
     from cai.util import stop_idle_timer, start_active_timer, start_idle_timer
 
     stop_idle_timer()
@@ -285,7 +297,7 @@ def run_local(command, stdout=False, timeout=100, stream=False, call_id=None, to
 
     process_start_time = time.time()
     try:
-        target_dir = workspace_dir or _get_workspace_dir()
+        target_dir = _resolve_local_target(workspace_dir)
         context_msg = f"(local:{target_dir})"
 
         if stream:
