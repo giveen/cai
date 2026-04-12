@@ -1,1418 +1,753 @@
-"""
-MCP (Model Context Protocol) command for CAI CLI
+"""MCP command module for CAI REPL.
 
-Provides commands for managing MCP servers and integrating their tools
-with agents.
-
-USAGE EXAMPLES:
-==============
-
-1. Load an SSE (Server-Sent Events) MCP server:
-   /mcp load http://localhost:9876/sse burp
-
-2. Load an SSE server with authentication headers:
-   /mcp load https://mcp.ai.hackthebox.com/v1/ctf/sse htb --header "Authorization: Bearer YOUR_TOKEN"
-   /mcp load https://api.example.com/mcp myapi -H "X-API-Key: secret" -H "Custom-Header: value"
-
-3. Load a STDIO MCP server:
-   /mcp load stdio myserver python mcp_server.py
-   /mcp load stdio myserver node server.js --port 8080
-
-4. List all active MCP connections:
-   /mcp list
-
-5. Add MCP tools to an agent:
-   /mcp add burp redteam_agent     # Add by agent name
-   /mcp add burp 13                 # Add by agent number
-
-6. List tools from a specific server:
-   /mcp tools burp
-
-7. Check server connection status:
-   /mcp status
-
-8. Remove a server connection:
-   /mcp remove burp
-
-9. Show help:
-   /mcp help
-
-NOTES:
-======
-- Each tool invocation creates a fresh connection to ensure reliability
-- SSE servers may show async generator warnings on cleanup (this is normal)
-- Use /mcp status to check and reconnect servers if needed
-- Tools are added directly to agent.tools for seamless integration
-
-QUICK START:
-===========
-1. Start your MCP server (e.g., Burp Suite MCP extension)
-2. Load it: /mcp load http://localhost:9876/sse burp
-3. Add to agent: /mcp add burp your_agent
-4. Use the tools through the agent
+This module provides a modern, framework-native MCP integration with:
+- async server lifecycle orchestration (connect/list/disconnect)
+- tool bridging into a process-wide MCP tool registry
+- security gatekeeper checks for every MCP tool invocation
+- MCP resource context injection into MemoryManager
 """
 
-# Standard library imports
-import asyncio
-import atexit
-import functools
-import warnings
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+import json
 import logging
-from typing import Dict, List, Optional
+import os
+from pathlib import Path
+import re
+from typing import Any, Awaitable, Dict, List, Mapping, MutableMapping, Optional, Sequence, Set, Tuple, cast
 
-# Third-party imports
+from rich import box
 from rich.console import Console
-from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.table import Table
 
-# Local imports
-from cai.agents import get_agent_by_name, get_available_agents
-from cai.repl.commands.base import Command, register_command
-from cai.sdk.agents.mcp import (
-    MCPServer,
-    MCPServerSse,
-    MCPServerSseParams,
-    MCPServerStdio,
-    MCPServerStdioParams,
-    MCPUtil,
-)
+from cai.agents import get_available_agents
+from cai.memory import MemoryManager
+from cai.repl.commands.base import FrameworkCommand, register_command
 from cai.sdk.agents.tool import FunctionTool
+from cai.tools.workspace import get_project_space
+
 
 console = Console()
-
-# Global registry for persistent MCP connections
-_GLOBAL_MCP_SERVERS: Dict[str, MCPServer] = {}
-
-# Per-server locks to serialize tool invocations for persistent connections
-_SERVER_INVOCATION_LOCKS: Dict[str, asyncio.Lock] = {}
-
-# Global registry for agent-MCP associations
-# Maps agent name to list of MCP server names
-_AGENT_MCP_ASSOCIATIONS: Dict[str, List[str]] = {}
+_log = logging.getLogger(__name__)
 
 
-# Custom MCPUtil that uses global registry
-class GlobalMCPUtil(MCPUtil):
-    """Custom MCP utility that uses global server registry"""
+# Optional backend: existing CAI MCP wrappers (if available in runtime environment).
+try:
+    from cai.sdk.agents.mcp import MCPServerSse, MCPServerStdio
+except Exception:  # pragma: no cover - optional runtime dependency
+    MCPServerSse = None
+    MCPServerStdio = None
 
-    @classmethod
-    def to_function_tool(cls, tool, server_name: str) -> FunctionTool:
-        """Convert an MCP tool to a CAI function tool using server name instead of object."""
 
-        # Store the server configuration instead of the server object
-        server = _GLOBAL_MCP_SERVERS.get(server_name)
-        if not server:
-            raise ValueError(f"Server {server_name} not found in registry")
+_JSON_OBJECT = Dict[str, Any]
 
-        # Capture server configuration
-        server_config = {
-            "name": server_name,
-            "type": type(server).__name__,
-            "tool_name": tool.name,
-            "tool_schema": tool.inputSchema,
-            "tool_description": tool.description,
-            "persistent": isinstance(server, MCPServerStdio),
+
+def _utc_now() -> str:
+    return datetime.now(tz=UTC).isoformat()
+
+
+@dataclass(frozen=True)
+class MCPToolMeta:
+    """Normalized MCP tool metadata for local registration."""
+
+    alias: str
+    name: str
+    description: str
+    schema: _JSON_OBJECT = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MCPResourceMeta:
+    """Normalized MCP resource metadata."""
+
+    alias: str
+    uri: str
+    name: str
+    description: str
+
+
+@dataclass
+class MCPConnection:
+    """Runtime MCP connection state."""
+
+    alias: str
+    transport: str
+    endpoint: str
+    server: Any
+    tools: List[MCPToolMeta] = field(default_factory=list)
+    resources: List[MCPResourceMeta] = field(default_factory=list)
+    connected_at: str = field(default_factory=_utc_now)
+
+
+@dataclass(frozen=True)
+class GatekeeperDecision:
+    """Result of a gatekeeper policy evaluation."""
+
+    allowed: bool
+    reason: str
+
+
+class Gatekeeper:
+    """Security policy evaluator for MCP tool/resource access."""
+
+    _SHELL_META = re.compile(r"[;&|`$<>]")
+
+    def __init__(self, workspace_root: Path) -> None:
+        self._workspace_root = workspace_root.resolve()
+        blocked = os.getenv("CAI_MCP_BLOCKED_TOOLS", "")
+        self._blocked_tools: Set[str] = {
+            item.strip().lower() for item in blocked.split(",") if item.strip()
         }
 
-        # For SSE servers, capture the URL
-        if isinstance(server, MCPServerSse):
-            server_config["url"] = server.params.get("url")
-            server_config["headers"] = server.params.get("headers")
-            server_config["timeout"] = server.params.get("timeout", 5)
-            server_config["sse_read_timeout"] = server.params.get("sse_read_timeout", 60 * 5)
-        # For STDIO servers, capture the command
-        elif isinstance(server, MCPServerStdio):
-            server_config["command"] = server.params.command
-            server_config["args"] = server.params.args
-            server_config["env"] = getattr(server.params, "env")
-            server_config["cwd"] = getattr(server.params, "cwd")
-            server_config["encoding"] = getattr(server.params, "encoding", "utf-8")
-            server_config["encoding_error_handler"] = getattr(
-                server.params, "encoding_error_handler", "strict"
+    def check_tool_call(self, *, alias: str, tool_name: str, payload: Mapping[str, Any]) -> GatekeeperDecision:
+        name_l = tool_name.lower().strip()
+        if name_l in self._blocked_tools:
+            return GatekeeperDecision(False, f"Tool '{tool_name}' blocked by policy")
+
+        path_decision = self._validate_pathlike_fields(payload)
+        if not path_decision.allowed:
+            return path_decision
+
+        command_decision = self._validate_commandlike_fields(payload)
+        if not command_decision.allowed:
+            return command_decision
+
+        return GatekeeperDecision(True, f"Allowed for alias '{alias}'")
+
+    def check_resource_uri(self, resource_uri: str) -> GatekeeperDecision:
+        if resource_uri.startswith("file://"):
+            maybe_path = Path(resource_uri.replace("file://", "", 1))
+            if not self._is_path_within_workspace(maybe_path):
+                return GatekeeperDecision(False, "Resource path escapes workspace boundary")
+
+        if resource_uri.startswith("/") or resource_uri.startswith("./"):
+            maybe_path = Path(resource_uri)
+            if not self._is_path_within_workspace(maybe_path):
+                return GatekeeperDecision(False, "Resource path escapes workspace boundary")
+
+        return GatekeeperDecision(True, "Resource URI accepted")
+
+    def _validate_commandlike_fields(self, payload: Mapping[str, Any]) -> GatekeeperDecision:
+        command_keys = {"cmd", "command", "shell", "script", "exec"}
+        for key, value in payload.items():
+            if key.lower() not in command_keys:
+                continue
+            if isinstance(value, str) and self._SHELL_META.search(value):
+                return GatekeeperDecision(False, f"Command field '{key}' contains disallowed shell metacharacters")
+        return GatekeeperDecision(True, "No command policy violations")
+
+    def _validate_pathlike_fields(self, payload: Mapping[str, Any]) -> GatekeeperDecision:
+        path_keys = {
+            "path",
+            "file",
+            "filepath",
+            "directory",
+            "cwd",
+            "output_path",
+            "target_path",
+            "filename",
+        }
+        for key, value in payload.items():
+            if key.lower() not in path_keys:
+                continue
+            if not isinstance(value, str):
+                continue
+            if value.startswith("http://") or value.startswith("https://"):
+                continue
+            if not self._is_path_within_workspace(Path(value)):
+                return GatekeeperDecision(False, f"Path field '{key}' escapes workspace boundary")
+        return GatekeeperDecision(True, "No path policy violations")
+
+    def _is_path_within_workspace(self, value: Path) -> bool:
+        candidate = value.expanduser()
+        if not candidate.is_absolute():
+            candidate = self._workspace_root / candidate
+        try:
+            candidate.resolve().relative_to(self._workspace_root)
+            return True
+        except Exception:
+            return False
+
+
+class MCPManager:
+    """Async MCP orchestrator for server lifecycle, tool bridge, and context injection."""
+
+    def __init__(self, *, memory: MemoryManager, workspace_root: Path) -> None:
+        self._memory = memory
+        self._workspace_root = workspace_root.resolve()
+        self._gatekeeper = Gatekeeper(self._workspace_root)
+        self._connections: Dict[str, MCPConnection] = {}
+        self._tool_registry: Dict[str, FunctionTool] = {}
+        self._audit_file = self._workspace_root / ".cai" / "audit" / "mcp_actions.jsonl"
+
+    @property
+    def connections(self) -> Mapping[str, MCPConnection]:
+        return self._connections
+
+    @property
+    def tool_registry(self) -> Mapping[str, FunctionTool]:
+        return self._tool_registry
+
+    async def connect(self, *, alias: str, endpoint: str, headers: Optional[Mapping[str, str]] = None) -> MCPConnection:
+        if alias in self._connections:
+            raise ValueError(f"Alias '{alias}' is already connected")
+
+        server, transport = await self._create_server(endpoint=endpoint, alias=alias, headers=headers)
+
+        try:
+            await self._safe_connect(server)
+            tools_raw = await self._safe_list_tools(server)
+            resources_raw = await self._safe_list_resources(server)
+        except Exception:
+            await self._safe_cleanup(server)
+            raise
+
+        tools = self._normalize_tools(alias=alias, raw_tools=tools_raw)
+        resources = self._normalize_resources(alias=alias, raw_resources=resources_raw)
+
+        conn = MCPConnection(
+            alias=alias,
+            transport=transport,
+            endpoint=endpoint,
+            server=server,
+            tools=tools,
+            resources=resources,
+        )
+        self._connections[alias] = conn
+
+        self._register_connection_tools(conn)
+        self._auto_attach_tools_to_agents(conn)
+
+        self._audit("connect", {"alias": alias, "transport": transport, "endpoint": endpoint, "tools": len(tools)})
+        return conn
+
+    async def disconnect(self, alias: str) -> bool:
+        conn = self._connections.get(alias)
+        if conn is None:
+            return False
+
+        await self._safe_cleanup(conn.server)
+        self._connections.pop(alias, None)
+
+        # Remove bridged tools for this alias from registry and existing agents.
+        prefix = f"mcp::{alias}::"
+        to_drop = [name for name in self._tool_registry.keys() if name.startswith(prefix)]
+        for name in to_drop:
+            self._tool_registry.pop(name, None)
+
+        for agent in get_available_agents().values():
+            tools = getattr(agent, "tools", None)
+            if not isinstance(tools, list):
+                continue
+            agent.tools = [tool for tool in tools if getattr(tool, "name", "").startswith(prefix) is False]
+
+        self._audit("disconnect", {"alias": alias, "removed_tools": len(to_drop)})
+        return True
+
+    async def refresh_inventory(self, alias: str) -> Tuple[List[MCPToolMeta], List[MCPResourceMeta]]:
+        conn = self._require_connection(alias)
+        tools_raw = await self._safe_list_tools(conn.server)
+        resources_raw = await self._safe_list_resources(conn.server)
+        conn.tools = self._normalize_tools(alias=alias, raw_tools=tools_raw)
+        conn.resources = self._normalize_resources(alias=alias, raw_resources=resources_raw)
+        self._register_connection_tools(conn)
+        self._auto_attach_tools_to_agents(conn)
+        return conn.tools, conn.resources
+
+    async def inject_resource_context(
+        self,
+        *,
+        alias: str,
+        resource_uri: str,
+        topic: str,
+        target_agent: Optional[str] = None,
+    ) -> str:
+        conn = self._require_connection(alias)
+
+        resource_check = self._gatekeeper.check_resource_uri(resource_uri)
+        if not resource_check.allowed:
+            raise PermissionError(resource_check.reason)
+
+        content = await self._read_resource(conn.server, resource_uri)
+        payload = {
+            "topic": topic,
+            "finding": f"MCP resource context injected from {alias}:{resource_uri}",
+            "source": "mcp.resource",
+            "tags": ["mcp", "context", alias],
+            "artifacts": {
+                "alias": alias,
+                "resource_uri": resource_uri,
+                "content_preview": content[:1200],
+                "target_agent": target_agent,
+            },
+        }
+        self._memory.record(payload)
+        self._audit("inject_context", {"alias": alias, "resource_uri": resource_uri, "topic": topic})
+        return content
+
+    async def call_tool(self, *, alias: str, tool_name: str, arguments: Mapping[str, Any]) -> Any:
+        conn = self._require_connection(alias)
+
+        decision = self._gatekeeper.check_tool_call(alias=alias, tool_name=tool_name, payload=arguments)
+        if not decision.allowed:
+            self._audit(
+                "tool_call_denied",
+                {"alias": alias, "tool": tool_name, "reason": decision.reason, "args_keys": sorted(arguments.keys())},
+            )
+            raise PermissionError(decision.reason)
+
+        result = await self._invoke_tool(conn.server, tool_name, dict(arguments))
+        self._audit("tool_call", {"alias": alias, "tool": tool_name, "allowed": True})
+        return result
+
+    async def _create_server(
+        self,
+        *,
+        endpoint: str,
+        alias: str,
+        headers: Optional[Mapping[str, str]],
+    ) -> Tuple[Any, str]:
+        if MCPServerSse is None or MCPServerStdio is None:
+            raise RuntimeError(
+                "MCP backend is unavailable. Install CAI MCP dependencies before using /mcp."
             )
 
-        # Create a custom invoke function that manages the server lifecycle per invocation
-        async def invoke_with_fresh_connection(config, context, input_json):
-            """Invoke an MCP tool, keeping STDIO transports persistent."""
-            import asyncio
-            import json
-            import warnings
+        endpoint = endpoint.strip()
+        if endpoint.startswith("stdio:"):
+            command_spec = endpoint.replace("stdio:", "", 1).strip()
+            if not command_spec:
+                raise ValueError("stdio endpoint requires a command, e.g. stdio:python server.py")
+            parts = command_spec.split()
+            command = parts[0]
+            args = parts[1:]
+            server = MCPServerStdio({"command": command, "args": args}, name=alias, cache_tools_list=True)
+            return server, "stdio"
 
-            from cai.sdk.agents.exceptions import AgentsException, ModelBehaviorError
-            from cai.sdk.agents.mcp import MCPServerSse, MCPServerStdio
+        if endpoint.startswith("http://") or endpoint.startswith("https://"):
+            params: Dict[str, Any] = {
+                "url": endpoint,
+                "timeout": 10,
+                "sse_read_timeout": 300,
+            }
+            if headers:
+                params["headers"] = dict(headers)
+            server = MCPServerSse(cast(Any, params), name=alias, cache_tools_list=True)
+            return server, "sse"
 
+        # Treat plain shell command as stdio for convenience.
+        parts = endpoint.split()
+        if not parts:
+            raise ValueError("Invalid endpoint")
+        server = MCPServerStdio({"command": parts[0], "args": parts[1:]}, name=alias, cache_tools_list=True)
+        return server, "stdio"
+
+    async def _safe_connect(self, server: Any) -> None:
+        try:
+            await server.connect()
+        except TimeoutError as exc:
+            raise TimeoutError("MCP server connection timed out") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Failed to connect MCP server: {exc}") from exc
+
+    async def _safe_list_tools(self, server: Any) -> Sequence[Any]:
+        try:
+            return await server.list_tools()
+        except TimeoutError as exc:
+            raise TimeoutError("MCP list_tools timed out") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Malformed/failed MCP tools response: {exc}") from exc
+
+    async def _safe_list_resources(self, server: Any) -> Sequence[Any]:
+        if not hasattr(server, "list_resources"):
+            return []
+        try:
+            return await server.list_resources()
+        except Exception:
+            return []
+
+    async def _safe_cleanup(self, server: Any) -> None:
+        try:
+            await server.cleanup()
+        except Exception:
+            pass
+
+    async def _invoke_tool(self, server: Any, tool_name: str, arguments: MutableMapping[str, Any]) -> Any:
+        if hasattr(server, "call_tool"):
+            return await server.call_tool(tool_name, arguments)
+        raise RuntimeError("MCP backend does not support tool invocation")
+
+    async def _read_resource(self, server: Any, resource_uri: str) -> str:
+        if hasattr(server, "read_resource"):
+            result = await server.read_resource(resource_uri)
+            return self._extract_resource_text(result)
+
+        if hasattr(server, "get_resource"):
+            result = await server.get_resource(resource_uri)
+            return self._extract_resource_text(result)
+
+        raise RuntimeError("MCP backend does not expose resource read operations")
+
+    @staticmethod
+    def _extract_resource_text(result: Any) -> str:
+        if result is None:
+            return ""
+        if isinstance(result, str):
+            return result
+        if isinstance(result, Mapping):
+            if isinstance(result.get("text"), str):
+                return result["text"]
+            return json.dumps(dict(result), ensure_ascii=False)
+
+        content = getattr(result, "content", None)
+        if isinstance(content, list) and content:
+            first = content[0]
+            text = getattr(first, "text", None)
+            if isinstance(text, str):
+                return text
             try:
-                json_data = json.loads(input_json) if input_json else {}
-            except Exception as e:
-                raise ModelBehaviorError(
-                    f"Invalid JSON input for tool {config['tool_name']}: {input_json}"
-                ) from e
+                if hasattr(first, "model_dump"):
+                    return json.dumps(first.model_dump(), ensure_ascii=False)
+            except Exception:
+                pass
+        return str(result)
 
-            result = None
-            max_retries = 2
-            retry_count = 0
-            server = None
-            should_cleanup = False
-            persistent = bool(config.get("persistent"))
+    def _normalize_tools(self, *, alias: str, raw_tools: Sequence[Any]) -> List[MCPToolMeta]:
+        normalized: List[MCPToolMeta] = []
+        for tool in raw_tools:
+            name = str(getattr(tool, "name", "")).strip()
+            if not name:
+                continue
+            description = str(getattr(tool, "description", "") or "")
+            schema = getattr(tool, "inputSchema", None)
+            if not isinstance(schema, dict):
+                schema = {}
+            normalized.append(MCPToolMeta(alias=alias, name=name, description=description, schema=schema))
+        return normalized
 
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=RuntimeWarning)
-                warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
-                warnings.filterwarnings("ignore", message=".*ClosedResourceError.*")
+    def _normalize_resources(self, *, alias: str, raw_resources: Sequence[Any]) -> List[MCPResourceMeta]:
+        normalized: List[MCPResourceMeta] = []
+        for resource in raw_resources:
+            uri = str(getattr(resource, "uri", "")).strip()
+            if not uri:
+                continue
+            name = str(getattr(resource, "name", uri))
+            description = str(getattr(resource, "description", "") or "")
+            normalized.append(MCPResourceMeta(alias=alias, uri=uri, name=name, description=description))
+        return normalized
 
+    def _register_connection_tools(self, conn: MCPConnection) -> None:
+        for tool_meta in conn.tools:
+            fq_name = f"mcp::{conn.alias}::{tool_meta.name}"
+            self._tool_registry[fq_name] = self._build_function_tool(conn.alias, tool_meta)
+
+    def _auto_attach_tools_to_agents(self, conn: MCPConnection) -> None:
+        mcp_tools = [self._tool_registry[f"mcp::{conn.alias}::{tool.name}"] for tool in conn.tools]
+        if not mcp_tools:
+            return
+
+        for agent in get_available_agents().values():
+            existing = getattr(agent, "tools", None)
+            if not isinstance(existing, list):
+                continue
+            existing_names = {getattr(t, "name", "") for t in existing}
+            for tool in mcp_tools:
+                if tool.name not in existing_names:
+                    existing.append(tool)
+
+    def _build_function_tool(self, alias: str, tool_meta: MCPToolMeta) -> FunctionTool:
+        async def _invoke(_ctx: Any, input_json: str) -> Any:
+            payload: Dict[str, Any]
+            if input_json.strip():
                 try:
-                    if persistent:
-                        server_name = config["name"]
-                        server = _GLOBAL_MCP_SERVERS.get(server_name)
-                        if not server or not isinstance(server, MCPServerStdio):
-                            raise AgentsException(
-                                f"MCP server '{server_name}' is unavailable. Use /mcp status to verify it is loaded."
-                            )
-
-                        lock = _SERVER_INVOCATION_LOCKS.setdefault(
-                            server_name, asyncio.Lock()
-                        )
-
-                        async with lock:
-                            while retry_count < max_retries:
-                                try:
-                                    if not getattr(server, "session", None):
-                                        try:
-                                            await asyncio.wait_for(server.connect(), timeout=10.0)
-                                        except asyncio.TimeoutError:
-                                            raise AgentsException(
-                                                f"Timeout connecting to MCP server for tool {config['tool_name']}. "
-                                                "The server may be down or not responding."
-                                            )
-
-                                    result = await asyncio.wait_for(
-                                        server.call_tool(config["tool_name"], json_data),
-                                        timeout=30.0,
-                                    )
-                                    break
-                                except asyncio.TimeoutError:
-                                    raise AgentsException(
-                                        f"Timeout calling MCP tool {config['tool_name']}. "
-                                        f"The tool took too long to respond."
-                                    )
-                                except Exception:
-                                    retry_count += 1
-                                    if retry_count >= max_retries:
-                                        raise
-                                    import logging
-
-                                    logging.debug(
-                                        f"Retrying MCP tool {config['tool_name']} (attempt {retry_count}/{max_retries})"
-                                    )
-                                    try:
-                                        await server.cleanup()
-                                    except Exception:
-                                        pass
-                                    server.session = None
-                                    await asyncio.sleep(0.5)
-                    else:
-                        if config["type"] == "MCPServerSse":
-                            params = {
-                                "url": config["url"],
-                                "headers": config.get("headers"),
-                                "timeout": config.get("timeout", 5),
-                                "sse_read_timeout": config.get("sse_read_timeout", 60 * 5),
-                            }
-                            params = {k: v for k, v in params.items() if v is not None}
-
-                            server = MCPServerSse(
-                                params,
-                                name=config["name"],
-                                cache_tools_list=False,
-                            )
-                        elif config["type"] == "MCPServerStdio":
-                            params = {
-                                "command": config["command"],
-                                "args": config.get("args", []),
-                                "env": config.get("env"),
-                                "cwd": config.get("cwd"),
-                                "encoding": config.get("encoding", "utf-8"),
-                                "encoding_error_handler": config.get(
-                                    "encoding_error_handler", "strict"
-                                ),
-                            }
-                            params = {k: v for k, v in params.items() if v is not None}
-
-                            server = MCPServerStdio(
-                                params, name=config["name"], cache_tools_list=False
-                            )
-                        else:
-                            raise AgentsException(f"Unknown server type: {config['type']}")
-
-                        should_cleanup = True
-
-                        while retry_count < max_retries:
-                            try:
-                                try:
-                                    await asyncio.wait_for(server.connect(), timeout=10.0)
-                                except asyncio.TimeoutError:
-                                    raise AgentsException(
-                                        f"Timeout connecting to MCP server for tool {config['tool_name']}. "
-                                        f"The server may be down or not responding."
-                                    )
-
-                                result = await asyncio.wait_for(
-                                    server.call_tool(config["tool_name"], json_data),
-                                    timeout=30.0,
-                                )
-                                break
-                            except asyncio.TimeoutError:
-                                raise AgentsException(
-                                    f"Timeout calling MCP tool {config['tool_name']}. "
-                                    f"The tool took too long to respond."
-                                )
-                            except Exception:
-                                retry_count += 1
-                                if retry_count >= max_retries:
-                                    raise
-                                import logging
-
-                                logging.debug(
-                                    f"Retrying MCP tool {config['tool_name']} (attempt {retry_count}/{max_retries})"
-                                )
-                                if isinstance(server, MCPServerSse) and hasattr(server, "session"):
-                                    server.session = None
-                                await asyncio.sleep(0.5)
-                except Exception as e:
-                    error_type = type(e).__name__
-                    error_str = str(e).lower()
-
-                    if (
-                        error_type in ("ClosedResourceError", "ExceptionGroup")
-                        or "closedresourceerror" in error_str
-                        or "closed" in error_str
-                        or "connection" in error_str
-                    ):
-                        raise AgentsException(
-                            f"Connection lost to MCP server for tool {config['tool_name']}. "
-                            "Use /mcp status to reconnect if the issue persists."
-                        ) from e
-                    raise AgentsException(
-                        f"Error invoking MCP tool {config['tool_name']}: {type(e).__name__}: {str(e)}"
-                    ) from e
-                finally:
-                    if should_cleanup and server:
-                        if isinstance(server, MCPServerSse):
-                            try:
-                                await asyncio.wait_for(server.cleanup(), timeout=0.5)
-                            except (asyncio.TimeoutError, RuntimeError, Exception):
-                                pass
-                            server.session = None
-                        else:
-                            try:
-                                await asyncio.wait_for(server.cleanup(), timeout=5.0)
-                            except (asyncio.TimeoutError, Exception):
-                                pass
-
-            if not result:
-                raise AgentsException(f"No result returned from MCP tool {config['tool_name']}")
-
-            # Convert result to string format
-            if len(result.content) == 1:
-                tool_output = result.content[0].model_dump_json()
-            elif len(result.content) > 1:
-                tool_output = json.dumps([item.model_dump() for item in result.content])
+                    decoded = json.loads(input_json)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid JSON input for {tool_meta.name}: {exc}") from exc
+                if not isinstance(decoded, dict):
+                    raise ValueError("MCP tool payload must be a JSON object")
+                payload = decoded
             else:
-                tool_output = "Error running tool."
+                payload = {}
 
-            # Handle tracing if needed
-            from cai.sdk.agents.tracing import FunctionSpanData, get_current_span
+            result = await self.call_tool(alias=alias, tool_name=tool_meta.name, arguments=payload)
 
-            current_span = get_current_span()
-            if current_span:
-                if isinstance(current_span.span_data, FunctionSpanData):
-                    current_span.span_data.output = tool_output
-                    current_span.span_data.mcp_data = {
-                        "server": config["name"],
-                    }
-
-            return tool_output
-
-        # Use functools.partial to bind the server config
-        invoke_func = functools.partial(invoke_with_fresh_connection, server_config)
+            if isinstance(result, str):
+                return result
+            if hasattr(result, "content"):
+                try:
+                    content = getattr(result, "content")
+                    if isinstance(content, list):
+                        return json.dumps([getattr(c, "model_dump", lambda: str(c))() for c in content])
+                except Exception:
+                    pass
+            try:
+                return json.dumps(result, default=str)
+            except Exception:
+                return str(result)
 
         return FunctionTool(
-            name=tool.name,
-            description=tool.description or "",
-            params_json_schema=tool.inputSchema,
-            on_invoke_tool=invoke_func,
+            name=f"mcp::{alias}::{tool_meta.name}",
+            description=tool_meta.description or f"MCP tool {tool_meta.name} from {alias}",
+            params_json_schema=tool_meta.schema,
+            on_invoke_tool=_invoke,
             strict_json_schema=False,
         )
 
+    def _require_connection(self, alias: str) -> MCPConnection:
+        conn = self._connections.get(alias)
+        if conn is None:
+            raise KeyError(f"MCP alias '{alias}' is not connected")
+        return conn
 
-def cleanup_mcp_servers():
-    """Cleanup all MCP servers on exit"""
-    try:
-        if _GLOBAL_MCP_SERVERS:
-            import warnings
-            # Suppress async generator warnings during cleanup
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=RuntimeWarning)
-                warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
-                
-                # Create new event loop for cleanup if needed
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                async def cleanup_all():
-                    tasks = []
-                    for name, server in _GLOBAL_MCP_SERVERS.items():
-                        try:
-                            # For SSE servers, use a very short timeout
-                            if isinstance(server, MCPServerSse):
-                                tasks.append(asyncio.wait_for(server.cleanup(), timeout=0.1))
-                            else:
-                                tasks.append(server.cleanup())
-                        except Exception:
-                            pass
-                    if tasks:
-                        await asyncio.gather(*tasks, return_exceptions=True)
-
-                loop.run_until_complete(cleanup_all())
-                # Only close the loop if it's not running
-                if not loop.is_running():
-                    loop.close()
-        _SERVER_INVOCATION_LOCKS.clear()
-    except Exception:
-        pass
+    def _audit(self, action: str, details: Mapping[str, Any]) -> None:
+        payload = {
+            "timestamp": _utc_now(),
+            "action": action,
+            "details": dict(details),
+        }
+        try:
+            self._audit_file.parent.mkdir(parents=True, exist_ok=True)
+            with self._audit_file.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            _log.debug("MCP audit write failed: %s", exc)
 
 
-# Register cleanup on exit
-atexit.register(cleanup_mcp_servers)
+_GLOBAL_MCP_MANAGER: Optional[MCPManager] = None
 
 
-class MCPCommand(Command):
-    """Command for managing MCP servers and their integration with agents."""
+def get_mcp_manager(memory: Optional[MemoryManager] = None) -> MCPManager:
+    global _GLOBAL_MCP_MANAGER
+    if _GLOBAL_MCP_MANAGER is None:
+        mem = memory or MemoryManager()
+        workspace_root = get_project_space().ensure_initialized().resolve()
+        _GLOBAL_MCP_MANAGER = MCPManager(memory=mem, workspace_root=workspace_root)
+    return _GLOBAL_MCP_MANAGER
 
-    def __init__(self):
-        """Initialize the MCP command."""
-        super().__init__(
-            name="/mcp",
-            description="Manage MCP servers and add their tools to agents",
-            aliases=["/m"],
-        )
 
-        # Add subcommands manually
+class MCPCommand(FrameworkCommand):
+    """Manage MCP server connections and bridge MCP tools/resources into CAI."""
+
+    name = "/mcp"
+    description = "Connect/list/disconnect MCP servers and bridge tools/resources"
+    aliases = ["/m"]
+
+    def __init__(self) -> None:
+        super().__init__()
         self._subcommands = {
-            "load": "Load an MCP server (SSE or stdio)",
-            "list": "List active MCP connections",
-            "add": "Add MCP tools to an agent",
-            "remove": "Remove an MCP server connection",
-            "tools": "List tools from an MCP server",
-            "status": "Check MCP server connection status",
-            "associations": "Show agent-MCP associations",
+            "connect": "Connect to an MCP server (SSE or stdio endpoint)",
+            "list": "List active MCP connections with tools/resources",
+            "disconnect": "Disconnect an active MCP alias",
+            "context": "Inject MCP resource context into MemoryManager",
             "help": "Show MCP command usage",
         }
 
-    def get_subcommands(self) -> List[str]:
-        """Get list of subcommand names.
+    @property
+    def help(self) -> str:
+        return (
+            "Usage:\n"
+            "  /mcp connect <alias> <url_or_path> [--header 'Key: Value']\n"
+            "  /mcp list\n"
+            "  /mcp disconnect <alias>\n"
+            "  /mcp context <alias> <resource_uri> [--topic topic_name] [--agent agent_name]\n"
+            "\n"
+            "Notes:\n"
+            "  - SSE endpoint: https://host/path/sse\n"
+            "  - stdio endpoint: stdio:python mcp_server.py\n"
+            "  - Every MCP tool call passes through Gatekeeper policy checks"
+        )
 
-        Returns:
-            List of subcommand names
-        """
-        return list(self._subcommands.keys())
-
-    def get_subcommand_description(self, subcommand: str) -> str:
-        """Get description for a subcommand.
-
-        Args:
-            subcommand: Name of the subcommand
-
-        Returns:
-            Description of the subcommand
-        """
-        return self._subcommands.get(subcommand, "")
-
-    def handle(self, args: Optional[List[str]] = None) -> bool:
-        """Handle the MCP command.
-
-        Args:
-            args: Optional list of command arguments
-
-        Returns:
-            True if the command was handled successfully
-        """
+    async def execute(self, args: List[str]) -> bool:
         if not args:
-            return self.handle_list(args)
+            console.print(self.help)
+            return True
 
-        subcommand = args[0]
-        if subcommand in self._subcommands:
-            handler = getattr(self, f"handle_{subcommand}", None)
-            if handler:
-                try:
-                    return handler(args[1:] if len(args) > 1 else None)
-                except Exception as e:
-                    console.print(f"[red]Error executing command: {e}[/red]")
-                    return False
+        sub = args[0].lower().strip()
+        if sub == "connect":
+            return await self._do_connect(args[1:])
+        if sub == "list":
+            return await self._do_list()
+        if sub == "disconnect":
+            return await self._do_disconnect(args[1:])
+        if sub == "context":
+            return await self._do_context(args[1:])
+        if sub == "help":
+            console.print(self.help)
+            return True
 
-        console.print(f"[red]Unknown subcommand: {subcommand}[/red]")
-        self.show_usage()
+        console.print(f"[red]Unknown MCP subcommand: {sub}[/red]")
+        console.print(self.help)
         return False
 
-    def show_usage(self):
-        """Show usage information for the MCP command."""
-        usage_text = """
-# MCP (Model Context Protocol) Command Usage
-
-The MCP command allows you to manage Model Context Protocol servers and integrate their tools with CAI agents.
-
-## Commands:
-
-### Load an MCP Server
-
-**SSE (Server-Sent Events) Server:**
-```
-/mcp load <url> <name> [--header "Key: Value" | -H "Key: Value"]
-```
-Example: `/mcp load http://localhost:9876/sse burp`
-
-**SSE Server with Authentication:**
-```
-/mcp load <url> <name> --header "Authorization: Bearer TOKEN"
-```
-Example: `/mcp load https://mcp.ai.hackthebox.com/v1/ctf/sse htb --header "Authorization: Bearer eyJ0..."`
-
-You can specify multiple headers by repeating the flag:
-```
-/mcp load <url> <name> -H "Header1: Value1" -H "Header2: Value2"
-```
-
-**STDIO Server:**
-```
-/mcp load stdio <name> <command> [args...]
-```
-Example: `/mcp load stdio myserver python mcp_server.py`
-
-### List Active Connections
-```
-/mcp list
-```
-
-### Add Tools to an Agent
-```
-/mcp add <server_name> <agent_name_or_number>
-```
-Example: `/mcp add burp redteam_agent`
-Example: `/mcp add burp 13`
-
-### List Tools from a Server
-```
-/mcp tools <server_name>
-```
-
-### Check Server Status
-```
-/mcp status
-```
-
-### Test Server Connection
-```
-/mcp test <server_name>
-```
-
-### Show Agent-MCP Associations
-```
-/mcp associations
-```
-
-### Remove a Server
-```
-/mcp remove <server_name>
-```
-
-### Show Help
-```
-/mcp help
-```
-
-## Quick Start:
-
-1. Load an MCP server:
-   `/mcp load http://localhost:9876/sse burp`
-
-2. List available tools:
-   `/mcp tools burp`
-
-3. Add tools to an agent:
-   `/mcp add burp redteam_agent`
-
-4. Switch to the agent and use the tools:
-   `/agent redteam_agent`
-"""
-        console.print(Markdown(usage_text))
-
-    def handle_help(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp help command.
-
-        Args:
-            args: Optional list of command arguments (not used)
-
-        Returns:
-            True
-        """
-        self.show_usage()
-        return True
-
-    def _run_async(self, coro):
-        """Run async code properly in the CLI context.
-
-        Args:
-            coro: The coroutine to run
-
-        Returns:
-            The result of the coroutine
-        """
-        try:
-            # Try to get existing loop
-            loop = asyncio.get_running_loop()
-            # If we're in a loop, we need to use a different approach
-            import concurrent.futures
-            import sys
-            from io import StringIO
-
-            def run_in_thread():
-                # Suppress stderr in the thread too
-                original_stderr = sys.stderr
-                try:
-                    sys.stderr = StringIO()
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    try:
-                        return new_loop.run_until_complete(coro)
-                    finally:
-                        new_loop.close()
-                finally:
-                    sys.stderr = original_stderr
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(run_in_thread)
-                return future.result(timeout=30)
-
-        except RuntimeError:
-            # No running loop, we can use asyncio.run
-            import sys
-            from io import StringIO
-
-            # Suppress stderr during asyncio.run
-            original_stderr = sys.stderr
-            try:
-                sys.stderr = StringIO()
-                return asyncio.run(coro)
-            finally:
-                sys.stderr = original_stderr
-
-    def handle_load(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp load command.
-
-        Usage:
-            /mcp load <url> <name> [--header "Key: Value"] - Load SSE server with optional auth headers
-            /mcp load stdio <name> <command> [args...]     - Load stdio server
-
-        Args:
-            args: List of command arguments
-
-        Returns:
-            True if successful
-        """
-        if not args or len(args) < 2:
-            console.print("[red]Error: Invalid arguments[/red]")
-            console.print("Usage:")
-            console.print("  /mcp load <url> <name> [--header \"Key: Value\"]  - For SSE servers")
-            console.print("  /mcp load stdio <name> <command> [args...]        - For STDIO servers")
+    async def _do_connect(self, args: List[str]) -> bool:
+        if len(args) < 2:
+            console.print("[red]Usage: /mcp connect <alias> <url_or_path> [--header 'Key: Value'][/red]")
             return False
 
-        # Check if it's a stdio server
-        if args[0] == "stdio":
-            if len(args) < 3:
-                console.print("[red]Error: stdio requires name and command[/red]")
-                return False
-
-            name = args[1]
-            command = args[2]
-            cmd_args = args[3:] if len(args) > 3 else []
-
-            return self._load_stdio_server(name, command, cmd_args)
-        else:
-            # SSE server
-            url = args[0]
-            name = args[1]
-
-            # Parse headers from remaining arguments
-            headers = {}
-            i = 2
-            while i < len(args):
-                if args[i] in ["--header", "-H"]:
-                    if i + 1 >= len(args):
-                        console.print("[red]Error: --header requires a value[/red]")
-                        return False
-
-                    # Parse header in format "Key: Value"
-                    header_str = args[i + 1]
-                    if ":" not in header_str:
-                        console.print(f"[red]Error: Invalid header format '{header_str}'. Use 'Key: Value'[/red]")
-                        return False
-
-                    key, value = header_str.split(":", 1)
-                    # Strip quotes and whitespace from key and value
-                    key = key.strip().strip('"').strip("'")
-                    value = value.strip().strip('"').strip("'")
-                    headers[key] = value
-                    i += 2
-                else:
-                    console.print(f"[yellow]Warning: Unknown argument '{args[i]}' ignored[/yellow]")
-                    i += 1
-
-            return self._load_sse_server(url, name, headers if headers else None)
-
-    def _load_sse_server(self, url: str, name: str, headers: Optional[Dict[str, str]] = None) -> bool:
-        """Load an SSE MCP server.
-
-        Args:
-            url: URL of the SSE server
-            name: Name to identify the server
-            headers: Optional HTTP headers for authentication (e.g., {"Authorization": "Bearer token"})
-
-        Returns:
-            True if successful
-        """
-        if name in _GLOBAL_MCP_SERVERS:
-            console.print(f"[yellow]Server '{name}' is already loaded and active.[/yellow]")
-            console.print(f"[dim]Use '/mcp remove {name}' first if you want to reload it.[/dim]")
-            return True
-
-        if headers:
-            console.print(f"Connecting to SSE server at {url} with authentication headers...")
-        else:
-            console.print(f"Connecting to SSE server at {url}...")
-
-        async def connect_and_test():
-            params: MCPServerSseParams = {
-                "url": url,
-                "timeout": 10,  # Connection timeout
-                "sse_read_timeout": 300  # 5 minutes for SSE reads
-            }
-            # Add headers if provided
-            if headers:
-                params["headers"] = headers
-
-            server = MCPServerSse(params, name=name, cache_tools_list=True)
-
-            # Connect to the server with retry logic
-            max_connect_retries = 3
-            for attempt in range(max_connect_retries):
-                try:
-                    await server.connect()
-                    break
-                except Exception as e:
-                    if attempt < max_connect_retries - 1:
-                        await asyncio.sleep(1)  # Wait before retry
-                        continue
-                    raise
-
-            # Test by listing tools
-            tools = await server.list_tools()
-
-            return server, tools
-
-        try:
-            # Suppress all stderr output during SSE connection
-            import sys
-            from io import StringIO
-
-            # Save the original stderr
-            original_stderr = sys.stderr
-
-            try:
-                # Redirect stderr to null
-                sys.stderr = StringIO()
-
-                # Also suppress warnings
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=RuntimeWarning)
-                    warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
-                    warnings.filterwarnings("ignore", message=".*cancel scope.*")
-                    warnings.filterwarnings("ignore", message=".*didn't stop after athrow.*")
-
-                    server, tools = self._run_async(connect_and_test())
-            finally:
-                # Always restore stderr
-                sys.stderr = original_stderr
-
-            # Store the server globally
-            _GLOBAL_MCP_SERVERS[name] = server
-
-            console.print(f"[green]✓ Connected to SSE server '{name}' at {url}[/green]")
-            console.print(f"Available tools: {len(tools)}")
-
-            # Show some tool names if available
-            if tools:
-                tool_names = [tool.name for tool in tools[:5]]
-                if len(tools) > 5:
-                    tool_names.append(f"... and {len(tools) - 5} more")
-                console.print(f"Tools: {', '.join(tool_names)}")
-
-            return True
-
-        except Exception as e:
-            console.print(f"[red]Error connecting to server: {e}[/red]")
-            # Clean up if connection failed
-            if name in _GLOBAL_MCP_SERVERS:
-                del _GLOBAL_MCP_SERVERS[name]
+        alias = args[0].strip()
+        endpoint = args[1].strip()
+        headers, error = self._parse_headers(args[2:])
+        if error:
+            console.print(f"[red]{error}[/red]")
             return False
 
-    def _load_stdio_server(self, name: str, command: str, cmd_args: List[str]) -> bool:
-        """Load a stdio MCP server.
+        manager = get_mcp_manager(memory=self._resolve_memory_manager())
+        try:
+            conn = await manager.connect(alias=alias, endpoint=endpoint, headers=headers)
+        except Exception as exc:
+            console.print(f"[red]MCP connect failed: {exc}[/red]")
+            return False
 
-        Args:
-            name: Name to identify the server
-            command: Command to execute
-            cmd_args: Arguments for the command
-
-        Returns:
-            True if successful
-        """
-        if name in _GLOBAL_MCP_SERVERS:
-            console.print(f"[yellow]Server '{name}' is already loaded and active.[/yellow]")
-            console.print(f"[dim]Use '/mcp remove {name}' first if you want to reload it.[/dim]")
-            return True
-
-        console.print(
-            f"Starting stdio server '{name}' with command: {command} {' '.join(cmd_args)}"
+        panel = Panel(
+            f"[bold green]Connected[/bold green]\n"
+            f"Alias: [cyan]{conn.alias}[/cyan]\n"
+            f"Transport: [magenta]{conn.transport}[/magenta]\n"
+            f"Tools bridged: [yellow]{len(conn.tools)}[/yellow]\n"
+            f"Resources discovered: [yellow]{len(conn.resources)}[/yellow]",
+            title="MCP Connection",
+            border_style="green",
         )
-
-        async def connect_and_test():
-            params: MCPServerStdioParams = {"command": command, "args": cmd_args}
-            server = MCPServerStdio(params, name=name, cache_tools_list=True)
-
-            # Connect to the server
-            await server.connect()
-
-            # Test by listing tools
-            tools = await server.list_tools()
-
-            return server, tools
-
-        try:
-            server, tools = self._run_async(connect_and_test())
-
-            # Store the server globally
-            _GLOBAL_MCP_SERVERS[name] = server
-
-            console.print(f"[green]✓ Started stdio server '{name}'[/green]")
-            console.print(f"Available tools: {len(tools)}")
-
-            # Show some tool names if available
-            if tools:
-                tool_names = [tool.name for tool in tools[:5]]
-                if len(tools) > 5:
-                    tool_names.append(f"... and {len(tools) - 5} more")
-                console.print(f"Tools: {', '.join(tool_names)}")
-
-            return True
-
-        except Exception as e:
-            console.print(f"[red]Error starting server: {e}[/red]")
-            # Clean up if connection failed
-            if name in _GLOBAL_MCP_SERVERS:
-                del _GLOBAL_MCP_SERVERS[name]
-            return False
-
-    def handle_list(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp list command.
-
-        Args:
-            args: Optional list of command arguments (not used)
-
-        Returns:
-            True
-        """
-        if not _GLOBAL_MCP_SERVERS:
-            console.print("[yellow]No active MCP connections[/yellow]")
-            console.print("\nUse `/mcp help` to see how to load servers.")
-            return True
-
-        table = Table(title="Active MCP Connections")
-        table.add_column("Name", style="cyan")
-        table.add_column("Type", style="magenta")
-        table.add_column("Details", style="green")
-        table.add_column("Tools", style="yellow")
-
-        for name, server in _GLOBAL_MCP_SERVERS.items():
-            server_type = type(server).__name__.replace("MCPServer", "")
-
-            # Get server details
-            if isinstance(server, MCPServerSse):
-                details = server.params.get("url", "N/A")
-            elif isinstance(server, MCPServerStdio):
-                cmd = server.params.command
-                args = " ".join(server.params.args)
-                details = f"{cmd} {args}".strip()
-            else:
-                details = "Unknown"
-
-            # Get tool count
-            try:
-
-                async def get_tools():
-                    return await server.list_tools()
-
-                tools = self._run_async(get_tools())
-                tool_count = str(len(tools))
-            except Exception:
-                tool_count = "Error"
-
-            table.add_row(name, server_type, details, tool_count)
-
-        console.print(table)
+        console.print(panel)
         return True
 
-    def handle_add(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp add command.
+    async def _do_list(self) -> bool:
+        manager = get_mcp_manager(memory=self._resolve_memory_manager())
+        connections = manager.connections
 
-        Usage: /mcp add <server_name> <agent_name>
+        if not connections:
+            console.print("[yellow]No MCP servers connected[/yellow]")
+            return True
 
-        Args:
-            args: List of command arguments
+        table = Table(title="MCP Connections", box=box.ROUNDED)
+        table.add_column("Alias", style="cyan")
+        table.add_column("Transport", style="magenta")
+        table.add_column("Endpoint", style="green")
+        table.add_column("Tools", style="yellow")
+        table.add_column("Resources", style="yellow")
 
-        Returns:
-            True if successful
-        """
-        if not args or len(args) < 2:
-            console.print("[red]Error: Invalid arguments[/red]")
-            console.print("Usage: /mcp add <server_name> <agent_name>")
+        for conn in connections.values():
+            table.add_row(
+                conn.alias,
+                conn.transport,
+                conn.endpoint,
+                str(len(conn.tools)),
+                str(len(conn.resources)),
+            )
+
+        console.print(table)
+
+        tool_table = Table(title="Bridged MCP Tools", box=box.SIMPLE)
+        tool_table.add_column("Registered Name", style="cyan")
+        tool_table.add_column("Description", style="white")
+        for name, tool in manager.tool_registry.items():
+            tool_table.add_row(name, getattr(tool, "description", ""))
+
+        console.print(tool_table)
+        return True
+
+    async def _do_disconnect(self, args: List[str]) -> bool:
+        if not args:
+            console.print("[red]Usage: /mcp disconnect <alias>[/red]")
             return False
 
-        server_name = args[0]
-        agent_identifier = args[1]
+        alias = args[0].strip()
+        manager = get_mcp_manager(memory=self._resolve_memory_manager())
 
-        # Check if server exists
-        if server_name not in _GLOBAL_MCP_SERVERS:
-            console.print(f"[red]Error: Server '{server_name}' not found[/red]")
-            console.print("Use /mcp list to see active servers")
+        ok = await manager.disconnect(alias)
+        if ok:
+            console.print(f"[green]Disconnected MCP alias '{alias}'[/green]")
+            return True
+
+        console.print(f"[yellow]Alias '{alias}' was not connected[/yellow]")
+        return False
+
+    async def _do_context(self, args: List[str]) -> bool:
+        if len(args) < 2:
+            console.print(
+                "[red]Usage: /mcp context <alias> <resource_uri> [--topic topic_name] [--agent agent_name][/red]"
+            )
             return False
 
-        # Get the agent
+        alias = args[0].strip()
+        resource_uri = args[1].strip()
+
+        topic = "mcp.context"
+        target_agent: Optional[str] = None
+
+        i = 2
+        while i < len(args):
+            token = args[i]
+            if token == "--topic":
+                if i + 1 >= len(args):
+                    console.print("[red]--topic requires a value[/red]")
+                    return False
+                topic = args[i + 1].strip() or topic
+                i += 2
+                continue
+            if token == "--agent":
+                if i + 1 >= len(args):
+                    console.print("[red]--agent requires a value[/red]")
+                    return False
+                target_agent = args[i + 1].strip()
+                i += 2
+                continue
+            console.print(f"[red]Unknown argument: {token}[/red]")
+            return False
+
+        manager = get_mcp_manager(memory=self._resolve_memory_manager())
+
         try:
-            agent = get_available_agents()[agent_identifier]
-            agent_display_name = getattr(agent, "name", agent_identifier)
-        except KeyError:
-            # Try by index
-            try:
-                agents = get_available_agents()
-                agent_list = list(agents.items())
+            content = await manager.inject_resource_context(
+                alias=alias,
+                resource_uri=resource_uri,
+                topic=topic,
+                target_agent=target_agent,
+            )
+        except Exception as exc:
+            console.print(f"[red]Context injection failed: {exc}[/red]")
+            return False
 
-                if agent_identifier.isdigit():
-                    idx = int(agent_identifier)
-                    if 1 <= idx <= len(agent_list):
-                        agent_key, agent = agent_list[idx - 1]
-                        agent_display_name = getattr(agent, "name", agent_key)
-                    else:
-                        raise ValueError("Invalid index")
-                else:
-                    raise ValueError("Not found")
-            except Exception:
-                console.print(f"[red]Error: Agent '{agent_identifier}' not found[/red]")
-                return False
-
-        # Add the MCP server to the agent
-        server = _GLOBAL_MCP_SERVERS[server_name]
-
+        preview = content if len(content) <= 500 else content[:500] + "..."
         console.print(
-            f"Adding tools from MCP server '{server_name}' to agent '{agent_display_name}'..."
+            Panel(
+                f"[bold green]Context Injected[/bold green]\n"
+                f"Alias: [cyan]{alias}[/cyan]\n"
+                f"Resource: [magenta]{resource_uri}[/magenta]\n"
+                f"Topic: [yellow]{topic}[/yellow]\n\n"
+                f"[white]{preview}[/white]",
+                title="MCP Resource Injection",
+                border_style="green",
+            )
         )
-
-        # Validate the server connection before adding
-        try:
-
-            async def validate_connection():
-                try:
-                    # Try to list tools to validate connection
-                    tools = await server.list_tools()
-                    return tools
-                except Exception:
-                    console.print(
-                        "[yellow]Warning: Server connection may be lost, attempting to reconnect...[/yellow]"
-                    )
-                    # Try to reconnect
-                    await server.connect()
-                    tools = await server.list_tools()
-                    console.print(f"[green]✓ Reconnected to server '{server_name}'[/green]")
-                    return tools
-
-            # Validate the connection and get tools
-            mcp_tools = self._run_async(validate_connection())
-
-        except Exception as e:
-            console.print(f"[red]Error: Cannot connect to server '{server_name}': {e}[/red]")
-            console.print("Try removing and reloading the server.")
-            return False
-
-        # Get and display the tools
-        try:
-            # Create function tools using GlobalMCPUtil
-            tools = []
-            for mcp_tool in mcp_tools:
-                # Use GlobalMCPUtil to create tools that use the global registry
-                function_tool = GlobalMCPUtil.to_function_tool(mcp_tool, server_name)
-                tools.append(function_tool)
-
-            # Display tools table
-            table = Table(title=f"Adding tools to {agent_display_name}")
-            table.add_column("Tool", style="cyan")
-            table.add_column("Status", style="green")
-            table.add_column("Details", style="yellow")
-
-            for tool in tools:
-                table.add_row(tool.name, "Added", f"Available as: {tool.name}")
-
-            console.print(table)
-
-            # Add tools directly to agent.tools
-            if not hasattr(agent, "tools"):
-                agent.tools = []
-
-            # Remove any existing tools with the same names to avoid duplicates
-            existing_tool_names = {t.name for t in tools}
-            agent.tools = [t for t in agent.tools if t.name not in existing_tool_names]
-
-            # Add the new tools
-            agent.tools.extend(tools)
-            
-            # Persist the association
-            # Get the agent's real name (not display name)
-            agent_real_name = agent_identifier.lower()
-            if not agent_identifier.isdigit():
-                # It's already a name
-                agent_real_name = agent_identifier.lower()
-            else:
-                # It's an index, get the actual agent name
-                agents = get_available_agents()
-                agent_list = list(agents.items())
-                idx = int(agent_identifier)
-                if 1 <= idx <= len(agent_list):
-                    agent_real_name, _ = agent_list[idx - 1]
-            
-            add_mcp_server_to_agent(agent_real_name, server_name)
-
-            console.print(
-                f"[green]Added {len(tools)} tools from server "
-                f"'{server_name}' to agent '{agent_display_name}'.[/green]"
-            )
-
-            # Test that the tools are accessible
-            async def test_agent_tools():
-                # Get all tools including MCP tools
-                all_regular_tools = agent.tools if hasattr(agent, "tools") else []
-                all_mcp_tools = (
-                    await agent.get_mcp_tools()
-                    if hasattr(agent, "mcp_servers") and agent.mcp_servers
-                    else []
-                )
-                return all_regular_tools + all_mcp_tools
-
-            all_tools = self._run_async(test_agent_tools())
-
-            # Count different types of tools
-            mcp_server_tools_count = (
-                len([t for t in agent.mcp_servers if hasattr(agent, "mcp_servers")])
-                if hasattr(agent, "mcp_servers")
-                else 0
-            )
-            regular_tools_count = len(agent.tools) if hasattr(agent, "tools") else 0
-
-            console.print(f"[blue]Agent now has {regular_tools_count} tools total[/blue]")
-
-            # Test a simple tool invocation to make sure everything works
-            console.print("[cyan]Testing MCP tool connectivity...[/cyan]")
-            try:
-                if tools:
-                    console.print("[green]✓ MCP tools are ready for use![/green]")
-                else:
-                    console.print("[yellow]Warning: No tools available from server[/yellow]")
-            except Exception as e:
-                console.print(f"[yellow]Warning: Tool connectivity test failed: {e}[/yellow]")
-
-            return True
-
-        except Exception as e:
-            console.print(f"[red]Error adding tools: {e}[/red]")
-            return False
-
-    def handle_remove(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp remove command.
-
-        Args:
-            args: List of command arguments
-
-        Returns:
-            True if successful
-        """
-        if not args:
-            console.print("[red]Error: No server name specified[/red]")
-            console.print("Usage: /mcp remove <server_name>")
-            return False
-
-        server_name = args[0]
-
-        if server_name not in _GLOBAL_MCP_SERVERS:
-            console.print(f"[red]Error: Server '{server_name}' not found[/red]")
-            return False
-
-        # Cleanup the server
-        server = _GLOBAL_MCP_SERVERS[server_name]
-
-        try:
-
-            async def cleanup_server():
-                await server.cleanup()
-
-            self._run_async(cleanup_server())
-            del _GLOBAL_MCP_SERVERS[server_name]
-            _SERVER_INVOCATION_LOCKS.pop(server_name, None)
-            console.print(f"[green]✓ Removed MCP server '{server_name}'[/green]")
-            return True
-        except Exception as e:
-            console.print(f"[red]Error removing server: {e}[/red]")
-            # Remove from list anyway
-            if server_name in _GLOBAL_MCP_SERVERS:
-                del _GLOBAL_MCP_SERVERS[server_name]
-            return False
-
-    def handle_status(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp status command.
-
-        Args:
-            args: Optional list of command arguments
-
-        Returns:
-            True if successful
-        """
-        if not _GLOBAL_MCP_SERVERS:
-            console.print("[yellow]No active MCP connections[/yellow]")
-            return True
-
-        console.print("[cyan]Checking MCP server connections...[/cyan]")
-
-        table = Table(title="MCP Server Status")
-        table.add_column("Name", style="cyan")
-        table.add_column("Type", style="magenta")
-        table.add_column("Status", style="bold")
-        table.add_column("Tools", style="yellow")
-        table.add_column("Details", style="dim")
-
-        healthy_count = 0
-
-        for name, server in _GLOBAL_MCP_SERVERS.items():
-            server_type = type(server).__name__.replace("MCPServer", "")
-
-            # Test server connection
-            try:
-
-                async def test_connection():
-                    tools = await server.list_tools()
-                    return len(tools), None
-
-                tools_count, error = self._run_async(test_connection())
-                status = "[green]✓ Healthy[/green]"
-                tools_str = str(tools_count)
-                details = "Connection active"
-                healthy_count += 1
-
-            except Exception as e:
-                status = "[red]✗ Error[/red]"
-                tools_str = "N/A"
-                details = f"Error: {str(e)[:50]}..."
-
-                # Try to reconnect
-                try:
-                    console.print(f"[yellow]Attempting to reconnect to '{name}'...[/yellow]")
-
-                    async def reconnect():
-                        await server.connect()
-                        tools = await server.list_tools()
-                        return len(tools)
-
-                    tools_count = self._run_async(reconnect())
-                    status = "[green]✓ Reconnected[/green]"
-                    tools_str = str(tools_count)
-                    details = "Reconnected successfully"
-                    healthy_count += 1
-
-                except Exception as reconnect_error:
-                    status = "[red]✗ Failed[/red]"
-                    details = f"Reconnect failed: {str(reconnect_error)[:30]}..."
-
-            table.add_row(name, server_type, status, tools_str, details)
-
-        console.print(table)
-
-        # Summary
-        total_servers = len(_GLOBAL_MCP_SERVERS)
-        if healthy_count == total_servers:
-            console.print(f"[green]✓ All {total_servers} MCP servers are healthy[/green]")
-        else:
-            failed_count = total_servers - healthy_count
-            console.print(
-                f"[yellow]⚠ {healthy_count}/{total_servers} servers healthy, {failed_count} failed[/yellow]"
-            )
-
         return True
 
-    def handle_tools(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp tools command.
+    def _resolve_memory_manager(self) -> MemoryManager:
+        candidate = self.memory
+        if isinstance(candidate, MemoryManager):
+            return candidate
+        return MemoryManager()
 
-        Args:
-            args: List of command arguments
+    @staticmethod
+    def _parse_headers(args: Sequence[str]) -> Tuple[Dict[str, str], Optional[str]]:
+        headers: Dict[str, str] = {}
+        i = 0
+        while i < len(args):
+            token = args[i]
+            if token not in ("--header", "-H"):
+                return headers, f"Unknown argument: {token}"
+            if i + 1 >= len(args):
+                return headers, "--header requires a value"
+            raw = args[i + 1]
+            if ":" not in raw:
+                return headers, f"Invalid header format '{raw}', expected 'Key: Value'"
+            key, value = raw.split(":", 1)
+            headers[key.strip()] = value.strip()
+            i += 2
 
-        Returns:
-            True if successful
-        """
-        if not args:
-            console.print("[red]Error: No server name specified[/red]")
-            console.print("Usage: /mcp tools <server_name>")
-            return False
-
-        server_name = args[0]
-
-        if server_name not in _GLOBAL_MCP_SERVERS:
-            console.print(f"[red]Error: Server '{server_name}' not found[/red]")
-            return False
-
-        server = _GLOBAL_MCP_SERVERS[server_name]
-
-        try:
-
-            async def get_tools():
-                return await server.list_tools()
-
-            tools = self._run_async(get_tools())
-
-            if not tools:
-                console.print(f"[yellow]No tools available from '{server_name}'[/yellow]")
-                return True
-
-            table = Table(title=f"Tools from '{server_name}'")
-            table.add_column("#", style="dim")
-            table.add_column("Name", style="cyan")
-            table.add_column("Description", style="green")
-
-            for idx, tool in enumerate(tools, 1):
-                description = tool.description or "No description"
-                if len(description) > 60:
-                    description = description[:57] + "..."
-                table.add_row(str(idx), tool.name, description)
-
-            console.print(table)
-            return True
-
-        except Exception as e:
-            console.print(f"[red]Error listing tools: {e}[/red]")
-            return False
-
-    def handle_associations(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp associations command to show agent-MCP associations.
-        
-        Args:
-            args: Optional list of command arguments (not used)
-            
-        Returns:
-            True
-        """
-        if not _AGENT_MCP_ASSOCIATIONS:
-            console.print("[yellow]No agent-MCP associations configured[/yellow]")
-            return True
-            
-        table = Table(title="Agent-MCP Associations")
-        table.add_column("Agent", style="cyan")
-        table.add_column("MCP Servers", style="magenta")
-        table.add_column("Total Tools", style="yellow")
-        
-        for agent_name, server_names in _AGENT_MCP_ASSOCIATIONS.items():
-            if server_names:
-                # Count total tools
-                total_tools = 0
-                for server_name in server_names:
-                    if server_name in _GLOBAL_MCP_SERVERS:
-                        try:
-                            async def count_tools(srv):
-                                tools = await srv.list_tools()
-                                return len(tools)
-                            
-                            server = _GLOBAL_MCP_SERVERS[server_name]
-                            tool_count = self._run_async(count_tools(server))
-                            total_tools += tool_count
-                        except Exception:
-                            pass
-                
-                servers_str = ", ".join(server_names)
-                table.add_row(agent_name, servers_str, str(total_tools))
-        
-        console.print(table)
-        return True
-
-    def handle_test(self, args: Optional[List[str]] = None) -> bool:
-        """Handle /mcp test command to test server connectivity.
-        
-        Args:
-            args: List of command arguments
-            
-        Returns:
-            True if successful
-        """
-        if not args:
-            console.print("[red]Error: No server name specified[/red]")
-            console.print("Usage: /mcp test <server_name>")
-            return False
-            
-        server_name = args[0]
-        
-        if server_name not in _GLOBAL_MCP_SERVERS:
-            console.print(f"[red]Error: Server '{server_name}' not found[/red]")
-            return False
-            
-        server = _GLOBAL_MCP_SERVERS[server_name]
-        
-        console.print(f"[cyan]Testing MCP server '{server_name}'...[/cyan]")
-        
-        try:
-            async def test_server():
-                # Test 1: List tools
-                console.print("[yellow]Test 1: Listing tools...[/yellow]")
-                tools = await server.list_tools()
-                console.print(f"[green]✓ Found {len(tools)} tools[/green]")
-                
-                # Test 2: Test a simple tool if available
-                if tools:
-                    test_tool = tools[0]
-                    console.print(f"[yellow]Test 2: Testing tool '{test_tool.name}'...[/yellow]")
-                    
-                    # Create a test invocation
-                    try:
-                        # Use empty input for testing
-                        result = await server.call_tool(test_tool.name, {})
-                        console.print(f"[green]✓ Tool invocation successful[/green]")
-                        if result and result.content:
-                            console.print(f"[dim]Result preview: {str(result.content[0])[:100]}...[/dim]")
-                    except Exception as tool_error:
-                        console.print(f"[yellow]⚠ Tool test failed (this is normal for tools requiring input)[/yellow]")
-                        console.print(f"[dim]Error: {str(tool_error)[:100]}[/dim]")
-                
-                # Test 3: Test reconnection
-                console.print("[yellow]Test 3: Testing reconnection...[/yellow]")
-                if hasattr(server, 'session'):
-                    old_session = server.session
-                    server.session = None
-                await server.connect()
-                console.print("[green]✓ Reconnection successful[/green]")
-                
-                return True
-            
-            self._run_async(test_server())
-            console.print(f"[green]✓ All tests passed for server '{server_name}'[/green]")
-            return True
-            
-        except Exception as e:
-            console.print(f"[red]✗ Test failed: {type(e).__name__}: {str(e)}[/red]")
-            return False
+        return headers, None
 
 
-def get_mcp_servers_for_agent(agent_name: str) -> List[str]:
-    """Get list of MCP server names associated with an agent.
-    
-    Args:
-        agent_name: Name of the agent
-        
-    Returns:
-        List of MCP server names
-    """
-    return _AGENT_MCP_ASSOCIATIONS.get(agent_name.lower(), [])
-
-
-def add_mcp_server_to_agent(agent_name: str, server_name: str):
-    """Associate an MCP server with an agent.
-    
-    Args:
-        agent_name: Name of the agent
-        server_name: Name of the MCP server
-    """
-    agent_name_lower = agent_name.lower()
-    if agent_name_lower not in _AGENT_MCP_ASSOCIATIONS:
-        _AGENT_MCP_ASSOCIATIONS[agent_name_lower] = []
-    
-    if server_name not in _AGENT_MCP_ASSOCIATIONS[agent_name_lower]:
-        _AGENT_MCP_ASSOCIATIONS[agent_name_lower].append(server_name)
-
-
-def remove_mcp_server_from_agent(agent_name: str, server_name: str):
-    """Remove an MCP server association from an agent.
-    
-    Args:
-        agent_name: Name of the agent
-        server_name: Name of the MCP server
-    """
-    agent_name_lower = agent_name.lower()
-    if agent_name_lower in _AGENT_MCP_ASSOCIATIONS:
-        if server_name in _AGENT_MCP_ASSOCIATIONS[agent_name_lower]:
-            _AGENT_MCP_ASSOCIATIONS[agent_name_lower].remove(server_name)
-
-
-def get_mcp_tools_for_agent(agent_name: str) -> List[FunctionTool]:
-    """Get all MCP tools for an agent based on associations.
-    
-    Args:
-        agent_name: Name of the agent
-        
-    Returns:
-        List of FunctionTool objects
-    """
-    tools = []
-    server_names = get_mcp_servers_for_agent(agent_name)
-    
-    for server_name in server_names:
-        if server_name in _GLOBAL_MCP_SERVERS:
-            server = _GLOBAL_MCP_SERVERS[server_name]
-            try:
-                # Get tools from server synchronously
-                import asyncio
-                async def get_tools():
-                    return await server.list_tools()
-                
-                # Try to get existing loop or create new one
-                try:
-                    loop = asyncio.get_running_loop()
-                    import concurrent.futures
-                    def run_in_thread():
-                        new_loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(new_loop)
-                        try:
-                            return new_loop.run_until_complete(get_tools())
-                        finally:
-                            new_loop.close()
-                    
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(run_in_thread)
-                        mcp_tools = future.result(timeout=10)
-                except RuntimeError:
-                    mcp_tools = asyncio.run(get_tools())
-                
-                # Convert to function tools
-                for mcp_tool in mcp_tools:
-                    function_tool = GlobalMCPUtil.to_function_tool(mcp_tool, server_name)
-                    tools.append(function_tool)
-                    
-            except Exception as e:
-                logging.warning(f"Failed to get tools from MCP server '{server_name}': {e}")
-    
-    return tools
-
-
-# Register the command
-register_command(MCPCommand())
+MCP_COMMAND_INSTANCE = MCPCommand()
+register_command(MCP_COMMAND_INSTANCE)
