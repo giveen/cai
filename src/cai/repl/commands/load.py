@@ -1,987 +1,606 @@
-"""
-Load command for CAI REPL.
+"""Session hydration command for CAI REPL.
 
-This module provides commands for loading a jsonl into
-the context of the current session.
+This module provides a security-first loader that restores prior session state
+with integrity verification, selective hydration modes, and conflict-aware
+merge/overwrite behavior.
 """
 
+from __future__ import annotations
+
+from contextlib import ExitStack
+from datetime import UTC, datetime
+from decimal import Decimal
+from hashlib import sha256
+import json
 import os
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-from rich.console import Console  # pylint: disable=import-error
-from rich.table import Table  # pylint: disable=import-error
+from pydantic import BaseModel, Field, ValidationError
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
-from cai.repl.commands.base import Command, register_command
-from cai.repl.commands.parallel import PARALLEL_CONFIGS
-from cai.sdk.agents.models.openai_chatcompletions import (
-    get_agent_message_history,
-    get_all_agent_histories,
-)
+from cai.memory import MemoryManager
+from cai.repl.commands.base import FrameworkCommand, register_command
+from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
+from cai.repl.commands.cost import USAGE_TRACKER, UsageRecord, BudgetPolicy
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-from cai.sdk.agents.run_to_jsonl import load_history_from_jsonl
+from cai.tools.workspace import get_project_space
 
 console = Console()
 
 
-class LoadCommand(Command):
-    """Command for loading a jsonl into the context of the current session."""
+class IntegrityError(Exception):
+    """Raised when session envelope integrity validation fails."""
 
-    def __init__(self):
-        """Initialize the load command."""
-        super().__init__(
-            name="/load",
-            description="Merge a jsonl file into agent histories with duplicate control (uses logs/last if no file specified)",
-            aliases=["/l"],
+
+class LedgerRecord(BaseModel):
+    """Serializable cost ledger record."""
+
+    record_id: Optional[str] = None
+    agent_name: str = ""
+    model: str = ""
+    operation: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost: str = "0"
+    timestamp: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class BudgetSnapshot(BaseModel):
+    """Serializable budget policy snapshot."""
+
+    limit: str = "0"
+    currency: str = "USD"
+    conversion_rate: str = "1"
+    soft_lock: bool = True
+
+
+class CostLedgerPayload(BaseModel):
+    """Serializable cost ledger payload."""
+
+    session_id: Optional[str] = None
+    session_total_usd: Optional[str] = None
+    budget: BudgetSnapshot = Field(default_factory=BudgetSnapshot)
+    records: List[LedgerRecord] = Field(default_factory=list)
+
+
+class AgentConfigPayload(BaseModel):
+    """Serializable parallel agent configuration."""
+
+    agent_name: str
+    model: Optional[str] = None
+    prompt: Optional[str] = None
+    unified_context: bool = False
+    id: Optional[str] = None
+
+
+class AgentContextPayload(BaseModel):
+    """Serializable agent-context payload."""
+
+    active_agent: Optional[str] = None
+    registry: Dict[str, str] = Field(default_factory=dict)
+    histories: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+    parallel_configs: List[AgentConfigPayload] = Field(default_factory=list)
+
+
+class MemoryStackPayload(BaseModel):
+    """Serializable memory stack payload."""
+
+    summaries: List[str] = Field(default_factory=list)
+    histories: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+
+
+class SessionConfigPayload(BaseModel):
+    """Serializable configuration payload."""
+
+    env: Dict[str, str] = Field(default_factory=dict)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SessionPayload(BaseModel):
+    """Serializable full session payload."""
+
+    workspace: str = ""
+    memory: MemoryStackPayload = Field(default_factory=MemoryStackPayload)
+    agents: AgentContextPayload = Field(default_factory=AgentContextPayload)
+    cost: CostLedgerPayload = Field(default_factory=CostLedgerPayload)
+    config: SessionConfigPayload = Field(default_factory=SessionConfigPayload)
+
+
+class IntegrityProof(BaseModel):
+    """Checksum metadata for payload integrity."""
+
+    algorithm: str = "sha256"
+    checksum: str
+
+
+class SessionEnvelope(BaseModel):
+    """Typed envelope for secure session hydration files."""
+
+    schema_version: str = "1.0"
+    created_at: str
+    payload: SessionPayload
+    integrity: IntegrityProof
+
+
+class HydrationMode(BaseModel):
+    """Requested hydration behavior."""
+
+    source: Optional[str] = None
+    history_only: bool = False
+    config_only: bool = False
+    overwrite: bool = False
+    merge: bool = True
+
+
+class SessionHydrator:
+    """Performs validated session re-hydration into runtime components."""
+
+    def __init__(self, *, memory_manager: MemoryManager, workspace: Any) -> None:
+        self._memory = memory_manager
+        self._workspace = workspace
+        self._workspace_root = get_project_space().ensure_initialized().resolve()
+        self._audit_file = self._workspace_root / ".cai" / "audit" / "load_actions.jsonl"
+
+    @property
+    def workspace_root(self) -> Path:
+        return self._workspace_root
+
+    def default_source(self) -> Path:
+        return self._workspace_root / ".cai" / "session" / "latest.session.json"
+
+    def resolve_source(self, candidate: Optional[str]) -> Path:
+        raw = Path(candidate) if candidate else self.default_source()
+        if not raw.is_absolute():
+            raw = self._workspace_root / raw
+        resolved = raw.expanduser().resolve()
+
+        try:
+            resolved.relative_to(self._workspace_root)
+        except ValueError as exc:
+            raise IntegrityError(
+                f"Security Integrity Alert: path escapes workspace root ({resolved})"
+            ) from exc
+
+        return resolved
+
+    def load(self, mode: HydrationMode, user: str) -> Tuple[bool, str]:
+        source = self.resolve_source(mode.source)
+
+        try:
+            if source.suffix.lower() == ".jsonl":
+                return self._load_jsonl_history(source=source, mode=mode, user=user)
+            envelope = self._read_envelope(source)
+            self._validate_integrity(envelope)
+            self._apply_envelope(envelope=envelope, mode=mode)
+            self._audit_attempt(
+                user=user,
+                source=source,
+                success=True,
+                detail="hydration-complete",
+            )
+            return True, f"Session hydrated from {source}"
+        except (IntegrityError, ValidationError) as exc:
+            detail = f"Security Integrity Alert: {exc}"
+            self._audit_attempt(user=user, source=source, success=False, detail=detail)
+            return False, detail
+        except Exception as exc:  # pylint: disable=broad-except
+            detail = f"Load failed: {exc}"
+            self._audit_attempt(user=user, source=source, success=False, detail=detail)
+            return False, detail
+
+    def _read_envelope(self, source: Path) -> SessionEnvelope:
+        if not source.exists():
+            raise IntegrityError(f"session source not found: {source}")
+
+        with ExitStack() as stack:
+            handle = stack.enter_context(source.open("r", encoding="utf-8"))
+            text = handle.read()
+
+        return SessionEnvelope.model_validate_json(text)
+
+    @staticmethod
+    def _canonical_payload_json(payload: SessionPayload) -> str:
+        obj = payload.model_dump(mode="json")
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+    def _validate_integrity(self, envelope: SessionEnvelope) -> None:
+        algo = envelope.integrity.algorithm.lower().strip()
+        if algo != "sha256":
+            raise IntegrityError(f"unsupported integrity algorithm: {algo}")
+
+        expected = envelope.integrity.checksum.lower().strip()
+        actual = sha256(self._canonical_payload_json(envelope.payload).encode("utf-8")).hexdigest()
+        if actual != expected:
+            raise IntegrityError("checksum mismatch; source may be tampered or corrupted")
+
+    def _active_session_has_state(self) -> bool:
+        if AGENT_MANAGER.get_registered_agents():
+            return True
+        if any(AGENT_MANAGER._message_history.values()):  # pylint: disable=protected-access
+            return True
+        if len(USAGE_TRACKER.all_records()) > 0:
+            return True
+        return False
+
+    def _apply_envelope(self, *, envelope: SessionEnvelope, mode: HydrationMode) -> None:
+        has_active = self._active_session_has_state()
+        if has_active and mode.overwrite:
+            self._wipe_current_state()
+
+        if mode.config_only:
+            self._restore_config(cfg=envelope.payload.config, overwrite=mode.overwrite)
+            return
+
+        self._restore_memory_stack(
+            memory=envelope.payload.memory,
+            merge=(mode.merge and not mode.overwrite),
+            restore_histories=True,
         )
-        
-        # Add subcommands
-        self.add_subcommand("agent", "Load history into a specific agent", self.handle_agent)
-        self.add_subcommand("all", "Show all available agents", self.handle_all)
-        self.add_subcommand("parallel", "Load JSONL matching configured parallel agents", self.handle_parallel)
-        self.add_subcommand("load-all", "Load JSONL into all parallel agents with same messages", self.handle_load_all)
 
-    def handle(self, args: Optional[List[str]] = None) -> bool:
-        """Handle the load command.
+        if not mode.history_only:
+            self._restore_agent_context(
+                agents=envelope.payload.agents,
+                merge=(mode.merge and not mode.overwrite),
+            )
+            self._restore_cost_ledger(
+                ledger=envelope.payload.cost,
+                merge=(mode.merge and not mode.overwrite),
+            )
+            self._restore_config(
+                cfg=envelope.payload.config,
+                overwrite=mode.overwrite,
+            )
 
-        Args:
-            args: Optional list of command arguments
+    def _wipe_current_state(self) -> None:
+        AGENT_MANAGER._agent_registry.clear()  # pylint: disable=protected-access
+        AGENT_MANAGER._message_history.clear()  # pylint: disable=protected-access
+        PARALLEL_CONFIGS.clear()
+        USAGE_TRACKER.reset_session()
 
-        Returns:
-            True if the command was handled successfully, False otherwise
-        """
-        if not args:
-            # No arguments - load into default agent (P1)
-            return self.handle_load_default()
-        
-        # Check if first arg is "all" (special case for showing all agents)
-        if args[0].lower() == "all":
-            return self.handle_all(args[1:] if len(args) > 1 else [])
-        
-        # Check if first arg is "agent" subcommand
-        if args[0].lower() == "agent":
-            return self.handle_agent(args[1:] if len(args) > 1 else [])
-        
-        # Check if first arg is "parallel" subcommand
-        if args[0].lower() == "parallel":
-            return self.handle_parallel(args[1:] if len(args) > 1 else [])
-        
-        # Check if first arg is "load-all" subcommand
-        if args[0].lower() == "load-all":
-            return self.handle_load_all(args[1:] if len(args) > 1 else [])
-        
-        # Check if first arg is a parallel pattern
-        if args[0].startswith("parallel_") or args[0] in ["bb_triage", "red_team"]:
-            from cai.agents.patterns import get_pattern
-            from cai.repl.commands.parallel import PARALLEL_CONFIGS
-            
-            pattern = get_pattern(args[0])
-            if pattern and hasattr(pattern, "configs"):
-                # Clear existing configs
+        try:
+            from cai.util import COST_TRACKER
+
+            COST_TRACKER.session_total_cost = 0.0
+            COST_TRACKER.last_total_cost = 0.0
+            COST_TRACKER.last_interaction_cost = 0.0
+        except Exception:
+            pass
+
+    def _restore_memory_stack(
+        self,
+        *,
+        memory: MemoryStackPayload,
+        merge: bool,
+        restore_histories: bool,
+    ) -> None:
+        if restore_histories:
+            for agent, entries in memory.histories.items():
+                existing = AGENT_MANAGER._message_history.get(agent, [])  # pylint: disable=protected-access
+                if merge:
+                    merged = self._merge_messages(existing, entries)
+                else:
+                    merged = list(entries)
+                AGENT_MANAGER._message_history[agent] = merged  # pylint: disable=protected-access
+
+        for idx, summary in enumerate(memory.summaries, start=1):
+            self._memory.record(
+                {
+                    "topic": "session.summary",
+                    "finding": summary,
+                    "source": "session_hydrator",
+                    "tags": ["summary", "rehydration"],
+                    "artifacts": {"ordinal": idx},
+                }
+            )
+
+    def _restore_agent_context(self, *, agents: AgentContextPayload, merge: bool) -> None:
+        for name, aid in agents.registry.items():
+            if merge and name in AGENT_MANAGER._agent_registry:  # pylint: disable=protected-access
+                continue
+            AGENT_MANAGER._agent_registry[name] = aid  # pylint: disable=protected-access
+
+        for name, entries in agents.histories.items():
+            existing = AGENT_MANAGER._message_history.get(name, [])  # pylint: disable=protected-access
+            if merge:
+                AGENT_MANAGER._message_history[name] = self._merge_messages(existing, entries)  # pylint: disable=protected-access
+            else:
+                AGENT_MANAGER._message_history[name] = list(entries)  # pylint: disable=protected-access
+
+        if agents.active_agent:
+            AGENT_MANAGER._active_agent_name = agents.active_agent  # pylint: disable=protected-access
+
+        if agents.parallel_configs:
+            if not merge:
                 PARALLEL_CONFIGS.clear()
-                
-                # Load pattern configs
-                for idx, config in enumerate(pattern.configs, 1):
-                    config.id = f"P{idx}"
-                    PARALLEL_CONFIGS.append(config)
-                
-                # Enable parallel mode
-                if len(PARALLEL_CONFIGS) >= 2:
-                    os.environ["CAI_PARALLEL"] = str(len(PARALLEL_CONFIGS))
-                    agent_names = [config.agent_name for config in PARALLEL_CONFIGS]
-                    os.environ["CAI_PARALLEL_AGENTS"] = ",".join(agent_names)
-                
-                console.print(f"[green]Loaded parallel pattern: {pattern.description}[/green]")
-                console.print(f"[cyan]{len(PARALLEL_CONFIGS)} agents configured[/cyan]")
-                
-                # Show configured agents with IDs
-                for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                    model_info = f" [{config.model}]" if config.model else " [default]"
-                    console.print(f"  [P{idx}] {config.agent_name}{model_info}")
-                
-                # Load history file if provided, or default to logs/last
-                jsonl_file = args[1] if len(args) > 1 else "logs/last"
-                
-                # Try to load and match agent histories
-                loaded = self.handle_load_pattern_from_jsonl(jsonl_file)
-                if not loaded:
-                    console.print(f"[yellow]No history loaded from {jsonl_file}[/yellow]")
-                
-                return True
-            else:
-                console.print(f"[red]Error: Unknown pattern '{args[0]}'[/red]")
-                return False
-        
-        # Check if it's a file path (contains / or . or ends with .jsonl)
-        if "/" in args[0] or "." in args[0] or args[0].endswith(".jsonl"):
-            # It's a file path, load into default agent (P1)
-            return self.handle_load_default(args[0])
-        
-        # Check if first arg is a numeric ID (like "14")
-        if args[0].isdigit():
-            # Convert to P format
-            args[0] = f"P{args[0]}"
-        
-        # Check if first arg is an ID (P1, P2, etc)
-        if args[0].upper().startswith("P"):
-            # Try to resolve ID to agent name
-            from cai.repl.commands.parallel import PARALLEL_CONFIGS
-            from cai.agents import get_available_agents
-            
-            identifier = args[0].upper()  # Normalize to uppercase
-            agent_name = None
-            available_agents = get_available_agents()
-            
-            # Import AGENT_MANAGER for single agent mode handling
-            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-            
-            # Check if there are no parallel configs
-            if not PARALLEL_CONFIGS:
-                if identifier == "P1":
-                    # P1 in single agent mode - load to the current active agent
-                    current_agent = AGENT_MANAGER.get_active_agent()
-                    current_agent_name = AGENT_MANAGER._active_agent_name
-                    if current_agent and current_agent_name:
-                        agent_name = current_agent_name
-                        console.print(f"[cyan]Loading to current agent: {agent_name}[/cyan]")
-                    else:
-                        console.print(f"[red]Error: No active agent found[/red]")
-                        return False
-                else:
-                    # Any other ID in single agent mode is invalid
-                    console.print(f"[red]Error: No agent found with ID '{identifier}'[/red]")
-                    console.print("[yellow]In single agent mode, only P1 is valid[/yellow]")
-                    console.print("[dim]Use '/parallel' to configure multiple agents[/dim]")
-                    return False
-            else:
-                # Look for matching ID in parallel configs
-                for config in PARALLEL_CONFIGS:
-                    if config.id and config.id.upper() == identifier:
-                        if config.agent_name in available_agents:
-                            agent = available_agents[config.agent_name]
-                            display_name = getattr(agent, "name", config.agent_name)
-                            
-                            # Count how many instances of this agent type exist
-                            total_count = sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name)
-                            
-                            # Count instances to find the right one
-                            instance_num = 0
-                            for c in PARALLEL_CONFIGS:
-                                if c.agent_name == config.agent_name:
-                                    instance_num += 1
-                                    if c.id == config.id:
-                                        break
-                            
-                            # Add instance number if there are duplicates
-                            if total_count > 1:
-                                agent_name = f"{display_name} #{instance_num}"
-                            else:
-                                agent_name = display_name
-                            break
-            
-            if agent_name:
-                # Replace ID with resolved agent name and process
-                args[0] = agent_name
-                return self.handle_load_to_agent(args)
-            else:
-                console.print(f"[red]Error: No agent found with ID '{identifier}'[/red]")
-                console.print("[dim]Use '/parallel' to see configured agents with IDs[/dim]")
-                return False
-        
-        # Otherwise, treat first arg as agent name and rest as file path
-        return self.handle_load_to_agent(args)
-
-    def handle_load_pattern_from_jsonl(self, jsonl_file: Optional[str] = None) -> bool:
-        """Load a JSONL file and match agent messages to configured parallel agents.
-        
-        Args:
-            jsonl_file: Optional jsonl file path, defaults to "logs/last"
-            
-        Returns:
-            bool: True if successful
-        """
-        from cai.repl.commands.parallel import PARALLEL_CONFIGS
-        import json
-        
-        if not PARALLEL_CONFIGS:
-            # No parallel configs, fallback to default behavior
-            return self.handle_load_default(jsonl_file)
-        
-        if not jsonl_file:
-            jsonl_file = "logs/last"
-            
-        try:
-            # First, try to parse agent names from JSONL if file exists
-            agent_conversations = {}
-            
-            try:
-                with open(jsonl_file, 'r', encoding='utf-8') as f:
-                    current_agent = None
-                    current_messages = []
-                    
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            record = json.loads(line)
-                            
-                            # Check if this is a completion record with agent_name
-                            if "agent_name" in record and record.get("object") == "chat.completion":
-                                # Save previous agent's messages if any
-                                if current_agent and current_messages:
-                                    if current_agent not in agent_conversations:
-                                        agent_conversations[current_agent] = []
-                                    agent_conversations[current_agent].extend(current_messages)
-                                
-                                # Start tracking new agent
-                                current_agent = record["agent_name"]
-                                current_messages = []
-                            
-                            # Check if this is a request record with messages
-                            elif "model" in record and "messages" in record and isinstance(record["messages"], list):
-                                # These messages belong to the current agent
-                                for msg in record["messages"]:
-                                    if msg.get("role") != "system":  # Skip system messages
-                                        current_messages.append(msg)
-                        
-                        except json.JSONDecodeError:
-                            continue
-                
-                # Save last agent's messages
-                if current_agent and current_messages:
-                    if current_agent not in agent_conversations:
-                        agent_conversations[current_agent] = []
-                    agent_conversations[current_agent].extend(current_messages)
-            except FileNotFoundError:
-                # File doesn't exist, will use traditional parsing below
-                pass
-            
-            # Also load traditional messages for backward compatibility
-            messages = load_history_from_jsonl(jsonl_file)
-            console.print(f"[green]Loaded {len(messages)} messages from {jsonl_file}[/green]")
-            
-            # Debug: Show what agent names were found
-            if agent_conversations:
-                console.print("[dim]Found agent conversations:[/dim]")
-                for agent_name, msgs in agent_conversations.items():
-                    console.print(f"[dim]  - {agent_name}: {len(msgs)} messages[/dim]")
-            
-            # If we didn't find agent names in completion records, try traditional parsing
-            if not agent_conversations:
-                agent_messages = {}
-                current_agent = None
-                
-                for msg in messages:
-                    # Check multiple ways agents can be identified
-                    # 1. Direct "name" field in assistant messages
-                    if msg.get("role") == "assistant" and "name" in msg:
-                        current_agent = msg["name"]
-                    # 2. "sender" field (used in multi-agent logs)
-                    elif "sender" in msg:
-                        current_agent = msg["sender"]
-                    # 3. Look in nested message structure for agent_name
-                    elif isinstance(msg, dict) and "agent_name" in msg:
-                        current_agent = msg["agent_name"]
-                    
-                    # Initialize agent message list if needed
-                    if current_agent and current_agent not in agent_messages:
-                        agent_messages[current_agent] = []
-                    
-                    # Add message to current agent's list
-                    if current_agent:
-                        agent_messages[current_agent].append(msg)
-                
-                # Use traditional parsing result
-                agent_conversations = agent_messages
-                    
-            # Match configured agents with loaded messages
-            loaded_count = 0
-            from cai.agents import get_available_agents
-            agents = get_available_agents()
-            
-            # Count instances of each agent type
-            agent_counts = {}
-            for config in PARALLEL_CONFIGS:
-                agent_counts[config.agent_name] = agent_counts.get(config.agent_name, 0) + 1
-            
-            # Track current instance for numbering
-            agent_instances = {}
-            
-            for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                # Check if config.agent_name is a pattern name
-                if config.agent_name.endswith("_pattern"):
-                    # Try to get the pattern
-                    from cai.agents.patterns import get_pattern
-                    pattern = get_pattern(config.agent_name)
-                    if pattern and hasattr(pattern, 'entry_agent'):
-                        # For swarm patterns, use the entry agent
-                        agent = pattern.entry_agent
-                        agent_display_name = getattr(agent, "name", config.agent_name)
-                    else:
-                        # Skip if pattern not found
-                        console.print(f"[yellow]Warning: Pattern '{config.agent_name}' not found[/yellow]")
-                        continue
-                elif config.agent_name in agents:
-                    agent = agents[config.agent_name]
-                    agent_display_name = getattr(agent, "name", config.agent_name)
-                else:
-                    # Skip if agent not found
-                    console.print(f"[yellow]Warning: Agent '{config.agent_name}' not found[/yellow]")
+            for cfg in agents.parallel_configs:
+                if merge and any(c.id == cfg.id for c in PARALLEL_CONFIGS):
                     continue
-                    
-                # Determine the instance name
-                if agent_counts[config.agent_name] > 1:
-                    if config.agent_name not in agent_instances:
-                        agent_instances[config.agent_name] = 0
-                    agent_instances[config.agent_name] += 1
-                    instance_name = f"{agent_display_name} #{agent_instances[config.agent_name]}"
-                else:
-                    instance_name = agent_display_name
-                    
-                    # Look for matching messages in various formats
-                    possible_names = [
-                        instance_name,
-                        agent_display_name,
-                        f"{agent_display_name} #1",
-                        f"{agent_display_name} #2",
-                        f"{agent_display_name} #3",
-                        config.agent_name,
-                        # Also check without spaces
-                        agent_display_name.replace(" ", ""),
-                        config.agent_name.replace("_agent", ""),
-                        config.agent_name.replace("_", " ").title(),
-                        # Add pattern-specific names
-                        "Red team manager",
-                        "Bug bounty Triage Agent",
-                        "ThoughtAgent",
-                        "Retester Agent",
-                    ]
-                    
-                    # Find the longest matching history
-                    best_match = None
-                    best_count = 0
-                    
-                    for name in possible_names:
-                        if name in agent_conversations and len(agent_conversations[name]) > best_count:
-                            best_match = name
-                            best_count = len(agent_conversations[name])
-                    
-                    if best_match:
-                        # Load these messages into the agent's history with the correct instance name
-                        # CRITICAL: We need to get the actual model instance to add messages properly
-                        # Using get_agent_message_history() and appending won't work as it returns a copy
-                        from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES
-                        
-                        # Find the matching model instance
-                        model_instance = None
-                        for (name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
-                            if name == instance_name:
-                                model = model_ref() if model_ref else None
-                                if model:
-                                    model_instance = model
-                                    break
-                        
-                        # Check if we're in parallel mode with isolation
-                        from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
-                        
-                        
-                        # Check if we should be in parallel mode based on configs
-                        if len(PARALLEL_CONFIGS) >= 2:
-                            # Ensure parallel mode is enabled
-                            PARALLEL_ISOLATION._parallel_mode = True
-                        
-                        if PARALLEL_ISOLATION.is_parallel_mode():
-                            # Update the isolated history instead of the main history
-                            agent_id = config.id or f"P{idx}"
-                            # Replace the entire isolated history with the loaded messages
-                            PARALLEL_ISOLATION.replace_isolated_history(agent_id, agent_conversations[best_match])
-                            
-                            # Verify it was stored
-                            test_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-                            
-                            # Also sync with AGENT_MANAGER for consistency
-                            # Don't use set_message_history or any method that might register the agent
-                            AGENT_MANAGER._message_history[instance_name] = list(agent_conversations[best_match])
-                            
-                            # Force sync the isolated histories back to AGENT_MANAGER for display
-                            # This ensures /history and /graph see the loaded data
-                            PARALLEL_ISOLATION.sync_with_agent_manager()
-                        else:
-                            # Normal mode - update as before
-                            if model_instance:
-                                # Add messages directly to the model's message history
-                                for msg in agent_conversations[best_match]:
-                                    model_instance.add_to_message_history(msg)
-                            else:
-                                # No active instance, store in persistent history
-                                from cai.sdk.agents.models.openai_chatcompletions import PERSISTENT_MESSAGE_HISTORIES
-                                PERSISTENT_MESSAGE_HISTORIES[instance_name] = list(agent_conversations[best_match])
-                                
-                                # CRITICAL: Also update AGENT_MANAGER to ensure consistency
-                                # This ensures the history is available when the agent is created
-                                # Don't use set_message_history or any method that might register the agent
-                                AGENT_MANAGER._message_history[instance_name] = list(agent_conversations[best_match])
-                        
-                        console.print(f"[green]Loaded {best_count} messages into '{instance_name}' [P{idx}][/green]")
-                        loaded_count += 1
-                        
-            if loaded_count > 0:
-                console.print(f"[bold green]Successfully loaded history for {loaded_count} agents[/bold green]")
-                
-                # Final sync to ensure all histories are visible
-                if PARALLEL_ISOLATION.is_parallel_mode():
-                    console.print("[dim]Syncing loaded histories...[/dim]")
-                    PARALLEL_ISOLATION.sync_with_agent_manager()
-            else:
-                console.print("[yellow]No matching agent histories found in JSONL[/yellow]")
-                
-                # If no agents were found, provide helpful information
-                if not agent_conversations:
-                    console.print("[dim]The JSONL file appears to be empty or does not contain agent messages[/dim]")
-                    console.print("[dim]Agent names should be in 'name', 'sender', or 'agent_name' fields[/dim]")
-                    return False
-                else:
-                    console.print(f"\n[dim]Found agents in JSONL:[/dim]")
-                    for agent, messages in sorted(agent_conversations.items(), key=lambda x: len(x[1]), reverse=True)[:5]:
-                        console.print(f"  • {agent} ({len(messages)} messages)")
-                    if len(agent_conversations) > 5:
-                        console.print(f"  ... and {len(agent_conversations) - 5} more")
-                    
-                    console.print(f"\n[dim]Configured agents expecting history:[/dim]")
-                    for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                        if config.agent_name in agents:
-                            agent = agents[config.agent_name]
-                            display_name = getattr(agent, "name", config.agent_name)
-                            console.print(f"  • [P{idx}] {display_name}")
-                    
-                    console.print("\n[dim]Tip: Agent names in JSONL must match the configured agent names[/dim]")
-                
-            return True
-            
-        except Exception as e:
-            console.print(f"[red]Error loading pattern from JSONL: {str(e)}[/red]")
-            return False
+                pc = ParallelConfig(
+                    cfg.agent_name,
+                    cfg.model,
+                    cfg.prompt,
+                    cfg.unified_context,
+                )
+                setattr(pc, "id", cfg.id)
+                PARALLEL_CONFIGS.append(pc)
 
-    def handle_load_default(self, jsonl_file: Optional[str] = None) -> bool:
-        """Load a jsonl and merge it into all active agents.
+            if len(PARALLEL_CONFIGS) >= 2:
+                os.environ["CAI_PARALLEL"] = str(len(PARALLEL_CONFIGS))
+                os.environ["CAI_PARALLEL_AGENTS"] = ",".join(c.agent_name for c in PARALLEL_CONFIGS)
 
-        Args:
-            jsonl_file: Optional jsonl file path, defaults to "logs/last"
+    def _restore_cost_ledger(self, *, ledger: CostLedgerPayload, merge: bool) -> None:
+        incoming_records: List[UsageRecord] = []
+        for rec in ledger.records:
+            payload = {
+                "record_id": rec.record_id or "",
+                "agent_name": rec.agent_name,
+                "model": rec.model,
+                "operation": rec.operation,
+                "input_tokens": rec.input_tokens,
+                "output_tokens": rec.output_tokens,
+                "cost": Decimal(str(rec.cost or "0")),
+                "timestamp": rec.timestamp,
+                "session_id": rec.session_id or ledger.session_id or "",
+            }
+            incoming_records.append(UsageRecord.model_validate(payload))
 
-        Returns:
-            bool: True if the jsonl was loaded successfully
-        """
-        if not jsonl_file:
-            jsonl_file = "logs/last"
+        with USAGE_TRACKER._lock:  # pylint: disable=protected-access
+            existing = list(USAGE_TRACKER._records) if merge else []  # pylint: disable=protected-access
+            merged = self._merge_records(existing, incoming_records)
+            USAGE_TRACKER._records = merged  # pylint: disable=protected-access
+            if ledger.session_id:
+                USAGE_TRACKER._session_id = ledger.session_id  # pylint: disable=protected-access
+            USAGE_TRACKER._budget = BudgetPolicy(  # pylint: disable=protected-access
+                limit=Decimal(str(ledger.budget.limit)),
+                currency=ledger.budget.currency,
+                conversion_rate=Decimal(str(ledger.budget.conversion_rate)),
+                soft_lock=ledger.budget.soft_lock,
+            )
+            total = sum((r.cost for r in USAGE_TRACKER._records), Decimal("0"))  # pylint: disable=protected-access
+            USAGE_TRACKER._budget_exceeded = bool(  # pylint: disable=protected-access
+                USAGE_TRACKER._budget.active and total >= USAGE_TRACKER._budget.limit  # pylint: disable=protected-access
+            )
 
         try:
-            # Try to load the jsonl file
-            try:
-                # fetch messages from JSONL file
-                messages = load_history_from_jsonl(jsonl_file)
-                console.print(f"[green]Jsonl file {jsonl_file} loaded[/green]")
-            except BaseException:  # pylint: disable=broad-exception-caught
-                console.print(f"[red]Error: Failed to load jsonl file {jsonl_file}[/red]")
-                return False
+            from cai.util import COST_TRACKER
 
-            # Check if there are any messages to load
-            if not messages:
-                console.print(f"[yellow]No messages found in {jsonl_file}[/yellow]")
-                return True
+            session_total = float(ledger.session_total_usd) if ledger.session_total_usd else float(USAGE_TRACKER.session_total())
+            COST_TRACKER.session_total_cost = session_total
+            COST_TRACKER.last_total_cost = session_total
+        except Exception:
+            pass
 
-            # Get the current active agent from AGENT_MANAGER
-            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-            
-            current_agent = AGENT_MANAGER.get_active_agent()
-            current_agent_name = AGENT_MANAGER._active_agent_name
-            
-            if not current_agent or not current_agent_name:
-                console.print("[red]Error: No active agent found[/red]")
-                console.print("[yellow]Please select an agent first with '/agent <name>'[/yellow]")
-                return False
-            
-            # Get all active agents to merge into (including current agent)
-            all_histories = get_all_agent_histories()
-            
-            # If no histories exist yet, create one for the current agent
-            if not all_histories:
-                all_histories = {f"{current_agent_name} [P1]": []}
-            
-            console.print(f"[cyan]Merging {len(messages)} messages into {len(all_histories)} active agent(s)...[/cyan]")
-            
-            # Merge messages into all active agents with duplicate control
-            from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
-            from cai.repl.commands.parallel import ParallelCommand
-            
-            # Create a ParallelCommand instance to use its merge methods
-            parallel_cmd = ParallelCommand()
-            
-            # Merge into each active agent
-            agents_updated = []
-            for agent_name, original_history in all_histories.items():
-                # Build a set of message signatures from original history for duplicate detection
-                original_signatures = set()
-                for msg in original_history:
-                    sig = parallel_cmd._get_message_signature(msg)
-                    if sig:
-                        original_signatures.add(sig)
-                
-                # Filter out duplicates from loaded messages
-                unique_messages = []
-                for msg in messages:
-                    sig = parallel_cmd._get_message_signature(msg)
-                    if sig and sig not in original_signatures:
-                        unique_messages.append(msg)
-                        original_signatures.add(sig)
-                
-                if not unique_messages:
-                    console.print(f"[dim]No new messages to add to {agent_name}[/dim]")
+    @staticmethod
+    def _restore_config(*, cfg: SessionConfigPayload, overwrite: bool) -> None:
+        for key, value in cfg.env.items():
+            if not overwrite and key in os.environ:
+                continue
+            os.environ[str(key)] = str(value)
+
+    @staticmethod
+    def _merge_messages(existing: List[Dict[str, Any]], incoming: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        seen = {SessionHydrator._msg_fingerprint(m) for m in existing}
+        merged = list(existing)
+        for msg in incoming:
+            fp = SessionHydrator._msg_fingerprint(msg)
+            if fp in seen:
+                continue
+            merged.append(msg)
+            seen.add(fp)
+        return merged
+
+    @staticmethod
+    def _msg_fingerprint(msg: Dict[str, Any]) -> str:
+        stable = {
+            "role": msg.get("role"),
+            "content": msg.get("content"),
+            "tool_call_id": msg.get("tool_call_id"),
+            "timestamp": msg.get("timestamp") or msg.get("created_at"),
+        }
+        return sha256(json.dumps(stable, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _merge_records(existing: List[UsageRecord], incoming: List[UsageRecord]) -> List[UsageRecord]:
+        merged = list(existing)
+        seen = {r.record_id for r in existing}
+        for rec in incoming:
+            if rec.record_id in seen:
+                continue
+            merged.append(rec)
+            seen.add(rec.record_id)
+        return merged
+
+    def _load_jsonl_history(self, *, source: Path, mode: HydrationMode, user: str) -> Tuple[bool, str]:
+        if mode.config_only:
+            return False, "Security Integrity Alert: --config-only cannot load from jsonl source"
+
+        histories: Dict[str, List[Dict[str, Any]]] = {}
+        with ExitStack() as stack:
+            handle = stack.enter_context(source.open("r", encoding="utf-8"))
+            for line_no, line in enumerate(handle, start=1):
+                text = line.strip()
+                if not text:
                     continue
-                
-                # The final history is original + unique messages
-                final_history = original_history + unique_messages
-                
-                # Extract base agent name if it has [ID] suffix
-                base_name = agent_name
-                agent_id = None
-                if "[" in agent_name and agent_name.endswith("]"):
-                    base_name = agent_name.rsplit("[", 1)[0].strip()
-                    agent_id = agent_name.split("[")[1].rstrip("]")
-                
-                # Find the matching model instance
-                model_instance = None
-                for (model_agent_name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
-                    if model_agent_name == base_name or model_agent_name == agent_name:
-                        model = model_ref() if callable(model_ref) else model_ref
-                        if model:
-                            model_instance = model
-                            break
-                
-                if model_instance:
-                    # Update existing model's history
-                    model_instance.message_history.clear()
-                    # Reset context usage since we're rebuilding history
-                    os.environ['CAI_CONTEXT_USAGE'] = '0.0'
-                    for msg in final_history:
-                        model_instance.add_to_message_history(msg)
-                    console.print(f"[green]✓ Updated {agent_name} - added {len(unique_messages)} new messages[/green]")
+                try:
+                    item = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise IntegrityError(f"jsonl parse error line {line_no}: {exc}") from exc
+                if not isinstance(item, dict):
+                    continue
+                agent_name = str(item.get("agent_name") or item.get("agent") or "default")
+                raw_msg = item.get("message") if isinstance(item.get("message"), dict) else item
+                if isinstance(raw_msg, dict):
+                    message: Dict[str, Any] = dict(raw_msg)
+                elif raw_msg is None:
+                    continue
                 else:
-                    # No active instance, store in persistent history
-                    PERSISTENT_MESSAGE_HISTORIES[agent_name] = final_history
-                    console.print(f"[green]✓ Updated {agent_name} (persistent) - added {len(unique_messages)} new messages[/green]")
-                
-                # Also update AGENT_MANAGER - using _message_history directly to avoid registration
-                AGENT_MANAGER._message_history[agent_name] = final_history
-                
-                # Update PARALLEL_ISOLATION if needed
-                if agent_id:
-                    from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
-                    if PARALLEL_ISOLATION.get_isolated_history(agent_id) is not None:
-                        PARALLEL_ISOLATION.replace_isolated_history(agent_id, final_history)
-                
-                agents_updated.append(agent_name)
-            
-            console.print(f"\n[bold green]Successfully merged {len(messages)} messages into {len(agents_updated)} agent(s)[/bold green]")
-            console.print("[dim]All agents now have the combined history with duplicate control[/dim]")
-            
-            return True
+                    message = {"role": "system", "content": str(raw_msg)}
+                histories.setdefault(agent_name, []).append(message)
 
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            console.print(f"[red]Error loading jsonl file: {str(e)}[/red]")
+        payload = MemoryStackPayload(histories=histories, summaries=[])
+        self._restore_memory_stack(
+            memory=payload,
+            merge=(mode.merge and not mode.overwrite),
+            restore_histories=True,
+        )
+
+        self._audit_attempt(
+            user=user,
+            source=source,
+            success=True,
+            detail="jsonl-history-loaded",
+        )
+        return True, f"Loaded history-only payload from {source}"
+
+    def _audit_attempt(self, *, user: str, source: Path, success: bool, detail: str) -> None:
+        payload = {
+            "timestamp": datetime.now(tz=UTC).isoformat(),
+            "user": user,
+            "source": str(source),
+            "success": success,
+            "detail": detail,
+        }
+        self._audit_file.parent.mkdir(parents=True, exist_ok=True)
+        with ExitStack() as stack:
+            handle = stack.enter_context(self._audit_file.open("a", encoding="utf-8"))
+            handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+
+        self._memory.record(
+            {
+                "topic": "load.audit",
+                "finding": detail,
+                "source": "load_command",
+                "tags": ["session-load", "audit"],
+                "artifacts": {
+                    "user": user,
+                    "source": str(source),
+                    "success": success,
+                },
+            }
+        )
+
+
+class LoadCommand(FrameworkCommand):
+    """Load and re-hydrate prior sessions with integrity protection."""
+
+    name = "/load"
+    description = "Re-hydrate a prior session or import scoped history safely"
+    aliases = ["/l"]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._memory = self._resolve_memory_manager()
+        self._hydrator = SessionHydrator(memory_manager=self._memory, workspace=self.workspace)
+
+    @property
+    def help(self) -> str:
+        return (
+            "Usage: /load [<source>] [--history-only] [--config-only] [--merge|--overwrite]\n"
+            "Examples:\n"
+            "  /load\n"
+            "  /load .cai/session/latest.session.json --merge\n"
+            "  /load logs/session.jsonl --history-only\n"
+            "  /load snapshot.session.json --config-only\n"
+            "Security: source must remain inside active workspace root."
+        )
+
+    async def execute(self, args: List[str]) -> bool:
+        mode = self._parse_args(args)
+        if mode is None:
             return False
-    
-    def handle_load_to_agent(self, args: List[str]) -> bool:
-        """Load a jsonl file into a specific agent by parsing agent name from args.
-        
-        Args:
-            args: List where first elements form agent name, last is optional file
-            
-        Returns:
-            bool: True if successful
-        """
-        if len(args) == 1:
-            # Only agent name provided
-            agent_name = args[0]
-            jsonl_file = "logs/last"
-        else:
-            # Find where the file path starts
-            file_idx = -1
-            for i, arg in enumerate(args[1:], 1):  # Start from second arg
-                if "/" in arg or "." in arg or arg.endswith(".jsonl"):
-                    file_idx = i
-                    break
-            
-            if file_idx == -1:
-                # No clear file path indicator, treat last arg as file if exactly 2 args
-                if len(args) == 2:
-                    agent_name = args[0]
-                    jsonl_file = args[1]
-                else:
-                    # Multiple args, all form agent name
-                    agent_name = " ".join(args)
-                    jsonl_file = "logs/last"
-            else:
-                # Everything before file path is agent name
-                agent_name = " ".join(args[:file_idx])
-                jsonl_file = args[file_idx]
-        
-        return self._load_to_agent(agent_name, jsonl_file)
-    
-    def handle_agent(self, args: Optional[List[str]] = None) -> bool:
-        """Load a jsonl file into a specific agent's history using 'agent' subcommand.
-        
-        Args:
-            args: List containing agent name and optional jsonl file path
-            
-        Returns:
-            bool: True if successful
-        """
-        if not args:
-            console.print("[red]Error: Agent name required[/red]")
-            console.print("Usage: /load agent <agent_name> [jsonl_file]")
-            console.print("Example: /load agent red_teamer")
-            console.print('Example: /load agent "Bug Bounter #1" logs/last')
+
+        ok, detail = self._hydrator.load(mode=mode, user=self.session.user)
+        if not ok:
+            console.print(f"[red]{detail}[/red]")
             return False
-        
-        # Parse using same logic as handle_load_to_agent
-        return self.handle_load_to_agent(args)
-    
-    def _load_to_agent(self, agent_name: str, jsonl_file: str) -> bool:
-        """Common method to merge a jsonl file into a specific agent's history.
-        
-        Args:
-            agent_name: Name of the agent
-            jsonl_file: Path to jsonl file
-            
-        Returns:
-            bool: True if successful
-        """
-        try:
-            # Load the jsonl file
-            try:
-                messages = load_history_from_jsonl(jsonl_file)
-                console.print(f"[green]Jsonl file {jsonl_file} loaded[/green]")
-            except FileNotFoundError:
-                console.print(f"[red]Error: File '{jsonl_file}' not found[/red]")
-                return False
-            except Exception as e:
-                console.print(f"[red]Error loading history from {jsonl_file}: {e}[/red]")
-                return False
-            
-            # Check if there are any messages to load
-            if not messages:
-                console.print(f"[yellow]No messages found in {jsonl_file}[/yellow]")
-                console.print("[dim]The file may be empty or contain only session events[/dim]")
-                return True
-            
-            # If agent_name is an ID (P1, P2, etc), resolve it to actual agent name
-            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-            resolved_agent_name = agent_name
-            
-            if agent_name.upper().startswith("P") and len(agent_name) >= 2 and agent_name[1:].isdigit():
-                # This is an ID, resolve it
-                agent_id = agent_name.upper()
-                resolved_name = AGENT_MANAGER.get_agent_by_id(agent_id)
-                if resolved_name:
-                    resolved_agent_name = resolved_name
-                    console.print(f"[cyan]Resolved {agent_id} to {resolved_agent_name}[/cyan]")
-                else:
-                    # ID not found, don't create agent
-                    console.print(f"[red]Error: No agent found with ID '{agent_id}'[/red]")
-                    console.print("[yellow]Available agents:[/yellow]")
-                    all_histories = get_all_agent_histories()
-                    for agent in sorted(all_histories.keys()):
-                        console.print(f"  - {agent}")
-                    return False
-            
-            # Merge messages into the specified agent's history with duplicate control
-            from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
-            from cai.repl.commands.parallel import ParallelCommand
-            
-            # Get the current history for this agent
-            current_history = AGENT_MANAGER.get_message_history(resolved_agent_name) or []
-            
-            # Create a ParallelCommand instance to use its merge methods
-            parallel_cmd = ParallelCommand()
-            
-            # Build a set of message signatures from current history for duplicate detection
-            original_signatures = set()
-            for msg in current_history:
-                sig = parallel_cmd._get_message_signature(msg)
-                if sig:
-                    original_signatures.add(sig)
-            
-            # Filter out duplicates from loaded messages
-            unique_messages = []
-            for msg in messages:
-                sig = parallel_cmd._get_message_signature(msg)
-                if sig and sig not in original_signatures:
-                    unique_messages.append(msg)
-                    original_signatures.add(sig)
-            
-            if not unique_messages:
-                console.print(f"[yellow]No new messages to add - all {len(messages)} messages already exist in history[/yellow]")
-                return True
-            
-            # The final history is original + unique messages
-            final_history = current_history + unique_messages
-            
-            # Find the matching model instance
-            model_instance = None
-            for (name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
-                if name == resolved_agent_name:
-                    model = model_ref() if model_ref else None
-                    if model:
-                        model_instance = model
-                        break
-            
-            if model_instance:
-                # Update existing model's history
-                model_instance.message_history.clear()
-                # Reset context usage since we're rebuilding history
-                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
-                for msg in final_history:
-                    model_instance.add_to_message_history(msg)
-            else:
-                # No active instance, store in persistent history
-                PERSISTENT_MESSAGE_HISTORIES[resolved_agent_name] = final_history
-            
-            # Also update AGENT_MANAGER's history to ensure consistency
-            AGENT_MANAGER._message_history[resolved_agent_name] = final_history
-            
-            # Don't register the agent - just update history
-            # The agent should already exist if we're loading history into it
-            # This prevents creating empty agents when loading
-            
-            console.print(f"[green]Merged {len(unique_messages)} new messages into agent '{resolved_agent_name}'[/green]")
-            console.print(f"[dim]Skipped {len(messages) - len(unique_messages)} duplicate messages[/dim]")
-            
-            # Show current message count for this agent
-            total_messages = len(final_history)
-            console.print(f"[dim]Agent '{resolved_agent_name}' now has {total_messages} messages in history[/dim]")
-            
-            return True
-            
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            console.print(f"[red]Error loading jsonl file: {str(e)}[/red]")
-            return False
-    
-    def handle_parallel(self, args: Optional[List[str]] = None) -> bool:
-        """Load a JSONL file matching messages to configured parallel agents.
-        
-        Args:
-            args: Optional list containing jsonl file path
-            
-        Returns:
-            bool: True if successful
-        """
-        # Get jsonl file from args or use default
-        jsonl_file = args[0] if args else "logs/last"
-        
-        # Call the pattern loading method
-        return self.handle_load_pattern_from_jsonl(jsonl_file)
-    
-    def handle_all(self, args: Optional[List[str]] = None) -> bool:
-        """Show all available agents that can have history loaded.
-        
-        Returns:
-            bool: True if successful
-        """
-        all_histories = get_all_agent_histories()
-        
-        # Also include agents from PARALLEL_CONFIGS that might not have history yet
-        from cai.repl.commands.parallel import PARALLEL_CONFIGS
-        from cai.agents import get_available_agents
-        
-        configured_agents = set()
-        if PARALLEL_CONFIGS:
-            available_agents = get_available_agents()
-            for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                if config.agent_name in available_agents:
-                    agent = available_agents[config.agent_name]
-                    display_name = getattr(agent, "name", config.agent_name)
-                    
-                    # Count instances to get the right name
-                    instance_count = sum(1 for c in PARALLEL_CONFIGS[:idx] if c.agent_name == config.agent_name)
-                    if instance_count > 1:
-                        display_name = f"{display_name} #{instance_count}"
-                    
-                    configured_agents.add(display_name)
-        
-        # Combine histories and configured agents
-        all_agents = set(all_histories.keys()) | configured_agents
-        
-        if not all_agents:
-            console.print("[yellow]No agents have been initialized or configured yet[/yellow]")
-            console.print("[dim]Agents are created when they are first used in a conversation[/dim]")
-            console.print("[dim]Or configured using '/parallel add <agent>'[/dim]")
-            return True
-        
-        # Get agent IDs mapping from AGENT_MANAGER
-        agent_ids = {}
-        for agent_name, history in all_histories.items():
-            # Extract ID from display format "Agent Name [ID]"
-            if '[' in agent_name and ']' in agent_name:
-                id_part = agent_name[agent_name.rindex('[') + 1:agent_name.rindex(']')]
-                name_part = agent_name[:agent_name.rindex('[')].strip()
-                agent_ids[name_part] = id_part
-            
-        # Also add configured but inactive agents from PARALLEL_CONFIGS
-        if PARALLEL_CONFIGS:
-            available_agents = get_available_agents()
-            for config in PARALLEL_CONFIGS:
-                if config.id:
-                    agent_ids[config.agent_name] = config.id
-        
-        # Create a table showing all agents
-        table = Table(title="Available Agents for Loading History", show_header=True, header_style="bold yellow")
-        table.add_column("ID", style="magenta", width=4)
-        table.add_column("Agent Name", style="cyan")
-        table.add_column("Current Messages", style="green", justify="right")
-        table.add_column("Message Types", style="magenta")
-        table.add_column("Status", style="yellow")
-        
-        for agent_name in sorted(all_agents):
-            history = all_histories.get(agent_name, [])
-            msg_count = len(history)
-            
-            # Count message types if history exists
-            if history:
-                role_counts = {}
-                for msg in history:
-                    role = msg.get("role", "unknown")
-                    role_counts[role] = role_counts.get(role, 0) + 1
-                
-                # Format role counts
-                role_str = ", ".join([f"{role}: {count}" for role, count in sorted(role_counts.items())])
-                status = "Active"
-            else:
-                role_str = "No messages"
-                status = "Configured" if agent_name in configured_agents else "Empty"
-            
-            # Get ID for this agent
-            id_str = agent_ids.get(agent_name, "-")
-            
-            table.add_row(id_str, agent_name, str(msg_count), role_str, status)
-        
+
+        table = Table(title="Session Re-hydration", box=box.SIMPLE_HEAVY)
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="white")
+        table.add_row("Source", str(self._hydrator.resolve_source(mode.source)))
+        table.add_row("Mode", self._mode_label(mode))
+        table.add_row("Conflict Policy", "overwrite" if mode.overwrite else "merge")
         console.print(table)
-        console.print("\n[dim]Usage: /load agent <agent_name> [jsonl_file][/dim]")
-        console.print("[dim]       /load <ID> [jsonl_file][/dim]")
-        console.print("[dim]       /load load-all [jsonl_file] - Load same messages to all parallel agents[/dim]")
-        console.print("[dim]Example: /load agent red_teamer logs/session_20240101.jsonl[/dim]")
-        console.print('[dim]Example: /load agent "Bug Bounter #1"[/dim]')
-        console.print("[dim]Example: /load P2 logs/last[/dim]")
-        console.print("[dim]Example: /load load-all logs/session.jsonl[/dim]")
-        
-        # IDs are now shown in the table above
-        
+        console.print(Panel(detail, border_style="green", title="Load Complete"))
         return True
-    
-    def handle_load_all(self, args: Optional[List[str]] = None) -> bool:
-        """Load the same JSONL messages into all configured parallel agents.
-        
-        Args:
-            args: Optional list containing jsonl file path
-            
-        Returns:
-            bool: True if successful
-        """
-        # Get jsonl file from args or use default
-        jsonl_file = args[0] if args else "logs/last"
-        
-        # Check if there are parallel configs
-        if not PARALLEL_CONFIGS:
-            console.print("[yellow]No parallel agents configured[/yellow]")
-            console.print("[dim]Use '/parallel add <agent>' to configure agents first[/dim]")
-            return False
-        
-        try:
-            # Load messages from JSONL file
-            try:
-                messages = load_history_from_jsonl(jsonl_file)
-                console.print(f"[green]Loaded {len(messages)} messages from {jsonl_file}[/green]")
-            except FileNotFoundError:
-                console.print(f"[red]Error: File '{jsonl_file}' not found[/red]")
-                return False
-            except Exception as e:
-                console.print(f"[red]Error loading history from {jsonl_file}: {e}[/red]")
-                return False
-            
-            if not messages:
-                console.print(f"[yellow]No messages found in {jsonl_file}[/yellow]")
-                return True
-            
-            # Load the same messages into each parallel agent
-            from cai.agents import get_available_agents
-            from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES, PERSISTENT_MESSAGE_HISTORIES
-            from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
-            
-            available_agents = get_available_agents()
-            loaded_agents = []
-            
-            # Count instances of each agent type for proper naming
-            agent_counts = {}
-            for config in PARALLEL_CONFIGS:
-                agent_counts[config.agent_name] = agent_counts.get(config.agent_name, 0) + 1
-            
-            agent_instances = {}
-            
-            for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                if config.agent_name in available_agents:
-                    agent = available_agents[config.agent_name]
-                    display_name = getattr(agent, "name", config.agent_name)
-                    
-                    # Add instance number if there are duplicates
-                    if agent_counts[config.agent_name] > 1:
-                        if config.agent_name not in agent_instances:
-                            agent_instances[config.agent_name] = 0
-                        agent_instances[config.agent_name] += 1
-                        instance_name = f"{display_name} #{agent_instances[config.agent_name]}"
-                    else:
-                        instance_name = display_name
-                    
-                    agent_id = config.id or f"P{idx}"
-                    
-                    # Check if we're in parallel mode with isolation
-                    if PARALLEL_ISOLATION.is_parallel_mode():
-                        # Replace the isolated history with the loaded messages
-                        PARALLEL_ISOLATION.replace_isolated_history(agent_id, messages[:])
-                        
-                        # Also sync with AGENT_MANAGER for consistency
-                        AGENT_MANAGER._message_history[instance_name] = messages[:]
-                    else:
-                        # Find the matching model instance
-                        model_instance = None
-                        for (name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
-                            if name == instance_name:
-                                model = model_ref() if model_ref else None
-                                if model:
-                                    model_instance = model
-                                    break
-                        
-                        if model_instance:
-                            # Clear existing messages and add new ones
-                            model_instance.message_history.clear()
-                            os.environ['CAI_CONTEXT_USAGE'] = '0.0'
-                            for message in messages:
-                                model_instance.add_to_message_history(message)
-                        else:
-                            # No active instance, store in persistent history
-                            PERSISTENT_MESSAGE_HISTORIES[instance_name] = messages[:]
-                            # Also update AGENT_MANAGER
-                            AGENT_MANAGER._message_history[instance_name] = messages[:]
-                    
-                    loaded_agents.append(f"{instance_name} [{agent_id}]")
-                    console.print(f"[green]✓ Loaded into {instance_name} [{agent_id}][/green]")
-            
-            console.print(f"\n[bold green]Successfully loaded {len(messages)} messages into {len(loaded_agents)} agents[/bold green]")
-            
-            return True
-            
-        except Exception as e:
-            console.print(f"[red]Error loading jsonl file: {str(e)}[/red]")
-            return False
+
+    def _parse_args(self, args: List[str]) -> Optional[HydrationMode]:
+        mode = HydrationMode()
+
+        i = 0
+        positional_source: Optional[str] = None
+        while i < len(args):
+            token = args[i]
+            if token in {"--help", "-h", "help"}:
+                console.print(self.help)
+                return None
+            if token == "--history-only":
+                mode.history_only = True
+                i += 1
+                continue
+            if token == "--config-only":
+                mode.config_only = True
+                i += 1
+                continue
+            if token == "--overwrite":
+                mode.overwrite = True
+                mode.merge = False
+                i += 1
+                continue
+            if token == "--merge":
+                mode.merge = True
+                mode.overwrite = False
+                i += 1
+                continue
+            if token == "--source":
+                if i + 1 >= len(args):
+                    console.print("[red]--source requires a path[/red]")
+                    return None
+                mode.source = args[i + 1]
+                i += 2
+                continue
+            if token.startswith("--"):
+                console.print(f"[red]Unknown argument: {token}[/red]")
+                console.print(self.help)
+                return None
+
+            if positional_source is None:
+                positional_source = token
+                i += 1
+                continue
+
+            console.print(f"[red]Unexpected argument: {token}[/red]")
+            console.print(self.help)
+            return None
+
+        if mode.history_only and mode.config_only:
+            console.print("[red]Cannot combine --history-only and --config-only[/red]")
+            return None
+
+        if positional_source and not mode.source:
+            mode.source = positional_source
+
+        return mode
+
+    @staticmethod
+    def _mode_label(mode: HydrationMode) -> str:
+        if mode.config_only:
+            return "config-only"
+        if mode.history_only:
+            return "history-only"
+        return "full"
+
+    def _resolve_memory_manager(self) -> MemoryManager:
+        candidate = self.memory
+        if isinstance(candidate, MemoryManager):
+            return candidate
+        return MemoryManager()
 
 
-# Register the command
-register_command(LoadCommand())
+LOAD_COMMAND_INSTANCE = LoadCommand()
+register_command(LOAD_COMMAND_INSTANCE)
