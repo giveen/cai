@@ -27,6 +27,8 @@ from cai.sdk.agents.models.openai_chatcompletions import (
 from cai.sdk.agents import Agent, Runner
 from cai.repl.commands.parallel import PARALLEL_CONFIGS
 from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+from cai.memory import MemoryManager
+from cai.memory.memory import MemoryManager as RuntimeMemoryManager
 from openai import AsyncOpenAI
 
 # Import get_compact_model function - imported later to avoid circular import
@@ -39,17 +41,26 @@ def get_compact_model():
 
 console = Console()
 
-# Memory directory path - use home directory for cross-platform compatibility
-MEMORY_DIR = Path.home() / ".cai" / "memory"
+# Workspace-aware memory manager (new modular memory package)
+MEMORY_MANAGER = MemoryManager()
+RUNTIME_MEMORY = RuntimeMemoryManager()
+
+# Keep legacy command file layout, but root it under active workspace memory storage.
+try:
+    MEMORY_DIR = MEMORY_MANAGER.initialize()
+except Exception:
+    # Conservative fallback preserves command availability if workspace is unavailable.
+    MEMORY_DIR = Path.home() / ".cai" / "memory"
+
 MEMORY_INDEX_FILE = MEMORY_DIR / "index.json"
 
 # Global storage for compacted summaries (deprecated - use file storage)
-# Now supports multiple memories per agent
-COMPACTED_SUMMARIES: Dict[str, List[str]] = {}
+# Supports both new list-style and legacy single-string values.
+COMPACTED_SUMMARIES: Dict[str, List[str] | str] = {}
 
 # Global storage for memory ID mappings per agent
-# Now supports multiple memory IDs per agent
-APPLIED_MEMORY_IDS: Dict[str, List[str]] = {}
+# Supports both new list-style and legacy single-string IDs.
+APPLIED_MEMORY_IDS: Dict[str, List[str] | str] = {}
 
 
 class MemoryCommand(Command):
@@ -75,6 +86,7 @@ class MemoryCommand(Command):
         self.add_subcommand("remove", "Remove a specific memory from an agent", self.handle_remove)
         self.add_subcommand("clear", "Clear all memories from an agent", self.handle_clear)
         self.add_subcommand("list-applied", "Show which memories are applied to an agent", self.handle_list_applied)
+        self.add_subcommand("search", "Search memory context by topic/keyword", self.handle_search)
         
 # Remove local compact_model since we'll use the one from compact command
         
@@ -128,6 +140,18 @@ class MemoryCommand(Command):
             if mem_file == filename:
                 return mem_id
         return None
+
+    def _ensure_agent_memory_lists(self, agent_name: str) -> tuple[list[str], list[str]]:
+        """Ensure memory stores for an agent are list-based for append-safe operations."""
+        summaries_val = COMPACTED_SUMMARIES.get(agent_name, [])
+        ids_val = APPLIED_MEMORY_IDS.get(agent_name, [])
+
+        summaries = summaries_val if isinstance(summaries_val, list) else ([summaries_val] if summaries_val else [])
+        memory_ids = ids_val if isinstance(ids_val, list) else ([ids_val] if ids_val else [])
+
+        COMPACTED_SUMMARIES[agent_name] = summaries
+        APPLIED_MEMORY_IDS[agent_name] = memory_ids
+        return summaries, memory_ids
     
     def _get_memory_path(self, name_or_id: str) -> Path:
         """Get the path for a memory file, resolving ID if necessary."""
@@ -418,32 +442,37 @@ class MemoryCommand(Command):
                     console.print("[red]Error: No active agent found[/red]")
                     return False
         
-        history = get_agent_message_history(agent_name)
-        
+        if not agent_name:
+            console.print("[red]Error: Could not resolve agent name[/red]")
+            return False
+
+        agent_name_str: str = agent_name
+        history = get_agent_message_history(agent_name_str)
+
         if not history:
-            console.print(f"[yellow]No history found for agent '{agent_name}'[/yellow]")
+            console.print(f"[yellow]No history found for agent '{agent_name_str}'[/yellow]")
             return True
-        
-        console.print(f"\n[cyan]Saving memory for {agent_name}...[/cyan]")
-        
+
+        console.print(f"\n[cyan]Saving memory for {agent_name_str}...[/cyan]")
+
         # Generate summary
-        summary = asyncio.run(self._ai_summarize_history(agent_name))
-        
+        summary = asyncio.run(self._ai_summarize_history(agent_name_str))
+
         if summary:
             # Generate unique ID for this memory
             memory_id = self._get_next_memory_id()
-            
+
             # Ensure memory_name has .md extension
             if not memory_name.endswith('.md'):
                 memory_name += '.md'
-            
+
             memory_path = MEMORY_DIR / memory_name
-            
+
             # Create memory content with metadata including ID
             memory_content = f"""# Memory: {memory_name}
 ID: {memory_id}
 Generated: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-Agent: {agent_name}
+Agent: {agent_name_str}
 Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
 
 {summary}
@@ -452,27 +481,40 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
 - Original messages: {len(history)}
 - Saved by: User request
 """
-            
+
             memory_path.write_text(memory_content)
-            
+
             # Register the memory in the index
             self._register_memory(memory_id, memory_name)
-            
+
             console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
-            
+
             # Automatically apply the memory to the agent's system prompt
-            if agent_name not in COMPACTED_SUMMARIES:
-                COMPACTED_SUMMARIES[agent_name] = []
-                APPLIED_MEMORY_IDS[agent_name] = []
-            
+            if agent_name_str not in COMPACTED_SUMMARIES:
+                COMPACTED_SUMMARIES[agent_name_str] = []
+                APPLIED_MEMORY_IDS[agent_name_str] = []
+
             # Clear existing memories and add new one (maintain single memory behavior for save)
-            COMPACTED_SUMMARIES[agent_name] = [summary]
-            APPLIED_MEMORY_IDS[agent_name] = [memory_id]
-            console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]")
-            os.environ['CAI_MEMORY'] = 'true' 
-            
+            COMPACTED_SUMMARIES[agent_name_str] = [summary]
+            APPLIED_MEMORY_IDS[agent_name_str] = [memory_id]
+            console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name_str}'s system prompt[/green]")
+            os.environ['CAI_MEMORY'] = 'true'
+
+            # Persist a structured long-term memory event in the runtime memory engine.
+            try:
+                RUNTIME_MEMORY.add_event(
+                    summary,
+                    topic="memory_save",
+                    tags=["summary", "repl", "memory"],
+                    agent_id=agent_name_str,
+                    importance=4,
+                    persist=True,
+                )
+            except Exception as e:
+                console.print(f"[yellow]Warning: runtime memory persistence skipped: {e}[/yellow]")
+
             # Reload the agent with the new memory
-            self._reload_agent_with_memory(agent_name, preserve_history=preserve_history)
+            self._reload_agent_with_memory(agent_name_str, preserve_history=preserve_history)
             
             # Show memory panel
             console.print(Panel(
@@ -580,22 +622,19 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         success_count = 0
         for agent_name in target_agents:
             try:
-                # Initialize lists if not present
-                if agent_name not in COMPACTED_SUMMARIES:
-                    COMPACTED_SUMMARIES[agent_name] = []
-                    APPLIED_MEMORY_IDS[agent_name] = []
-                
+                summaries, memory_ids = self._ensure_agent_memory_lists(agent_name)
+
                 # Check if memory already applied
-                if memory_id and memory_id in APPLIED_MEMORY_IDS[agent_name]:
+                if memory_id and memory_id in memory_ids:
                     console.print(f"[yellow]Memory {memory_id} already applied to {agent_name}[/yellow]")
                     continue
-                
+
                 # Append memory (supports multiple memories)
-                COMPACTED_SUMMARIES[agent_name].append(summary)
-                
+                summaries.append(summary)
+
                 # Store the memory ID for this agent
                 if memory_id:
-                    APPLIED_MEMORY_IDS[agent_name].append(memory_id)
+                    memory_ids.append(memory_id)
                     console.print(f"[green]✓ Applied memory {memory_id} to {agent_name}[/green]")
                 else:
                     console.print(f"[green]✓ Applied memory '{memory_identifier}' to {agent_name}[/green]")
@@ -839,14 +878,11 @@ Model: Merged from {len(memory_identifiers)} memories
         if apply.lower() == 'y':
             agent_name = self._get_current_agent_name()
             if agent_name:
-                # Initialize lists if not present
-                if agent_name not in COMPACTED_SUMMARIES:
-                    COMPACTED_SUMMARIES[agent_name] = []
-                    APPLIED_MEMORY_IDS[agent_name] = []
-                
+                summaries, memory_ids = self._ensure_agent_memory_lists(agent_name)
+
                 # Append the merged memory
-                COMPACTED_SUMMARIES[agent_name].append(combined_summary)
-                APPLIED_MEMORY_IDS[agent_name].append(memory_id)
+                summaries.append(combined_summary)
+                memory_ids.append(memory_id)
                 console.print(f"[green]✓ Applied merged memory {memory_id} to {agent_name}[/green]")
                 # Reload the agent with the new memory
                 self._reload_agent_with_memory(agent_name)
@@ -897,7 +933,55 @@ Model: Merged from {len(memory_identifiers)} memories
         
         if total_tokens > 0:
             console.print(f"\n[bold]Total estimated tokens: ~{total_tokens:,}[/bold]")
+
+        # Show compact runtime memory state snapshot from the new memory engine.
+        try:
+            runtime_summary = RUNTIME_MEMORY.summarize(max_events=40, max_points=5)
+            console.print("\n[bold cyan]Runtime Memory Summary[/bold cyan]")
+            console.print(Panel(runtime_summary, border_style="cyan"))
+        except Exception as e:
+            console.print(f"[yellow]Runtime memory summary unavailable: {e}[/yellow]")
         
+        return True
+
+    def handle_search(self, args: Optional[List[str]] = None) -> bool:
+        """Search structured memory using the runtime MemoryManager context API."""
+        if not args:
+            console.print("[red]Error: Search query required[/red]")
+            console.print("Usage: /memory search <topic_or_keyword>")
+            return False
+
+        query = " ".join(args).strip()
+        if not query:
+            console.print("[red]Error: Empty query[/red]")
+            return False
+
+        try:
+            context = RUNTIME_MEMORY.get_context(query, limit=10)
+        except Exception as e:
+            console.print(f"[red]Error searching runtime memory: {e}[/red]")
+            return False
+
+        if not context.events:
+            console.print(f"[yellow]No runtime memory matches for '{query}'[/yellow]")
+            return True
+
+        table = Table(title=f"Runtime Memory Search: {query}", show_header=True, header_style="bold yellow")
+        table.add_column("Agent", style="green")
+        table.add_column("Topic", style="cyan")
+        table.add_column("Content", style="white")
+        table.add_column("When", style="magenta")
+
+        for event in context.events:
+            preview = event.content[:120] + "..." if len(event.content) > 120 else event.content
+            table.add_row(
+                event.agent_id,
+                event.topic,
+                preview,
+                event.created_at.strftime("%Y-%m-%d %H:%M"),
+            )
+
+        console.print(table)
         return True
     
     def handle_compact(self, args: Optional[List[str]] = None) -> bool:
@@ -997,7 +1081,6 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 agent_name = getattr(current_agent, "name", None)
                 if not agent_name:
                     # Try to get from environment
-                    import os
                     agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
                     from cai.agents import get_available_agents
                     agents = get_available_agents()
@@ -1081,12 +1164,14 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             
             # Ask if user wants to clear history
             clear = console.input("\nClear agent history after compaction? (y/N): ")
+            preserve_history_after_compact = True
             if clear.lower() == 'y':
                 self._clear_agent_history(agent_name)
+                preserve_history_after_compact = False
                 console.print(f"[green]✓ Cleared history for {agent_name}[/green]")
             
             # Reload the agent with the new memory
-            self._reload_agent_with_memory(agent_name, preserve_history=preserve_history)
+            self._reload_agent_with_memory(agent_name, preserve_history=preserve_history_after_compact)
             
             # Show memory panel
             console.print(Panel(
@@ -1483,7 +1568,7 @@ This session is being continued from a previous conversation that ran out of con
                 try:
                     import cai.cli
                     if hasattr(cai.cli, 'agent'):
-                        cai.cli.agent = new_agent
+                        setattr(cai.cli, 'agent', new_agent)
                 except:
                     pass
             
@@ -1580,6 +1665,16 @@ This session is being continued from a previous conversation that ran out of con
             del APPLIED_MEMORY_IDS[agent_name]
             if agent_name in COMPACTED_SUMMARIES:
                 del COMPACTED_SUMMARIES[agent_name]
+
+            # Also clear long-term runtime memory entries for this agent.
+            try:
+                cleared = RUNTIME_MEMORY.clear(short_term=False, long_term=True, agent_id=agent_name)
+                console.print(
+                    f"[dim]Runtime memory cleared: {cleared.get('long_term_cleared', 0)} event(s) for {agent_name}[/dim]"
+                )
+            except Exception as e:
+                console.print(f"[yellow]Warning: runtime memory clear skipped: {e}[/yellow]")
+
             console.print(f"[green]✓ Cleared all memories from {agent_name}[/green]")
             self._reload_agent_with_memory(agent_name)
         else:
