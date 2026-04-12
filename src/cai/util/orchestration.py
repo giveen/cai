@@ -122,7 +122,7 @@ def inject_pinned_cookie_into_command(command: str) -> str:
     if re.search(r"^\s*(?:curl)\b", command):
         return command + f" -b {shlex.quote(pinned)}"
     if re.search(r"^\s*(?:wget)\b", command):
-        return command + f' --header={shlex.quote("Cookie: " + pinned)}'
+        return command + f" --header={shlex.quote('Cookie: ' + pinned)}"
     return command + f" --cookie={shlex.quote(pinned)}"
 
 
@@ -423,6 +423,13 @@ def maybe_auto_compact(
                     console.print(
                         f"\n[bold yellow]⟳ Auto-compact: {_llm_call_count} LLM responses (threshold {_support_interval}) — summarising with {_support_model}[/bold yellow]"
                     )
+                    # Visible trigger message for CLI users
+                    try:
+                        console.print(
+                            "[*] Context threshold reached. Compacting conversation history..."
+                        )
+                    except Exception:
+                        pass
                     COMPACT_COMMAND_INSTANCE._perform_compaction(model_override=_support_model)
                     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER as _AM
 
@@ -488,6 +495,35 @@ def start_cli_loop(
     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
 
     console = Console()
+    # If caller provided context variables (from CLI startup), ensure
+    # environment reflects them so older codepaths reading os.getenv keep working.
+    try:
+        if context_variables:
+            if "CAI_CTX_LIMIT" in context_variables:
+                os.environ.setdefault("CAI_CTX_LIMIT", str(context_variables["CAI_CTX_LIMIT"]))
+            else:
+                try:
+                    from cai.config import CAI_CTX_LIMIT as _CAI_CTX_LIMIT
+
+                    os.environ.setdefault("CAI_CTX_LIMIT", str(_CAI_CTX_LIMIT))
+                except Exception:
+                    pass
+            if "CAI_AUTO_COMPACT_THRESHOLD" in context_variables:
+                os.environ.setdefault(
+                    "CAI_AUTO_COMPACT_THRESHOLD",
+                    str(context_variables["CAI_AUTO_COMPACT_THRESHOLD"]),
+                )
+            else:
+                try:
+                    from cai.config import CAI_AUTO_COMPACT_THRESHOLD as _CAI_AUTO_COMPACT_THRESHOLD
+
+                    os.environ.setdefault(
+                        "CAI_AUTO_COMPACT_THRESHOLD", str(_CAI_AUTO_COMPACT_THRESHOLD)
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
     # Reuse most of the original function's local variable names for compatibility
     agent = starting_agent
     turn_count = 0
@@ -831,6 +867,65 @@ def handle_post_turn(
     if _screenshot_gc_turn_counter % _SCREENSHOT_GC_EVERY_N_TURNS == 0:
         try:
             cleanup_screenshots()
+        except Exception:
+            pass
+
+    # --- CLI context status indicator (enabled when CAI_DEBUG >= 1) ---
+    try:
+        debug_level = int(os.getenv("CAI_DEBUG", "1"))
+    except Exception:
+        debug_level = 1
+
+    if debug_level >= 1:
+        try:
+            from cai.config import CAI_CTX_LIMIT
+
+            limit = int(CAI_CTX_LIMIT)
+        except Exception:
+            try:
+                limit = int(os.getenv("CAI_CTX_LIMIT", "393216"))
+            except Exception:
+                limit = 393216
+
+        used_tokens = None
+        try:
+            env_usage = os.getenv("CAI_CONTEXT_USAGE")
+            if env_usage:
+                used_tokens = int(float(env_usage) * max(1, limit))
+        except Exception:
+            used_tokens = None
+
+        if used_tokens is None:
+            try:
+                # Try to estimate using tiktoken-backed helper if available
+                from cai.sdk.agents.models.openai_chatcompletions import (
+                    count_tokens_with_tiktoken,
+                )
+
+                if hasattr(agent, "model") and hasattr(agent.model, "message_history"):
+                    est_in, _ = count_tokens_with_tiktoken(agent.model.message_history)
+                    used_tokens = int(est_in)
+            except Exception:
+                try:
+                    # Fallback: character-based estimate
+                    if hasattr(agent, "model") and hasattr(agent.model, "message_history"):
+                        total_chars = 0
+                        for m in agent.model.message_history:
+                            if isinstance(m, dict):
+                                total_chars += len(str(m.get("content") or ""))
+                            else:
+                                total_chars += len(str(m))
+                        used_tokens = total_chars // 4
+                except Exception:
+                    used_tokens = 0
+
+        try:
+            pct = int(100 * used_tokens / max(1, limit)) if limit > 0 else 0
+
+            def _fmt(n: int) -> str:
+                return f"{n // 1000}k" if n >= 1000 else str(n)
+
+            console.print(f"[dim][Context: {_fmt(used_tokens)}/{_fmt(limit)} | {pct}%][/dim]")
         except Exception:
             pass
 

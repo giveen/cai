@@ -3,6 +3,7 @@ Centralised response renderers for the CLI/TUI.
 
 Provides helpers to render final agent analysis responses consistently.
 """
+
 from __future__ import annotations
 
 import logging

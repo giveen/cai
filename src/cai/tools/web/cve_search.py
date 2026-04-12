@@ -11,6 +11,7 @@ Endpoints exposed:
   - cve_search_browse   — browse vendors or products under a vendor
   - cve_search_db_info  — check the database freshness / stats
 """
+
 from __future__ import annotations
 
 import json

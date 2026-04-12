@@ -44,7 +44,9 @@ async def post_file_with_retries(
             except Exception:
                 _timeout_val = None
 
-            async with httpx.AsyncClient(timeout=httpx.Timeout(_timeout_val, connect=5.0)) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(_timeout_val, connect=5.0)
+            ) as client:
                 with open(file_path, "rb") as f:
                     files = {field_name: (os.path.basename(file_path), f)}
                     resp = await client.post(endpoint, files=files, data=data)

@@ -326,7 +326,7 @@ def run_evaluation_pii(
     if new_column not in fieldnames:
         fieldnames.append(new_column)
 
-    _ = datetime.datetime.now()
+    start_time = datetime.datetime.now()
     print("\nStarting PII Anonymization Benchmark")
     print(f"Model: {model}")
     print(f"Dataset: {dataset_file}")
@@ -972,7 +972,6 @@ def main():
             Return your answer in this CVSS format: 'ANSWER: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H'"""
         dataset = load_dataset(args.dataset_file, "cti_bench")
 
-    start_time = datetime.datetime.now()
     # Pass save_interval and eval args to run_evaluation
     result, eval_start_time, cost = run_evaluation(
         dataset,

@@ -175,7 +175,9 @@ data/
 
 # ignore dev files
 cai-*
-tui_config.json
+# tui_config.json is tracked (non-sensitive defaults; needed for Docker bind
+# mount — an untracked file causes Docker to create a directory instead of
+# a file, breaking TUI config persistence)
 
 # Ignore pytest failure dumps
 pytest_failures/

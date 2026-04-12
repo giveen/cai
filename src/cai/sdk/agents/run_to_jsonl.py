@@ -229,9 +229,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
                 {
                     "role": m.role,
                     "content": m.content,
-                    "tool_calls": [
-                        t.model_dump() for t in (m.tool_calls or [])
-                    ],  # pylint: disable=line-too-long  # noqa: E501
+                    "tool_calls": [t.model_dump() for t in (m.tool_calls or [])],  # pylint: disable=line-too-long  # noqa: E501
                 }
                 for m in msg.messages
             ]

@@ -1,4 +1,5 @@
 """Tests for cai.util.maintenance smoke/integration behavior."""
+
 from __future__ import annotations
 
 import subprocess
@@ -45,8 +46,7 @@ def test_sync_knowledge_base_success(monkeypatch):
     val = maintenance.sync_knowledge_base()
     assert val == 7
     assert any(
-        "Knowledge base sync starting" in m or "Knowledge base updated" in m
-        for m in recorded
+        "Knowledge base sync starting" in m or "Knowledge base updated" in m for m in recorded
     )
 
 

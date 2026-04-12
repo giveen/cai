@@ -553,15 +553,9 @@ I'll execute your code and show you the results.
         except Exception as e:
             if debug:
                 print(color(f"❌ Code generation failed: {str(e)}", fg="red", bold=True))
-            raise CodeGenerationError(
-                f"Failed to generate code: {str(e)}"
-            )  # pylint: disable=raise-missing-from # noqa: E702,E501
+            raise CodeGenerationError(f"Failed to generate code: {str(e)}")  # pylint: disable=raise-missing-from # noqa: E702,E501
 
-    def _execute_code(
-        self, code: str, debug: bool = False
-    ) -> (
-        Result
-    ):  # pylint: disable=too-many-locals,too-many-branches,too-many-statements # noqa: E501
+    def _execute_code(self, code: str, debug: bool = False) -> Result:  # pylint: disable=too-many-locals,too-many-branches,too-many-statements # noqa: E501
         """
         Execute the Python code and return the result.
 
@@ -747,9 +741,7 @@ I'll execute your code and show you the results.
 
                     error_message += f"\n\nExecution logs before error:\n```\n{execution_logs}\n```"
 
-                    raise CodeExecutionError(
-                        error_message
-                    )  # pylint: disable=raise-missing-from # noqa
+                    raise CodeExecutionError(error_message)  # pylint: disable=raise-missing-from # noqa
 
             # Prepare the result message
             result_message = "Code execution completed.\n\n"
@@ -797,9 +789,7 @@ I'll execute your code and show you the results.
 
             error_message += f"\n\nExecution logs before error:\n```\n{execution_logs}\n```"
 
-            raise CodeExecutionError(
-                error_message
-            )  # pylint: disable=raise-missing-from # noqa: E702,E501
+            raise CodeExecutionError(error_message)  # pylint: disable=raise-missing-from # noqa: E702,E501
         finally:
             # Always restore original signal handlers
             self._restore_signal_handlers(original_handlers)

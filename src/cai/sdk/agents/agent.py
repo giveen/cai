@@ -119,6 +119,9 @@ class Agent(Generic[TContext]):
     tools: list[Tool] = field(default_factory=list)
     """A list of tools that the agent can use."""
 
+    functions: list[Callable] = field(default_factory=list)
+    """Optional list of Python callables exposed as functions/tools by this agent (for CodeAgent)."""
+
     mcp_servers: list[MCPServer] = field(default_factory=list)
     """A list of [Model Context Protocol](https://modelcontextprotocol.io/) servers that
     the agent can use. Every time the agent runs, it will include tools from these servers in the
@@ -141,6 +144,15 @@ class Agent(Generic[TContext]):
 
     output_type: type[Any] | None = None
     """The type of the output object. If not provided, the output will be `str`."""
+
+    # Backwards-compatible tunables for agents that previously accepted
+    # these parameters in their constructor.
+    reasoning_effort: str | None = None
+    """Optional hint about how much reasoning effort (low/medium/high) the agent should use."""
+
+    temperature: float | None = None
+    """Optional temperature override for the agent's model. When provided, may be applied
+    to model settings or ignored by implementations that manage temperature elsewhere."""
 
     hooks: AgentHooks[TContext] | None = None
     """A class that receives callbacks on various lifecycle events for this agent.

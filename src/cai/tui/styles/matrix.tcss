@@ -1,0 +1,1362 @@
+/* ═══════════════ MATRIX THEME ═══════════════ */
+Screen {
+    background: #000000;
+    color: #00ff00;
+}
+
+/* ─── Header row ─── */
+CaiHeader {
+    height: 1;
+    dock: top;
+    background: #001a00;
+    layout: horizontal;
+}
+
+#header-left {
+    width: 1fr;
+    height: 1;
+    layout: horizontal;
+}
+
+#header-left-text {
+    width: auto;
+    min-width: 0;
+    height: 1;
+    content-align: left middle;
+    padding: 0 1;
+    color: #00ff00;
+}
+
+#header-menu {
+    width: 8;
+    height: 1;
+    min-width: 8;
+    background: #001a00;
+    color: #00cc00;
+    border: none;
+    padding: 0 1;
+}
+
+#header-menu:hover {
+    background: #002400;
+    color: #00ff00;
+}
+
+#header-nav {
+    width: 1fr;
+    height: 1;
+    layout: horizontal;
+}
+
+.top-nav-btn {
+    width: auto;
+    min-width: 8;
+    height: 1;
+    background: #001a00;
+    color: #006600;
+    border: none;
+    padding: 0 1;
+}
+
+.top-nav-btn:hover,
+.top-nav-btn.-active-top-nav {
+    background: #002c00;
+    color: #00ff00;
+    text-style: bold;
+}
+
+#header-right {
+    width: auto;
+    height: 1;
+    content-align: right middle;
+    padding: 0 1;
+    color: #00cc00;
+}
+
+/* ─── Main body ─── */
+#body {
+    layout: vertical;
+    height: 1fr;
+}
+
+#sidebar-tabs {
+    background: #000000;
+    height: 1fr;
+    color: #00ff00;
+}
+
+#sidebar-tabs Tabs {
+    background: #001a00;
+    height: 0;
+    display: none;
+    border-bottom: solid #003300;
+}
+
+#sidebar-tabs Tab {
+    background: #001a00;
+    color: #006600;
+    padding: 0 2;
+}
+
+#sidebar-tabs Tab.-active {
+    background: #003300;
+    color: #00ff00;
+    text-style: bold;
+}
+
+#sidebar-tabs Tab:hover {
+    background: #002200;
+    color: #00cc00;
+}
+
+#sidebar-tabs ContentSwitcher {
+    height: 1fr;
+    background: #000000;
+}
+
+/* Agents pane */
+#agents-pane {
+    height: 1fr;
+    background: #000000;
+    layout: vertical;
+}
+
+#agents-scroll {
+    height: 1fr;
+    background: #000000;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+    scrollbar-size: 1 1;
+}
+
+.agent-btn {
+    width: 1fr;
+    height: 1;
+    background: #000000;
+    color: #00cc00;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+.agent-btn:hover {
+    background: #001a00;
+    color: #00ff00;
+}
+
+.agent-btn.-active-agent {
+    background: #002800;
+    color: #00ff00;
+    text-style: bold;
+}
+
+#teams-section {
+    height: auto;
+    max-height: 18;
+    background: #000000;
+    border-top: solid #003300;
+    layout: vertical;
+}
+
+#teams-label {
+    height: 1;
+    background: #001a00;
+    color: #006600;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#teams-scroll {
+    height: 1fr;
+    max-height: 14;
+    background: #000000;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+    scrollbar-size: 1 1;
+}
+
+#team-playbook-preview {
+    height: 4;
+    background: #001200;
+    color: #00cc00;
+    border-top: solid #003300;
+    padding: 0 1;
+}
+
+.team-btn {
+    width: 1fr;
+    height: 1;
+    background: #000000;
+    color: #008800;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+.team-btn:hover {
+    background: #001a00;
+    color: #00ff00;
+}
+
+.team-btn.-active-team {
+    background: #002800;
+    color: #00ff00;
+    text-style: bold;
+}
+
+#new-team-btn {
+    width: 1fr;
+    height: 1;
+    background: #000000;
+    color: #004400;
+    border: none;
+    border-top: solid #002200;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+#new-team-btn:hover {
+    background: #001a00;
+    color: #00aa00;
+}
+
+/* Queue pane */
+#queue-pane {
+    height: 1fr;
+    background: #000000;
+    layout: vertical;
+}
+
+#queue-list {
+    height: 1fr;
+    background: #000000;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+    scrollbar-size: 1 1;
+}
+
+#queue-list > ListItem {
+    background: #000000;
+    color: #00cc00;
+    padding: 0 1;
+    height: 1;
+    border-bottom: solid #001a00;
+}
+
+#queue-list > ListItem:hover {
+    background: #001a00;
+    color: #00ff00;
+}
+
+#queue-list > ListItem.--highlight {
+    background: #002800;
+    color: #00ff00;
+}
+
+#queue-list Label {
+    background: transparent;
+    color: #00cc00;
+    width: 1fr;
+}
+
+#queue-status {
+    height: 2;
+    padding: 0 1;
+    color: #00aa00;
+    border-top: solid #003300;
+    background: #000000;
+}
+
+#queue-actions {
+    height: 3;
+    layout: horizontal;
+    border-top: solid #003300;
+    background: #000000;
+}
+
+#queue-input-row {
+    height: 3;
+    layout: horizontal;
+    background: #000000;
+    border-top: solid #003300;
+}
+
+#queue-prefix {
+    width: 4;
+    height: 3;
+    content-align: left middle;
+    color: #004400;
+    padding: 0 1;
+    background: #000000;
+}
+
+#queue-input {
+    background: #000000;
+    color: #00ff00;
+    border: none;
+    border-bottom: solid #003300;
+    height: 3;
+    width: 1fr;
+    padding: 0 1;
+}
+
+#queue-broadcast {
+    width: 12;
+    height: 3;
+    text-align: center;
+}
+
+#queue-input:focus {
+    border: none;
+    border-bottom: solid #00ff00;
+    background: #000000;
+}
+
+#queue-input > .input--placeholder {
+    color: #004400;
+}
+
+/* ─── Right area: output + status + terminal input ─── */
+#main-area {
+    width: 1fr;
+    height: 100%;
+    layout: vertical;
+}
+
+/* ─── Scrollable output log ─── */
+#output-log {
+    height: 1fr;
+    background: rgba(0, 20, 0, 0.1);
+    color: #00ff00;
+    border: none;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+    scrollbar-size: 1 1;
+    padding: 0 1;
+}
+
+/* ─── One-line status / thinking bar ─── */
+#status-bar {
+    height: 1;
+    background: #001a00;
+    color: #00aa00;
+    padding: 0 1;
+    border-top: solid #003300;
+}
+
+/* ─── Input row ─── */
+#input-row {
+    height: 3;
+    layout: horizontal;
+    background: #000000;
+    border-top: solid #003300;
+}
+
+#input-prefix {
+    width: 7;
+    height: 3;
+    content-align: left middle;
+    color: #00ff00;
+    padding: 0 1;
+    background: #000000;
+}
+
+#user-input {
+    background: #000000;
+    color: #00ff00;
+    border: none;
+    border-bottom: solid #003300;
+    height: 3;
+    width: 1fr;
+    padding: 0 1;
+}
+
+#user-input:focus {
+    border: none;
+    border-bottom: solid #00ff00;
+    background: #000000;
+}
+
+#user-input > .input--placeholder {
+    color: #004400;
+}
+
+/* ─── Footer ─── */
+Footer {
+    background: #001a00;
+    color: #00aa00;
+}
+
+Footer > .footer--key {
+    background: #003300;
+    color: #00ff00;
+}
+
+Footer > .footer--description {
+    color: #00aa00;
+}
+
+/* Web-served session tweaks: subtle glow and larger hit targets for mouse/hover */
+.CAIApp.-web-session, CAIApp.-web-session, Screen.-web-session {
+    /* TCSS doesn't support CSS linear-gradient() syntax; keep a subtle tint. */
+    background: #001200;
+}
+
+/* Keep web-session styles TCSS-compatible; avoid unsupported CSS properties. */
+.memory-page-btn {
+}
+.memory-page-btn:hover {
+}
+
+/* Web-session specific adjustments (applied when CAIApp has -web-session class) */
+CAIApp.-web-session CaiHeader {
+    background: #001400;
+}
+
+CAIApp.-web-session #agents-scroll,
+CAIApp.-web-session #queue-list,
+CAIApp.-web-session #output-log {
+    scrollbar-color: #006600;
+}
+
+/* Make the header slightly more compact in web sessions */
+CAIApp.-web-session #header-left-text {
+    padding: 0 2;
+}
+
+/* Agents grid HUD styles */
+#agents-body {
+    height: 1fr;
+    layout: horizontal;
+}
+
+#agents-left {
+    width: 1fr;
+    background: #000000;
+}
+
+#agents-right {
+    width: 36;
+    min-width: 36;
+    background: #001200;
+    border-left: solid #002200;
+    padding: 0 1;
+}
+
+#agents-columns {
+    layout: horizontal;
+    width: 1fr;
+    height: auto;
+}
+
+.agents-col {
+    width: 1fr;
+    height: auto;
+}
+
+.agent-col-label {
+    width: 1fr;
+    height: 1;
+    color: #00cc00;
+    background: #001200;
+    padding: 0 1;
+    text-align: center;
+    text-style: bold;
+}
+
+.agent-col-empty {
+    height: 1;
+    color: #004400;
+    padding: 0 1;
+}
+
+.agent-tile {
+    width: 1fr;
+    height: 1;
+    background: #000000;
+    color: #00cc00;
+    border: none;
+    text-align: center;
+    padding: 0 1;
+    margin: 0;
+}
+
+.agent-tile:hover {
+    background: #001a00;
+    color: #00ff00;
+}
+
+#agent-intel-header {
+    height: 1;
+    color: #00ff00;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#agent-intel-brief {
+    height: 1fr;
+    background: #001000;
+    color: #00cc00;
+    padding: 1;
+    overflow: auto;
+}
+
+/* Active Swarm overlay: small connection map + sync status */
+#active-swarm-overlay {
+    height: 6;
+    background: #001000;
+    color: #00cc00;
+    padding: 1;
+    margin-top: 1;
+    border-top: solid #002200;
+    overflow: auto;
+}
+
+.swarm-shared {
+    color: #00ff00;
+    text-style: bold;
+}
+
+Footer > .footer--spacer {
+    background: #001a00;
+}
+
+/* ─── Terminals: flexible 2-column grid ─── */
+#terminal-grid {
+    layout: grid;
+    grid-size: 2;
+    height: 1fr;
+    background: #000000;
+}
+
+TerminalPanel {
+    width: 1fr;
+    height: 100%;
+    layout: vertical;
+    border: tall #003300;
+    background: #000000;
+    transition: width 300ms linear;
+}
+
+TerminalPanel.-full-width {
+    column-span: 2;
+}
+
+TerminalPanel.-active-panel {
+    border: tall #00ff00;
+}
+
+TerminalPanel.-inactive-panel {
+    border: tall #003300;
+}
+
+/* .-focused-terminal: heightened border + brighter text for the selected panel */
+TerminalPanel.-focused-terminal {
+    border: tall #00ff00;
+}
+
+TerminalPanel.-focused-terminal .term-log {
+    color: #33ff33;
+}
+
+TerminalPanel.-focused-terminal .term-header {
+    background: #002800;
+    color: #00ff00;
+    text-style: bold;
+}
+
+/* .-maximised: overlay the panel over the entire grid */
+TerminalPanel.-maximised {
+    layer: overlay;
+    offset: 0 0;
+    width: 100%;
+    height: 100%;
+    border: tall #00ff00;
+    background: #000000;
+}
+
+TerminalPanel.-busy-panel {
+    border: solid #00aa55;
+}
+
+TerminalPanel.-error-panel {
+    border: solid #cc3333;
+}
+
+.term-header {
+    height: 1;
+    background: #001a00;
+    color: #00cc00;
+    padding: 0 1;
+    border-bottom: solid #003300;
+}
+
+.term-log {
+    height: 1fr;
+    background: #000000;
+    color: #00ff00;
+    border: none;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+    scrollbar-size: 1 1;
+    padding: 0 1;
+}
+
+.term-status {
+    height: 1;
+    background: #001a00;
+    color: #00aa00;
+    padding: 0 1;
+}
+
+.term-loading {
+    height: 1;
+    display: none;
+    background: #001a00;
+    color: #00cc66;
+}
+
+TerminalPanel.-busy-panel .term-status {
+    background: #102300;
+    color: #66ff99;
+}
+
+TerminalPanel.-error-panel .term-status {
+    background: #220000;
+    color: #ff7777;
+}
+
+.term-input-row {
+    height: 4;
+    layout: horizontal;
+    background: #000000;
+    border-top: solid #003300;
+}
+
+.term-input-prefix {
+    width: 7;
+    height: 4;
+    content-align: left middle;
+    color: #00ff00;
+    padding: 0 1;
+    background: #000000;
+}
+
+.term-input-column {
+    width: 1fr;
+    height: 1fr;
+    layout: vertical;
+    background: #000000;
+}
+
+.term-input {
+    background: #000000;
+    color: #00ff00;
+    border: none;
+    border-bottom: solid #003300;
+    height: 3;
+    width: 1fr;
+    padding: 0 1;
+}
+
+.term-input:focus {
+    border: none;
+    border-bottom: solid #00ff00;
+    background: #000000;
+}
+
+.term-input > .input--placeholder {
+    color: #004400;
+}
+
+.term-input-meta {
+    height: 1;
+    color: #006600;
+    background: #000000;
+    padding: 0 1;
+}
+
+/* ─── Modal overlay / Dialog (Glassmorphism) ─── */
+ModalScreen {
+    align: center middle;
+    /* Dim the underlying terminal content so it remains visible but muted */
+    background: rgba(0, 0, 0, 0.55);
+}
+
+#modal-dialog {
+    width: 32;
+    height: auto;
+    /* Glass tint + partial transparency */
+    background: rgba(0, 20, 0, 0.7);
+    border: solid #00ff00;
+    padding: 1 2;
+    layout: vertical;
+    /* Blur backdrop where supported by terminal rendering (unsupported in TCSS) */
+    /* backdrop-filter: blur(6px); */
+    /* box-shadow is not supported in TCSS */
+    /* Transform-based animations are not supported by TCSS; use opacity-only transitions */
+    transition: opacity 300ms linear;
+}
+
+/* Ensure inner elements don't use opaque backgrounds so glass shows through */
+#modal-dialog * {
+    background: transparent;
+}
+
+/* ─── Providers two-panel modal (keep larger dialog but maintain glass overlay) ─── */
+ProvidersScreen {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+#providers-dialog {
+    width: 110;
+    height: 40;
+    background: #001a00;
+    border: tall #00ff00;
+    padding: 1 2;
+    layout: vertical;
+}
+
+/* ─── Config modal: slide-in from the right (adds -slide-in class to trigger) ─── */
+ConfigModal #modal-dialog {
+    /* Fallback: use opacity-based fade when transform isn't available in the terminal */
+    opacity: 0;
+    transition: opacity 360ms linear;
+}
+
+ConfigModal #modal-dialog.-slide-in {
+    opacity: 1;
+}
+
+#providers-body {
+    height: 1fr;
+    layout: horizontal;
+}
+
+/* Left pane — provider picker */
+#providers-left {
+    width: 28;
+    height: 100%;
+    border-right: solid #003300;
+    padding-right: 1;
+    layout: vertical;
+}
+
+.prov-cat-label {
+    height: 1;
+    color: #006600;
+    text-style: bold;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+#prov-cloud-scroll {
+    height: 12;
+    background: #000800;
+    border: solid #002200;
+    margin-bottom: 1;
+}
+
+#prov-local-scroll {
+    height: 1fr;
+    background: #000800;
+    border: solid #002200;
+}
+
+.prov-btn {
+    width: 1fr;
+    height: 1;
+    background: #001000;
+    color: #00aa00;
+    border: none;
+    padding: 0 1;
+    text-align: left;
+}
+
+.prov-btn:hover {
+    background: #002800;
+    color: #00ff00;
+}
+
+.prov-btn:focus {
+    background: #002800;
+    color: #00ff00;
+    border: solid #00ff00;
+}
+
+/* Right pane — config form */
+#providers-right {
+    width: 1fr;
+    height: 100%;
+    padding-left: 2;
+    layout: vertical;
+}
+
+.prov-right-title {
+    height: 1;
+    color: #00ff00;
+    text-style: bold;
+    margin-bottom: 1;
+    margin-top: 1;
+}
+
+.prov-hint {
+    height: 1;
+    color: #556655;
+    margin-bottom: 1;
+}
+
+.prov-models-hint {
+    height: 1;
+    color: #446644;
+    margin-top: 1;
+}
+
+.prov-field-label {
+    height: 1;
+    color: #008800;
+    margin-top: 1;
+}
+
+#prov-key-row {
+    height: 1;
+    layout: horizontal;
+    margin-top: 1;
+}
+
+.prov-key-label {
+    width: 1fr;
+    margin-top: 0;
+}
+
+.prov-inline-btn {
+    width: 8;
+    height: 1;
+    background: #002200;
+    color: #00aa00;
+    border: solid #003300;
+    padding: 0;
+    text-align: center;
+}
+
+.prov-inline-btn:hover {
+    background: #003300;
+    color: #00ff00;
+}
+
+#prov-base-url {
+    background: #000800;
+    border: tall #003300;
+    color: #00cc00;
+}
+
+#prov-base-url:focus {
+    border: tall #00ff00;
+}
+
+#prov-api-key {
+    background: #000800;
+    border: tall #003300;
+    color: #00cc00;
+}
+
+#prov-api-key:focus {
+    border: tall #00ff00;
+}
+
+.prov-status {
+    height: 1;
+    color: #00ff00;
+    margin-top: 1;
+}
+
+#prov-actions {
+    height: 3;
+    layout: horizontal;
+    margin-top: 1;
+}
+
+#prov-footer-hint {
+    height: 1;
+    color: #445544;
+    border-top: solid #002800;
+    padding-top: 1;
+    margin-top: 1;
+}
+
+#modal-agent-label {
+    height: 2;
+    color: #00ff00;
+    text-style: bold;
+    content-align: center middle;
+    border-bottom: solid #003300;
+    margin-bottom: 1;
+}
+
+.modal-btn {
+    width: 1fr;
+    height: 3;
+    background: #002800;
+    color: #00cc00;
+    border: solid #003300;
+    margin-bottom: 1;
+    text-align: center;
+}
+
+.modal-btn:hover {
+    background: #003300;
+    color: #00ff00;
+}
+
+.modal-btn:focus {
+    border: solid #00ff00;
+    color: #00ff00;
+}
+
+.modal-btn--cancel {
+    background: #050000;
+    color: #446644;
+    border: solid #002200;
+    margin-bottom: 0;
+}
+
+.modal-btn--cancel:hover {
+    background: #110000;
+    color: #00aa44;
+}
+
+#palette-wrap {
+    width: 100;
+    height: auto;
+    max-height: 44;
+    background: #001a00;
+    border: tall #00ff00;
+    padding: 1 2;
+    layout: vertical;
+}
+
+#palette-search {
+    margin-bottom: 1;
+    background: #000800;
+    color: #00ff00;
+    border: tall #003300;
+}
+
+#palette-search:focus {
+    border: tall #00ff00;
+}
+
+#palette-title {
+    height: 2;
+    color: #00ff00;
+    text-style: bold;
+    content-align: center middle;
+    border-bottom: solid #003300;
+    margin-bottom: 1;
+}
+
+#palette-results-scroll {
+    height: 26;
+    border-top: solid #003300;
+    border-bottom: solid #003300;
+    background: #000000;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+}
+
+.palette-section-header {
+    width: 1fr;
+    height: 1;
+    background: #001800;
+    color: #005500;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+.palette-empty {
+    height: 1;
+    color: #004400;
+    padding: 0 2;
+}
+
+#palette-results {
+    height: auto;
+    layout: vertical;
+    background: #000000;
+}
+
+.palette-cmd {
+    width: 1fr;
+    height: 1;
+    background: #000000;
+    color: #00cc00;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+.palette-cmd:hover,
+.palette-cmd.-selected {
+    background: #002800;
+    color: #00ff00;
+    text-style: bold;
+}
+
+#palette-help {
+    height: 2;
+    color: #006600;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+#sessions-list > ListItem.-selected {
+    background: #002800;
+    color: #00ff00;
+    border-left: solid #00ff00;
+}
+#sessions-list > ListItem > Button {
+    margin-left: 1;
+}
+# session preview area
+#session-preview {
+    height: 7;
+    padding: 0 1;
+    background: #001400;
+    color: #00ff00;
+    border-top: solid #003300;
+}
+
+/* ---- Config tab (two-column terminal overlay) ---- */
+#config-tab-widget {
+    height: 1fr;
+    background: #000000;
+    layout: vertical;
+}
+
+#cfg-header {
+    height: 2;
+    content-align: center middle;
+    border-bottom: solid #003300;
+    color: #00aa00;
+    background: #000900;
+}
+
+#cfg-body {
+    height: 1fr;
+    layout: horizontal;
+    background: #000000;
+}
+
+#cfg-left {
+    width: 40;
+    border-right: solid #003300;
+    border: solid #003300;
+    margin: 1 1 1 0;
+    padding: 0 1;
+    background: #000800;
+}
+
+.cfg-btn {
+    width: 1fr;
+    height: 2;
+    background: #000000;
+    color: #00cc00;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+.cfg-btn:hover {
+    background: #001400;
+    color: #00ff00;
+    border-left: solid #00aa00;
+}
+
+.cfg-btn--danger {
+    color: #99cc66;
+    border-top: solid #003300;
+}
+
+.cfg-sep {
+    height: 1;
+    color: #003300;
+    margin: 1 0;
+}
+
+#cfg-recording-row {
+    height: 3;
+    background: #000a00;
+    border: solid #003300;
+    padding: 0 1;
+    margin-bottom: 1;
+    align: left middle;
+}
+
+#cfg-recording-label {
+    width: 1fr;
+    color: #009944;
+}
+
+#cfg-recording-switch {
+    width: auto;
+    background: #001200;
+    color: #006633;
+}
+
+#cfg-recording-switch.-on {
+    background: #003300;
+    color: #00ff00;
+}
+
+#cfg-right {
+    width: 1fr;
+    border: solid #003300;
+    margin: 1 0 1 0;
+    background: #000800;
+    padding: 0 1;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+}
+
+#cfg-detail {
+    width: 1fr;
+    height: auto;
+    color: #00cc00;
+    padding: 1;
+}
+
+#tools-pane {
+    height: 1fr;
+    background: #000000;
+    layout: vertical;
+}
+
+#tools-list-scroll {
+    height: 1fr;
+    background: #000000;
+    scrollbar-background: #000000;
+    scrollbar-color: #004400;
+    scrollbar-size: 1 1;
+}
+
+.tool-btn {
+    width: 1fr;
+    height: 1;
+    background: #000000;
+    color: #00cc00;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    margin: 0;
+}
+
+.tool-btn:hover {
+    background: #001a00;
+    color: #00ff00;
+}
+
+.tool-btn.-active-tool {
+    background: #002800;
+    color: #00ff00;
+    text-style: bold;
+}
+
+#tools-actions {
+    height: 3;
+    layout: horizontal;
+    border-top: solid #003300;
+    background: #000000;
+}
+
+#tools-preview {
+    height: 8;
+    padding: 0 1;
+    background: #001400;
+    color: #00ff00;
+    border-top: solid #003300;
+}
+
+#tools-history-scroll {
+    height: 8;
+    border-top: solid #003300;
+    background: #000000;
+}
+
+#tools-inject-mode.-inject-input {
+    background: #001a00;
+    color: #00cc00;
+    border: solid #003300;
+}
+
+#tools-inject-mode.-inject-command {
+    background: #003000;
+    color: #00ff00;
+    border: solid #00aa00;
+    text-style: bold;
+}
+
+#metrics-pane {
+    height: 1fr;
+    background: #000000;
+    layout: vertical;
+}
+
+/* ---- Sparkline section ---- */
+#sparkline-section {
+    height: auto;
+    background: #000000;
+    border-bottom: solid #003300;
+    padding: 0 1;
+}
+
+.sparkline-label {
+    height: 1;
+    color: #00aa00;
+    background: #000000;
+    margin-top: 1;
+}
+
+#sparkline-cpu {
+    height: 5;
+    background: #000800;
+    border: solid #003300;
+    margin-bottom: 1;
+}
+
+#sparkline-ctx {
+    height: 5;
+    background: #000800;
+    border: solid #003300;
+    margin-bottom: 1;
+}
+
+#metrics-summary {
+    height: 10;
+    padding: 0 1;
+    background: #001400;
+    color: #00ff00;
+    border-top: solid #003300;
+}
+
+#metrics-events-scroll {
+    height: 1fr;
+    background: #000000;
+    border-top: solid #003300;
+}
+
+#metrics-events {
+    height: auto;
+    color: #00cc00;
+    padding: 0 1;
+}
+
+#metrics-actions {
+    height: 3;
+    layout: horizontal;
+    border-top: solid #003300;
+    background: #000000;
+}
+
+BrowserPreview {
+    height: 0;
+    display: none;
+    background: #000000;
+    border: solid magenta;
+    layout: vertical;
+    padding: 0 1;
+}
+
+BrowserPreview.-visible {
+    display: block;
+    height: 22;
+}
+
+#browser-preview-content {
+    height: 1fr;
+    color: #ff77ff;
+    background: #000000;
+}
+
+/* ---- Tool progress bar (docked above footer, hidden by default) ---- */
+#tool-progress-bar {
+    dock: bottom;
+    height: 1;
+    display: none;
+    background: #001a00;
+    color: #00ff00;
+}
+
+.-vulnerable {
+    color: #ff4444;
+    background: #1a0000;
+    border: tall #ff0000;
+    text-style: bold;
+}
+
+/* ---- HUDWidget ---- */
+HUDWidget {
+    height: auto;
+    width: 100%;
+    background: #000800;
+    border: solid #003300;
+    padding: 0 1;
+}
+
+HUDWidget .hud-label {
+    height: 1;
+    color: #00aa00;
+    background: #000800;
+    margin-top: 1;
+    text-style: bold;
+}
+
+HUDWidget #hud-sparkline {
+    height: 5;
+    background: #000800;
+    border: solid #003300;
+    margin-bottom: 0;
+}
+
+HUDWidget .hud-status {
+    height: 1;
+    color: #00cc00;
+    background: #000800;
+    margin-bottom: 1;
+}
+
+/* ---- Windows RDP stream panel ---- */
+WindowsStream {
+    height: 0;
+    display: none;
+    background: #000010;
+    border: solid #0044cc;
+    layout: vertical;
+}
+
+WindowsStream.-visible {
+    display: block;
+    height: 20;
+}
+
+#win-stream-header {
+    height: 1;
+    background: #001040;
+    color: #4488ff;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#win-stream-log {
+    height: 1fr;
+    background: #000010;
+    color: #5599ff;
+    scrollbar-background: #000020;
+    scrollbar-color: #0044cc;
+    scrollbar-size: 1 1;
+}

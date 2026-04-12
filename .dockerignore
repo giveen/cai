@@ -1,0 +1,41 @@
+# Docker ignore for building CAI image
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+
+# Virtual environments
+venv/
+cai_venv/
+.venv/
+env/
+
+# Environment files
+.env
+
+# VCS and editor
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Logs and runtime files
+logs/
+nohup.out
+
+# Documentation builds
+docs/_build/
+
+# Node
+node_modules/
+
+# System swap files
+*.swp

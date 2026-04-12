@@ -23,6 +23,7 @@ Scheduler
     ...
     stop_scheduler()    # graceful shutdown at exit
 """
+
 from __future__ import annotations
 
 import logging
@@ -66,8 +67,7 @@ def sync_knowledge_base(force: bool = False) -> int:
 
     if not _SYNC_SCRIPT.exists():
         msg = (
-            f"[MAINTENANCE] vault_sync.sh not found at {_SYNC_SCRIPT}. "
-            "Cannot sync knowledge base."
+            f"[MAINTENANCE] vault_sync.sh not found at {_SYNC_SCRIPT}. Cannot sync knowledge base."
         )
         logger.error(msg)
         write_progress(msg, "red")
@@ -144,12 +144,8 @@ def start_scheduler() -> None:
     )
     scheduler.start()
     _scheduler = scheduler
-    logger.info(
-        "[MAINTENANCE] Scheduler started. Cyber-Vault will sync every Monday at 03:00."
-    )
-    write_progress(
-        "Scheduler started — Cyber-Vault syncs every Monday at 03:00.", "dim"
-    )
+    logger.info("[MAINTENANCE] Scheduler started. Cyber-Vault will sync every Monday at 03:00.")
+    write_progress("Scheduler started — Cyber-Vault syncs every Monday at 03:00.", "dim")
 
 
 def stop_scheduler() -> None:
@@ -191,9 +187,7 @@ def _emit_tui_notification(new_chunks: int, raw_stdout: str) -> None:
     if "PayloadsAllTheThings" in raw_stdout and "hacktricks" not in raw_stdout.lower():
         source = "PayloadsAllTheThings"
     elif new_chunks == 0:
-        write_progress(
-            "Knowledge base sync complete: no new payloads since last run.", "dim"
-        )
+        write_progress("Knowledge base sync complete: no new payloads since last run.", "dim")
         return
 
     write_progress(

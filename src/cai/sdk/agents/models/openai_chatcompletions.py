@@ -411,6 +411,73 @@ def _check_reasoning_compatibility(messages):
     return True
 
 
+def _assistant_message_has_text_content(msg: dict[str, Any]) -> bool:
+    """Return True when an assistant message includes non-empty text content."""
+    try:
+        if not isinstance(msg, dict):
+            return False
+        content = msg.get("content")
+        if isinstance(content, str):
+            return bool(content.strip())
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, str) and block.strip():
+                    return True
+                if isinstance(block, dict):
+                    btype = str(block.get("type", "")).lower()
+                    if btype in {"text", "output_text"}:
+                        text_val = block.get("text")
+                        if text_val is None:
+                            text_val = block.get("content")
+                        if isinstance(text_val, str) and text_val.strip():
+                            return True
+        return False
+    except Exception:
+        return False
+
+
+def _strip_trailing_assistant_prefill(
+    messages: Any,
+    *,
+    aggressive: bool = False,
+) -> Any:
+    """Strip trailing assistant prefill messages from a message list.
+
+    Normal mode removes only tail assistant messages that look like prefill
+    text and have no tool calls. Aggressive mode (used only on explicit
+    provider prefill/thinking errors) also removes tail assistant text even
+    when tool_calls exist.
+    """
+    if not isinstance(messages, list) or not messages:
+        return messages
+
+    pruned = list(messages)
+    removed_any = False
+    while pruned:
+        last = pruned[-1]
+        if not isinstance(last, dict) or last.get("role") != "assistant":
+            break
+
+        has_tool_calls = bool(last.get("tool_calls"))
+        has_text = _assistant_message_has_text_content(last)
+
+        should_remove = False
+        if has_text and (aggressive or not has_tool_calls):
+            should_remove = True
+        elif not has_tool_calls:
+            content = last.get("content")
+            if content in (None, "", []):
+                should_remove = True
+
+        if not should_remove:
+            break
+
+        pruned.pop()
+        removed_any = True
+
+    return pruned if removed_any else messages
+
+
 def count_tokens_with_tiktoken(text_or_messages):
     """
     Count tokens consistently using tiktoken library.
@@ -1057,7 +1124,7 @@ class OpenAIChatCompletionsModel(Model):
             try:
                 response = await self._fetch_response(
                     system_instructions,
-                    input,
+                    self._warn_on_repeated_calls(converted_messages),
                     model_settings,
                     tools,
                     output_schema,
@@ -1791,7 +1858,7 @@ class OpenAIChatCompletionsModel(Model):
 
                 response, stream = await self._fetch_response(
                     system_instructions,
-                    input,
+                    self._warn_on_repeated_calls(converted_messages),
                     model_settings,
                     tools,
                     output_schema,
@@ -3072,8 +3139,7 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: Literal[True],
-    ) -> tuple[Response, AsyncStream[ChatCompletionChunk]]:
-        ...
+    ) -> tuple[Response, AsyncStream[ChatCompletionChunk]]: ...
 
     @overload
     async def _fetch_response(
@@ -3087,8 +3153,7 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: Literal[False],
-    ) -> ChatCompletion:
-        ...
+    ) -> ChatCompletion: ...
 
     async def _fetch_response(
         self,
@@ -3344,9 +3409,9 @@ class OpenAIChatCompletionsModel(Model):
                     is_compatible = _check_reasoning_compatibility(messages)
 
                     if is_compatible:
-                        kwargs[
-                            "reasoning_effort"
-                        ] = "low"  # Use reasoning_effort instead of thinking
+                        kwargs["reasoning_effort"] = (
+                            "low"  # Use reasoning_effort instead of thinking
+                        )
             elif provider == "gemini":
                 kwargs.pop("parallel_tool_calls", None)
                 # Add any specific gemini settings if needed
@@ -3386,9 +3451,9 @@ class OpenAIChatCompletionsModel(Model):
                     is_compatible = _check_reasoning_compatibility(messages)
 
                     if is_compatible:
-                        kwargs[
-                            "reasoning_effort"
-                        ] = "low"  # Use reasoning_effort instead of thinking
+                        kwargs["reasoning_effort"] = (
+                            "low"  # Use reasoning_effort instead of thinking
+                        )
             elif "gemini" in model_str:
                 kwargs.pop("parallel_tool_calls", None)
             elif "qwen" in model_str or ":" in model_str:
@@ -3444,32 +3509,33 @@ class OpenAIChatCompletionsModel(Model):
                 filtered_kwargs[_k] = NOT_GIVEN
         kwargs = filtered_kwargs
 
-        # Sanitize kwargs for local "reasoner" model groups that do not
-        # support reasoning/thinking parameters or assistant-prefill content.
-        # LiteLLM proxies sometimes expose custom model groups (e.g. "reasoner")
-        # which reject parameters like `reasoning_effort` or prefilled
-        # assistant messages. Detect that case proactively and remove
-        # incompatible fields to avoid hard 400 errors from the client.
+        # Sanitize kwargs for model groups / endpoints that have thinking/reasoning
+        # enabled and therefore reject assistant-prefill content.
+        #
+        # Triggers when EITHER:
+        #   - the model name contains "reasoner" (explicit local LiteLLM group), OR
+        #   - `enable_thinking` is explicitly present in kwargs (Claude thinking mode)
+        #
+        # What we strip:
+        #   - reasoning_effort / thinking / enable_thinking parameters
+        #   - The LAST message when it is an assistant message without tool_calls
+        #     (i.e. the "prefill" pattern that thinking models reject)
+        #     NOTE: we only strip the tail, not all text-only assistant messages,
+        #     to preserve conversation history as much as possible.
         try:
             model_name_lower = str(kwargs.get("model", "")).lower()
-            if "reasoner" in model_name_lower:
+            _is_thinking_model = (
+                "reasoner" in model_name_lower
+                or kwargs.get("enable_thinking") is not None
+            )
+            if _is_thinking_model:
                 kwargs.pop("reasoning_effort", None)
                 kwargs.pop("thinking", None)
                 kwargs.pop("enable_thinking", None)
-
-                msgs = kwargs.get("messages")
-                if isinstance(msgs, list):
-                    filtered = []
-                    for m in msgs:
-                        try:
-                            role = m.get("role") if isinstance(m, dict) else None
-                        except Exception:
-                            role = None
-                        # Drop assistant prefill messages unless they contain tool_calls
-                        if role == "assistant" and isinstance(m, dict) and not m.get("tool_calls"):
-                            continue
-                        filtered.append(m)
-                    kwargs["messages"] = filtered
+                kwargs["messages"] = _strip_trailing_assistant_prefill(
+                    kwargs.get("messages"),
+                    aggressive=False,
+                )
         except Exception:
             # Best-effort only — do not fail the call if sanitization errors
             pass
@@ -3667,9 +3733,7 @@ class OpenAIChatCompletionsModel(Model):
                     raise
                 import random
 
-                retry_delay = min(300, 2**retry_count) + random.uniform(
-                    0, 0.1 * (2**retry_count)
-                )
+                retry_delay = min(300, 2**retry_count) + random.uniform(0, 0.1 * (2**retry_count))
                 logger.debug(
                     f"Network error during model call, retrying in {retry_delay:.1f}s: {e}"
                 )
@@ -3687,33 +3751,16 @@ class OpenAIChatCompletionsModel(Model):
                     or "incompatible with enable_thinking" in error_msg
                     or "Assistant response prefill is incompatible" in error_msg
                 ):
-                    # Retry without reasoning_effort
+                    # Retry: strip thinking-related kwargs and the trailing prefill
+                    # (a text-only assistant message at the END of the messages list).
                     retry_kwargs = kwargs.copy()
                     retry_kwargs.pop("reasoning_effort", None)
-
-                    # Also remove any assistant-message prefill content which can
-                    # be incompatible with thinking-enabled models. Keep assistant
-                    # messages only if they contain tool_calls so we don't lose
-                    # important tool invocations.
-                    try:
-                        msgs = retry_kwargs.get("messages")
-                        if isinstance(msgs, list):
-                            filtered = []
-                            for m in msgs:
-                                try:
-                                    role = m.get("role") if isinstance(m, dict) else None
-                                except Exception:
-                                    role = None
-                                if role != "assistant":
-                                    filtered.append(m)
-                                else:
-                                    # Preserve assistant messages that include tool_calls
-                                    if isinstance(m, dict) and m.get("tool_calls"):
-                                        filtered.append(m)
-                            retry_kwargs["messages"] = filtered
-                    except Exception:
-                        # Best-effort only; fall back to retrying without reasoning_effort
-                        pass
+                    retry_kwargs.pop("enable_thinking", None)
+                    retry_kwargs.pop("thinking", None)
+                    retry_kwargs["messages"] = _strip_trailing_assistant_prefill(
+                        retry_kwargs.get("messages"),
+                        aggressive=True,
+                    )
 
                     try:
                         if stream:
@@ -3754,23 +3801,12 @@ class OpenAIChatCompletionsModel(Model):
                 ):
                     retry_kwargs = kwargs.copy()
                     retry_kwargs.pop("reasoning_effort", None)
-                    try:
-                        msgs = retry_kwargs.get("messages")
-                        if isinstance(msgs, list):
-                            filtered = []
-                            for m in msgs:
-                                try:
-                                    role = m.get("role") if isinstance(m, dict) else None
-                                except Exception:
-                                    role = None
-                                if role != "assistant":
-                                    filtered.append(m)
-                                else:
-                                    if isinstance(m, dict) and m.get("tool_calls"):
-                                        filtered.append(m)
-                            retry_kwargs["messages"] = filtered
-                    except Exception:
-                        pass
+                    retry_kwargs.pop("enable_thinking", None)
+                    retry_kwargs.pop("thinking", None)
+                    retry_kwargs["messages"] = _strip_trailing_assistant_prefill(
+                        retry_kwargs.get("messages"),
+                        aggressive=True,
+                    )
 
                     try:
                         if stream:
@@ -3874,9 +3910,9 @@ class OpenAIChatCompletionsModel(Model):
                                 hasattr(model_settings, "reasoning_effort")
                                 and model_settings.reasoning_effort
                             ):
-                                provider_kwargs[
-                                    "reasoning_effort"
-                                ] = model_settings.reasoning_effort
+                                provider_kwargs["reasoning_effort"] = (
+                                    model_settings.reasoning_effort
+                                )
                             else:
                                 # Default to "low" reasoning effort
                                 provider_kwargs["reasoning_effort"] = "low"
@@ -3914,9 +3950,9 @@ class OpenAIChatCompletionsModel(Model):
                                 is_compatible = _check_reasoning_compatibility(messages)
 
                                 if is_compatible:
-                                    provider_kwargs[
-                                        "reasoning_effort"
-                                    ] = "low"  # Use reasoning_effort instead of thinking
+                                    provider_kwargs["reasoning_effort"] = (
+                                        "low"  # Use reasoning_effort instead of thinking
+                                    )
                         elif provider == "gemini":
                             provider_kwargs["custom_llm_provider"] = "gemini"
                             provider_kwargs.pop(
@@ -4068,9 +4104,7 @@ class OpenAIChatCompletionsModel(Model):
                 # Handle Anthropic error for empty text content blocks
                 if "text content blocks must be non-empty" in str(
                     e
-                ) or "cache_control cannot be set for empty text blocks" in str(
-                    e
-                ):  # noqa
+                ) or "cache_control cannot be set for empty text blocks" in str(e):  # noqa
                     # Print the error message only once
                     print(
                         "⚠️  Empty text blocks detected - Adding placeholder content"
@@ -4234,6 +4268,46 @@ class OpenAIChatCompletionsModel(Model):
                 return ret
         except Exception as e:
             error_msg = str(e)
+
+            # Handle Claude thinking/prefill incompatibility raised by the direct OpenAI client.
+            # litellm raises a different error type (handled above); the direct AsyncOpenAI
+            # client raises openai.BadRequestError which hits this branch instead.
+            _thinking_signals = (
+                "incompatible with enable_thinking",
+                "Assistant response prefill is incompatible",
+                "Expected `thinking` or `redacted_thinking`, but found `text`",
+                "When `thinking` is enabled, a final `assistant` message must start with a thinking block",
+            )
+            if any(sig in error_msg for sig in _thinking_signals):
+                retry_kwargs = dict(client_kwargs)
+                retry_kwargs.pop("reasoning_effort", None)
+                retry_kwargs.pop("enable_thinking", None)
+                retry_kwargs.pop("thinking", None)
+                retry_kwargs["messages"] = _strip_trailing_assistant_prefill(
+                    retry_kwargs.get("messages"),
+                    aggressive=True,
+                )
+                try:
+                    if stream:
+                        stream_obj = await self._client.chat.completions.create(**retry_kwargs)
+                        response = Response(
+                            id=FAKE_RESPONSES_ID,
+                            created_at=time.time(),
+                            model=self.model,
+                            object="response",
+                            output=[],
+                            tool_choice=_sanitize_tool_choice_value(tool_choice),
+                            top_p=model_settings.top_p,
+                            temperature=model_settings.temperature,
+                            tools=[],
+                            parallel_tool_calls=parallel_tool_calls or False,
+                        )
+                        return response, stream_obj
+                    else:
+                        return await self._client.chat.completions.create(**retry_kwargs)
+                except Exception:
+                    raise e
+
             # Handle both OpenAI and Anthropic error messages for tool_call_id
             if (
                 "string too long" in error_msg
@@ -4459,16 +4533,28 @@ class OpenAIChatCompletionsModel(Model):
         try:
             import pathlib
 
+            from cai.config import CAI_CTX_LIMIT
+
             pricing_path = pathlib.Path("pricing.json")
             if pricing_path.exists():
                 with open(pricing_path, encoding="utf-8") as f:
                     pricing_data = json.load(f)
                     model_info = pricing_data.get(model_name, {})
-                    return model_info.get("max_input_tokens", 200000)
+                    return int(model_info.get("max_input_tokens", CAI_CTX_LIMIT))
         except Exception:
             pass
-        # Default to 200k if not found
-        return 200000
+        # Default to CAI_CTX_LIMIT if not found
+        try:
+            from cai.config import CAI_CTX_LIMIT
+
+            return int(CAI_CTX_LIMIT)
+        except Exception:
+            try:
+                import cai.config as _c
+
+                return int(_c.CAI_CTX_LIMIT)
+            except Exception:
+                return 393216
 
     async def _auto_compact_if_needed(
         self,
@@ -4581,7 +4667,9 @@ class OpenAIChatCompletionsModel(Model):
                                             pass
                                         try:
                                             if self.agent_name in PERSISTENT_MESSAGE_HISTORIES:
-                                                PERSISTENT_MESSAGE_HISTORIES[self.agent_name].clear()
+                                                PERSISTENT_MESSAGE_HISTORIES[
+                                                    self.agent_name
+                                                ].clear()
                                         except Exception:
                                             pass
                                 except Exception:
@@ -4616,8 +4704,28 @@ class OpenAIChatCompletionsModel(Model):
                 pass  # malformed interval — ignore silently
 
         max_tokens = self._get_model_max_tokens(str(self.model))
-        threshold_percent = float(os.getenv("CAI_AUTO_COMPACT_THRESHOLD", "0.8"))
-        threshold = max_tokens * threshold_percent
+        # Determine the auto-compact threshold.
+        # Priority: runtime `CAI_AUTO_COMPACT_THRESHOLD` env var (supports 0.x fraction or absolute int),
+        # then `cai.config.CAI_AUTO_COMPACT_THRESHOLD` (set at import-time), then a safe default (80%).
+        _env_threshold = os.getenv("CAI_AUTO_COMPACT_THRESHOLD", "")
+        if _env_threshold:
+            try:
+                _f = float(_env_threshold)
+                if 0.0 < _f <= 1.0:
+                    threshold = int(max_tokens * _f)
+                else:
+                    threshold = int(_f)
+            except Exception:
+                threshold = int(max_tokens * 0.8)
+        else:
+            try:
+                from cai.config import CAI_AUTO_COMPACT_THRESHOLD
+
+                # Cap threshold to the model's max_tokens where sensible.
+                threshold = min(int(max_tokens), int(CAI_AUTO_COMPACT_THRESHOLD))
+            except Exception:
+                # Fallback to historical fractional behaviour (80%).
+                threshold = int(max_tokens * 0.8)
 
         if estimated_tokens <= threshold:
             # Context dropped below threshold — clear any previous failure record so we
@@ -4750,6 +4858,54 @@ class OpenAIChatCompletionsModel(Model):
             self._compact_failed_tokens = estimated_tokens
 
         return input, system_instructions, False
+
+    def _warn_on_repeated_calls(self, converted_messages: list) -> list:
+        """Inject a user-role nudge when the model keeps calling the same tool
+        with identical arguments without making progress.
+
+        Scans the tail of *converted_messages* for consecutive assistant
+        messages that all carry the same (tool_name, arguments) signature.
+        When the count reaches CAI_MAX_TOOL_REPEATS (default: 2) the model is
+        about to make *another* identical call, so we append a synthetic
+        user message telling it to stop and try something different.
+        """
+        max_repeats = int(os.getenv("CAI_MAX_TOOL_REPEATS", "2"))
+        if max_repeats <= 0 or not converted_messages:
+            return converted_messages
+
+        # Walk backwards collecting the tool-call signature from each assistant
+        # message.  Stop at the first user/system message or text-only assistant
+        # message so we only consider the current agentic loop iteration.
+        signatures: list[tuple[str, str]] = []
+        for msg in reversed(converted_messages):
+            role = msg.get("role") if isinstance(msg, dict) else None
+            if role == "tool":
+                continue  # skip tool-response messages
+            elif role == "assistant":
+                tcs = msg.get("tool_calls") if isinstance(msg, dict) else None
+                if tcs:
+                    tc = tcs[0] if tcs else {}
+                    fn = (tc.get("function") or {}) if isinstance(tc, dict) else {}
+                    sig: tuple[str, str] = (fn.get("name", ""), fn.get("arguments", ""))
+                    signatures.append(sig)
+                else:
+                    break  # text-only assistant message – stop here
+            else:
+                break  # user / system boundary
+
+        if len(signatures) >= max_repeats and signatures:
+            first = signatures[0]
+            if all(s == first for s in signatures):
+                name = first[0]
+                nudge = (
+                    f"[System notice] You have called `{name}` with the same arguments "
+                    f"{len(signatures)} time(s) in a row without useful results. "
+                    f"Do NOT call `{name}` with these same arguments again. "
+                    f"Try a fundamentally different command, tool, or approach to make progress."
+                )
+                return list(converted_messages) + [{"role": "user", "content": nudge}]
+
+        return converted_messages
 
     def _intermediate_logs(self):
         """Intermediate logging placeholder (telemetry disabled)."""
@@ -5100,9 +5256,9 @@ class _Converter:
                     # Ensure content is not None if tool_calls are absent and content is also None
                     # Some models like Anthropic require some content, even if it's just a placeholder.
                     if current_assistant_msg.get("content") is None:
-                        current_assistant_msg[
-                            "content"
-                        ] = "(No text content in this assistant message)"  # Or just an empty string if preferred
+                        current_assistant_msg["content"] = (
+                            "(No text content in this assistant message)"  # Or just an empty string if preferred
+                        )
                     current_assistant_msg.pop(
                         "tool_calls", None
                     )  # Use pop with default to avoid KeyError

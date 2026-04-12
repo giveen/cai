@@ -251,9 +251,9 @@ class TestCLIStreaming(unittest.TestCase):
         self.verify_message_history_openai_compliance()
 
         # Verify we have the expected sequence
-        assert (
-            len(self.get_combined_message_history()) >= 3
-        ), "Should have user, assistant, tool messages"
+        assert len(self.get_combined_message_history()) >= 3, (
+            "Should have user, assistant, tool messages"
+        )
 
         # Check message roles in order
         roles = [msg["role"] for msg in self.get_combined_message_history()]
@@ -265,12 +265,12 @@ class TestCLIStreaming(unittest.TestCase):
         assistant_msg = self.get_combined_message_history()[1]
         tool_msg = self.get_combined_message_history()[2]
         assert assistant_msg.get("tool_calls"), "Assistant message should have tool calls"
-        assert (
-            tool_msg["tool_call_id"] == assistant_msg["tool_calls"][0]["id"]
-        ), "Tool call ID should match"
-        assert (
-            "interrupted" in tool_msg["content"].lower()
-        ), "Tool result should indicate interruption"
+        assert tool_msg["tool_call_id"] == assistant_msg["tool_calls"][0]["id"], (
+            "Tool call ID should match"
+        )
+        assert "interrupted" in tool_msg["content"].lower(), (
+            "Tool result should indicate interruption"
+        )
 
         print("✅ CTRL+C cleanup message consistency test passed!")
 
@@ -309,9 +309,9 @@ class TestCLIStreaming(unittest.TestCase):
             fixed_messages = fix_message_list(incomplete_messages)
 
             # Verify fix_message_list added the missing tool result
-            assert len(fixed_messages) > len(
-                incomplete_messages
-            ), "fix_message_list should add missing tool result"
+            assert len(fixed_messages) > len(incomplete_messages), (
+                "fix_message_list should add missing tool result"
+            )
 
             # Find the added tool message
             tool_msg = None
@@ -413,9 +413,9 @@ class TestCLIStreaming(unittest.TestCase):
 
         # Verify OpenAI format compliance
         final_messages = self.get_combined_message_history()
-        assert len(final_messages) == len(
-            test_messages
-        ), f"Expected {len(test_messages)} messages, got {len(final_messages)}"
+        assert len(final_messages) == len(test_messages), (
+            f"Expected {len(test_messages)} messages, got {len(final_messages)}"
+        )
 
         for i, msg in enumerate(self.get_combined_message_history()):
             # Required fields
@@ -423,9 +423,9 @@ class TestCLIStreaming(unittest.TestCase):
 
             # Valid roles
             valid_roles = ["user", "assistant", "system", "tool", "developer"]
-            assert (
-                msg["role"] in valid_roles
-            ), f"Message {i} has invalid role '{msg['role']}', must be one of {valid_roles}"
+            assert msg["role"] in valid_roles, (
+                f"Message {i} has invalid role '{msg['role']}', must be one of {valid_roles}"
+            )
 
             # Role-specific validation
             if msg["role"] == "tool":
@@ -433,19 +433,19 @@ class TestCLIStreaming(unittest.TestCase):
                 assert "content" in msg, f"Tool message {i} missing 'content'"
 
             if msg["role"] == "assistant" and msg.get("tool_calls"):
-                assert isinstance(
-                    msg["tool_calls"], list
-                ), f"Assistant message {i} tool_calls must be a list"
+                assert isinstance(msg["tool_calls"], list), (
+                    f"Assistant message {i} tool_calls must be a list"
+                )
                 for j, tc in enumerate(msg["tool_calls"]):
                     assert "id" in tc, f"Tool call {j} in message {i} missing 'id'"
                     assert "type" in tc, f"Tool call {j} in message {i} missing 'type'"
                     assert "function" in tc, f"Tool call {j} in message {i} missing 'function'"
-                    assert (
-                        "name" in tc["function"]
-                    ), f"Tool call {j} function in message {i} missing 'name'"
-                    assert (
-                        "arguments" in tc["function"]
-                    ), f"Tool call {j} function in message {i} missing 'arguments'"
+                    assert "name" in tc["function"], (
+                        f"Tool call {j} function in message {i} missing 'name'"
+                    )
+                    assert "arguments" in tc["function"], (
+                        f"Tool call {j} function in message {i} missing 'arguments'"
+                    )
 
         print("✅ Message history OpenAI format compliance test passed!")
 
@@ -514,9 +514,9 @@ class TestCLIStreaming(unittest.TestCase):
 
             # Role validation
             valid_roles = ["user", "assistant", "system", "tool", "developer"]
-            assert (
-                msg["role"] in valid_roles
-            ), f"Message {i} role '{msg['role']}' not in valid roles {valid_roles}"
+            assert msg["role"] in valid_roles, (
+                f"Message {i} role '{msg['role']}' not in valid roles {valid_roles}"
+            )
 
             # Content or tool_calls must exist for most roles
             if msg["role"] in ["user", "system", "developer"]:
@@ -526,9 +526,9 @@ class TestCLIStreaming(unittest.TestCase):
                 # Assistant must have content OR tool_calls
                 has_content = "content" in msg and msg["content"] is not None
                 has_tool_calls = "tool_calls" in msg and msg["tool_calls"]
-                assert (
-                    has_content or has_tool_calls
-                ), f"Assistant message {i} must have content or tool_calls"
+                assert has_content or has_tool_calls, (
+                    f"Assistant message {i} must have content or tool_calls"
+                )
 
             elif msg["role"] == "tool":
                 assert "tool_call_id" in msg, f"Tool message {i} missing tool_call_id"

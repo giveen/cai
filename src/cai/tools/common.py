@@ -184,6 +184,88 @@ def _normalize_command(command: Any):
     return exec_cmd, cmd_name, cmd_args, full_command
 
 
+def _should_skip_recon(tool_name: str | None, tool_args: dict | None = None, text: str | None = None) -> bool:
+    """Decide whether a given tool invocation should be skipped due to existing
+    workspace state (e.g., targets already discovered) and reconnaissance
+    heuristics.
+
+    Returns True when the workspace appears to already have targets and the
+    invocation looks reconnaissance-related and is not forced.
+    """
+    try:
+        # Honor explicit force overrides passed via tool args
+        if isinstance(tool_args, dict):
+            force_val = tool_args.get("force") or tool_args.get("_force")
+            if isinstance(force_val, str):
+                if force_val.lower() in ("1", "true", "yes", "y"):
+                    return False
+            if force_val:
+                return False
+
+        # Honor environment-wide force override (REPL /workspace set --force)
+        try:
+            env_force = os.getenv("CAI_FORCE_RECON") or os.getenv("CAI_FORCE")
+            if isinstance(env_force, str) and env_force.strip():
+                if env_force.lower() in ("1", "true", "yes", "y"):
+                    return False
+                # Any non-empty value counts as a truthy override
+                return False
+        except Exception:
+            pass
+
+        # Read workspace state to decide if recon has already been done
+        try:
+            from cai.session import _read_state
+
+            st = _read_state()
+        except Exception:
+            st = None
+
+        if not st or not st.get("targets"):
+            return False
+
+        # Build a combined text to run simple keyword heuristics against
+        parts: list[str] = []
+        if tool_name:
+            parts.append(str(tool_name))
+        if isinstance(tool_args, dict):
+            try:
+                parts.append(json.dumps(tool_args, ensure_ascii=False))
+            except Exception:
+                parts.append(str(tool_args))
+        if text:
+            parts.append(str(text))
+        combined = " ".join([p.lower() for p in parts if p])
+        if not combined:
+            return False
+
+        keywords = (
+            "nmap",
+            "masscan",
+            "linpeas",
+            "lin_peas",
+            "recon",
+            "scan",
+            "shodan",
+            "sqlmap",
+            "cewl",
+            "netcat",
+            "netstat",
+            "smb",
+            "ldap",
+            "curl",
+            "wget",
+            "smbclient",
+            "enum",
+            "enumerat",
+            "reconnaissance",
+        )
+
+        return any(k in combined for k in keywords)
+    except Exception:
+        return False
+
+
 # Session management has been moved to `cai.tools.sessions`.
 # The authoritative implementations for `ShellSession` and the session
 # registry live in `src/cai/tools/sessions.py` and are imported at the
@@ -204,7 +286,25 @@ def _run_ctf(ctf, command, stdout=False, timeout=100, workspace_dir=None, stream
         # The streaming system will handle the display
         if stdout and not stream:
             print(f"\033[32m{context_msg} $ {original_cmd_for_msg}\n{output}\033[0m")  # noqa E501
-        return output
+        try:
+            from cai.tools.base import process_tool_output
+
+            t0 = time.time()
+            res = process_tool_output(None, output)
+            t1 = time.time()
+            try:
+                with open("/tmp/cai_tool_debug.log", "a") as _f:
+                    _f.write(f"{time.time():.3f} CTF processed tool=None dur={(t1-t0):.3f} size={len(output)}\n")
+            except Exception:
+                pass
+            return res
+        except Exception:
+            try:
+                with open("/tmp/cai_tool_debug.log", "a") as _f:
+                    _f.write(f"{time.time():.3f} CTF process_tool_output FAILED tool=None size={len(output)}\n")
+            except Exception:
+                pass
+            return output
     except Exception as e:  # pylint: disable=broad-except
         error_msg = f"Error executing CTF command '{original_cmd_for_msg}' in '{target_dir}': {e}"  # noqa E501
         print(color(error_msg, fg="red"))
@@ -242,14 +342,30 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         if stdout and not stream:
             print(f"\033[32m{context_msg} $ {original_cmd_for_msg}\n{output}\033[0m")  # noqa E501
         # Return combined output, potentially including errors
-        return output.strip()
+        try:
+            from cai.tools.base import process_tool_output
+
+            t0 = time.time()
+            res = process_tool_output(None, output.strip())
+            t1 = time.time()
+            try:
+                with open("/tmp/cai_tool_debug.log", "a") as _f:
+                    _f.write(f"{time.time():.3f} SSH processed tool=None dur={(t1-t0):.3f} size={len(output)}\n")
+            except Exception:
+                pass
+            return res
+        except Exception:
+            try:
+                with open("/tmp/cai_tool_debug.log", "a") as _f:
+                    _f.write(f"{time.time():.3f} SSH process_tool_output FAILED tool=None size={len(output)}\n")
+            except Exception:
+                pass
+            return output.strip()
     except subprocess.TimeoutExpired as e:
         error_output = e.stdout if e.stdout else str(e)
         timeout_msg = f"Timeout executing SSH command: {error_output}"
         if stdout and not stream:
-            print(
-                f"\033[33m{context_msg} $ {original_cmd_for_msg}\nTIMEOUT\n{error_output}\033[0m"
-            )  # noqa E501
+            print(f"\033[33m{context_msg} $ {original_cmd_for_msg}\nTIMEOUT\n{error_output}\033[0m")  # noqa E501
         return timeout_msg
     except FileNotFoundError:
         # Handle case where ssh or sshpass isn't installed
@@ -257,9 +373,7 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         print(color(error_msg, fg="red"))
         return error_msg
     except Exception as e:  # pylint: disable=broad-except
-        error_msg = (
-            f"Error executing SSH command '{original_cmd_for_msg}' on {ssh_host}: {e}"  # noqa E501
-        )
+        error_msg = f"Error executing SSH command '{original_cmd_for_msg}' on {ssh_host}: {e}"  # noqa E501
         print(color(error_msg, fg="red"))
         return error_msg
 
@@ -754,6 +868,17 @@ def run_command(
     except Exception:
         pass
 
+    # Wrap network tools with nss-wrapper when virtual hosts are configured.
+    try:
+        from cai.tools.network.dns_proxy import get_vhm
+
+        _wrapped = get_vhm().wrap_command(full_command)
+        if _wrapped != full_command:
+            command = _wrapped
+            exec_cmd, cmd_name, cmd_args, full_command = _normalize_command(command)
+    except Exception:
+        pass
+
     # Generate a call_id if we're streaming and one wasn't provided
     # Use a more specific format that includes the command name for easier tracking
     if not call_id and stream:
@@ -892,9 +1017,7 @@ def run_command(
             # Handle Async Session Creation in Container
             if async_mode and not session_id:
                 # Create a session specifically for the container environment
-                new_session_id = create_shell_session(
-                    command, container_id=container_id
-                )  # noqa E501
+                new_session_id = create_shell_session(command, container_id=container_id)  # noqa E501
                 if "Failed" in new_session_id:  # Check if session creation failed
                     # Switch back to idle mode before returning error
                     stop_active_timer()

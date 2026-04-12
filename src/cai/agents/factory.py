@@ -5,6 +5,8 @@ Generic agent factory module for creating agent instances dynamically.
 import importlib
 import os
 from collections.abc import Callable
+from pathlib import Path
+from typing import Optional
 
 try:
     from openai import AsyncOpenAI
@@ -12,6 +14,53 @@ except Exception:
     AsyncOpenAI = None
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+
+
+# Cache workspace-level instruction text so we don't re-read files repeatedly
+_WORKSPACE_INSTRUCTIONS_CACHE: Optional[str] = None
+
+
+def _load_workspace_instructions() -> Optional[str]:
+    """Load any workspace-level instruction templates ("*.instructions.md").
+
+    Searches the repository root (heuristic) for files named
+    "*.instructions.md" and concatenates them. Returns None when nothing
+    relevant is found.
+    """
+    global _WORKSPACE_INSTRUCTIONS_CACHE
+    if _WORKSPACE_INSTRUCTIONS_CACHE is not None:
+        return _WORKSPACE_INSTRUCTIONS_CACHE
+
+    try:
+        repo_root = Path(__file__).resolve()
+        # Walk up to find repository root (stop at a few common markers)
+        for _ in range(6):
+            if (repo_root / "pyproject.toml").exists() or (repo_root / ".git").exists() or (
+                repo_root / "README.md"
+            ).exists():
+                break
+            if repo_root.parent == repo_root:
+                break
+            repo_root = repo_root.parent
+
+        files = sorted(repo_root.rglob("*.instructions.md"))
+        contents: list[str] = []
+        for f in files:
+            try:
+                txt = f.read_text(encoding="utf-8")
+                contents.append(f"\n\n# Source: {f.relative_to(repo_root)}\n\n{txt}")
+            except Exception:
+                continue
+
+        if contents:
+            combined = "\n\n".join(contents)
+            _WORKSPACE_INSTRUCTIONS_CACHE = combined
+            return combined
+    except Exception:
+        pass
+
+    _WORKSPACE_INSTRUCTIONS_CACHE = None
+    return None
 
 
 def create_generic_agent_factory(
@@ -79,6 +128,24 @@ def create_generic_agent_factory(
         # Update agent name if custom name was provided
         if custom_name:
             cloned_agent.name = custom_name
+
+        # Append any workspace-level instruction templates to the agent's
+        # system prompt. This uses the lightweight helpers in cai.util and is
+        # best-effort (fail silently on any errors) so agent creation remains
+        # robust even if templates are missing or unreadable.
+        try:
+            additional = _load_workspace_instructions()
+            if additional:
+                # Import here to avoid potential import-time cycles
+                from cai.util import append_instructions, create_system_prompt_renderer
+
+                if not getattr(cloned_agent, "instructions", None):
+                    cloned_agent.instructions = create_system_prompt_renderer(additional)
+                else:
+                    append_instructions(cloned_agent, additional)
+        except Exception:
+            # Best-effort: if anything goes wrong we don't want to break agent creation
+            pass
 
         # Check if this agent has any MCP tools configured
         try:

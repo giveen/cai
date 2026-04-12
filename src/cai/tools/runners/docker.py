@@ -14,6 +14,7 @@ import time
 import uuid
 
 from wasabi import color
+from cai.tools.base import process_tool_output
 
 
 async def run_docker_async(
@@ -85,6 +86,15 @@ async def run_docker_async(
 
             if not call_id:
                 call_id = f"cmd_{cmd_name}_{str(uuid.uuid4())[:8]}"
+
+            # Check recon-skip before starting streaming in container
+            try:
+                from cai.tools.common import _should_skip_recon
+
+                if _should_skip_recon(tool_name, tool_args, None):
+                    return {"status": "skipped", "reason": "resume_skip_recon", "tool": tool_name}
+            except Exception:
+                pass
 
             token_info = _get_agent_token_info()
             call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
@@ -158,11 +168,47 @@ async def run_docker_async(
             finish_tool_streaming(
                 tool_name, tool_args, final_output, call_id, execution_info, token_info
             )
-            return final_output
+            try:
+                t0 = time.time()
+                res = process_tool_output(tool_name, final_output)
+                t1 = time.time()
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} DOCKER_STREAM processed tool={tool_name} dur={(t1-t0):.3f} size={len(final_output)}\n")
+                except Exception:
+                    pass
+                return res
+            except Exception:
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} DOCKER_STREAM process_tool_output FAILED tool={tool_name} size={len(final_output)}\n")
+                except Exception:
+                    pass
+                return final_output
 
         else:
             # Non-streaming async execution
             start_time = time.time()
+            # Before executing, honor recon-skip heuristics
+            try:
+                from cai.tools.common import _should_skip_recon
+
+                display_args = (
+                    args
+                    if args is not None
+                    else {
+                        "command": cmd_name,
+                        "args": cmd_args,
+                        "full_command": command,
+                        "container": container_id[:12],
+                        "workspace": container_workspace,
+                    }
+                )
+                if _should_skip_recon(tool_name, display_args, None):
+                    return {"status": "skipped", "reason": "resume_skip_recon", "tool": tool_name}
+            except Exception:
+                pass
+
             process = await asyncio.create_subprocess_exec(
                 *docker_cmd_list, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
@@ -234,7 +280,23 @@ async def run_docker_async(
                     streaming=False,
                 )
 
-            return output.strip()
+            try:
+                t0 = time.time()
+                res = process_tool_output(tool_name, output.strip())
+                t1 = time.time()
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} DOCKER_ASYNC processed tool={tool_name} dur={(t1-t0):.3f} size={len(output)}\n")
+                except Exception:
+                    pass
+                return res
+            except Exception:
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} DOCKER_ASYNC process_tool_output FAILED tool={tool_name} size={len(output)}\n")
+                except Exception:
+                    pass
+                return output.strip()
 
     except Exception as e:
         error_msg = f"Error executing command in container: {str(e)}"
@@ -301,6 +363,15 @@ def run_docker(
         if tool_name == "generic_linux_command":
             tool_args["refresh_rate"] = 2
 
+        # Check recon-skip before starting streaming in container
+        try:
+            from cai.tools.common import _should_skip_recon
+
+            if _should_skip_recon(tool_name, tool_args, None):
+                return {"status": "skipped", "reason": "resume_skip_recon", "tool": tool_name}
+        except Exception:
+            pass
+
         token_info = _get_agent_token_info()
         call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
 
@@ -317,6 +388,17 @@ def run_docker(
 
         try:
             start_time = time.time()
+            # Before executing, honor recon-skip heuristics for sync container run
+            try:
+                from cai.tools.common import _should_skip_recon
+
+                if _should_skip_recon(tool_name, tool_args, None):
+                    stop_active_timer()
+                    start_idle_timer()
+                    return {"status": "skipped", "reason": "resume_skip_recon", "tool": tool_name}
+            except Exception:
+                pass
+
             process = subprocess.Popen(
                 docker_exec_cmd,
                 shell=True,
@@ -368,7 +450,23 @@ def run_docker(
             )
             stop_active_timer()
             start_idle_timer()
-            return final_output
+            try:
+                t0 = time.time()
+                res = process_tool_output(tool_name, final_output)
+                t1 = time.time()
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} DOCKER_STREAM_SYNC processed tool={tool_name} dur={(t1-t0):.3f} size={len(final_output)}\n")
+                except Exception:
+                    pass
+                return res
+            except Exception:
+                try:
+                    with open("/tmp/cai_tool_debug.log", "a") as _f:
+                        _f.write(f"{time.time():.3f} DOCKER_STREAM_SYNC process_tool_output FAILED tool={tool_name} size={len(final_output)}\n")
+                except Exception:
+                    pass
+                return final_output
 
         except subprocess.TimeoutExpired as e:
             error_output = e.stdout if hasattr(e, "stdout") and e.stdout else str(e)
@@ -468,7 +566,23 @@ def run_docker(
 
         stop_active_timer()
         start_idle_timer()
-        return output
+        try:
+            t0 = time.time()
+            res = process_tool_output(tool_name, output)
+            t1 = time.time()
+            try:
+                with open("/tmp/cai_tool_debug.log", "a") as _f:
+                    _f.write(f"{time.time():.3f} DOCKER_SYNC processed tool={tool_name} dur={(t1-t0):.3f} size={len(output)}\n")
+            except Exception:
+                pass
+            return res
+        except Exception:
+            try:
+                with open("/tmp/cai_tool_debug.log", "a") as _f:
+                    _f.write(f"{time.time():.3f} DOCKER_SYNC process_tool_output FAILED tool={tool_name} size={len(output)}\n")
+            except Exception:
+                pass
+            return output
 
     except subprocess.TimeoutExpired:
         _timeout_msg = "Timeout executing command in container."

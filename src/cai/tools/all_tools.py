@@ -21,10 +21,12 @@ from cai.tools.misc.rag_monitor import get_rag_status
 
 # ── Reasoning & memory ────────────────────────────────────────────────────────
 from cai.tools.misc.reasoning import read_key_findings, think, thought, write_key_findings
+from cai.orchestration.persistence import sync_to_journal
 from cai.tools.network.capture_traffic import capture_remote_traffic, remote_capture_session_tool
 from cai.tools.network.impacket import impacket_executor
 from cai.tools.network.ligolo import ligolo_executor
 from cai.tools.network.netexec import netexec_executor
+from cai.tools.pw.hashcat import hashcat_executor
 from cai.tools.others.scripting import scripting_tool
 from cai.tools.reconnaissance.blue_team_safe_command import blue_team_safe_command
 from cai.tools.reconnaissance.crypto_tools import decode64, decode_hex_bytes, strings_command
@@ -38,6 +40,12 @@ from cai.tools.reconnaissance.ldap_search import ldap_search
 from cai.tools.reconnaissance.netcat import netcat
 from cai.tools.reconnaissance.netstat import netstat
 from cai.tools.reconnaissance.nmap import nmap
+from cai.tools.post_ex.linpeas import execute_linpeas
+from cai.tools.atomic_red_team import (
+    list_art_techniques,
+    get_art_technique,
+    generate_art_logs,
+)
 from cai.tools.reconnaissance.smbclient_tool import (  # noqa: E501
     smb_download_file,
     smb_list_shares,
@@ -73,6 +81,7 @@ ALL_TOOLS = [
     execute_code,
     ldap_search,
     nmap,
+    execute_linpeas,
     netcat,
     netstat,
     curl,
@@ -95,6 +104,7 @@ ALL_TOOLS = [
     impacket_executor,
     netexec_executor,
     ligolo_executor,
+    hashcat_executor,
     # Web
     web_request_framework,
     js_surface_mapper,
@@ -126,10 +136,21 @@ ALL_TOOLS = [
     think,
     write_key_findings,
     read_key_findings,
+    # State journal: let agents persist structured facts
+    sync_to_journal,
+    # Persistence / State Journal
+    # sync_to_journal lets agents append structured facts to intelligence.json
+    # and triggers README_ENGAGEMENT.md generation.
+    # Implemented in cai.orchestration.persistence
+    # (import above to ensure tool registration)
     query_memory,
     add_to_memory_episodic,
     add_to_memory_semantic,
     get_rag_status,
+    # Atomic Red Team tools
+    list_art_techniques,
+    get_art_technique,
+    generate_art_logs,
 ]
 
 # ── Conditional: OSINT / search ───────────────────────────────────────────────

@@ -16,6 +16,7 @@ Actions supported:
 The tool never shells-out via `shell=True` and blocks on unsafe shell meta
 characters in `run_args`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -52,9 +53,7 @@ def _check_injection(value: str) -> Optional[str]:
     if not value:
         return None
     if re.search(_INJECTION_RE, value):
-        return (
-            "Parameter contains disallowed shell metacharacters; remove ; & | ` $ $() >"
-        )
+        return "Parameter contains disallowed shell metacharacters; remove ; & | ` $ $() >"
     return None
 
 
@@ -79,7 +78,13 @@ async def _start_process(binary: str, args: list[str], log_path: Path) -> Dict[s
             pass
 
     task = asyncio.create_task(_drain_stream(proc.stdout, log_path))
-    return {"proc": proc, "task": task, "log": str(log_path), "started_at": time.time(), "args": args}
+    return {
+        "proc": proc,
+        "task": task,
+        "log": str(log_path),
+        "started_at": time.time(),
+        "args": args,
+    }
 
 
 async def _stop_process(info: Dict[str, Any], timeout: int = 5) -> Dict[str, Any]:
@@ -179,7 +184,10 @@ async def ligolo_executor(
             try:
                 info = await _start_process(binary, args, log_path)
                 _LOCAL_PROC["server"] = info
-                out["server"] = {"pid": getattr(info.get("proc"), "pid", None), "log": str(log_path)}
+                out["server"] = {
+                    "pid": getattr(info.get("proc"), "pid", None),
+                    "log": str(log_path),
+                }
                 out["status"] = "running"
             except Exception as exc:
                 out["error"] = f"failed to start ligolo: {exc}"
@@ -191,14 +199,26 @@ async def ligolo_executor(
         if not run_args:
             return json.dumps({"error": "run_args required to start local ligolo server"})
         if _LOCAL_PROC.get("server"):
-            return json.dumps({"error": "local ligolo server already running", "server": {"pid": getattr(_LOCAL_PROC['server'].get('proc'), 'pid', None)}})
+            return json.dumps(
+                {
+                    "error": "local ligolo server already running",
+                    "server": {"pid": getattr(_LOCAL_PROC["server"].get("proc"), "pid", None)},
+                }
+            )
 
         args = shlex.split(run_args)
         log_path = _LOG_DIR / f"ligolo_{int(time.time())}.log"
         try:
             info = await _start_process(binary, args, log_path)
             _LOCAL_PROC["server"] = info
-            return json.dumps({"status": "running", "pid": getattr(info.get("proc"), "pid", None), "log": str(log_path)}, indent=2)
+            return json.dumps(
+                {
+                    "status": "running",
+                    "pid": getattr(info.get("proc"), "pid", None),
+                    "log": str(log_path),
+                },
+                indent=2,
+            )
         except Exception as exc:
             return json.dumps({"error": f"failed to start ligolo: {exc}"})
 
@@ -217,6 +237,9 @@ async def ligolo_executor(
         proc = info.get("proc")
         pid = getattr(proc, "pid", None)
         started_at = datetime.utcfromtimestamp(info.get("started_at")).isoformat() + "Z"
-        return json.dumps({"status": "running", "pid": pid, "started_at": started_at, "log": info.get("log")}, indent=2)
+        return json.dumps(
+            {"status": "running", "pid": pid, "started_at": started_at, "log": info.get("log")},
+            indent=2,
+        )
 
     return json.dumps({"error": "unhandled action"})

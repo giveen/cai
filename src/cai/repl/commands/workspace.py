@@ -35,6 +35,7 @@ class WorkspaceCommand(Command):
 
         # Add subcommands
         self.add_subcommand("set", "Set the current workspace name", self.handle_set)
+        self.add_subcommand("pages", "Manage VCM pages (list/in/out/invoke)", self.handle_pages)
         self.add_subcommand("get", "Display the current workspace name", self.handle_get)
         self.add_subcommand("ls", "List files in the workspace", self.handle_ls_subcommand)
         self.add_subcommand(
@@ -164,12 +165,25 @@ class WorkspaceCommand(Command):
         return True
 
     def handle_set(self, args: list[str] | None = None) -> bool:
-        """Set the current workspace name"""
-        if not args or len(args) != 1:
-            console.print("[yellow]Usage: /workspace set <workspace_name>[/yellow]")
+        """Set the current workspace name
+
+        Supports optional flags: --force / --force-recon to enable a
+        process-level force override (CAI_FORCE_RECON=true) which will
+        bypass the resume-skip reconnaissance heuristic. Use
+        --clear-force to unset the override.
+        """
+        if not args or len(args) < 1:
+            console.print("[yellow]Usage: /workspace set <workspace_name> [--force|--clear-force][/yellow]")
             return False
 
-        workspace_name = args[0]
+        # Parse flags and workspace name
+        flags = [a for a in (args or []) if a.startswith("--")]
+        pos_args = [a for a in (args or []) if not a.startswith("--")]
+        if len(pos_args) != 1:
+            console.print("[yellow]Usage: /workspace set <workspace_name> [--force|--clear-force][/yellow]")
+            return False
+
+        workspace_name = pos_args[0]
         # Allow alphanumeric, underscores, hyphens
         if not all(c.isalnum() or c in ["_", "-"] for c in workspace_name):
             console.print(
@@ -186,13 +200,30 @@ class WorkspaceCommand(Command):
                 _get_workspace_dir as get_common_workspace_dir,
             )
 
-            # Set the environment variable
+            # Set the environment variable for workspace
             if not set_env_var("CAI_WORKSPACE", workspace_name):
                 console.print("[red]Failed to set workspace environment variable.[/red]")
                 return False
+
+            # Handle force flags via the same config helper so changes are process-wide
+            if "--force" in flags or "--force-recon" in flags:
+                set_env_var("CAI_FORCE_RECON", "true")
+                console.print("[dim]Global force override enabled (CAI_FORCE_RECON=true)[/dim]")
+            if "--clear-force" in flags or "--no-force" in flags:
+                set_env_var("CAI_FORCE_RECON", "false")
+                console.print("[dim]Global force override cleared (CAI_FORCE_RECON=false)[/dim]")
+
         except ImportError:
             # Fallback if import fails
             os.environ["CAI_WORKSPACE"] = workspace_name
+
+            # Handle force flags using os.environ fallback
+            if "--force" in flags or "--force-recon" in flags:
+                os.environ["CAI_FORCE_RECON"] = "true"
+                console.print("[dim]Global force override enabled (CAI_FORCE_RECON=true)[/dim]")
+            if "--clear-force" in flags or "--no-force" in flags:
+                os.environ["CAI_FORCE_RECON"] = "false"
+                console.print("[dim]Global force override cleared (CAI_FORCE_RECON=false)[/dim]")
 
             # Define basic fallbacks for path functions if import failed
             def get_common_workspace_dir():
@@ -303,6 +334,68 @@ class WorkspaceCommand(Command):
             else:
                 # Default to current working directory if nothing else is set
                 return os.getcwd()
+
+    def handle_pages(self, args: list[str] | None = None) -> bool:
+        """Manage Virtual Context Manager pages.
+
+        Usage:
+          /workspace pages list
+          /workspace pages in <name> [--force] [--pin]
+          /workspace pages out <name>
+          /workspace pages export   # write VCM into state.json
+          /workspace pages import   # import VCM from state.json
+        """
+        try:
+            from cai.memory.paging import list_pages, page_in, page_out
+            from cai.session import export_vcm_state, import_vcm_state
+        except Exception:
+            console.print("[yellow]VCM functionality unavailable in this environment.[/yellow]")
+            return False
+
+        if not args:
+            console.print("[cyan]Usage: /workspace pages <list|in|out|export|import>[/cyan]")
+            return False
+
+        cmd = args[0].lower()
+        if cmd in ("list", "ls"):
+            pages = list_pages() or []
+            if not pages:
+                console.print(Panel("No pages registered."))
+                return True
+            lines = []
+            for p in pages:
+                lines.append(f"{p.get('name')}  tokens={p.get('tokens')} in_gpu={p.get('in_gpu')} pinned={p.get('pinned')}")
+            console.print(Panel("\n".join(lines), title="VCM Pages"))
+            return True
+
+        if cmd == "in" and len(args) >= 2:
+            name = args[1]
+            force = any(a in ("--force", "--force-recon") for a in args[2:])
+            pin = "--pin" in args[2:]
+            res = page_in(name, force=force, pin=pin)
+            console.print(Panel(str(res), title=f"Page In: {name}"))
+            return True
+
+        if cmd == "out" and len(args) >= 2:
+            name = args[1]
+            res = page_out(name)
+            console.print(Panel(str(res), title=f"Page Out: {name}"))
+            return True
+
+        if cmd == "export":
+            new_wd = self._get_workspace_dir()
+            res = export_vcm_state(new_wd)
+            console.print(Panel(str(res), title="VCM Export"))
+            return True
+
+        if cmd == "import":
+            new_wd = self._get_workspace_dir()
+            res = import_vcm_state(new_wd)
+            console.print(Panel(str(res), title="VCM Import"))
+            return True
+
+        console.print("[yellow]Unknown pages subcommand. Use list|in|out|export|import[/yellow]")
+        return False
 
     def _list_workspace_contents(self, env_type: str, workspace_dir: str) -> None:
         """List the contents of the workspace.

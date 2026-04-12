@@ -410,11 +410,7 @@ class ModelShowCommand(Command):
             aliases=["/mod-show"],
         )
 
-    def handle(
-        self, args: list[str] | None = None
-    ) -> (
-        bool
-    ):  # pylint: disable=too-many-locals,too-many-branches,too-many-statements,line-too-long # noqa: E501
+    def handle(self, args: list[str] | None = None) -> bool:  # pylint: disable=too-many-locals,too-many-branches,too-many-statements,line-too-long # noqa: E501
         """Handle the model-show command.
 
         Args:

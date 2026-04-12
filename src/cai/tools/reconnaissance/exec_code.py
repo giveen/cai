@@ -1,19 +1,41 @@
-"""
-Tool for executing code via LLM tool calls.
+"""Tool for executing code via LLM tool calls.
+
+This tool ensures Python code runs with the currently active Python
+interpreter (``sys.executable``) so executions occur inside the active
+virtualenv. It also implements a simple error-backoff: repeated identical
+errors (e.g., HTTP 500) increment a counter per-session and on the third
+consecutive occurrence we append a System Advice warning to the agent and
+record the failure into the intelligence journal to avoid immediate
+retries.
 """
 
 import base64
 import os
 import shlex
+import sys
+import re
 import uuid
+from datetime import datetime
+from typing import Any
 
 from cai.sdk.agents import function_tool
+from cai.sdk.agents.run_context import RunContextWrapper
 from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.tools.validation import is_valid_filename  # pylint: disable=import-error
+
+# Local in-process backoff tracker: session_id -> {last_error_sig, count}
+_BACKOFF_STATE: dict[str, dict[str, Any]] = {}
+
+# Persistence helpers (journal) — used to record failed paths
+try:
+    from cai.orchestration import persistence
+except Exception:
+    persistence = None
 
 
 @function_tool
 def execute_code(
+    ctx: RunContextWrapper[Any],
     code: str = "",
     language: str = "python",
     filename: str = "exploit",
@@ -105,7 +127,9 @@ def execute_code(
     # Build execution commands depending on language
     # We always execute from inside tmp_dir so compiled artifacts do not escape
     if language in ["python", "py"]:
-        exec_cmd = f"cd {shlex.quote(tmp_dir)} && python3 {shlex.quote(full_filename)}"
+        # Use the currently active Python interpreter (sys.executable)
+        py_exec = shlex.quote(sys.executable or "python3")
+        exec_cmd = f"cd {shlex.quote(tmp_dir)} && {py_exec} {shlex.quote(full_filename)}"
     elif language in ["php"]:
         exec_cmd = f"cd {shlex.quote(tmp_dir)} && php {shlex.quote(full_filename)}"
     elif language in ["bash", "sh", "shell"]:
@@ -186,10 +210,98 @@ def execute_code(
         "timeout": timeout,
     }
 
+    # Session id used for journaling/backoff scoping
+    session_id = os.getenv("CAI_SESSION_ID") or os.getenv("SESSION_ID") or "default"
+
+    # Prevent immediate retries: if the code itself targets a URL that is
+    # already recorded as a failed path in the session's journal, skip execution.
+    try:
+        if persistence is not None:
+            url_in_code = re.search(r"https?://([^/\s:]+)(?::\d+)?(/[^\s\'\"]*)", code or "")
+            if url_in_code:
+                tgt_host = url_in_code.group(1)
+                tgt_path = url_in_code.group(2) or "/"
+                journal = persistence._read_journal()
+                for e in journal.get("entries", [])[::-1]:
+                    if e.get("session_id") != session_id:
+                        continue
+                    fact = e.get("fact", {}) or {}
+                    if isinstance(fact, dict) and fact.get("host") == tgt_host and fact.get("failed_path") == tgt_path:
+                        return (
+                            f"Skipping execution: Previously recorded failure for {tgt_host}{tgt_path} in this session."
+                        )
+    except Exception:
+        # Journaling lookups are best-effort; on error fall through and execute
+        pass
+
     try:
         output = run_command(
             exec_cmd, timeout=timeout, stream=True, tool_name="execute_code", args=tool_args
         )
+        # After execution, inspect output for repeated errors (simple heuristic)
+        try:
+            out_text = output if isinstance(output, str) else str(output)
+            session_id = os.getenv("CAI_SESSION_ID") or os.getenv("SESSION_ID") or "default"
+
+            # Detect an HTTP 500 / Internal Server Error pattern
+            is_500 = bool(re.search(r"\b500\b", out_text)) or ("internal server error" in out_text.lower())
+            if is_500:
+                # Create a concise error signature (first 120 chars around the first 500 mention)
+                m = re.search(r"(.{0,60}500.{0,60})", out_text)
+                sig = m.group(0) if m else "HTTP 500"
+
+                prev = _BACKOFF_STATE.get(session_id)
+                if prev and prev.get("last_error_sig") == sig:
+                    prev["count"] = prev.get("count", 1) + 1
+                else:
+                    _BACKOFF_STATE[session_id] = {"last_error_sig": sig, "count": 1}
+
+                count = _BACKOFF_STATE[session_id]["count"]
+
+                # On three consecutive identical failures, append System Advice and journal the failure
+                if count >= 3:
+                    # Try to extract host and path from any URL in the output
+                    url_match = re.search(r"https?://([^/\s:]+)(?::\d+)?(/[^\s\n\r]*)?", out_text)
+                    host = url_match.group(1) if url_match else "<unknown>"
+                    path = url_match.group(2) if url_match and url_match.group(2) else "/"
+                    system_advice = (
+                        f"System Advice: TARGET ERROR: Host {host} is repeatedly returning 500 Internal Server Error. "
+                        "Immediate strategy shift or target reset required."
+                    )
+                    # Append advice to returned output so the agent receives the warning
+                    output = (out_text + "\n\n" + system_advice)
+
+                    # Record a compact failure fact in the intelligence journal
+                    try:
+                        if persistence is not None:
+                            journal = persistence._read_journal()
+                            entry_id = uuid.uuid4().hex
+                            entry = {
+                                "id": entry_id,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "category": "failure",
+                                "source": "execute_code",
+                                "session_id": session_id,
+                                "fact": {
+                                    "failed_path": path,
+                                    "host": host,
+                                    "error": "HTTP 500",
+                                },
+                            }
+                            journal.setdefault("entries", []).append(entry)
+                            journal.setdefault("meta", {})["updated_at"] = datetime.utcnow().isoformat() + "Z"
+                            persistence._write_journal_atomic(journal)
+                            try:
+                                persistence._render_readme(journal)
+                            except Exception:
+                                pass
+                    except Exception:
+                        # Never raise from journaling — journaling is best-effort
+                        pass
+
+        except Exception:
+            # Parsing/backoff should not affect execution return path
+            pass
     finally:
         # Clean up temporary directory unless persistence requested
         if not persist:

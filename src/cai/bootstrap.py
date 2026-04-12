@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 try:
     from dotenv import load_dotenv
@@ -23,15 +24,49 @@ from cai.repl.ui.logging_filters import install_comprehensive_error_filter  # ty
 from cai.util.warnings import install_warning_handler  # type: ignore
 
 
+def _load_dotenv_fallback(path: str = ".env") -> None:
+    """Minimal .env parser used when python-dotenv is unavailable.
+
+    Supports `KEY=VALUE` lines, optional single/double quotes, and comments.
+    """
+    env_path = Path(path)
+    if not env_path.exists() or not env_path.is_file():
+        return
+
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key:
+                continue
+            if value and ((value[0] == value[-1]) and value[0] in {'"', "'"}):
+                value = value[1:-1]
+            os.environ[key] = value
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "Failed to load .env via fallback parser", exc_info=True
+        )
+
+
 def initialize_env() -> None:
     """Initialize environment: load .env, configure warnings and logging filters."""
     # Load .env early if python-dotenv is available
+    loaded_dotenv = False
     if load_dotenv is not None:
         try:
-            load_dotenv(override=True)
+            # Use an explicit relative path so container/service launches that
+            # import from site-packages still load the CWD .env file.
+            loaded_dotenv = bool(load_dotenv(dotenv_path=".env", override=True))
         except Exception:
             # Best-effort: don't fail startup if .env can't be loaded
             pass
+
+    if not loaded_dotenv:
+        _load_dotenv_fallback(".env")
     # Propagate LOCAL_* environment variables to OPENAI_* when not explicitly set.
     # This makes a developer-friendly default so a local LiteLLM/OpenAI-compatible
     # proxy (configured via LOCAL_API_BASE / LOCAL_API_KEY) is used without

@@ -199,6 +199,22 @@ CAI TUI
 
 For technical details, see the [Architecture Overview](../cai_architecture.md).
 
+### Developer Notes: Modular TUI Architecture
+
+The TUI has been refactored into a lightweight wrapper and modular components to make maintenance and testing easier:
+
+- `src/cai/tui/app.py` — small compatibility wrapper that re-exports the public API for back-compat (`CAIApp`, `run_tui`, etc.).
+- `src/cai/tui/app_impl.py` — the full implementation/engine used by the wrapper (intended for incremental refactoring).
+- `src/cai/tui/components/` — self-contained UI widgets (e.g., `terminal.py`, `header.py`, `sidebar.py`) that should avoid importing the large `app_impl` at module import time.
+- `src/cai/tui/controller.py` — `TuiController` owns long-running orchestration and component wiring; prefer placing background/async logic here rather than in widgets.
+
+Guidance:
+
+- Import minimal helpers from `cai.tui.components.header` (banner/formatting) rather than `app_impl` to avoid circular imports.
+- Keep widget modules self-contained and use `query`/`query_one` to interact with other widgets at runtime.
+- Continue using `from cai.tui.app import CAIApp` in tests and scripts for backwards compatibility; the wrapper preserves the public API.
+
+
 ## Community and Support
 
 - **Documentation**: [https://docs.aliasrobotics.com](https://docs.aliasrobotics.com)

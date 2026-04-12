@@ -826,7 +826,9 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 else:
                     # 2) Fallback: extract body between top metadata and "## Metadata" (or file end)
                     meta_marker = "## Metadata"
-                    before_meta = content.split(meta_marker)[0] if meta_marker in content else content
+                    before_meta = (
+                        content.split(meta_marker)[0] if meta_marker in content else content
+                    )
 
                     # Remove common header/meta lines and collect the remaining body
                     body_lines = []
@@ -842,7 +844,12 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                             except Exception:
                                 pass
                         # Skip obvious header/meta lines
-                        if line.startswith("#") or line.startswith("ID:") or line.startswith("Generated:") or line.startswith("Model:"):
+                        if (
+                            line.startswith("#")
+                            or line.startswith("ID:")
+                            or line.startswith("Generated:")
+                            or line.startswith("Model:")
+                        ):
                             continue
                         body_lines.append(line)
 
@@ -853,7 +860,12 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                     if not summary:
                         alt_lines = []
                         for line in content.split("\n"):
-                            if line.startswith("#") or line.startswith("ID:") or line.startswith("Generated:") or line.startswith("Model:"):
+                            if (
+                                line.startswith("#")
+                                or line.startswith("ID:")
+                                or line.startswith("Generated:")
+                                or line.startswith("Model:")
+                            ):
                                 continue
                             alt_lines.append(line)
                         summary = "\n".join(alt_lines).strip()
@@ -862,7 +874,9 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                     summaries.append(f"### Memory: {identifier}\n{summary.strip()}")
                     console.print(f"[green]✓ Loaded memory '{identifier}'[/green]")
                 else:
-                    console.print(f"[yellow]Warning: No summary found in memory '{identifier}'[/yellow]")
+                    console.print(
+                        f"[yellow]Warning: No summary found in memory '{identifier}'[/yellow]"
+                    )
 
             except Exception as e:
                 console.print(f"[red]Error loading memory '{identifier}': {e}[/red]")
@@ -1460,7 +1474,7 @@ This session is being continued from a previous conversation that ran out of con
 
                 # 3) Raw model responses: try to pull any text fields from the raw outputs
                 raw_texts: list[str] = []
-                for mr in (result.raw_responses or []):
+                for mr in result.raw_responses or []:
                     for out in getattr(mr, "output", []) or []:
                         try:
                             t = ItemHelpers.extract_last_text(out)

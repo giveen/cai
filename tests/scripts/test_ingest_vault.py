@@ -4,6 +4,7 @@ These tests avoid heavy network/ML downloads by patching the external
 dependencies (chromadb, git) and replacing the embedding function with a
 lightweight dummy.
 """
+
 from __future__ import annotations
 
 import importlib.util
