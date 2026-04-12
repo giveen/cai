@@ -399,6 +399,34 @@ Footer > .footer--description {
     color: #00aa00;
 }
 
+/* Web-served session tweaks: subtle glow and larger hit targets for mouse/hover */
+.CAIApp.-web-session, CAIApp.-web-session, Screen.-web-session {
+    /* TCSS doesn't support CSS linear-gradient() syntax; keep a subtle tint. */
+    background: #001200;
+}
+
+/* Keep web-session styles TCSS-compatible; avoid unsupported CSS properties. */
+.memory-page-btn {
+}
+.memory-page-btn:hover {
+}
+
+/* Web-session specific adjustments (applied when CAIApp has -web-session class) */
+CAIApp.-web-session CaiHeader {
+    background: #001400;
+}
+
+CAIApp.-web-session #agents-scroll,
+CAIApp.-web-session #queue-list,
+CAIApp.-web-session #output-log {
+    scrollbar-color: #006600;
+}
+
+/* Make the header slightly more compact in web sessions */
+CAIApp.-web-session #header-left-text {
+    padding: 0 2;
+}
+
 /* Agents grid HUD styles */
 #agents-body {
     height: 1fr;
@@ -1300,4 +1328,35 @@ HUDWidget .hud-status {
     color: #00cc00;
     background: #000800;
     margin-bottom: 1;
+}
+
+/* ---- Windows RDP stream panel ---- */
+WindowsStream {
+    height: 0;
+    display: none;
+    background: #000010;
+    border: solid #0044cc;
+    layout: vertical;
+}
+
+WindowsStream.-visible {
+    display: block;
+    height: 20;
+}
+
+#win-stream-header {
+    height: 1;
+    background: #001040;
+    color: #4488ff;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#win-stream-log {
+    height: 1fr;
+    background: #000010;
+    color: #5599ff;
+    scrollbar-background: #000020;
+    scrollbar-color: #0044cc;
+    scrollbar-size: 1 1;
 }

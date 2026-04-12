@@ -5,6 +5,6 @@ Activated via:
     cai --tui
 """
 
-from .app import run_tui
+from .app import run_tui, run_tui_web
 
-__all__ = ["run_tui"]
+__all__ = ["run_tui", "run_tui_web"]

@@ -304,6 +304,67 @@ def init_default_partition(total_tokens: int = 393216) -> None:
     register_page("notes", "", tags=["notes"], preferred_tokens=notes)
 
 
+# ── VPN / network-log protection ─────────────────────────────────────────────
+
+# Any page whose content matches one of these terms will be treated as
+# high-salience and automatically pinned so the LRU eviction policy never
+# compacts critical network pivoting data.
+VPN_PROTECTION_PATTERNS: List[str] = [
+    "tun0",
+    "VPN",
+    "AUTHENTICATION SUCCESS",
+    "Initialization Sequence Completed",
+    "AUTH_FAILED",
+    "CONNECTED",
+]
+
+
+def register_vpn_log_page(name: str, content: str) -> Page:
+    """Register (or update) a VPN log page in the VCM, always pinned.
+
+    Pinned pages are never subject to LRU eviction, ensuring that tunnel
+    logs and authentication events survive context-window compaction while
+    the agent is actively pivoting through the target network.
+
+    Args:
+        name:    The page name (e.g. ``"vpn_logs"``).
+        content: The current log text to store.
+
+    Returns:
+        The registered :class:`Page` object.
+    """
+    pg = VCM.add_page(name, content, tags=["vpn", "network", "critical"], pinned=True)
+    # Force page into active context so it's always visible to the agent
+    try:
+        VCM.page_in(name, force=True, pin=True)
+    except Exception:
+        pass
+    logger.info("VCM: pinned VPN log page '%s' (%d tokens)", name, pg.token_count())
+    return pg
+
+
+def protect_vpn_logs() -> List[str]:
+    """Scan all current VCM pages and pin those containing VPN protection patterns.
+
+    Call this after bulk-loading pages (e.g. from a restored session) to
+    ensure any pre-existing VPN/tun0 content is not accidentally evicted.
+
+    Returns:
+        List of page names that were newly pinned.
+    """
+    newly_pinned: List[str] = []
+    with VCM._lock:
+        for name, pg in VCM._pages.items():
+            if pg.pinned:
+                continue
+            content_lower = (pg.content or "").lower()
+            if any(pat.lower() in content_lower for pat in VPN_PROTECTION_PATTERNS):
+                pg.pinned = True
+                newly_pinned.append(name)
+                logger.info("VCM: auto-pinned page '%s' (matched VPN protection pattern)", name)
+    return newly_pinned
+
+
 __all__ = [
     "VCM",
     "register_page",
@@ -313,6 +374,9 @@ __all__ = [
     "list_pages",
     "get_active_context",
     "init_default_partition",
+    "register_vpn_log_page",
+    "protect_vpn_logs",
+    "VPN_PROTECTION_PATTERNS",
     "VirtualContextManager",
     "Page",
 ]

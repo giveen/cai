@@ -1201,7 +1201,29 @@ def visualize_agent_graph(start_agent: Any) -> None:
 
 # -------------------- Small utilities --------------------
 def fix_litellm_transcription_annotations() -> bool:
-    return False
+    """Best-effort compatibility patch for LiteLLM transcription response types.
+
+    Older/newer LiteLLM versions may expose different response classes, and some
+    builds can miss `__annotations__` on a class that downstream code expects to
+    introspect. This helper should never break startup: if LiteLLM is absent or
+    no patch target exists, we treat it as a no-op success.
+    """
+
+    try:
+        # Lazy import so CLI startup still works when LiteLLM isn't installed.
+        from litellm.types.utils import TranscriptionResponse  # type: ignore
+    except Exception:
+        return True
+
+    try:
+        annotations = getattr(TranscriptionResponse, "__annotations__", None)
+        if annotations is None:
+            setattr(TranscriptionResponse, "__annotations__", {})
+        elif not isinstance(annotations, dict):
+            setattr(TranscriptionResponse, "__annotations__", dict(annotations))
+        return True
+    except Exception:
+        return False
 
 
 def setup_ctf():

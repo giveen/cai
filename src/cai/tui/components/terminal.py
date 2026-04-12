@@ -77,6 +77,8 @@ class TerminalPanel(Widget):
         self._workers: list[Any] = []
         self._prompt_history: list[str] = []
         self._history_index: int | None = None
+        self._last_input_text: str = ""
+        self._suppress_next_enter_submit: bool = False
 
     def _get_input_widget(self):
         try:
@@ -93,6 +95,7 @@ class TerminalPanel(Widget):
                 inp.load_text(text)
             else:
                 cast(Any, inp).value = text
+            self._last_input_text = str(text or "")
         except Exception:
             pass
 
@@ -484,6 +487,8 @@ class TerminalPanel(Widget):
         if (event.text_area.id or "") != f"term-input-{self._term_id}":
             return
         text = str(getattr(event.text_area, "text", "") or "")
+        prev_text = self._last_input_text
+        self._last_input_text = text
 
         # ── Enter-key detection ───────────────────────────────────────────────
         # In Textual 8+, TextArea._on_key intercepts ALL printable characters
@@ -494,21 +499,20 @@ class TerminalPanel(Widget):
         # We detect the resulting document state: text ends with exactly one '\n'
         # and has NO embedded '\n' (was single-line before the keypress) → that
         # means a plain Enter was just pressed while in single-line mode → submit.
-        if (
-            not self._busy
-            and text.endswith("\n")
-            and "\n" not in text[:-1]  # no embedded newline → was single-line
-        ):
-            if text[:-1].strip():
-                # Non-empty content → submit via the normal path
-                # (_submit_from_input_widget strips the trailing \n via .strip())
+        if not self._busy and text.endswith("\n") and text[:-1] == prev_text:
+            if self._suppress_next_enter_submit:
+                self._suppress_next_enter_submit = False
+            elif prev_text.strip():
+                # Enter appended a trailing newline to existing text. Submit
+                # regardless of embedded newlines so paste+Enter works.
                 await self._submit_from_input_widget()
+                return
             else:
                 # Empty Enter press → discard the newline, keep input blank
                 self._set_input_text("")
                 self._resize_input_for_text("")
                 self._update_input_meta("")
-            return
+                return
 
         # Normal change: resize the input to fit the content and update metadata
         self._resize_input_for_text(text)
@@ -552,6 +556,12 @@ class TerminalPanel(Widget):
             event.prevent_default()
             event.stop()
             await self._submit_from_input_widget()
+            return
+
+        if key == "shift+enter":
+            # If this event bubbles in the current Textual build, preserve a
+            # single newline insertion rather than treating it as submit.
+            self._suppress_next_enter_submit = True
             return
 
         if key == "enter":

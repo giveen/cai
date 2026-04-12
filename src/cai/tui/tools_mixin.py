@@ -323,10 +323,41 @@ class ToolsMixin:
             preview.update("\n".join(lines))
 
     def _log_to_active_terminal(self, line: str, style: str = "#00aa00") -> None:
+        # Ensure thread-safe dispatch: calls may come from background workers
+        try:
+            import threading
+            if threading.current_thread() is not threading.main_thread():
+                try:
+                    # Schedule onto main thread and return
+                    self.call_from_thread(self._log_to_active_terminal, line, style)
+                    return
+                except Exception:
+                    # Fall through and attempt best-effort write below
+                    pass
+        except Exception:
+            pass
+
         try:
             panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
             log = panel.query_one(f"#term-log-{panel._term_id}", RichLog)
             log.write(RichText(line, style=style))
+        except Exception:
+            # If writing to the active RichLog fails, continue to write to raw file
+            pass
+
+        # Also persist raw log lines to disk for session capture (non-blocking is fine)
+        try:
+            import os
+            p = os.path.join(os.getcwd(), "logs")
+            os.makedirs(p, exist_ok=True)
+            raw_path = os.path.join(p, "session_raw.log")
+            try:
+                with open(raw_path, "a", encoding="utf-8") as rf:
+                    # Strip simple markup sequences for readability in raw log
+                    s = str(line)
+                    rf.write(s + "\n")
+            except Exception:
+                pass
         except Exception:
             pass
 

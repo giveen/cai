@@ -17,6 +17,31 @@ def run_tui(agent: Any | None = None, initial_prompt: str | None = None) -> None
     return _impl.run_tui(agent=agent, initial_prompt=initial_prompt)
 
 
+def run_tui_web(
+    agent: Any | None = None,
+    initial_prompt: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    detach_logging: bool = False,
+):
+    """Run the TUI served over HTTP using textual-web (best-effort).
+
+    This attempts to use the `textual-web` package if available. If not
+    installed, a helpful message is printed and the call returns False.
+    """
+    try:
+        return _impl.run_tui_web(
+            agent=agent,
+            initial_prompt=initial_prompt,
+            host=host,
+            port=port,
+            detach_logging=detach_logging,
+        )
+    except Exception:
+        # Bubble up minimal fallback information to the caller.
+        raise
+
+
 CONFIG_FILE = _impl.CONFIG_FILE
 _pretty_name = _impl._pretty_name
 _BANNER_LINES = _impl._BANNER_LINES

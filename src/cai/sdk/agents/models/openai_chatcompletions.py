@@ -411,6 +411,73 @@ def _check_reasoning_compatibility(messages):
     return True
 
 
+def _assistant_message_has_text_content(msg: dict[str, Any]) -> bool:
+    """Return True when an assistant message includes non-empty text content."""
+    try:
+        if not isinstance(msg, dict):
+            return False
+        content = msg.get("content")
+        if isinstance(content, str):
+            return bool(content.strip())
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, str) and block.strip():
+                    return True
+                if isinstance(block, dict):
+                    btype = str(block.get("type", "")).lower()
+                    if btype in {"text", "output_text"}:
+                        text_val = block.get("text")
+                        if text_val is None:
+                            text_val = block.get("content")
+                        if isinstance(text_val, str) and text_val.strip():
+                            return True
+        return False
+    except Exception:
+        return False
+
+
+def _strip_trailing_assistant_prefill(
+    messages: Any,
+    *,
+    aggressive: bool = False,
+) -> Any:
+    """Strip trailing assistant prefill messages from a message list.
+
+    Normal mode removes only tail assistant messages that look like prefill
+    text and have no tool calls. Aggressive mode (used only on explicit
+    provider prefill/thinking errors) also removes tail assistant text even
+    when tool_calls exist.
+    """
+    if not isinstance(messages, list) or not messages:
+        return messages
+
+    pruned = list(messages)
+    removed_any = False
+    while pruned:
+        last = pruned[-1]
+        if not isinstance(last, dict) or last.get("role") != "assistant":
+            break
+
+        has_tool_calls = bool(last.get("tool_calls"))
+        has_text = _assistant_message_has_text_content(last)
+
+        should_remove = False
+        if has_text and (aggressive or not has_tool_calls):
+            should_remove = True
+        elif not has_tool_calls:
+            content = last.get("content")
+            if content in (None, "", []):
+                should_remove = True
+
+        if not should_remove:
+            break
+
+        pruned.pop()
+        removed_any = True
+
+    return pruned if removed_any else messages
+
+
 def count_tokens_with_tiktoken(text_or_messages):
     """
     Count tokens consistently using tiktoken library.
@@ -3465,21 +3532,10 @@ class OpenAIChatCompletionsModel(Model):
                 kwargs.pop("reasoning_effort", None)
                 kwargs.pop("thinking", None)
                 kwargs.pop("enable_thinking", None)
-
-                msgs = kwargs.get("messages")
-                if isinstance(msgs, list) and msgs:
-                    last = msgs[-1]
-                    try:
-                        last_role = last.get("role") if isinstance(last, dict) else None
-                    except Exception:
-                        last_role = None
-                    # Strip only the trailing prefill: an assistant message with no tool_calls
-                    if (
-                        last_role == "assistant"
-                        and isinstance(last, dict)
-                        and not last.get("tool_calls")
-                    ):
-                        kwargs["messages"] = msgs[:-1]
+                kwargs["messages"] = _strip_trailing_assistant_prefill(
+                    kwargs.get("messages"),
+                    aggressive=False,
+                )
         except Exception:
             # Best-effort only — do not fail the call if sanitization errors
             pass
@@ -3701,24 +3757,10 @@ class OpenAIChatCompletionsModel(Model):
                     retry_kwargs.pop("reasoning_effort", None)
                     retry_kwargs.pop("enable_thinking", None)
                     retry_kwargs.pop("thinking", None)
-
-                    try:
-                        msgs = retry_kwargs.get("messages")
-                        if isinstance(msgs, list) and msgs:
-                            last = msgs[-1]
-                            try:
-                                last_role = last.get("role") if isinstance(last, dict) else None
-                            except Exception:
-                                last_role = None
-                            # Strip only the trailing prefill: an assistant message with no tool_calls
-                            if (
-                                last_role == "assistant"
-                                and isinstance(last, dict)
-                                and not last.get("tool_calls")
-                            ):
-                                retry_kwargs["messages"] = msgs[:-1]
-                    except Exception:
-                        pass
+                    retry_kwargs["messages"] = _strip_trailing_assistant_prefill(
+                        retry_kwargs.get("messages"),
+                        aggressive=True,
+                    )
 
                     try:
                         if stream:
@@ -3761,22 +3803,10 @@ class OpenAIChatCompletionsModel(Model):
                     retry_kwargs.pop("reasoning_effort", None)
                     retry_kwargs.pop("enable_thinking", None)
                     retry_kwargs.pop("thinking", None)
-                    try:
-                        msgs = retry_kwargs.get("messages")
-                        if isinstance(msgs, list) and msgs:
-                            last = msgs[-1]
-                            try:
-                                last_role = last.get("role") if isinstance(last, dict) else None
-                            except Exception:
-                                last_role = None
-                            if (
-                                last_role == "assistant"
-                                and isinstance(last, dict)
-                                and not last.get("tool_calls")
-                            ):
-                                retry_kwargs["messages"] = msgs[:-1]
-                    except Exception:
-                        pass
+                    retry_kwargs["messages"] = _strip_trailing_assistant_prefill(
+                        retry_kwargs.get("messages"),
+                        aggressive=True,
+                    )
 
                     try:
                         if stream:
@@ -4253,22 +4283,10 @@ class OpenAIChatCompletionsModel(Model):
                 retry_kwargs.pop("reasoning_effort", None)
                 retry_kwargs.pop("enable_thinking", None)
                 retry_kwargs.pop("thinking", None)
-                # Strip the trailing prefill: only the LAST message when it is an
-                # assistant message without tool_calls.  Stripping ALL such messages
-                # is too aggressive and corrupts multi-turn conversation history.
-                try:
-                    msgs = retry_kwargs.get("messages")
-                    if isinstance(msgs, list) and msgs:
-                        last = msgs[-1]
-                        last_role = last.get("role") if isinstance(last, dict) else None
-                        if (
-                            last_role == "assistant"
-                            and isinstance(last, dict)
-                            and not last.get("tool_calls")
-                        ):
-                            retry_kwargs["messages"] = msgs[:-1]
-                except Exception:
-                    pass
+                retry_kwargs["messages"] = _strip_trailing_assistant_prefill(
+                    retry_kwargs.get("messages"),
+                    aggressive=True,
+                )
                 try:
                     if stream:
                         stream_obj = await self._client.chat.completions.create(**retry_kwargs)

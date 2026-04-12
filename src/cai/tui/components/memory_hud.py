@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import time
 import logging
+import asyncio
+import threading
 from typing import Any, List
 from textual.containers import Horizontal
 
@@ -68,6 +70,8 @@ class MemoryHUD(Widget):
         self._prune_armed_until: float = 0.0
         # Map button id -> page name for click handling
         self._page_button_map: dict[str, str] = {}
+        # Guard to prevent re-entrant tick runs
+        self._tick_running: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static("MEMORY", id="memory-hud-label", classes="mh-label")
@@ -84,6 +88,10 @@ class MemoryHUD(Widget):
             pass
 
     def _tick(self) -> None:
+        # Prevent re-entrant runs which can cause widget-ghosting
+        if getattr(self, "_tick_running", False):
+            return
+        self._tick_running = True
         try:
             pages = list_pages() or []
             total_pages = len(pages)
@@ -108,7 +116,7 @@ class MemoryHUD(Widget):
             # Rebuild mapping and children each tick (keeps UI simple)
             self._page_button_map.clear()
             if container is not None:
-                # Remove existing children
+                # Remove existing children (best-effort)
                 try:
                     for child in list(container.children):
                         try:
@@ -190,12 +198,14 @@ class MemoryHUD(Widget):
         except Exception:
             # Swallow to keep UI stable
             logger.exception("MemoryHUD tick failed")
+        finally:
+            self._tick_running = False
 
     def on_button_pressed(self, event: Button.Pressed) -> None:  # type: ignore[override]
         bid = event.button.id or ""
+
+        # Manual prune button: two-step confirmation
         if bid == "memory-prune":
-            # Two-step confirmation: first press arms prune, second press within
-            # a short window executes it. This avoids accidental mass-evictions.
             if not self._prune_armed:
                 self._prune_armed = True
                 self._prune_armed_until = time.time() + 3.0
@@ -204,68 +214,47 @@ class MemoryHUD(Widget):
                 except Exception:
                     pass
                 return
-            # Handle page button presses
-            if bid.startswith("memory-page-"):
-                try:
-                    name = self._page_button_map.get(bid)
-                    if not name:
-                        return
-                    # Find page dict
-                    pages = list_pages() or []
-                    page = next((p for p in pages if p.get("name") == name), None)
-                    if not page:
-                        try:
-                            self.query_one("#memory-hud-status", Static).update(f"Page not found: {name}")
-                        except Exception:
-                            pass
-                        return
-
-                    # Toggle: if in_gpu -> page_out, else -> page_in
-                    try:
-                        if page.get("in_gpu"):
-                            res = page_out(name)
-                        else:
-                            res = page_in(name)
-                            # If failed due to space, attempt a forced page-in
-                            if isinstance(res, dict) and res.get("status") == "error":
-                                try:
-                                    res2 = page_in(name, force=True)
-                                    res = res2 or res
-                                except Exception:
-                                    pass
-                    except Exception as exc:
-                        try:
-                            self.query_one("#memory-hud-status", Static).update(f"Error paging {name}: {exc}")
-                        except Exception:
-                            pass
-                        try:
-                            # Refresh view
-                            self._tick()
-                        except Exception:
-                            pass
-                        return
-
-                    # Display result summary
-                    try:
-                        if isinstance(res, dict):
-                            st = res.get("status") or str(res)
-                        else:
-                            st = str(res)
-                        self.query_one("#memory-hud-status", Static).update(f"{name}: {st}")
-                    except Exception:
-                        pass
-                    try:
-                        self._tick()
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-            # Armed — perform prune
+            # Confirmed: perform prune asynchronously to avoid blocking the UI
             self._prune_armed = False
             self._prune_armed_until = 0.0
-            self._manual_prune()
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._manual_prune_async())
+            except Exception:
+                # Fallback to thread
+                try:
+                    t = threading.Thread(target=self._manual_prune)
+                    t.daemon = True
+                    t.start()
+                except Exception:
+                    pass
+            return
+
+        # Per-page button toggles (page_in / page_out)
+        if bid.startswith("memory-page-"):
+            try:
+                name = self._page_button_map.get(bid)
+                if not name:
+                    return
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._page_toggle_async(name, bid))
+                except Exception:
+                    # Fallback: run in thread
+                    try:
+                        t = threading.Thread(target=self._page_toggle_sync, args=(name, bid))
+                        t.daemon = True
+                        t.start()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     def _manual_prune(self, target_pct: float = 65.0) -> None:
+        # Synchronous convenience wrapper for background threads
+        return self._manual_prune_sync(target_pct)
+
+    def _manual_prune_sync(self, target_pct: float = 65.0) -> None:
         try:
             pages = list_pages() or []
             try:
@@ -290,7 +279,7 @@ class MemoryHUD(Widget):
                     continue
                 try:
                     res = page_out(name)
-                    if res.get("status") in ("paged_out", "already_paged_out"):
+                    if isinstance(res, dict) and res.get("status") in ("paged_out", "already_paged_out"):
                         evicted.append(name)
                         # Recompute active tokens
                         pages = list_pages() or []
@@ -308,3 +297,58 @@ class MemoryHUD(Widget):
                 pass
         except Exception:
             logger.exception("MemoryHUD manual_prune failed")
+
+    async def _manual_prune_async(self, target_pct: float = 65.0) -> None:
+        # Run the blocking prune logic in a thread then refresh the UI on completion
+        try:
+            await asyncio.to_thread(self._manual_prune_sync, target_pct)
+        except Exception:
+            logger.exception("async manual prune failed")
+        try:
+            # schedule a prompt UI refresh on the main loop
+            self.set_timer(0.1, self._tick)
+        except Exception:
+            pass
+
+    def _page_toggle_sync(self, name: str, bid: str | None = None) -> None:
+        # Blocking version used in thread fallback
+        try:
+            pages = list_pages() or []
+            page = next((p for p in pages if p.get("name") == name), None)
+            if not page:
+                try:
+                    self.query_one("#memory-hud-status", Static).update(f"Page not found: {name}")
+                except Exception:
+                    pass
+                return
+            if page.get("in_gpu"):
+                res = page_out(name)
+            else:
+                res = page_in(name)
+                if isinstance(res, dict) and res.get("status") == "error":
+                    try:
+                        res2 = page_in(name, force=True)
+                        res = res2 or res
+                    except Exception:
+                        pass
+            try:
+                st = res.get("status") if isinstance(res, dict) else str(res)
+            except Exception:
+                st = str(res)
+            try:
+                self.query_one("#memory-hud-status", Static).update(f"{name}: {st}")
+            except Exception:
+                pass
+            try:
+                self.set_timer(0.1, self._tick)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    async def _page_toggle_async(self, name: str, bid: str | None = None) -> None:
+        try:
+            # Execute blocking page operations in a thread
+            await asyncio.to_thread(self._page_toggle_sync, name, bid)
+        except Exception:
+            logger.exception("page toggle async failed for %s", name)

@@ -603,25 +603,72 @@ def main():
         pass
 
     # Check for command-line arguments to use as initial prompt.
-    # --tui flag triggers the Textual TUI and is consumed here.
-    initial_prompt = None
-    use_tui = "--tui" in sys.argv or os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false")
-    remaining_args = [a for a in sys.argv[1:] if a != "--tui"]
-    if remaining_args:
-        initial_prompt = remaining_args[0]
+    # --tui flag triggers the Textual TUI and --web triggers textual-web serving.
+    args = sys.argv[1:]
+    use_tui = "--tui" in args or os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false")
+    use_web = "--web" in args or os.getenv("CAI_WEB", "false").lower() not in ("", "0", "false")
+    remaining_args = [a for a in args if a not in ("--tui", "--web")]
+    initial_prompt = remaining_args[0] if remaining_args else None
 
     # Detect TUI activation via env or CLI flag (--tui)
-    tui_flag = (
-        os.getenv("CAI_TUI", "false").lower() not in ("", "0", "false") or "--tui" in sys.argv
-    )
+    tui_flag = use_tui
 
     # Get agent type from environment variables or use default
     agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
 
+    # If web requested, try to initialize and run the textual-web server.
+    agent = None
+    if use_web:
+        try:
+            agent = get_agent_by_name(agent_type, agent_id="P1")
+            # Disable the CLI rich-streaming panel when running in web mode
+            if hasattr(agent, "model") and hasattr(agent.model, "disable_rich_streaming"):
+                agent.model.disable_rich_streaming = True
+            try:
+                from cai.tui import run_tui_web
+
+                host = os.getenv("TEXTUAL_WEB_HOST", "0.0.0.0")
+                port = int(os.getenv("TEXTUAL_WEB_PORT", "8000"))
+                detach_logging = os.getenv("CAI_WEB_DETACH", "true").lower() not in ("", "0", "false")
+                restart = os.getenv("CAI_WEB_RESTART", "false").lower() not in ("", "0", "false")
+
+                while True:
+                    try:
+                        ran = run_tui_web(
+                            agent=agent,
+                            initial_prompt=initial_prompt,
+                            host=host,
+                            port=port,
+                            detach_logging=detach_logging,
+                        )
+                        # If run_tui_web returned False it likely failed to start.
+                        if ran is False and not restart:
+                            agent = None
+                            break
+                        # If server exited normally, respect restart flag.
+                        if not restart:
+                            break
+                        time.sleep(2)
+                        continue
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        print(f"Web server crashed: {e}; restarting in 2s")
+                        if not restart:
+                            break
+                        time.sleep(2)
+                        continue
+                return
+            except Exception as e:
+                print(f"Failed to start web TUI ({e}), falling back to CLI.")
+                agent = None
+        except Exception as e:
+            print(f"Failed to initialize agent for web TUI ({e}), falling back to CLI.")
+            agent = None
+
     # If TUI requested, try to initialize and run it (Textual if available,
     # otherwise a Rich fallback). Create the agent only if needed so the
     # TUI can reuse the agent instance for display or interaction.
-    agent = None
     if tui_flag:
         try:
             agent = get_agent_by_name(agent_type, agent_id="P1")

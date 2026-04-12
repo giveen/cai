@@ -196,6 +196,9 @@ class CaiHeader(Widget):
         self._agent_name = agent_name
         self._model = model
         self._ctx = ctx
+        # VPN indicator state: "off" | "connecting" | "<ip>"
+        self._vpn_status: str = "off"
+        self._vpn_ip: str = ""
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="header-left"):
@@ -213,12 +216,37 @@ class CaiHeader(Widget):
                 yield Button("Stats", id="top-nav-metrics", classes="top-nav-btn")
                 yield Button("Menu", id="header-menu")
         yield Static(
+            self._build_header_right(),
+            id="header-right",
+        )
+
+    def _build_header_right(self) -> str:
+        """Build the markup for the right-hand status segment."""
+        vpn_seg = self._vpn_segment()
+        return (
             f"[#00cc00]{self._agent_name}[/#00cc00][#004400] ▼ [/#004400]"
             f"[#00cc00]{self._model}[/#00cc00][#004400] ▼ [/#004400]"
             f"[#006600]{self._ctx}[/#006600][#004400] ▼  [/#004400]"
-            "[bold #00ff00]●[/bold #00ff00]",
-            id="header-right",
+            f"{vpn_seg}  "
+            "[bold #00ff00]●[/bold #00ff00]"
         )
+
+    def _vpn_segment(self) -> str:
+        """Return a markup segment for the VPN indicator."""
+        if self._vpn_ip:
+            return f"[bold #00ff00][VPN: {self._vpn_ip}][/bold #00ff00]"
+        if self._vpn_status == "connecting":
+            return "[bold #ffcc00][VPN: ...][/bold #ffcc00]"
+        return "[dim #555555][VPN: OFF][/dim #555555]"
+
+    def update_vpn_status(self, status: str, ip: str = "") -> None:
+        """Called periodically by the App to refresh the VPN indicator."""
+        self._vpn_status = status
+        self._vpn_ip = ip
+        try:
+            self.query_one("#header-right", Static).update(self._build_header_right())
+        except Exception:
+            pass
 
 
 __all__ = ["run_tui", "CAIApp", "CONFIG_FILE", "_pretty_name", "_BANNER_LINES"]
@@ -253,8 +281,12 @@ from cai.tui.screens.config import (
     SessionRecordingScreen,
     ResetDefaultsScreen,
     ConfigOverviewScreen,
+    VpnSettingsScreen,
+    VpnFilePickerScreen,
+    VpnCredentialScreen,
 )
 from cai.tui.components.browser import BrowserPreview
+from cai.tui.components.windows_stream import WindowsStream
 from cai.tui.components.terminal import TerminalPanel
 from cai.tui.components.terminal_grid import TerminalGrid
 from cai.tui.components.persistence_manager import PersistenceManager
@@ -296,9 +328,13 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
         self,
         agent: Any = None,
         initial_prompt: str | None = None,
+        is_web_session: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        # Indicates the app is being served over HTTP (textual-web).
+        # Used by CSS selectors to adapt layout for browser sessions.
+        self._is_web_session: bool = bool(is_web_session)
         self._agent = agent
         self._agent_name: str = (
             getattr(agent, "name", "one_tool_agent") if agent else "one_tool_agent"
@@ -405,6 +441,7 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
                 with TabPane("Terminal", id="tab-terminal"):
                     yield TerminalGrid(id="terminal-grid")
                     yield BrowserPreview(id="browser-preview")
+                    yield WindowsStream(id="windows-stream")
                 with TabPane("Agents", id="tab-agents"):
                     with Horizontal(id="agents-body"):
                         with Vertical(id="agents-left"):
@@ -521,6 +558,20 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
     # ------------------------------------------------------------------ lifecycle
 
     async def on_mount(self) -> None:
+        # If running in a web session, expose a CSS class for media-like rules.
+        try:
+            if getattr(self, "_is_web_session", False):
+                try:
+                    self.add_class("-web-session")
+                    # Start a periodic heartbeat to help keep web clients alive
+                    try:
+                        self.set_interval(15.0, self._web_heartbeat)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
         # Load available agents
         try:
             from cai.agents import get_available_agents
@@ -647,6 +698,39 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
         # Start the background timer that feeds CPU/context sparklines (2s tick)
         self.set_interval(2.0, self._tick_sparklines)
 
+        # VPN status poll fires every 1 s; _vpn_last_poll enforces
+        # a 3 s (normal) or 10 s (web back-off) effective interval.
+        self._vpn_last_poll: float = 0.0
+        self.set_interval(1.0, self._refresh_vpn_header)
+
+    def _refresh_vpn_header(self) -> None:
+        """Poll VPN status and update the CaiHeader indicator.
+
+        Fires every 1 s but applies an internal rate-limit:
+          - Normal sessions   : poll at most every 3 s.
+          - Web / minimized   : poll at most every 10 s (saves LLM cycles).
+
+        ``get_vpn_ip()`` uses a two-tier strategy (fast ioctl → cached
+        subprocess) so this callback never blocks the main event loop.
+        """
+        import time as _time
+        now = _time.monotonic()
+        # Back-off: larger interval when serving remote web users
+        poll_interval = 10.0 if getattr(self, "_is_web_session", False) else 3.0
+        if now - getattr(self, "_vpn_last_poll", 0.0) < poll_interval:
+            return
+        self._vpn_last_poll = now
+        try:
+            from cai.network.vpn_manager import get_manager, VpnStatus  # noqa: PLC0415
+            mgr = get_manager()
+            status = mgr.get_status()
+            # get_vpn_ip() returns instantly (ioctl or fresh cache); never blocks
+            ip = mgr.get_vpn_ip() or ""
+            status_str = status.value  # "off" / "connecting" / "connected" / "error"
+            self.query_one(CaiHeader).update_vpn_status(status_str, ip)
+        except Exception:
+            pass
+
     def on_enter(self, event: events.Enter) -> None:
         """Hover/focus handler: update intelligence brief when hovering agents."""
         node = getattr(event, "node", None)
@@ -769,6 +853,27 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             from cai.util import set_screenshot_writer
 
             set_screenshot_writer(None)
+        except Exception:
+            pass
+
+    def _web_heartbeat(self) -> None:
+        """Periodic heartbeat for web-served sessions: write a timestamped ping to logs and stdout.
+
+        This helps external proxies / load-balancers see periodic traffic and provides
+        a simple keep-alive for served sessions.
+        """
+        try:
+            import os, time
+
+            os.makedirs(os.path.join(os.getcwd(), "logs"), exist_ok=True)
+            path = os.path.join(os.getcwd(), "logs", "web_keepalive.log")
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(f"{time.time()}\n")
+            # Also print a short line so container logs show liveliness
+            try:
+                print(f"[web-heartbeat] {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -1013,6 +1118,34 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             self._populate_tools_list_worker()
         except Exception:
             pass
+
+    def _apply_agent_to_terminal(self, term_id: int, agent_name: str, agent_obj: Any) -> bool:
+        """Apply an agent switch to a terminal and sync app/session state."""
+        try:
+            panel = self.query_one(f"#terminal-panel-{term_id}", TerminalPanel)
+            panel.update_agent(agent_obj, agent_name)
+            self._set_active_terminal(term_id)
+        except Exception:
+            return False
+
+        # Keep app-level defaults and agent manager aligned with the active terminal.
+        if term_id == self._active_term_id:
+            try:
+                self._agent = agent_obj
+                self._agent_name = agent_name
+                os.environ["CAI_AGENT_TYPE"] = agent_name
+            except Exception:
+                pass
+            try:
+                from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
+                AGENT_MANAGER.switch_to_single_agent(
+                    agent_obj,
+                    getattr(agent_obj, "name", agent_name),
+                )
+            except Exception:
+                pass
+        return True
 
     @work(exclusive=True)
     async def _populate_tools_list_worker(self) -> None:
@@ -1302,6 +1435,7 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             "config-memory",
             "config-export-import",
             "config-env",
+            "config-vpn",
             "config-reset-defaults",
         ):
             try:
@@ -1379,6 +1513,7 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             "env": EnvScreen(cfg),
             "session-recording": SessionRecordingScreen(cfg),
             "reset-defaults": ResetDefaultsScreen(),
+            "vpn": VpnSettingsScreen(),
             "full-config": None,
         }
 
@@ -1625,6 +1760,53 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
                     if log:
                         log.write(RichText.from_markup(f"[red]Reset failed: {e}[/red]"))
 
+            # ── VPN actions ───────────────────────────────────────────────────
+            elif key == "open_file_picker":
+                # User hit Browse inside VpnSettingsScreen — open file picker
+                # then re-open VPN settings so they can connect.
+                file_result = await self.push_screen_wait(VpnFilePickerScreen())
+                if file_result and file_result[0] == "selected":
+                    config_path = file_result[1]
+                    try:
+                        from cai.network.vpn_manager import get_manager
+                        mgr = get_manager()
+                        ok, err = mgr.load_config(config_path)
+                        if ok:
+                            self.notify(f"VPN config loaded: {config_path}", severity="information")
+                            # Re-open VPN settings so user can connect
+                            self._open_config_screen("vpn")
+                        else:
+                            self.notify(f"Invalid VPN config: {err}", severity="error")
+                    except Exception as exc:
+                        self.notify(f"VPN config load error: {exc}", severity="error")
+
+            elif key == "connect":
+                # User flipped the switch to connect inside VpnSettingsScreen
+                try:
+                    from cai.network.vpn_manager import get_manager
+                    mgr = get_manager()
+                    if not mgr._config_path:
+                        self.notify("No config loaded. Use Browse to select an .ovpn file.", severity="warning")
+                    elif mgr.needs_auth():
+                        cred_result = await self.push_screen_wait(VpnCredentialScreen())
+                        if cred_result and cred_result[0] == "credentials":
+                            _, username, password = cred_result
+                            ok, err = mgr.connect(auth_creds=(username, password))
+                            if ok:
+                                self.notify("VPN connecting…", severity="information")
+                            else:
+                                tail = "\n".join(mgr.get_log_tail(5))
+                                self.notify(f"VPN error: {err}\n{tail}", severity="error")
+                    else:
+                        ok, err = mgr.connect()
+                        if ok:
+                            self.notify("VPN connecting…", severity="information")
+                        else:
+                            tail = "\n".join(mgr.get_log_tail(5))
+                            self.notify(f"VPN error: {err}\n{tail}", severity="error")
+                except Exception as exc:
+                    self.notify(f"VPN connect error: {exc}", severity="error")
+
         except Exception:
             if log:
                 log.write(RichText.from_markup("[red]Error handling config action[/red]"))
@@ -1640,12 +1822,7 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
             return
 
         if action == "update":
-            try:
-                panel = self.query_one(f"#terminal-panel-{self._active_term_id}", TerminalPanel)
-                panel.update_agent(new_agent, agent_name)
-                self._set_active_terminal(self._active_term_id)
-            except Exception:
-                pass
+            self._apply_agent_to_terminal(self._active_term_id, agent_name, new_agent)
             self._highlight_active_agent(agent_name)
         elif action == "new":
             await self._add_terminal(new_agent, agent_name)
@@ -2173,14 +2350,7 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
                 f"[palette] agent not found: {agent_name}", style="#ff6600"
             )
             return
-        try:
-            panel = self.query_one(
-                f"#terminal-panel-{self._active_term_id}", TerminalPanel
-            )
-            panel.update_agent(new_agent, agent_name)
-            self._set_active_terminal(self._active_term_id)
-        except Exception:
-            pass
+        self._apply_agent_to_terminal(self._active_term_id, agent_name, new_agent)
         self._highlight_active_agent(agent_name)
         self._record_palette_recent(f"agent::{agent_name}")
         self._log_to_active_terminal(
@@ -2286,6 +2456,68 @@ class CAIApp(TelemetryMixin, ResponsiveMixin, ToolsMixin, QueueMixin, SessionsMi
                 pass
         except Exception:
             pass
+
+    async def action_quit(self) -> None:
+        """Quit the TUI and shut down the CAI process when in web mode.
+
+        This performs best-effort cleanup of streaming resources, attempts
+        a graceful Textual exit, and when running as a web session forces
+        process termination so embedded web servers are stopped.
+        """
+        try:
+            # Best-effort cleanup of any streaming/tool resources
+            try:
+                from cai.util import cleanup_all_streaming_resources
+
+                try:
+                    cleanup_all_streaming_resources()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            # Try graceful Textual shutdown
+            try:
+                self.exit()
+            except Exception:
+                try:
+                    await super().action_quit()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            # If we're a web-served session, ensure the server process stops.
+            if getattr(self, "_is_web_session", False):
+                try:
+                    import threading
+                    import time
+                    import os
+
+                    def _kill():
+                        # Give the event loop a short moment to unwind.
+                        time.sleep(0.1)
+                        try:
+                            os._exit(0)
+                        except Exception:
+                            try:
+                                os.exit(0)
+                            except Exception:
+                                pass
+
+                    t = threading.Thread(target=_kill, daemon=True)
+                    t.start()
+                except Exception:
+                    try:
+                        import os
+
+                        os._exit(0)
+                    except Exception:
+                        pass
+        finally:
+            # As a last resort, try to stop the app loop
+            try:
+                self.exit()
+            except Exception:
+                pass
 
     @on(events.Key)
     async def on_key(self, event: events.Key) -> None:
@@ -2545,3 +2777,149 @@ def run_tui(agent=None, initial_prompt: str | None = None) -> None:
     except Exception:
         pass
     CAIApp(agent=agent, initial_prompt=initial_prompt).run()
+
+
+def run_tui_web(
+    agent=None,
+    initial_prompt: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    detach_logging: bool = False,
+):
+    """Attempt to serve the TUI over HTTP using textual-web.
+
+    This is a best-effort helper: when `textual-web` is installed it will
+    attempt several common entrypoints. If textual-web is not available a
+    helpful message is printed and the function returns False.
+    """
+    # Ensure environment initialization (loads .env, etc.).
+    try:
+        from cai.bootstrap import initialize_env
+
+        initialize_env()
+    except Exception:
+        pass
+
+    host = host or os.getenv("TEXTUAL_WEB_HOST", "0.0.0.0")
+    port = int(port or os.getenv("TEXTUAL_WEB_PORT", "8000"))
+
+    # Attempt to detect container/internal host IP for helpful logging
+    try:
+        import socket
+
+        try:
+            internal_ip = socket.gethostbyname(socket.gethostname())
+        except Exception:
+            internal_ip = "localhost"
+    except Exception:
+        internal_ip = "localhost"
+
+    # Prepare detached logging if requested
+    if detach_logging:
+        try:
+            os.makedirs(os.path.join(os.getcwd(), "logs"), exist_ok=True)
+            log_path = os.getenv("CAI_WEB_LOG", os.path.join(os.getcwd(), "logs", "web_tui.log"))
+            lf = open(log_path, "a+", buffering=1)
+            try:
+                # Redirect low-level fds so external C libraries write into the log.
+                os.dup2(lf.fileno(), 1)
+                os.dup2(lf.fileno(), 2)
+            except Exception:
+                # Best-effort: ignore if dup2 fails on some platforms
+                pass
+        except Exception:
+            pass
+
+    # Preferred backend: textual-serve (local HTTP server + websocket bridge).
+    # This is the supported path for serving a Textual app in a browser.
+    try:
+        import shlex
+        from textual_serve.server import Server as TextualServeServer
+
+        # Launch a minimal direct Textual entrypoint for web sessions.
+        # This avoids CLI fallback paths that may exit quickly under WebDriver.
+        child_py = (
+            "from cai.bootstrap import initialize_env; initialize_env(); "
+            "import os; "
+            "from cai.agents import get_agent_by_name; "
+            "from cai.tui.app_impl import CAIApp; "
+            "_agent_name=os.getenv('CAI_AGENT_TYPE','one_tool_agent'); "
+            "_agent=get_agent_by_name(_agent_name, agent_id='P1'); "
+            "CAIApp(agent=_agent, initial_prompt=None, is_web_session=True).run()"
+        )
+        child_cmd = (
+            f"CAI_WEB=0 CAI_WEB_RESTART=0 /opt/venv/bin/python3 -c {shlex.quote(child_py)} "
+            "2>>/opt/cai/logs/web_child.err"
+        )
+
+        # textual-serve uses `public_url` to build script/websocket URLs.
+        # Browsers can't reliably connect to 0.0.0.0, so keep bind host as-is
+        # but publish a routable client URL by default.
+        public_url = os.getenv("CAI_WEB_PUBLIC_URL", "").strip()
+        if not public_url:
+            if str(host) in {"0.0.0.0", "::", ""}:
+                public_url = f"http://127.0.0.1:{int(port)}"
+            else:
+                public_url = f"http://{host}:{int(port)}"
+
+        print(f"Serving TUI (textual-serve) - listening on http://{host}:{port}/")
+        TextualServeServer(
+            command=child_cmd,
+            host=str(host),
+            port=int(port),
+            title="CAI",
+            public_url=public_url,
+        ).serve(debug=False)
+        return True
+    except Exception as e:
+        print(f"textual-serve startup failed: {e}; trying textual-web fallback")
+
+    # Fallback for legacy environments: try textual-web style entrypoints.
+    try:
+        import importlib
+
+        tw = importlib.import_module("textual_web")
+    except Exception:
+        print(
+            "textual-web is not installed. Install it (`pip install textual-web`) to use --web."
+        )
+        return False
+
+    # Build the app instance with web-session marker so CSS can adapt.
+    app = CAIApp(agent=agent, initial_prompt=initial_prompt, is_web_session=True)
+
+    # Log helpful access URLs (listen address and common host address)
+    try:
+        print(f"Serving TUI (textual-web) — listening on http://{host}:{port}/")
+        if internal_ip and internal_ip != "0.0.0.0":
+            print(f"Try connecting from host at http://{internal_ip}:{port}/")
+        else:
+            print(f"Try connecting via localhost or container host on port {port}")
+    except Exception:
+        pass
+
+    # Try common textual-web callables
+    tried = []
+    for attr in ("serve", "run", "serve_app", "run_app", "start", "start_server"):
+        if hasattr(tw, attr):
+            fn = getattr(tw, attr)
+            tried.append(attr)
+            try:
+                # Try a few calling conventions
+                try:
+                    return fn(app, host=host, port=port)
+                except TypeError:
+                    try:
+                        return fn(app, str(host), int(port))
+                    except TypeError:
+                        return fn()
+            except Exception as e:
+                print(f"textual-web entrypoint {attr} failed: {e}")
+                continue
+
+    # Fallback: textual-web present but no known entrypoint found
+    print(
+        "textual-web installed but no known entrypoint found (tried: %s)."
+        % (",".join(tried) or "none")
+    )
+    return False

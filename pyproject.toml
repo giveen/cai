@@ -91,6 +91,16 @@ rag = [
 tui = [
     "textual-image>=0.7",
     "Pillow>=10.0",
+    "textual-serve",
+    "textual-web; python_version < '3.13'",
+]
+
+# Optional headless RDP command execution via the aardwolf library.
+# aardwolf also pulls in asyauth and asysocks as transitive deps.
+# Install with:  pip install "cai-framework[rdp]"
+#             or pip install aardwolf
+rdp = [
+    "aardwolf>=0.2.10",
 ]
 
 # NOTE: the virtual-hosts nss-wrapper feature depends on the system C library

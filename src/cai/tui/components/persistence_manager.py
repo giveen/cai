@@ -99,7 +99,14 @@ class PersistenceManager(Widget):
                 # ignore if sidebar not mounted
                 pass
         except Exception:
-            traceback.print_exc()
+            # Indicate degraded data state rather than raising traceback in the UI
+            try:
+                disk = self.query_one("#persistence-disk", Static)
+                disk.update("[bold red]Data Degraded[/bold red]")
+            except Exception:
+                pass
+            self._synced = False
+            self._last_updated = None
 
     def _refresh_from_disk(self) -> None:
         try:
@@ -123,9 +130,18 @@ class PersistenceManager(Widget):
 
             self._update_disk_icon()
         except Exception:
-            # If reading fails, mark as not synced
+            # If reading fails, mark as degraded and update UI accordingly
             self._synced = False
-            self._update_disk_icon()
+            self._last_updated = None
+            try:
+                disk = self.query_one("#persistence-disk", Static)
+                disk.update("[bold red]Data Degraded[/bold red]")
+            except Exception:
+                pass
+            try:
+                self._update_disk_icon()
+            except Exception:
+                pass
 
     def _update_disk_icon(self) -> None:
         try:

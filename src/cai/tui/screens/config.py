@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual.screen import ModalScreen
 from textual import on
-from textual.widgets import Static, Button, Input, ListView, ListItem, Label
+from textual.widgets import Static, Button, Input, ListView, ListItem, Label, Switch
 
 
 # ---------------------------------------------------------------------------
@@ -508,6 +508,251 @@ class ExportImportScreen(ModalScreen):
 
     @on(Button.Pressed, "#export-import-cancel")
     def on_export_import_cancel(self, event: Button.Pressed) -> None:
+        self.dismiss(None)
+
+
+# ---------------------------------------------------------------------------
+# VPN screens
+# ---------------------------------------------------------------------------
+
+class VpnResumeModal(ModalScreen):
+    """Simple yes/no prompt shown on session resume when a prior VPN config exists."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self, config_path: str) -> None:
+        super().__init__()
+        self._config_path = config_path
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static(
+                "[bold #44ddff]🌐 Previous VPN Session Detected[/bold #44ddff]",
+                id="modal-agent-label",
+            )
+            yield Static(
+                f"[dim]Config:[/dim] [#00cc00]{self._config_path}[/#00cc00]",
+                classes="prov-hint",
+            )
+            yield Static(
+                "Reconnect to this VPN to restore the previous network state?",
+                classes="prov-status",
+            )
+            with Horizontal():
+                yield Button("Reconnect", id="vpn-resume-yes", classes="modal-btn")
+                yield Button("Skip", id="vpn-resume-no", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed, "#vpn-resume-yes")
+    def on_yes(self, event: Button.Pressed) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#vpn-resume-no")
+    def on_no(self, event: Button.Pressed) -> None:
+        self.dismiss(False)
+
+
+class VpnFilePickerScreen(ModalScreen):
+    """Browse for .ovpn files within workspace/vpn_configs or the cwd."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._ovpn_files: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("Select an OpenVPN config file", id="modal-agent-label")
+            with ScrollableContainer(id="vpn-file-scroll"):
+                yield ListView(id="vpn-file-list")
+            yield Static("", id="vpn-file-hint", classes="prov-hint")
+            with Horizontal():
+                yield Button("Select", id="vpn-file-select", classes="modal-btn")
+                yield Button("Cancel", id="vpn-file-cancel", classes="modal-btn modal-btn--cancel")
+
+    async def on_mount(self) -> None:
+        lv = self.query_one("#vpn-file-list", ListView)
+        # Resolve the workspace root via the same helper used by all tools.
+        # In web/remote sessions this keeps the picker scoped to the server
+        # workspace and never triggers a host-level file dialog.
+        try:
+            from cai.tools.common import _get_workspace_dir  # noqa: PLC0415
+            ws_root = os.path.realpath(_get_workspace_dir())
+        except Exception:
+            ws_root = os.path.realpath(os.getcwd())
+
+        search_dirs: list[str] = []
+        for sub in ("vpn_configs", "workspaces", "."):
+            d = os.path.realpath(os.path.join(ws_root, sub))
+            if os.path.isdir(d):
+                search_dirs.append(d)
+
+        _MAX_DEPTH = 3  # prevent accidental full-tree walks
+        for base in search_dirs:
+            for root, dirs, files in os.walk(base):
+                # Enforce depth cap relative to search root
+                depth = len(os.path.relpath(root, base).split(os.sep))
+                if depth > _MAX_DEPTH:
+                    dirs[:] = []  # prune sub-directories beyond depth
+                    continue
+                # Security: reject any path that escapes ws_root
+                if not os.path.realpath(root).startswith(ws_root):
+                    dirs[:] = []
+                    continue
+                for f in sorted(files):
+                    if f.lower().endswith((".ovpn", ".conf")):
+                        full = os.path.join(root, f)
+                        self._ovpn_files.append(full)
+                        rel = os.path.relpath(full, ws_root)
+                        await lv.mount(ListItem(Label(rel)))
+        if not self._ovpn_files:
+            try:
+                self.query_one("#vpn-file-hint", Static).update(
+                    "[#ffaa00]No .ovpn files found. Place them in vpn_configs/.[/#ffaa00]"
+                )
+            except Exception:
+                pass
+
+    @on(Button.Pressed, "#vpn-file-select")
+    def on_select(self, event: Button.Pressed) -> None:
+        try:
+            lv = self.query_one("#vpn-file-list", ListView)
+            idx = lv.index
+            if idx is not None and 0 <= idx < len(self._ovpn_files):
+                self.dismiss(("selected", self._ovpn_files[idx]))
+                return
+        except Exception:
+            pass
+        self.dismiss(None)
+
+    @on(Button.Pressed, "#vpn-file-cancel")
+    def on_cancel(self, event: Button.Pressed) -> None:
+        self.dismiss(None)
+
+
+class VpnCredentialScreen(ModalScreen):
+    """Prompt for OpenVPN username / password."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Static("VPN Authentication Required", id="modal-agent-label")
+            yield Static("Username", classes="prov-field-label")
+            yield Input("", id="vpn-username", placeholder="VPN username")
+            yield Static("Password", classes="prov-field-label")
+            yield Input("", id="vpn-password", placeholder="VPN password", password=True)
+            with Horizontal():
+                yield Button("Connect", id="vpn-cred-connect", classes="modal-btn")
+                yield Button("Cancel", id="vpn-cred-cancel", classes="modal-btn modal-btn--cancel")
+
+    @on(Button.Pressed, "#vpn-cred-connect")
+    def on_connect(self, event: Button.Pressed) -> None:
+        try:
+            username = self.query_one("#vpn-username", Input).value.strip()
+            password = self.query_one("#vpn-password", Input).value
+        except Exception:
+            username = ""
+            password = ""
+        if not username:
+            self.dismiss(None)
+            return
+        self.dismiss(("credentials", username, password))
+
+    @on(Button.Pressed, "#vpn-cred-cancel")
+    def on_cancel(self, event: Button.Pressed) -> None:
+        self.dismiss(None)
+
+
+class VpnSettingsScreen(ModalScreen):
+    """Full VPN management screen: load config, connect/disconnect, live status."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Close")]
+
+    def __init__(self) -> None:
+        super().__init__()
+        try:
+            from cai.network.vpn_manager import get_manager
+            self._mgr = get_manager()
+        except Exception:
+            self._mgr = None
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="providers-dialog"):
+            yield Static("[bold #44ddff]🌐 VPN Settings[/bold #44ddff]", id="modal-agent-label")
+            with Horizontal(id="vpn-config-row"):
+                yield Input("", id="vpn-config-path", placeholder="/path/to/config.ovpn")
+                yield Button("Browse", id="vpn-browse", classes="prov-inline-btn")
+            yield Static("", id="vpn-status-line", classes="prov-status")
+            # Connection switch
+            with Horizontal(id="vpn-switch-row"):
+                yield Static("Connection", id="vpn-switch-label", classes="prov-field-label")
+                yield Switch(value=False, id="vpn-connect-switch")
+            # Last log lines (shown on error)
+            yield Static("", id="vpn-log-tail", classes="prov-hint")
+            with Horizontal():
+                yield Button("Close", id="vpn-settings-close", classes="modal-btn modal-btn--cancel")
+
+    def on_mount(self) -> None:
+        self._refresh_status()
+        self.set_interval(2.0, self._refresh_status)
+
+    def _refresh_status(self) -> None:
+        if not self._mgr:
+            return
+        try:
+            from cai.network.vpn_manager import VpnStatus
+            status = self._mgr.get_status()
+            ip = self._mgr.get_vpn_ip()
+            cfg_path = str(self._mgr._config_path or "")
+            # Status line
+            if status == VpnStatus.CONNECTED:
+                label = f"[bold #00ff00]● CONNECTED — {ip or 'tun0 up'}[/bold #00ff00]"
+            elif status == VpnStatus.CONNECTING:
+                label = "[bold #ffcc00]◌ CONNECTING…[/bold #ffcc00]"
+            elif status == VpnStatus.ERROR:
+                label = "[bold #ff4444]✗ ERROR[/bold #ff4444]"
+            else:
+                label = "[dim #888888]○ DISCONNECTED[/dim #888888]"
+            self.query_one("#vpn-status-line", Static).update(label)
+            # Prefill config path input
+            if cfg_path:
+                inp = self.query_one("#vpn-config-path", Input)
+                if not inp.value:
+                    inp.value = cfg_path
+            # Switch value (without triggering on_switch_changed)
+            sw = self.query_one("#vpn-connect-switch", Switch)
+            is_on = status in (VpnStatus.CONNECTED, VpnStatus.CONNECTING)
+            if sw.value != is_on:
+                sw.value = is_on
+            # Log tail on error
+            if status == VpnStatus.ERROR:
+                tail = self._mgr.get_log_tail(5)
+                self.query_one("#vpn-log-tail", Static).update(
+                    "[dim #ff4444]" + "\n".join(tail) + "[/dim #ff4444]"
+                )
+            else:
+                self.query_one("#vpn-log-tail", Static).update("")
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#vpn-browse")
+    def on_browse(self, event: Button.Pressed) -> None:
+        self.dismiss(("open_file_picker",))
+
+    @on(Switch.Changed, "#vpn-connect-switch")
+    def on_switch(self, event: Switch.Changed) -> None:
+        event.stop()
+        if not self._mgr:
+            return
+        if event.value:
+            self.dismiss(("connect",))
+        else:
+            self._mgr.disconnect()
+            self._refresh_status()
+
+    @on(Button.Pressed, "#vpn-settings-close")
+    def on_close(self, event: Button.Pressed) -> None:
         self.dismiss(None)
 
 

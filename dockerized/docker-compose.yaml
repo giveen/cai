@@ -68,6 +68,9 @@ services:
     build:
       context: ..
       dockerfile: dockerized/Dockerfile
+      args:
+        INCLUDE_METASPLOIT: ${INCLUDE_METASPLOIT:-false}
+        PIP_CONSTRAINTS: ${PIP_CONSTRAINTS:-}
     container_name: cai
     depends_on:
       qdrant:
@@ -87,6 +90,18 @@ services:
     #                        rustscan) can open thousands of sockets at once
     #                        without hitting the OS default of 1024.
     privileged: true
+
+    # Explicit Linux capabilities for OpenVPN + raw-socket tools.
+    # NAT_ADMIN is required for openvpn to create/manage the tun0 tunnel.
+    # (privileged:true above already grants these, but explicit cap_add
+    # documents intent and is respected if privileged is ever toggled off.)
+    cap_add:
+      - NET_ADMIN
+
+    # Mount the TUN device so openvpn can open /dev/net/tun inside the container.
+    # Required even under network_mode:host for the kernel TUN driver to work.
+    devices:
+      - /dev/net/tun:/dev/net/tun
 
     security_opt:
       - seccomp:unconfined
@@ -123,8 +138,11 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - OLLAMA_API_BASE=${OLLAMA_API_BASE:-}
+      # Local / LiteLLM proxy — forward exactly what the host has set
+      - LOCAL_API_BASE=${LOCAL_API_BASE:-}
+      - LOCAL_API_KEY=${LOCAL_API_KEY:-}
       - PROMPT_TOOLKIT_NO_CPR=1
-      - CAI_STREAM=false
+      - CAI_STREAM=${CAI_STREAM:-true}
       # RAG / memory backend (Qdrant running as a sibling service)
       # network_mode: host means localhost:6333 is reachable directly
       - QDRANT_URL=${QDRANT_URL:-http://localhost:6333}
@@ -140,7 +158,7 @@ services:
       # ── TUI ─────────────────────────────────────────────────────────────
       # Set CAI_TUI=true in your shell or .env to launch the textual TUI.
       # TERM + COLORTERM ensure Textual gets full 24-bit color inside Docker.
-      - CAI_TUI=${CAI_TUI:-false}
+      - CAI_TUI=${CAI_TUI:-true}
       - TERM=${TERM:-xterm-256color}
       - COLORTERM=${COLORTERM:-truecolor}
       # Disable nss-wrapper in Docker — /etc/hosts already handles hostname
@@ -149,10 +167,26 @@ services:
       - CAI_VHOST_WRAP=${CAI_VHOST_WRAP:-false}
       # Ensure Python output (logs, errors) is never buffered inside Docker.
       - PYTHONUNBUFFERED=1
+      # ── File ownership ───────────────────────────────────────────────────
+      # Files written by the container (logs, workspaces, intelligence.json)
+      # are chowned to PUID:PGID at startup and on exit so the host user can
+      # read and edit them without sudo.  Defaults to UID/GID 1000 which
+      # matches a standard single-user Ubuntu desktop (run `id` to confirm).
+      # Override in your .env: PUID=1000 PGID=1000
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Web TUI (textual-web) settings
+      - CAI_WEB=${CAI_WEB:-true}
+      - TEXTUAL_WEB_HOST=${TEXTUAL_WEB_HOST:-0.0.0.0}
+      - TEXTUAL_WEB_PORT=${TEXTUAL_WEB_PORT:-8000}
+      - CAI_WEB_LOG=${CAI_WEB_LOG:-/opt/cai/logs/web_tui.log}
     
     # Interactive
     stdin_open: true
     tty: true
+    # Expose web TUI port (useful when not using host networking)
+    ports:
+      - "8000:8000"
     
     # no: do not auto-restart — cai is an interactive session; if the user
     # exits the TUI or completes a run the container should stop, not loop.

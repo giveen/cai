@@ -100,7 +100,11 @@ class SessionsTab(Widget):
             preview = self.query_one("#session-preview", Static)
             preview.update(text or "")
         except Exception:
-            pass
+            # If something went wrong reading/parsing journal, indicate degraded data
+            try:
+                self.query_one("#topo-status", Static).update("[bold red]Data Degraded[/bold red]")
+            except Exception:
+                pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:  # type: ignore[override]
         bid = event.button.id or ""
@@ -312,6 +316,14 @@ class ConfigTab(Widget):
             "badge_fn": "_badge_env",
             "detail_fn": "_detail_env",
         },
+        {
+            "id": "config-vpn",
+            "icon": "[bold #44ddff]🌐[/bold #44ddff] ",
+            "label": "VPN Settings",
+            "key": "vpn",
+            "badge_fn": "_badge_vpn",
+            "detail_fn": "_detail_vpn",
+        },
     ]
 
     _scan_frame: reactive[int] = reactive(0)
@@ -434,6 +446,22 @@ class ConfigTab(Widget):
             if os.environ.get(k)
         )
         return f"{count}/5 keys set"
+
+    def _badge_vpn(self) -> str:
+        try:
+            from cai.network.vpn_manager import get_manager, VpnStatus
+            mgr = get_manager()
+            status = mgr.get_status()
+            ip = mgr.get_vpn_ip()
+            if status == VpnStatus.CONNECTED:
+                return f"[bold #00ff00]● {ip or 'connected'}[/bold #00ff00]"
+            if status == VpnStatus.CONNECTING:
+                return "[#ffcc00]◌ connecting[/#ffcc00]"
+            if status == VpnStatus.ERROR:
+                return "[#ff4444]✗ error[/#ff4444]"
+        except Exception:
+            pass
+        return "[dim]○ off[/dim]"
 
     # ── Detail pane helpers ───────────────────────────────────────────────
 
@@ -600,6 +628,41 @@ class ConfigTab(Widget):
             lines.append(f"  [dim]{v:<32}[/dim] [#00cc00]{val}[/#00cc00]")
         lines += ["", "[dim #005500]Press Enter to edit env vars[/dim #005500]"]
         return "\n".join(lines)
+
+    def _detail_vpn(self) -> str:
+        try:
+            from cai.network.vpn_manager import get_manager, VpnStatus
+            mgr = get_manager()
+            status = mgr.get_status()
+            ip = mgr.get_vpn_ip() or "—"
+            cfg = str(mgr._config_path or "—")
+            priv = "yes" if mgr.has_privilege() else "[#ff4444]NO — need root/CAP_NET_ADMIN[/#ff4444]"
+            if status == VpnStatus.CONNECTED:
+                status_str = f"[bold #00ff00]● CONNECTED[/bold #00ff00]"
+            elif status == VpnStatus.CONNECTING:
+                status_str = "[bold #ffcc00]◌ CONNECTING…[/bold #ffcc00]"
+            elif status == VpnStatus.ERROR:
+                tail = mgr.get_log_tail(3)
+                tail_str = "\n    ".join(tail) if tail else "—"
+                status_str = f"[bold #ff4444]✗ ERROR[/bold #ff4444]\n    {tail_str}"
+            else:
+                status_str = "[dim]○ OFF[/dim]"
+            return "\n".join([
+                "[bold #44ddff]🌐 VPN Settings[/bold #44ddff]",
+                "",
+                f"  Status     {status_str}",
+                f"  tun0 IP    [#00cc00]{ip}[/#00cc00]",
+                f"  Config     [dim]{cfg[:44]}[/dim]",
+                f"  Privilege  [#00cc00]{priv}[/#00cc00]",
+                "",
+                "[dim #005500]Press Enter to open VPN settings[/dim #005500]",
+            ])
+        except Exception:
+            return "\n".join([
+                "[bold #44ddff]🌐 VPN Settings[/bold #44ddff]",
+                "",
+                "  [dim]VPN manager not available[/dim]",
+            ])
 
     # ── Badge refresh ─────────────────────────────────────────────────────
 
@@ -957,7 +1020,17 @@ class Sidebar(Widget):
         except Exception:
             ctx_pct = 0.0
 
-        self._ctx_history.append(ctx_pct)
+        # Smooth the sparkline values to reduce jitter (exponential moving average)
+        try:
+            alpha = 0.25
+            if self._ctx_history:
+                prev = float(self._ctx_history[-1])
+                smoothed = prev * (1.0 - alpha) + ctx_pct * alpha
+            else:
+                smoothed = ctx_pct
+        except Exception:
+            smoothed = ctx_pct
+        self._ctx_history.append(smoothed)
         if len(self._ctx_history) > 60:
             self._ctx_history = self._ctx_history[-60:]
         try:
@@ -992,7 +1065,17 @@ class Sidebar(Widget):
         except Exception:
             vram_pct = 0.0
 
-        self._vram_history.append(vram_pct)
+            # Smooth VRAM values similarly
+            try:
+                alpha = 0.25
+                if self._vram_history:
+                    prev_v = float(self._vram_history[-1])
+                    v_smoothed = prev_v * (1.0 - alpha) + vram_pct * alpha
+                else:
+                    v_smoothed = vram_pct
+            except Exception:
+                v_smoothed = vram_pct
+            self._vram_history.append(v_smoothed)
         if len(self._vram_history) > 60:
             self._vram_history = self._vram_history[-60:]
         try:

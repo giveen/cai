@@ -835,6 +835,45 @@ class TuiController:
                         pass
             except Exception:
                 pass
+
+            # Deep resume: if intelligence.json recorded an active VPN, offer to reconnect.
+            try:
+                from cai.orchestration.persistence import _read_journal
+                from cai.tools.common import _get_workspace_dir
+                ws = _get_workspace_dir()
+                j = _read_journal(ws)
+                vpn_entries = [
+                    e for e in j.get("entries", [])
+                    if (e.get("fact") or {}).get("type") == "vpn_connected"
+                ]
+                if vpn_entries:
+                    latest = vpn_entries[-1]
+                    cfg_path = (latest.get("fact") or {}).get("config_path")
+                    if cfg_path and os.path.exists(cfg_path):
+                        from cai.tui.screens.config import VpnResumeModal
+                        reconnect = await app.push_screen_wait(VpnResumeModal(cfg_path))
+                        if reconnect:
+                            from cai.network.vpn_manager import get_manager
+                            mgr = get_manager()
+                            ok, err = mgr.load_config(cfg_path)
+                            if ok:
+                                if mgr.needs_auth():
+                                    from cai.tui.screens.config import VpnCredentialScreen
+                                    cred = await app.push_screen_wait(VpnCredentialScreen())
+                                    if cred and cred[0] == "credentials":
+                                        ok2, err2 = mgr.connect(auth_creds=(cred[1], cred[2]))
+                                    else:
+                                        ok2, err2 = False, "Cancelled"
+                                else:
+                                    ok2, err2 = mgr.connect()
+                                if ok2:
+                                    app.notify("VPN reconnecting from session state…", severity="information")
+                                else:
+                                    app.notify(f"VPN reconnect failed: {err2}", severity="warning")
+                            else:
+                                app.notify(f"VPN config no longer valid: {err}", severity="warning")
+            except Exception:
+                pass
         except Exception:
             pass
 
