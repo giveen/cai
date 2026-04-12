@@ -1,602 +1,687 @@
-"""
-Compact command for CAI REPL.
-Compacts current conversation and manages model/prompt settings.
+"""REPL compact command — Context Distillation Engine.
+
+Provides two lossless-critical compression modes for long agent conversations:
+
+  summary  — async LLM call produces a "Current Progress / Pending Tasks"
+             bullet summary; critical indicators are always preserved.
+  buffer   — keep the last N turns verbatim; archive the rest via the memory
+             system; critical indicators are injected as a Permanent Context
+             block at position 0.
+
+Registration::
+
+    from cai.repl.commands.compact import COMPACT_COMMAND_INSTANCE
+
+Usage::
+
+    /compact                            # summary mode, interactive confirm
+    /compact --mode summary --hard      # summary, no prompt
+    /compact --mode buffer --turns 20   # keep last 20 turns
+    /compact --model gpt-4o-mini        # one-shot model override
+    /compact status                     # show settings
+    /compact model gpt-4o-mini          # persist model
+    /compact prompt "Focus on CVEs"     # persist prompt
 """
 
-from typing import List, Optional
-import os
+from __future__ import annotations
+
 import datetime
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
+import json
+import os
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
-from cai.repl.commands.base import Command, register_command
-from cai.sdk.agents.models.openai_chatcompletions import get_current_active_model
-from cai.util import COST_TRACKER
-from cai.repl.commands.model import (
-    ModelCommand, 
-    get_predefined_model_categories,
-    get_all_predefined_models
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+from cai.repl.commands.base import (
+    CommandError,
+    FrameworkCommand,
+    ValidationError,
+    register_command,
 )
 
 console = Console()
 
+# ---------------------------------------------------------------------------
+# constants
+# ---------------------------------------------------------------------------
 
-class CompactCommand(Command):
-    """Command for compacting conversations with optional model and prompt settings."""
-    
-    def __init__(self):
-        """Initialize the compact command."""
-        super().__init__(
-            name="/compact",
-            description="Compact current conversation into a memory summary",
-            aliases=["/cmp"]
+_DEFAULT_SUMMARY_PROMPT = (
+    "You are a precise conversation summarizer for a security-engineering assistant. "
+    "Produce a concise Markdown summary with these sections:\n"
+    "## Current Progress\n"
+    "- Bullet list of completed steps and key findings.\n"
+    "## Pending Tasks\n"
+    "- Bullet list of open tasks and next actions.\n"
+    "## Critical Findings\n"
+    "- IPs, hostnames, CVEs, credentials, ports (preserve verbatim).\n"
+    "Be terse; omit filler."
+)
+
+_CRITICAL_PATTERNS: List[Tuple[str, str]] = [
+    # (label, regex)
+    ("ip",         r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
+    ("cve",        r"\bCVE-\d{4}-\d{4,7}\b"),
+    ("port",       r"\bport[s]?\s*:?\s*\d{1,5}\b"),
+    ("credential", r"(?i)(?:password|passwd|secret|token|api[_\-]?key)\s*[:=]\s*\S+"),
+    ("hash",       r"\b[0-9a-fA-F]{32,64}\b"),
+]
+
+_BUFFER_DEFAULT_TURNS = 20
+
+
+# ---------------------------------------------------------------------------
+# helper — token proxy
+# ---------------------------------------------------------------------------
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count.  Uses tiktoken when available, else char/4."""
+    try:
+        import tiktoken  # type: ignore[import-untyped]
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        return max(1, len(text) // 4)
+
+
+# ---------------------------------------------------------------------------
+# helper — message text extraction
+# ---------------------------------------------------------------------------
+
+def _msg_text(msg: Any) -> str:
+    """Return the string content of a message dict or object."""
+    if isinstance(msg, dict):
+        content = msg.get("content", "")
+    else:
+        content = getattr(msg, "content", "")
+    if isinstance(content, list):
+        # OpenAI multi-part content blocks
+        return " ".join(
+            p.get("text", "") if isinstance(p, dict) else getattr(p, "text", "")
+            for p in content
         )
-        
-        # Add subcommands
-        self.add_subcommand("model", "Set model for compaction", self.handle_model)
-        self.add_subcommand("prompt", "Set custom summarization prompt", self.handle_prompt)
-        self.add_subcommand("status", "Show compaction settings", self.handle_status)
-        
-        # Default model for compaction (None means use current model)
-        self.compact_model = None
-        
-        # Custom summarization prompt (None means use default)
-        self.custom_prompt = None
-        
-        # Cache for model numbers
-        self.cached_model_numbers = {}
-        
-    def handle(self, args: Optional[List[str]] = None) -> bool:
-        """Handle the compact command."""
-        # Parse arguments for --model and --prompt flags
-        model_override = None
-        prompt_override = None
-        
-        if args:
-            i = 0
-            while i < len(args):
-                if args[i] == "--model" and i + 1 < len(args):
-                    model_override = args[i + 1]
-                    i += 2
-                elif args[i] == "--prompt" and i + 1 < len(args):
-                    # Collect all remaining args as prompt
-                    prompt_override = " ".join(args[i + 1:])
-                    break
-                else:
-                    # Check if it's a subcommand
-                    subcommand = args[i].lower()
-                    if subcommand in self.subcommands:
-                        handler = self.subcommands[subcommand]["handler"]
-                        return handler(args[i+1:] if len(args) > i+1 else [])
-                    else:
-                        console.print(f"[yellow]Unknown argument: {args[i]}[/yellow]")
-                        console.print("[dim]Usage: /compact [--model <model>] [--prompt <prompt>][/dim]")
-                        return True
-        else:
-            # No arguments provided - check if in parallel mode
-            from cai.repl.commands.parallel import PARALLEL_CONFIGS
-            
-            if PARALLEL_CONFIGS:
-                # In parallel mode - automatically compact all agents
-                return self._perform_parallel_compaction()
-            else:
-                # Single agent mode - show help menu and ask
-                self._show_help_menu()
-                return self._ask_and_perform_compaction()
-                    
-        # If arguments provided, perform compaction with overrides
-        return self._perform_compaction(model_override, prompt_override)
-    
-    def handle_model(self, args: Optional[List[str]] = None) -> bool:
-        """Set model for compaction."""
+    return str(content or "")
+
+
+# ---------------------------------------------------------------------------
+# CompactCommand
+# ---------------------------------------------------------------------------
+
+class CompactCommand(FrameworkCommand):
+    """Context Distillation Engine — compresses agent conversation history."""
+
+    name = "compact"
+    description = "Compress conversation history (summary or buffer mode)"
+    aliases = ["ctx", "compress"]
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Persist across invocations
+        self.compact_model: Optional[str] = None
+        self.custom_prompt: Optional[str] = None
+        self._cached_model_numbers: Dict[str, str] = {}
+
+        # Register sub-commands for the base-class listing
+        self.add_subcommand("model",  "Set/show model used for compaction",   self._sub_model)
+        self.add_subcommand("prompt", "Set/show custom summarisation prompt",  self._sub_prompt)
+        self.add_subcommand("status", "Show current compaction settings",      self._sub_status)
+
+    # ------------------------------------------------------------------ #
+    # Mandatory contract                                                   #
+    # ------------------------------------------------------------------ #
+
+    @property
+    def help(self) -> str:
+        return (
+            "Usage: /compact [--mode summary|buffer] [--turns N] [--model M]\n"
+            "               [--prompt TEXT] [--hard] [--no-checkpoint]\n"
+            "       /compact model [<name>|default]\n"
+            "       /compact prompt [<text>|reset]\n"
+            "       /compact status\n\n"
+            "Modes:\n"
+            "  summary  (default) — LLM produces a bullet summary; history replaced.\n"
+            "  buffer             — keep last N turns; older turns archived to memory.\n\n"
+            "Critical Indicators (IPs, CVEs, credentials, ports) are always preserved\n"
+            "in a Permanent Context block and never discarded.\n\n"
+            "WARNING: compaction is irreversible without the checkpoint file.\n"
+            "         Checkpoints are written to the workspace directory."
+        )
+
+    async def execute(self, args: List[str]) -> bool:
+        """Dispatch sub-commands or trigger compaction."""
         if not args:
-            # Display current model
-            console.print(
-                Panel(
-                    f"Current compact model: [bold green]{self.compact_model or 'Using current model'}[/bold green]",
-                    border_style="green",
-                    title="Compact Model Setting"
-                )
-            )
-            
-            # Get all predefined models using the shared function
-            ALL_MODELS = get_all_predefined_models()
-            
-            # Show available models in a table
-            model_table = Table(
-                title="Available Models for Compaction",
-                show_header=True,
-                header_style="bold yellow")
-            model_table.add_column("#", style="bold white", justify="right")
-            model_table.add_column("Model", style="cyan")
-            model_table.add_column("Provider", style="magenta")
-            model_table.add_column("Category", style="blue")
-            model_table.add_column("Input Cost ($/M)", style="green", justify="right")
-            model_table.add_column("Output Cost ($/M)", style="red", justify="right")
-            model_table.add_column("Description", style="white")
-            
-            # Add all predefined models
-            for i, model in enumerate(ALL_MODELS, 1):
-                # Format pricing info
-                input_cost_str = (
-                    f"${model['input_cost']:.2f}"
-                    if model['input_cost'] is not None else "Unknown"
-                )
-                output_cost_str = (
-                    f"${model['output_cost']:.2f}"
-                    if model['output_cost'] is not None else "Unknown"
-                )
-                
-                model_table.add_row(
-                    str(i),
-                    model["name"],
-                    model["provider"],
-                    model["category"],
-                    input_cost_str,
-                    output_cost_str,
-                    model["description"]
-                )
-            
-            console.print(model_table)
-            
-            # Usage instructions
-            console.print("\n[cyan]Usage:[/cyan]")
-            console.print("  [bold]/compact model <model_name>[/bold] - Set model by name")
-            console.print("  [bold]/compact model <number>[/bold]     - Set model by number from table")
-            console.print("  [bold]/compact model default[/bold]      - Use current agent model")
-            
-            # Update cached model numbers for selection
-            self.cached_model_numbers = {
-                str(i): model["name"] for i, model in enumerate(ALL_MODELS, 1)
-            }
-            
+            return await self._do_compact_interactive([])
+
+        sub = args[0].lstrip("-").lower()
+
+        if sub == "model":
+            return self._sub_model(args[1:])
+        if sub == "prompt":
+            return self._sub_prompt(args[1:])
+        if sub in ("status", "st"):
+            return self._sub_status([])
+
+        # Flag-style invocation: /compact --mode summary ...
+        return await self._do_compact_interactive(args)
+
+    # ------------------------------------------------------------------ #
+    # Sub-command handlers                                                 #
+    # ------------------------------------------------------------------ #
+
+    def _sub_model(self, args: Optional[List[str]] = None) -> bool:
+        """Set or list available models for compaction."""
+        args = args or []
+        if not args:
+            self._show_model_table()
             return True
-            
+
         model_arg = args[0]
-        
-        # Check if it's a number for model selection
-        if model_arg.isdigit() and hasattr(self, 'cached_model_numbers'):
-            if model_arg in self.cached_model_numbers:
-                model_name = self.cached_model_numbers[model_arg]
-            else:
+        if model_arg.isdigit() and self._cached_model_numbers:
+            model_name = self._cached_model_numbers.get(model_arg)
+            if not model_name:
                 console.print(f"[red]Invalid model number: {model_arg}[/red]")
                 return True
         else:
             model_name = model_arg
-        
+
         if model_name.lower() == "default":
             self.compact_model = None
-            console.print("[green]Will use current model for compaction[/green]")
+            console.print("[green]Compaction model reset to current agent model[/green]")
         else:
             self.compact_model = model_name
-            console.print(f"[green]Set compact model to: {model_name}[/green]")
-            
+            console.print(f"[green]Compaction model → {model_name}[/green]")
         return True
-    
-    def handle_prompt(self, args: Optional[List[str]] = None) -> bool:
-        """Set custom summarization prompt."""
+
+    def _sub_prompt(self, args: Optional[List[str]] = None) -> bool:
+        """Set or show custom summarisation prompt."""
+        args = args or []
         if not args:
             if self.custom_prompt:
-                console.print("[cyan]Current custom prompt:[/cyan]")
-                console.print(self.custom_prompt)
+                console.print(Panel(self.custom_prompt, title="Custom prompt", border_style="cyan"))
             else:
-                console.print("[yellow]No custom prompt set. Using default prompt.[/yellow]")
-            
-            console.print("\nUsage: /compact prompt <prompt_text>")
-            console.print("       /compact prompt reset    - Reset to default prompt")
-            console.print("\nExample: /compact prompt Focus on security findings and vulnerabilities")
+                console.print("[yellow]No custom prompt set; using default.[/yellow]")
             return True
-        
+
         if args[0].lower() == "reset":
             self.custom_prompt = None
-            console.print("[green]Reset to default summarization prompt[/green]")
+            console.print("[green]Custom prompt cleared; default will be used.[/green]")
         else:
-            # Join all args as the prompt
             self.custom_prompt = " ".join(args)
-            console.print(f"[green]Set custom prompt: {self.custom_prompt}[/green]")
-        
+            console.print(f"[green]Custom prompt set ({len(self.custom_prompt)} chars)[/green]")
         return True
-    
-    def handle_status(self, args: Optional[List[str]] = None) -> bool:
-        """Show compaction settings."""
-        current_model = get_current_active_model()
-        
+
+    def _sub_status(self, _args: Optional[List[str]] = None) -> bool:
+        """Print compaction settings."""
+        from cai.sdk.agents.models.openai_chatcompletions import (  # type: ignore[import-untyped]
+            get_current_active_model,
+        )
+
         console.print("[bold cyan]Compaction Settings[/bold cyan]\n")
-        
-        # Show model info
-        console.print(f"Compact Model: {self.compact_model or 'Using current model'}")
-        if current_model:
-            console.print(f"Current Model: {current_model.model}")
-        
-        # Show prompt info
-        if self.custom_prompt:
-            console.print(f"\nCustom Prompt: {self.custom_prompt}")
-        else:
-            console.print("\nCustom Prompt: Not set (using default)")
-        
-        # Show default prompt
-        console.print("\n[dim]Default summarization prompt:[/dim]")
-        console.print("[dim]You are a conversation summarizer. Your task is to create a concise summary that captures:[/dim]")
-        console.print("[dim]1. The main objectives and goals discussed[/dim]")
-        console.print("[dim]2. Key findings and important information discovered[/dim]")
-        console.print("[dim]3. Critical tool outputs and results[/dim]")
-        console.print("[dim]4. Current status and next steps[/dim]")
-        console.print("[dim]5. Any flags, credentials, or important data found[/dim]")
-        
-        console.print("\n[yellow]Note: For memory management, use the /memory command[/yellow]")
-        
+        current = get_current_active_model()
+        console.print(f"  Compact model : {self.compact_model or '(use current agent model)'}")
+        if current:
+            console.print(f"  Current model : {current.model}")
+        console.print(f"  Custom prompt : {'set' if self.custom_prompt else 'not set (default)'}")
+        console.print(f"  Default turns : {_BUFFER_DEFAULT_TURNS} (buffer mode)")
         return True
-    
-    def _show_help_menu(self):
-        """Show help menu for the compact command."""
-        from rich.panel import Panel
-        
-        # Show current status
-        current_model = get_current_active_model()
-        model_info = self.compact_model or (current_model.model if current_model else "default")
-        
-        console.print(Panel(
-            "[bold cyan]Compact Command - Memory Summarization[/bold cyan]\n\n"
-            f"Current model: [green]{model_info}[/green]\n"
-            f"Custom prompt: [green]{'Set' if self.custom_prompt else 'Using default'}[/green]",
-            title="[bold yellow]💡 Compact Settings[/bold yellow]",
-            border_style="cyan"
-        ))
-        
-        console.print("\n[bold cyan]Available commands:[/bold cyan]")
-        console.print("  [bold]/compact[/bold]                      - Summarize current conversation")
-        console.print("  [bold]/compact model[/bold]                - Configure model for compaction") 
-        console.print("  [bold]/compact prompt[/bold]               - Set custom summarization prompt")
-        console.print("  [bold]/compact status[/bold]               - Show current settings")
-        console.print("\n[bold cyan]Quick usage:[/bold cyan]")
-        console.print("  [bold]/compact --model o3-mini[/bold]      - Compact with specific model")
-        console.print("  [bold]/compact --prompt \"Focus on...\"[/bold] - Compact with custom prompt")
-        console.print("\n[dim]Note: Compacted conversations are saved to /memory for later use[/dim]")
-    
-    def _ask_and_perform_compaction(self) -> bool:
-        """Ask user if they want to compact and perform if confirmed."""
-        from cai.sdk.agents.models.openai_chatcompletions import get_agent_message_history, get_all_agent_histories
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        
-        # Try to find an agent with messages
-        agent_name = None
-        current_agent = None
-        
-        # First check if there's an active agent
-        current_agent = AGENT_MANAGER.get_active_agent()
-        if current_agent:
-            agent_name = getattr(current_agent, 'name', None)
-        
-        # If no active agent or no name, check all histories for one with messages
-        if not agent_name:
-            all_histories = get_all_agent_histories()
-            for name, history in all_histories.items():
-                if history and len(history) > 0:
-                    agent_name = name
-                    break
-        
-        # If still no agent, try to get from registered agents
-        if not agent_name:
-            registered = AGENT_MANAGER.get_registered_agents()
-            if registered:
-                # Get the first registered agent
-                agent_name = list(registered.keys())[0]
-        
-        # If still no agent, try to get from environment
-        if not agent_name:
-            agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
-            from cai.agents import get_available_agents
+
+    # ------------------------------------------------------------------ #
+    # Core compaction flow                                                 #
+    # ------------------------------------------------------------------ #
+
+    async def _do_compact_interactive(self, args: List[str]) -> bool:
+        """Parse flags, maybe ask for confirmation, then compact."""
+        # --- parse flags ---------------------------------------------------
+        mode = "summary"
+        turns = _BUFFER_DEFAULT_TURNS
+        model_override: Optional[str] = None
+        prompt_override: Optional[str] = None
+        hard = False
+        checkpoint = True
+
+        i = 0
+        while i < len(args):
+            tok = args[i].lstrip("-").lower()
+            if tok == "mode" and i + 1 < len(args):
+                mode = args[i + 1].lower(); i += 2
+            elif tok == "turns" and i + 1 < len(args):
+                try:
+                    turns = int(args[i + 1]); i += 2
+                except ValueError:
+                    turns = _BUFFER_DEFAULT_TURNS; i += 2
+            elif tok == "model" and i + 1 < len(args):
+                model_override = args[i + 1]; i += 2
+            elif tok == "prompt" and i + 1 < len(args):
+                prompt_override = args[i + 1]; i += 2
+            elif tok == "hard":
+                hard = True; i += 1
+            elif tok in ("no-checkpoint", "nocheckpoint"):
+                checkpoint = False; i += 1
+            else:
+                i += 1
+
+        if mode not in ("summary", "buffer"):
+            console.print(f"[red]Unknown mode '{mode}'; choose 'summary' or 'buffer'.[/red]")
+            return False
+
+        # --- resolve agent + history ---------------------------------------
+        agent_name, history = self._resolve_agent_history()
+        if not history:
+            console.print("[yellow]No conversation history to compact.[/yellow]")
+            return True
+
+        msg_count = len(history)
+        tokens_before = sum(_estimate_tokens(_msg_text(m)) for m in history)
+
+        # --- interactive confirm (unless --hard) ---------------------------
+        if not hard:
+            console.print(
+                f"\n[cyan]Compact {msg_count} messages (~{tokens_before:,} tokens) "
+                f"for agent [bold]{agent_name}[/bold] using mode=[bold]{mode}[/bold]?[/cyan]"
+            )
+            try:
+                answer = console.input("[cyan]Proceed? (y/N): [/cyan]")
+            except (EOFError, KeyboardInterrupt):
+                console.print("[dim]Cancelled.[/dim]")
+                return True
+            if answer.strip().lower() != "y":
+                console.print("[dim]Compaction cancelled.[/dim]")
+                return True
+
+        return await self._compact(
+            agent_name=agent_name,
+            history=history,
+            mode=mode,
+            turns=turns,
+            model_override=model_override or self.compact_model,
+            prompt_override=prompt_override or self.custom_prompt,
+            write_checkpoint=checkpoint,
+            tokens_before=tokens_before,
+        )
+
+    async def _compact(
+        self,
+        *,
+        agent_name: str,
+        history: List[Any],
+        mode: str,
+        turns: int,
+        model_override: Optional[str],
+        prompt_override: Optional[str],
+        write_checkpoint: bool,
+        tokens_before: int,
+    ) -> bool:
+        """Perform the actual compaction and post-hoc history replacement."""
+        indicators = self._extract_critical_indicators(history)
+
+        if mode == "summary":
+            new_history = await self._compress_summary(
+                history, agent_name, model_override, prompt_override, indicators
+            )
+        else:  # buffer
+            new_history = self._compress_buffer(
+                history, turns, indicators
+            )
+
+        tokens_after = sum(_estimate_tokens(_msg_text(m)) for m in new_history)
+        saved = max(0, tokens_before - tokens_after)
+
+        if write_checkpoint:
+            self._write_checkpoint(agent_name, history, new_history)
+
+        # Replace history in-place
+        self._apply_history(agent_name, new_history)
+
+        # Reset context-usage env var so the TUI gauge refreshes
+        os.environ["CAI_CONTEXT_USAGE"] = "0.0"
+
+        console.print(
+            f"\n[green]✓ Compaction complete[/green]  "
+            f"({tokens_before:,} → {tokens_after:,} tokens, saved ~{saved:,})"
+        )
+        if indicators:
+            console.print(
+                f"[dim]  Preserved {len(indicators)} critical indicator(s) in Permanent Context block.[/dim]"
+            )
+        return True
+
+    # ------------------------------------------------------------------ #
+    # Compression strategies                                               #
+    # ------------------------------------------------------------------ #
+
+    async def _compress_summary(
+        self,
+        history: List[Any],
+        agent_name: str,
+        model_override: Optional[str],
+        prompt_override: Optional[str],
+        indicators: List[str],
+    ) -> List[Any]:
+        """Call an LLM to produce a compact bullet summary."""
+        try:
+            from cai.sdk.agents.models.openai_chatcompletions import (  # type: ignore[import-untyped]
+                get_current_active_model,
+            )
+
+            # Build the conversation text block
+            conv_text = "\n\n".join(
+                f"[{_role(m)}] {_msg_text(m)}" for m in history
+            )
+            summary_prompt = prompt_override or _DEFAULT_SUMMARY_PROMPT
+
+            summarizer_model = model_override
+            if not summarizer_model:
+                active = get_current_active_model()
+                summarizer_model = active.model if active else "gpt-4o-mini"
+
+            console.print(f"[dim]Summarising via {summarizer_model}…[/dim]")
+
+            import openai  # type: ignore[import-untyped]
+            client = openai.AsyncOpenAI()
+            resp = await client.chat.completions.create(
+                model=summarizer_model,
+                messages=[
+                    {"role": "system", "content": summary_prompt},
+                    {"role": "user",   "content": conv_text},
+                ],
+                temperature=0.2,
+                max_tokens=2048,
+            )
+            summary_text = resp.choices[0].message.content or ""
+
+        except Exception as exc:  # pylint: disable=broad-except
+            console.print(f"[yellow]LLM summary failed ({exc}); falling back to keyword extraction.[/yellow]")
+            summary_text = self._fallback_summary(history)
+
+        # Build replacement history: system → permanent-context → summary
+        return self._build_replacement_history(history, summary_text, indicators)
+
+    def _compress_buffer(
+        self,
+        history: List[Any],
+        turns: int,
+        indicators: List[str],
+    ) -> List[Any]:
+        """Keep last *turns* messages; archive the rest via memory system."""
+        system_msgs: List[Any] = [m for m in history if _role(m) == "system"]
+        non_system: List[Any] = [m for m in history if _role(m) != "system"]
+
+        keep = non_system[-turns:] if len(non_system) > turns else non_system
+        archived = non_system[:-turns] if len(non_system) > turns else []
+
+        # Best-effort: archive older turns to memory
+        if archived:
+            self._archive_to_memory(archived)
+
+        perm_block = self._permanent_context_block(indicators)
+        result: List[Any] = []
+        if system_msgs:
+            result.extend(system_msgs)
+        if perm_block:
+            result.append({"role": "system", "content": perm_block})
+        result.extend(keep)
+        return result
+
+    # ------------------------------------------------------------------ #
+    # Critical Indicators                                                  #
+    # ------------------------------------------------------------------ #
+
+    def _extract_critical_indicators(self, history: List[Any]) -> List[str]:
+        """Scan conversation text for IPs, CVEs, credentials, hashes, ports."""
+        full_text = "\n".join(_msg_text(m) for m in history)
+        found: List[str] = []
+        for label, pattern in _CRITICAL_PATTERNS:
+            hits = re.findall(pattern, full_text)
+            for hit in set(hits):
+                found.append(f"[{label}] {hit}")
+        # Deduplicate preserving first-seen order
+        seen: set = set()
+        unique: List[str] = []
+        for item in found:
+            if item not in seen:
+                seen.add(item)
+                unique.append(item)
+        return unique
+
+    def _permanent_context_block(self, indicators: List[str]) -> str:
+        if not indicators:
+            return ""
+        lines = "\n".join(f"  - {ind}" for ind in indicators)
+        return (
+            "## Permanent Context (DO NOT DISCARD)\n"
+            "The following critical indicators were extracted from prior conversation "
+            "and must never be deleted:\n"
+            + lines
+        )
+
+    # ------------------------------------------------------------------ #
+    # History utilities                                                    #
+    # ------------------------------------------------------------------ #
+
+    def _resolve_agent_history(self) -> Tuple[str, List[Any]]:
+        """Return (agent_name, message_list) for the best available agent."""
+        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER  # type: ignore[import-untyped]
+        from cai.sdk.agents.models.openai_chatcompletions import (  # type: ignore[import-untyped]
+            get_agent_message_history,
+            get_all_agent_histories,
+        )
+
+        # 1. active agent
+        active = AGENT_MANAGER.get_active_agent()
+        if active:
+            name = getattr(active, "name", None)
+            if name:
+                hist = get_agent_message_history(name)
+                if hist:
+                    return name, list(hist)
+
+        # 2. any history with messages
+        for name, hist in get_all_agent_histories().items():
+            if hist:
+                return name, list(hist)
+
+        # 3. registered agents
+        registered = AGENT_MANAGER.get_registered_agents()
+        if registered:
+            name = next(iter(registered))
+            hist = get_agent_message_history(name)
+            return name, list(hist) if hist else []
+
+        # 4. env default
+        agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+        try:
+            from cai.agents import get_available_agents  # type: ignore[import-untyped]
             agents = get_available_agents()
             if agent_type in agents:
                 agent = agents[agent_type]
-                agent_name = getattr(agent, "name", agent_type)
-        
-        # Get message count
-        history = get_agent_message_history(agent_name) if agent_name else []
-        msg_count = len(history)
-        
-        if msg_count == 0:
-            console.print("\n[yellow]No conversation history to compact[/yellow]")
-            return True
-        
-        # Ask for confirmation
-        console.print(f"\n[cyan]¿Quieres resumir la conversación? ({msg_count} mensajes)[/cyan]")
-        confirm = console.input("[cyan]Resumir conversación? (y/N): [/cyan]")
-        
-        if confirm.lower() == 'y':
-            # Pass the detected agent name to _perform_compaction
-            return self._perform_compaction(None, None, agent_name=agent_name)
-        else:
-            console.print("[dim]Compactación cancelada[/dim]")
-            return True
-    
-    def _perform_parallel_compaction(self) -> bool:
-        """Perform compaction for all parallel agents."""
-        from cai.repl.commands.parallel import PARALLEL_CONFIGS
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        from cai.sdk.agents.models.openai_chatcompletions import get_agent_message_history
-        from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
-        from cai.agents import get_available_agents
-        from cai.agents.patterns import get_pattern
-        
-        if not PARALLEL_CONFIGS:
-            console.print("[yellow]No parallel agents configured[/yellow]")
-            return True
-        
-        console.print("[bold cyan]Compacting all parallel agents automatically...[/bold cyan]\n")
-        
-        success_count = 0
-        total_count = 0
-        
-        # Process each parallel agent
-        for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-            total_count += 1
-            agent_id = config.id or f"P{idx}"
-            
-            # Get isolated history for this agent
-            history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-            if not history or len(history) == 0:
-                # Also check AGENT_MANAGER for the history
-                # Resolve the agent name from the config
-                agent_name = None
-                
-                if config.agent_name.endswith("_pattern"):
-                    # This is a pattern, get the entry agent name
-                    pattern = get_pattern(config.agent_name)
-                    if pattern and hasattr(pattern, 'entry_agent'):
-                        agent_name = getattr(pattern.entry_agent, "name", None)
-                else:
-                    # Regular agent
-                    available_agents = get_available_agents()
-                    if config.agent_name in available_agents:
-                        agent = available_agents[config.agent_name]
-                        agent_name = getattr(agent, "name", config.agent_name)
-                
-                if agent_name:
-                    # Try to get history from AGENT_MANAGER
-                    history = get_agent_message_history(agent_name)
-                
-                if not history or len(history) == 0:
-                    console.print(f"[yellow]{config.agent_name} [{agent_id}]: No messages to compact[/yellow]")
-                    continue
-            
-            # Resolve the agent name for display
-            display_name = config.agent_name
-            if config.agent_name.endswith("_pattern"):
-                pattern = get_pattern(config.agent_name)
-                if pattern and hasattr(pattern, 'entry_agent'):
-                    display_name = getattr(pattern.entry_agent, "name", config.agent_name)
-            else:
-                available_agents = get_available_agents()
-                if config.agent_name in available_agents:
-                    agent = available_agents[config.agent_name]
-                    display_name = getattr(agent, "name", config.agent_name)
-            
-            console.print(f"[cyan]Compacting {display_name} [{agent_id}] ({len(history)} messages)...[/cyan]")
-            
-            # Create a temporary agent instance for this compaction
-            # This is necessary because _perform_compaction expects an active agent
-            from cai.agents import get_agent_by_name
-            try:
-                # Get the correct agent type name
-                agent_type = config.agent_name
-                
-                # Create a temporary agent instance
-                temp_agent = get_agent_by_name(agent_type, custom_name=display_name, agent_id=agent_id)
-                
-                # Set it as active temporarily
-                old_active = AGENT_MANAGER.get_active_agent()
-                old_active_name = AGENT_MANAGER._active_agent_name
-                
-                AGENT_MANAGER.set_active_agent(temp_agent, display_name)
-                
-                # Set the isolated history to the agent's model
-                if hasattr(temp_agent, 'model') and hasattr(temp_agent.model, 'message_history'):
-                    temp_agent.model.message_history.clear()
-                    temp_agent.model.message_history.extend(history)
-                
-                # Perform compaction for this agent
-                if self._perform_compaction(agent_name=display_name):
-                    success_count += 1
-                    console.print(f"[green]✓ {display_name} [{agent_id}] compacted successfully[/green]\n")
-                    
-                    # Clear the isolated history after successful compaction
-                    PARALLEL_ISOLATION.replace_isolated_history(agent_id, [])
-                else:
-                    console.print(f"[red]✗ Failed to compact {display_name} [{agent_id}][/red]\n")
-                
-                # Restore the previous active agent
-                if old_active:
-                    AGENT_MANAGER.set_active_agent(old_active, old_active_name)
-                else:
-                    AGENT_MANAGER._active_agent = None
-                    AGENT_MANAGER._active_agent_name = None
-                    
-            except Exception as e:
-                console.print(f"[red]Error compacting {display_name}: {str(e)}[/red]\n")
-                if os.getenv("CAI_DEBUG", "1") == "2":
-                    import traceback
-                    traceback.print_exc()
-        
-        # Summary
-        console.print(f"\n[bold]Parallel compaction complete: {success_count}/{total_count} agents processed[/bold]")
-        
-        if success_count > 0:
-            console.print("[dim]Use '/memory list' to see all saved memories[/dim]")
-            console.print("[dim]All agent histories have been cleared after compaction[/dim]")
-        
-        return True
-    
-    def _perform_compaction(self, model_override: Optional[str] = None, prompt_override: Optional[str] = None, agent_name: Optional[str] = None, *args, **kwargs) -> bool:
-        """Perform immediate compaction of the current conversation.
-        
-        Args:
-            model_override: Optional model to use for this compaction
-            prompt_override: Optional prompt to use for this compaction
-            *args: Additional positional arguments (ignored)
-            **kwargs: Additional keyword arguments (ignored)
-            
-        Returns:
-            True if successful
-        """
-        from cai.repl.commands.memory import MEMORY_COMMAND_INSTANCE
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        from cai.sdk.agents.models.openai_chatcompletions import (
-            ACTIVE_MODEL_INSTANCES, 
-            PERSISTENT_MESSAGE_HISTORIES,
-            get_all_agent_histories
-        )
-        
-        # If agent_name wasn't passed, try to detect it
-        if not agent_name:
-            # Get current agent
-            current_agent = AGENT_MANAGER.get_active_agent()
-            if current_agent:
-                agent_name = getattr(current_agent, 'name', None)
-            
-            # If still no agent, check all histories for one with messages
-            if not agent_name:
-                all_histories = get_all_agent_histories()
-                for name, history in all_histories.items():
-                    if history and len(history) > 0:
-                        agent_name = name
-                        break
-            
-            # If still no agent, try to get from registered agents
-            if not agent_name:
-                registered = AGENT_MANAGER.get_registered_agents()
-                if registered:
-                    # Get the first registered agent
-                    agent_name = list(registered.keys())[0]
-            
-            # If still no agent, try to get from environment
-            if not agent_name:
-                agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
-                from cai.agents import get_available_agents
-                agents = get_available_agents()
-                if agent_type in agents:
-                    agent = agents[agent_type]
-                    agent_name = getattr(agent, "name", agent_type)
-            
-            if not agent_name:
-                console.print("[red]Could not determine agent name[/red]")
-                return False
-        
-        # Try to get the actual agent object if we don't have it
-        current_agent = AGENT_MANAGER.get_active_agent()
-        if not current_agent or getattr(current_agent, 'name', None) != agent_name:
-            # The detected agent might not be the active one
-            # Set it as active if possible
-            from cai.agents import get_agent_by_name
-            try:
-                current_agent = get_agent_by_name(agent_name.lower().replace(' ', '_'))
-                if current_agent:
-                    AGENT_MANAGER.set_active_agent(current_agent, agent_name)
-            except:
-                # If we can't create the agent, continue anyway
-                # The history might still be accessible
-                pass
-        
-        # Temporarily set model/prompt if overrides provided
-        original_model = self.compact_model
-        original_prompt = self.custom_prompt
-        
-        if model_override:
-            self.compact_model = model_override
-            console.print(f"[dim]Using model override: {model_override}[/dim]")
-        
-        if prompt_override:
-            self.custom_prompt = prompt_override
-            console.print(f"[dim]Using custom prompt: {prompt_override[:50]}...[/dim]")
-        
+                name = getattr(agent, "name", agent_type)
+                hist = get_agent_message_history(name)
+                return name, list(hist) if hist else []
+        except Exception:
+            pass
+
+        return "unknown", []
+
+    def _apply_history(self, agent_name: str, new_history: List[Any]) -> None:
+        """Replace the live agent history with *new_history*."""
         try:
-            # Generate memory name
-            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-            memory_name = f"compact_{agent_name.replace(' ', '_').replace('#', '')}_{timestamp}"
-            
-            console.print(f"\n[cyan]Compacting conversation for {agent_name}...[/cyan]")
-            
-            # Use memory command's save functionality  
-            # Pass the compact model if set
-            if self.compact_model:
-                # Temporarily override the model for this operation
-                original_model = os.environ.get("CAI_MODEL", "alias1")
-                os.environ["CAI_MODEL"] = self.compact_model
-                try:
-                    result = MEMORY_COMMAND_INSTANCE.handle_save([memory_name], preserve_history=False)
-                finally:
-                    os.environ["CAI_MODEL"] = original_model
-            else:
-                result = MEMORY_COMMAND_INSTANCE.handle_save([memory_name], preserve_history=False)
-            
-            if result:
-                console.print(f"\n[green]✓ Conversation compacted successfully![/green]")
-                console.print("[dim]The memory has been saved and applied to the agent[/dim]")
-                console.print("[dim]Use '/memory list' to see all saved memories[/dim]")
-                
-                # IMPORTANT: Explicitly clear the history after compaction
-                # The handle_save with preserve_history=False doesn't always clear properly
-                console.print("\n[cyan]Clearing conversation history...[/cyan]")
-                
-                # Clear using AGENT_MANAGER (this uses .clear() to maintain reference)
-                AGENT_MANAGER.clear_history(agent_name)
-                
-                # Also clear persistent history
-                if agent_name in PERSISTENT_MESSAGE_HISTORIES:
-                    PERSISTENT_MESSAGE_HISTORIES[agent_name].clear()
-                
-                # Get the current active agent and clear its model history too
-                current_agent = AGENT_MANAGER.get_active_agent()
-                if current_agent and hasattr(current_agent, 'model') and hasattr(current_agent.model, 'message_history'):
-                    current_agent.model.message_history.clear()
-                
-                # Reset context usage since we cleared the history
-                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
-                console.print("[green]✓ Conversation history cleared[/green]")
-                
-                # Debug: Verify histories are actually cleared
-                if os.getenv("CAI_DEBUG", "1") == "2":
-                    # Check AGENT_MANAGER
-                    manager_history = AGENT_MANAGER.get_message_history(agent_name)
-                    console.print(f"[dim]Debug: AGENT_MANAGER history length: {len(manager_history)}[/dim]")
-                    
-                    # Check active agent (re-fetch to ensure we have the current one)
-                    current_active_agent = AGENT_MANAGER.get_active_agent()
-                    if current_active_agent and hasattr(current_active_agent, 'model') and hasattr(current_active_agent.model, 'message_history'):
-                        console.print(f"[dim]Debug: Active agent model history length: {len(current_active_agent.model.message_history)}[/dim]")
-                
-            else:
-                console.print(f"[red]Failed to compact conversation[/red]")
-            
-            return result
-            
-        finally:
-            # Restore original settings
-            self.compact_model = original_model
-            self.custom_prompt = original_prompt
+            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER  # type: ignore[import-untyped]
+            from cai.sdk.agents.models.openai_chatcompletions import (  # type: ignore[import-untyped]
+                PERSISTENT_MESSAGE_HISTORIES,
+            )
+
+            AGENT_MANAGER.clear_history(agent_name)
+
+            hist_ref = PERSISTENT_MESSAGE_HISTORIES.get(agent_name)
+            if hist_ref is not None:
+                hist_ref.clear()
+                hist_ref.extend(new_history)
+
+            active = AGENT_MANAGER.get_active_agent()
+            if active and hasattr(active, "model") and hasattr(active.model, "message_history"):
+                active.model.message_history.clear()
+                active.model.message_history.extend(new_history)
+
+        except Exception as exc:  # pylint: disable=broad-except
+            console.print(f"[yellow]History replacement partial: {exc}[/yellow]")
+
+    def _build_replacement_history(
+        self,
+        original: List[Any],
+        summary_text: str,
+        indicators: List[str],
+    ) -> List[Any]:
+        """Assemble the compact replacement history."""
+        system_msgs = [m for m in original if _role(m) == "system"]
+        result: List[Any] = list(system_msgs)
+
+        perm = self._permanent_context_block(indicators)
+        if perm:
+            result.append({"role": "system", "content": perm})
+
+        result.append({
+            "role": "assistant",
+            "content": (
+                "## Compacted Conversation Summary\n\n"
+                + summary_text
+            ),
+        })
+        return result
+
+    def _fallback_summary(self, history: List[Any]) -> str:
+        """Keyword-extraction summary when LLM is unavailable."""
+        lines: List[str] = []
+        for msg in history[-20:]:
+            text = _msg_text(msg)
+            if text.strip():
+                truncated = text[:200].replace("\n", " ")
+                lines.append(f"- [{_role(msg)}] {truncated}…")
+        return "## Conversation Excerpt (fallback summary)\n" + "\n".join(lines)
+
+    def _archive_to_memory(self, archived: List[Any]) -> None:
+        """Best-effort: save archived turns to the memory system."""
+        try:
+            from cai.repl.commands.memory import MEMORY_COMMAND_INSTANCE  # type: ignore[import-untyped]
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            name = f"compact_archive_{ts}"
+            MEMORY_COMMAND_INSTANCE.handle_save([name], preserve_history=True)
+        except Exception:
+            pass  # archival is best-effort; do not disrupt the main flow
+
+    # ------------------------------------------------------------------ #
+    # Engagement Checkpoint                                                #
+    # ------------------------------------------------------------------ #
+
+    def _write_checkpoint(
+        self,
+        agent_name: str,
+        original: List[Any],
+        compacted: List[Any],
+    ) -> None:
+        """Write a timestamped checkpoint JSON to the workspace directory."""
+        workspace_dir: Optional[str] = None
+
+        # Try session workspace
+        if self._session and self._session.workspace:
+            ws = self._session.workspace
+            workspace_dir = str(ws) if isinstance(ws, str) else getattr(ws, "path", None)
+
+        if not workspace_dir:
+            workspace_dir = os.getcwd()
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = re.sub(r"[^\w\-]", "_", agent_name)
+        filename = os.path.join(workspace_dir, f"compact_checkpoint_{safe_name}_{ts}.json")
+
+        try:
+            payload: Dict[str, Any] = {
+                "agent": agent_name,
+                "timestamp": ts,
+                "original_message_count": len(original),
+                "compacted_message_count": len(compacted),
+                "tokens_before": sum(_estimate_tokens(_msg_text(m)) for m in original),
+                "tokens_after":  sum(_estimate_tokens(_msg_text(m)) for m in compacted),
+                "original_history": [_serialise_msg(m) for m in original],
+            }
+            with open(filename, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2, ensure_ascii=False)
+            console.print(f"[dim]Checkpoint saved → {filename}[/dim]")
+        except OSError as exc:
+            console.print(f"[yellow]Could not write checkpoint: {exc}[/yellow]")
+
+    # ------------------------------------------------------------------ #
+    # Model table (sub-command helper)                                     #
+    # ------------------------------------------------------------------ #
+
+    def _show_model_table(self) -> None:
+        from cai.sdk.agents.models.openai_chatcompletions import (  # type: ignore[import-untyped]
+            get_current_active_model,
+        )
+        try:
+            from cai.tools.common.get_models import (  # type: ignore[import-untyped]
+                get_predefined_model_categories,
+                get_all_predefined_models,
+            )
+            ALL_MODELS = get_all_predefined_models()
+        except Exception:
+            ALL_MODELS = []
+
+        current = get_current_active_model()
+        info = self.compact_model or (current.model if current else "default")
+        console.print(Panel(
+            f"[bold cyan]Context Distillation Engine[/bold cyan]\n\n"
+            f"Compaction model : [green]{info}[/green]\n"
+            f"Custom prompt    : [green]{'set' if self.custom_prompt else 'using default'}[/green]",
+            title="[bold yellow]Compact settings[/bold yellow]",
+            border_style="cyan",
+        ))
+
+        if ALL_MODELS:
+            tbl = Table(title="Available Models", show_header=True, header_style="bold magenta")
+            for col in ("#", "Name", "Provider", "Category", "In $/1M", "Out $/1M", "Description"):
+                tbl.add_column(col, overflow="fold")
+            for idx, m in enumerate(ALL_MODELS, 1):
+                in_cost  = f"${m['input_cost']:.2f}"  if m.get("input_cost")  is not None else "—"
+                out_cost = f"${m['output_cost']:.2f}" if m.get("output_cost") is not None else "—"
+                tbl.add_row(str(idx), m["name"], m["provider"],
+                            m["category"], in_cost, out_cost, m["description"])
+            console.print(tbl)
+            self._cached_model_numbers = {str(i): m["name"] for i, m in enumerate(ALL_MODELS, 1)}
+
+        console.print("\n[cyan]Usage:[/cyan]  [bold]/compact model <name|number>[/bold]  or  [bold]/compact model default[/bold]")
 
 
-# Global instance for access from other modules
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+def _role(msg: Any) -> str:
+    if isinstance(msg, dict):
+        return msg.get("role", "user")
+    return getattr(msg, "role", "user")
+
+
+def _serialise_msg(msg: Any) -> Dict[str, Any]:
+    if isinstance(msg, dict):
+        return msg
+    return {"role": _role(msg), "content": _msg_text(msg)}
+
+
+# ---------------------------------------------------------------------------
+# Module globals (backward compat)
+# ---------------------------------------------------------------------------
+
 COMPACT_COMMAND_INSTANCE = CompactCommand()
-
-# Register the command
 register_command(COMPACT_COMMAND_INSTANCE)
 
 
 def get_compact_model() -> Optional[str]:
-    """Get the configured compaction model.
-    
-    Returns:
-        Model name if set, None to use current model
-    """
+    """Return the configured compaction model (None = use current agent model)."""
     return COMPACT_COMMAND_INSTANCE.compact_model
 
 
 def get_custom_prompt() -> Optional[str]:
-    """Get the custom summarization prompt.
-    
-    Returns:
-        Custom prompt if set, None to use default
-    """
+    """Return the custom summarisation prompt (None = use default)."""
     return COMPACT_COMMAND_INSTANCE.custom_prompt
