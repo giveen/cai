@@ -1,1105 +1,793 @@
-"""
-Graph command for CAI cli.
+"""Engagement topology mapping command for CAI REPL.
 
-This module provides commands for visualizing the agent interaction graph.
-It allows users to display a simple directed graph of the conversation history,
-showing the sequence of user and agent interactions, including tool calls.
+This module provides a commercial-grade graphing pipeline with decoupled
+builders and renderers:
+- TopologyBuilder: compute graph nodes/edges from memory and history sources.
+- Renderers/Exporters: transform graph documents into Mermaid/ASCII/JSON/
+  GraphML and visual PNG/SVG outputs.
+
+No networkx/matplotlib dependencies are used.
 """
+
+from __future__ import annotations
+
+import json
+import logging
 import os
-import importlib.util
-from typing import List, Optional
-from rich.console import Console  # pylint: disable=import-error
+import re
+import subprocess
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from pydantic import BaseModel, Field
+from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
+from rich import box
 
-from cai.repl.commands.base import Command, register_command
+from cai.repl.commands.base import FrameworkCommand, register_command
 
+logger = logging.getLogger(__name__)
 console = Console()
 
 
-def find_agent_name_by_instructions(target_instructions: str, agents_dir: str) -> Optional[str]:
-    """
-    Search all Python files in the agents directory for an agent whose 'instructions'
-    attribute matches the given target_instructions (ignoring leading/trailing whitespace).
-    Returns the agent's 'name' attribute if found, otherwise None.
+# ---------------------------------------------------------------------------
+# Graph document models
+# ---------------------------------------------------------------------------
 
-    Args:
-        target_instructions (str): The instructions string to match.
-        agents_dir (str): The directory containing agent files.
+class GraphNode(BaseModel):
+    id: str
+    label: str
+    kind: str
+    criticality: str = "info"
+    color: str = "#4a5568"
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    Returns:
-        Optional[str]: The agent name if found, else None.
-    """
-    for filename in os.listdir(agents_dir):
-        if not filename.endswith(".py") or filename.startswith("__"):
-            continue
-        filepath = os.path.join(agents_dir, filename)
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    relation: str
+    layer: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphDocument(BaseModel):
+    graph_type: str
+    title: str
+    generated_at: str
+    nodes: List[GraphNode] = Field(default_factory=list)
+    edges: List[GraphEdge] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Privacy redaction policy
+# ---------------------------------------------------------------------------
+
+class PrivacyRedactor:
+    """Redact sensitive values before rendering/exporting graph artifacts."""
+
+    _PRIVATE_IPV4 = re.compile(
+        r"\b(?:10\.(?:\d{1,3}\.){2}\d{1,3}|192\.168\.(?:\d{1,3})\.(?:\d{1,3})|172\.(?:1[6-9]|2\d|3[0-1])\.(?:\d{1,3})\.(?:\d{1,3}))\b"
+    )
+    _PUBLIC_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+    _SECRET_VALUE = re.compile(r"(?i)\b(?:sk|rk)-[A-Za-z0-9]{12,}\b|\bAKIA[0-9A-Z]{16}\b")
+    _KEY_VALUE = re.compile(r"(?i)\b([A-Z][A-Z0-9_]{2,})\s*[:=]\s*([^\s,;]+)")
+
+    def __init__(self) -> None:
+        self._allow_private_ip = os.getenv("CAI_GRAPH_ALLOW_PRIVATE_IP", "false").lower() == "true"
+
         try:
-            spec = importlib.util.spec_from_file_location("agent_mod", filepath)
-            agent_mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(agent_mod)
-            for attr_name in dir(agent_mod):
-                attr = getattr(agent_mod, attr_name)
-                if hasattr(attr, "instructions"):
-                    agent_instructions = getattr(attr, "instructions", None)
-                    if agent_instructions and agent_instructions.strip() == target_instructions.strip():
-                        agent_name = getattr(attr, "name", None)
-                        if agent_name:
-                            return agent_name
+            from cai.repl.commands.env import ENV_AUDITOR
+
+            self._env_allow = set(ENV_AUDITOR.allow_list())
         except Exception:
-            continue
-    return None
+            self._env_allow = set()
 
-
-class GraphCommand(Command):
-    """
-    Command for visualizing the agent interaction graph.
-
-    This command displays a directed graph of the conversation history,
-    showing the sequence of user and agent messages, and highlighting
-    tool calls made by the agent.
-    """
-
-    def __init__(self):
-        """Initialize the graph command."""
-        super().__init__(
-            name="/graph",
-            description="Visualize the agent interaction graph",
-            aliases=["/g"]
-        )
-        
-        # Add subcommands
-        self.add_subcommand("all", "Show graphs for all agents", self.handle_all)
-        self.add_subcommand("timeline", "Show unified timeline view", self.handle_timeline)
-        self.add_subcommand("stats", "Show detailed statistics", self.handle_stats)
-        self.add_subcommand("export", "Export graph data", self.handle_export)
-
-    def handle(self, args: Optional[List[str]] = None) -> bool:
-        """
-        Handle the /graph command.
-
-        Args:
-            args: Optional list of command arguments
-
-        Returns:
-            bool: True if the command was handled successfully, False otherwise.
-        """
-        if not args:
-            return self.handle_graph_show()
-        
-        # Check if it's a subcommand
-        subcommand = args[0].lower()
-        if subcommand in self.subcommands:
-            handler = self.subcommands[subcommand]["handler"]
-            return handler(args[1:] if len(args) > 1 else [])
-        
-        # Check if it's an agent ID (P1, P2, etc.)
-        if args[0].upper().startswith("P") and len(args[0]) >= 2 and args[0][1:].isdigit():
-            return self.handle_agent_graph(args[0])
-        
-        # Otherwise treat as agent name
-        agent_name = " ".join(args)
-        return self._handle_single_agent_graph(agent_name)
-
-    def handle_graph_show(self) -> bool:
-        """Handle /graph show command - now supports multi-agent conversations"""
-        # Check if we're in parallel mode first
-        parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
-        
-        # Also check if we have parallel configs even if not in active parallel mode
-        from cai.repl.commands.parallel import PARALLEL_CONFIGS
-        
-        if parallel_count > 1 or len(PARALLEL_CONFIGS) > 1:
-            # Multi-agent mode - show all agents' conversations
-            return self._handle_multi_agent_graph()
-        else:
-            # Single agent mode - check for agent parameter
-            return self._handle_single_agent_graph()
-
-    def _handle_single_agent_graph(self, agent_name: Optional[str] = None) -> bool:
-        """Handle graph display for a single agent"""
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        
-        # If no agent specified, use the current active agent
-        if not agent_name:
-            # Try to get the current active agent
-            current_agent = AGENT_MANAGER.get_active_agent()
-            if current_agent:
-                agent_name = getattr(current_agent, 'name', None)
-                if not agent_name:
-                    # Fallback to getting from active agents dict
-                    active_agents = AGENT_MANAGER.get_active_agents()
-                    if active_agents:
-                        agent_name = list(active_agents.keys())[0]
-            else:
-                # No current agent, try active agents
-                active_agents = AGENT_MANAGER.get_active_agents()
-                if not active_agents:
-                    console.print("[yellow]No active agent found.[/yellow]")
-                    return True
-                # Get the first active agent
-                agent_name = list(active_agents.keys())[0]
-        
-        # Get history for this specific agent
-        history = AGENT_MANAGER.get_message_history(agent_name)
-        
-        if not history:
-            console.print(f"[yellow]No conversation history for agent '{agent_name}'.[/yellow]")
-            return True
-        
         try:
-            import networkx as nx
-            
-            G = nx.DiGraph()
-            prev_node_idx = None
-            node_counter = 0  # Use a separate counter for node IDs
-            current_turn = 0  # Track current turn number (will be incremented on first assistant message)
-            last_role = None  # Track last role to detect turn changes
-            
-            for idx, msg in enumerate(history):
-                role = msg.get("role", "unknown")
-                
-                # Skip system messages in graph
-                if role == "system":
-                    continue
-                
-                # Increment turn counter for each assistant message
-                if role == "assistant":
-                    current_turn += 1
-                
-                # User messages don't get a turn number
-                # Tool messages inherit the current turn number from the last assistant
-                
-                label = role
-                extra_info = ""
-                
-                if role == "assistant":
-                    label = agent_name
-                    if msg.get("tool_calls"):
-                        tool_calls = msg["tool_calls"]
-                        tool_info = []
-                        for tc in tool_calls[:3]:  # Show first 3 tool calls
-                            if tc.get("function"):
-                                func_name = tc["function"].get("name", "")
-                                tool_info.append(func_name)
-                        if tool_info:
-                            extra_info = f"\n[cyan]Tools:[/cyan] {', '.join(tool_info)}"
-                        if len(tool_calls) > 3:
-                            extra_info += f" (+{len(tool_calls)-3} more)"
-                elif role == "user":
-                    user_content = msg.get("content", "")
-                    if user_content:
-                        # Truncate long content
-                        if len(user_content) > 100:
-                            user_content = user_content[:97] + "..."
-                        extra_info = f"\n{user_content}"
-                elif role == "tool":
-                    # For tool responses, try to get the tool name
-                    tool_call_id = msg.get("tool_call_id", "")
-                    tool_name = "Tool Result"
-                    # Look back for the tool call
-                    for prev_msg in history[:idx]:
-                        if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
-                            for tc in prev_msg["tool_calls"]:
-                                if tc.get("id") == tool_call_id:
-                                    tool_name = tc.get("function", {}).get("name", "Tool")
-                                    break
-                    label = f"Tool: {tool_name}"
-                    content = msg.get("content", "")
-                    if len(content) > 80:
-                        content = content[:77] + "..."
-                    extra_info = f"\n[dim]{content}[/dim]"
-                
-                # User messages don't get turn numbers
-                if role == "user":
-                    G.add_node(node_counter, role=label, extra_info=extra_info, turn_number=0)
-                else:
-                    G.add_node(node_counter, role=label, extra_info=extra_info, turn_number=current_turn)
-                if prev_node_idx is not None:
-                    G.add_edge(prev_node_idx, node_counter)
-                prev_node_idx = node_counter
-                node_counter += 1
-                
-                # Update last_role for turn tracking
-                last_role = role
-            
-            def render_graph(G):
-                """Render the conversation graph as panels with arrows"""
-                lines = []
-                node_list = list(G.nodes(data=True))
-                for i, (idx, data) in enumerate(node_list):
-                    role = data.get("role", "unknown")
-                    extra_info = data.get("extra_info", "")
-                    turn_number = data.get("turn_number", 0)
-                    
-                    # Color based on role type
-                    if "Tool:" in role:
-                        role_fmt = f"[bold magenta]{role}[/bold magenta]"
-                        border_style = "magenta"
-                    elif role == "user":
-                        role_fmt = f"[bold cyan]{role.title()}[/bold cyan]"
-                        border_style = "cyan"
-                    else:
-                        role_fmt = f"[bold yellow]{role}[/bold yellow]"
-                        border_style = "yellow"
-                    
-                    # Add turn number to the beginning (except for user messages which have turn_number=0)
-                    if turn_number == 0 or role == "user" or role.lower() == "user":
-                        panel_content = role_fmt
-                    else:
-                        panel_content = f"[bold red][{turn_number}][/bold red] {role_fmt}"
-                    if extra_info:
-                        panel_content += extra_info
-                        
-                    panel = Panel(
-                        panel_content,
-                        expand=False,
-                        border_style=border_style
-                    )
-                    lines.append(panel)
-                    if i < len(node_list) - 1:
-                        lines.append("[dim]   │\n   │\n   ▼[/dim]")
-                return lines
-            
-            console.print(f"\n[bold]Conversation Graph for {agent_name}:[/bold]")
-            console.print("-" * (20 + len(agent_name)))
-            
-            if len(G.nodes) == 0:
-                console.print("[yellow]No messages to display in graph.[/yellow]")
-            else:
-                for item in render_graph(G):
-                    console.print(item)
-            console.print()
-            return True
-            
-        except Exception as e:
-            console.print(f"[red]Error displaying graph: {e}[/red]")
-            return False
+            from cai.repl.commands.config import _is_secret as cfg_is_secret, _mask as cfg_mask
 
-    def _handle_multi_agent_graph(self) -> bool:
-        """Handle graph display for multiple agents in parallel mode"""
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        from cai.repl.commands.parallel import PARALLEL_CONFIGS
-        from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
-        from rich.columns import Columns
-        from rich.rule import Rule
-        from cai.agents import get_available_agents
-        
-        # First check if we have isolated histories in parallel mode
-        if PARALLEL_ISOLATION.has_isolated_histories():
-            # Sync isolated histories with AGENT_MANAGER
-            PARALLEL_ISOLATION.sync_with_agent_manager()
-        
-        # Get all histories including from parallel isolation
-        all_histories = {}
-        
-        # Add histories from AGENT_MANAGER
-        manager_histories = AGENT_MANAGER.get_all_histories()
-        for name, hist in manager_histories.items():
-            all_histories[name] = hist
-        
-        # Also check isolated histories if we have them (even if not explicitly in parallel mode)
-        if PARALLEL_CONFIGS and (PARALLEL_ISOLATION.is_parallel_mode() or PARALLEL_ISOLATION.has_isolated_histories()):
-            available_agents = get_available_agents()
-            for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                agent_id = config.id or f"P{idx}"
-                isolated_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-                if isolated_history:
-                    # Build proper display name
-                    if config.agent_name in available_agents:
-                        agent = available_agents[config.agent_name]
-                        display_name = getattr(agent, "name", config.agent_name)
-                    else:
-                        display_name = config.agent_name
-                    
-                    # Add instance number if needed
-                    agent_counts = {}
-                    for c in PARALLEL_CONFIGS:
-                        agent_counts[c.agent_name] = agent_counts.get(c.agent_name, 0) + 1
-                    
-                    if agent_counts[config.agent_name] > 1:
-                        instance_num = 0
-                        for c in PARALLEL_CONFIGS[:idx]:
-                            if c.agent_name == config.agent_name:
-                                instance_num += 1
-                        instance_num += 1
-                        display_name = f"{display_name} #{instance_num}"
-                    
-                    full_name = f"{display_name} [{agent_id}]"
-                    all_histories[full_name] = isolated_history
-        
-        if not all_histories and not PARALLEL_CONFIGS:
-            console.print("[yellow]No agents configured or no conversation history available.[/yellow]")
-            return True
-        
-        console.print("\n[bold cyan]Multi-Agent Conversation Graphs[/bold cyan]")
-        console.print(Rule())
-        
-        # Build list of agents to show
-        agents_to_show = []
-        
-        # If we have parallel configs, show them in order
-        if PARALLEL_CONFIGS:
-            available_agents = get_available_agents()
-            
-            # Count instances of each agent type for proper naming
-            agent_counts = {}
-            for c in PARALLEL_CONFIGS:
-                agent_counts[c.agent_name] = agent_counts.get(c.agent_name, 0) + 1
-            
-            # Track current instance for numbering
-            agent_instances = {}
-            
-            for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                agent_id = config.id or f"P{idx}"
-                
-                # Check if config.agent_name is a pattern name
-                if config.agent_name.endswith("_pattern"):
-                    # Try to get the pattern
-                    from cai.agents.patterns import get_pattern
-                    pattern = get_pattern(config.agent_name)
-                    if pattern and hasattr(pattern, 'entry_agent'):
-                        # For swarm patterns, use the entry agent
-                        base_agent = pattern.entry_agent
-                        base_display_name = getattr(base_agent, "name", config.agent_name)
-                    else:
-                        # Skip if pattern not found
-                        continue
-                else:
-                    # Get the agent instance to get its actual name
-                    base_agent = available_agents.get(config.agent_name)
-                    if not base_agent:
-                        base_agent = available_agents.get(config.agent_name.lower())
-                    
-                    if base_agent:
-                        # Get the display name from the agent object
-                        base_display_name = getattr(base_agent, "name", config.agent_name)
-                    else:
-                        # Agent not found
-                        agents_to_show.append((f"{config.agent_name} [{agent_id}]", []))
-                        continue
-                
-                # Determine instance number if there are duplicates
-                if agent_counts[config.agent_name] > 1:
-                    if config.agent_name not in agent_instances:
-                        agent_instances[config.agent_name] = 0
-                    agent_instances[config.agent_name] += 1
-                    instance_num = agent_instances[config.agent_name]
-                else:
-                    instance_num = 1
-                
-                # Construct the display name
-                if agent_counts[config.agent_name] > 1:
-                    display_name = f"{base_display_name} #{instance_num}"
-                else:
-                    display_name = base_display_name
-                
-                full_name = f"{display_name} [{agent_id}]"
-                
-                # Look for this agent in all_histories
-                if full_name in all_histories:
-                    agents_to_show.append((full_name, all_histories[full_name]))
-                else:
-                    # Try without the ID suffix
-                    found = False
-                    for hist_name, history in all_histories.items():
-                        if display_name in hist_name or f"[{agent_id}]" in hist_name:
-                            agents_to_show.append((hist_name, history))
-                            found = True
-                            break
-                    
-                    if not found:
-                        # No history yet
-                        agents_to_show.append((full_name, []))
-        else:
-            # No parallel configs, just show all histories
-            agents_to_show = list(all_histories.items())
-        
-        # Create graphs for each agent
-        graphs = []
-        for display_name, history in agents_to_show:
-            if not history:
-                # Empty history
-                graphs.append(Panel(
-                    "[dim]No messages yet[/dim]",
-                    title=f"[cyan]{display_name}[/cyan]",
-                    border_style="dim",
-                    padding=(0, 1),
-                    expand=False
-                ))
-                continue
-            
+            self._cfg_is_secret = cfg_is_secret
+            self._cfg_mask = cfg_mask
+        except Exception:
+            self._cfg_is_secret = None
+            self._cfg_mask = None
+
+    def _mask_key_value(self, key: str, val: str) -> str:
+        if self._cfg_is_secret and self._cfg_mask:
             try:
-                import networkx as nx
-                
-                G = nx.DiGraph()
-                prev_node_idx = None
-                node_counter = 0
-                message_count = 0
-                turn_counter = 0  # Will be incremented on first assistant message
-                last_role = None
-                
-                # Build graph for this agent's history
-                for idx, msg in enumerate(history):
-                    role = msg.get("role", "unknown")
-                    
-                    # Skip system messages
-                    if role == "system":
-                        continue
-                    
-                    message_count += 1
-                    
-                    # Increment turn counter only for assistant messages
-                    if role == "assistant":
-                        turn_counter += 1
-                    
-                    # Create node label
-                    if role == "assistant":
-                        label = "Assistant"
-                        if msg.get("tool_calls"):
-                            label += f" ({len(msg['tool_calls'])} tools)"
-                    elif role == "user":
-                        label = "User"
-                    elif role == "tool":
-                        label = "Tool"
-                    else:
-                        label = role.title()
-                    
-                    # User messages don't get turn numbers
-                    if role == "user":
-                        G.add_node(node_counter, role=label, turn_number=0)
-                    else:
-                        G.add_node(node_counter, role=label, turn_number=turn_counter)
-                    if prev_node_idx is not None:
-                        G.add_edge(prev_node_idx, node_counter)
-                    prev_node_idx = node_counter
-                    node_counter += 1
-                    
-                    # Update last_role for turn tracking
-                    last_role = role
-                
-                # Create simplified graph representation
-                graph_lines = []
-                nodes = list(G.nodes(data=True))
-                
-                if nodes:
-                    # Create a more compact representation
-                    for i, (idx, data) in enumerate(nodes):
-                        role = data.get("role", "unknown")
-                        turn_number = data.get("turn_number", 0)
-                        
-                        # Compact box representation with turn number (except for user)
-                        if turn_number == 0 or role == "User":
-                            # No turn number for user messages
-                            graph_lines.append(f"[cyan]● User[/cyan]")
-                        else:
-                            turn_prefix = f"[bold red][{turn_number}][/bold red] "
-                            
-                            if "Tool" in role:
-                                # Shorten tool representation
-                                if "(" in role:
-                                    # Extract just the tool name
-                                    role_short = "Tool"
-                                else:
-                                    role_short = role
-                                graph_lines.append(f"{turn_prefix}[magenta]◆ {role_short}[/magenta]")
-                            elif "Assistant" in role:
-                                # Check if it has tool calls
-                                if "tools)" in role:
-                                    graph_lines.append(f"{turn_prefix}[yellow]▶ Agent (tools)[/yellow]")
-                                else:
-                                    graph_lines.append(f"{turn_prefix}[yellow]▶ Agent[/yellow]")
-                            else:
-                                graph_lines.append(f"{turn_prefix}[yellow]▶ {role}[/yellow]")
-                        
-                        if i < len(nodes) - 1:
-                            graph_lines.append("    ↓")
-                else:
-                    # No non-system messages
-                    graph_lines.append("[dim]No messages yet[/dim]")
-                
-                # Create panel for this agent's graph
-                agent_graph = Panel(
-                    "\n".join(graph_lines),
-                    title=f"[cyan]{display_name}[/cyan]",
-                    subtitle=f"[dim]{message_count} msgs[/dim]" if message_count > 0 else None,
-                    border_style="blue",
-                    padding=(0, 1),
-                    expand=False
-                )
-                graphs.append(agent_graph)
-                
-            except Exception as e:
-                graphs.append(Panel(
-                    f"[red]Error: {str(e)}[/red]",
-                    title=f"[cyan]{display_name}[/cyan]",
-                    border_style="red"
-                ))
-        
-        # Display graphs in columns if multiple agents
-        if len(graphs) > 1:
-            # Create columns layout with appropriate width
-            # Use equal=False to let panels size naturally
-            console.print(Columns(graphs, equal=False, expand=False, padding=(1, 2)))
-        elif graphs:
-            # Single graph
-            console.print(graphs[0])
-        
-        # Summary statistics
-        console.print("\n[bold]Summary:[/bold]")
-        # Count only actual messages (skip system messages)
-        total_messages = 0
-        for _, hist in agents_to_show:
-            for msg in hist:
-                if msg.get("role") != "system":
-                    total_messages += 1
-        
-        console.print(f"• Total agents: {len(agents_to_show)}")
-        console.print(f"• Total messages: {total_messages}")
-        console.print(f"• Average messages per agent: {total_messages / len(agents_to_show) if agents_to_show else 0:.1f}")
-        
-        return True
+                if self._cfg_is_secret(key):
+                    return f"{key}=HIDDEN_BY_POLICY"
+                return f"{key}={self._cfg_mask(key, val)}"
+            except Exception:
+                pass
 
-    def handle_agent_graph(self, agent_id: str) -> bool:
-        """Handle graph display for a specific agent by ID."""
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
-        from cai.repl.commands.parallel import PARALLEL_CONFIGS
-        from cai.agents import get_available_agents
-        
-        # Normalize agent ID
-        agent_id = agent_id.upper()
-        
-        # First check if we're in parallel mode with isolation
-        if PARALLEL_ISOLATION.is_parallel_mode():
-            # Look for agent in PARALLEL_CONFIGS
-            for idx, config in enumerate(PARALLEL_CONFIGS, 1):
-                if f"P{idx}" == agent_id:
-                    # Found the config, get the agent display name
-                    available_agents = get_available_agents()
-                    
-                    # Check if config.agent_name is a pattern
-                    if config.agent_name.endswith("_pattern"):
-                        from cai.agents.patterns import get_pattern
-                        pattern = get_pattern(config.agent_name)
-                        if pattern and hasattr(pattern, 'entry_agent'):
-                            agent = pattern.entry_agent
-                            agent_display_name = getattr(agent, "name", config.agent_name)
-                        else:
-                            console.print(f"[yellow]Pattern '{config.agent_name}' not found[/yellow]")
-                            return True
-                    elif config.agent_name in available_agents:
-                        agent = available_agents[config.agent_name]
-                        agent_display_name = getattr(agent, "name", config.agent_name)
-                    else:
-                        console.print(f"[yellow]Agent '{config.agent_name}' not found[/yellow]")
-                        return True
-                    
-                    # Count instances for proper naming
-                    agent_counts = {}
-                    for c in PARALLEL_CONFIGS:
-                        agent_counts[c.agent_name] = agent_counts.get(c.agent_name, 0) + 1
-                    
-                    # Determine instance number
-                    instance_num = 0
-                    for c in PARALLEL_CONFIGS[:idx]:
-                        if c.agent_name == config.agent_name:
-                            instance_num += 1
-                    instance_num += 1
-                    
-                    # Build the agent name with instance number if needed
-                    if agent_counts[config.agent_name] > 1:
-                        full_agent_name = f"{agent_display_name} #{instance_num}"
-                    else:
-                        full_agent_name = agent_display_name
-                    
-                    # Get the isolated history for this agent
-                    history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-                    if history is None:
-                        # Try syncing first
-                        PARALLEL_ISOLATION.sync_with_agent_manager()
-                        history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-                    
-                    if history:
-                        # Build a temporary graph for this specific agent
-                        console.print(f"[cyan]Showing graph for {full_agent_name} [{agent_id}][/cyan]")
-                        # Manually build the graph using the isolated history
-                        try:
-                            import networkx as nx
-                            
-                            G = nx.DiGraph()
-                            prev_node_idx = None
-                            node_counter = 0
-                            current_turn = 0  # Will be incremented to 1 on first user message
-                            last_role = None
-                            
-                            for idx, msg in enumerate(history):
-                                role = msg.get("role", "unknown")
-                                
-                                # Skip system messages in graph
-                                if role == "system":
-                                    continue
-                                
-                                # Increment turn counter only for assistant messages
-                                # This groups assistant + tools in same turn
-                                if role == "assistant":
-                                    current_turn += 1
-                                
-                                label = role
-                                extra_info = ""
-                                
-                                if role == "assistant":
-                                    label = full_agent_name
-                                    if msg.get("tool_calls"):
-                                        tool_calls = msg["tool_calls"]
-                                        tool_info = []
-                                        for tc in tool_calls[:3]:  # Show first 3 tool calls
-                                            if tc.get("function"):
-                                                func_name = tc["function"].get("name", "")
-                                                tool_info.append(func_name)
-                                        if tool_info:
-                                            extra_info = f"\n[cyan]Tools:[/cyan] {', '.join(tool_info)}"
-                                        if len(tool_calls) > 3:
-                                            extra_info += f" (+{len(tool_calls)-3} more)"
-                                elif role == "user":
-                                    user_content = msg.get("content", "")
-                                    if user_content:
-                                        # Truncate long content
-                                        if len(user_content) > 100:
-                                            user_content = user_content[:97] + "..."
-                                        extra_info = f"\n{user_content}"
-                                elif role == "tool":
-                                    # For tool responses, try to get the tool name
-                                    tool_call_id = msg.get("tool_call_id", "")
-                                    tool_name = "Tool Result"
-                                    # Look back for the tool call
-                                    for prev_msg in history[:idx]:
-                                        if prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls"):
-                                            for tc in prev_msg["tool_calls"]:
-                                                if tc.get("id") == tool_call_id:
-                                                    tool_name = tc.get("function", {}).get("name", "Tool")
-                                                    break
-                                    label = f"Tool: {tool_name}"
-                                    content = msg.get("content", "")
-                                    if len(content) > 80:
-                                        content = content[:77] + "..."
-                                    extra_info = f"\n[dim]{content}[/dim]"
-                                
-                                # User messages don't get turn numbers
-                                if role == "user":
-                                    G.add_node(node_counter, role=label, extra_info=extra_info, turn_number=0)
-                                else:
-                                    G.add_node(node_counter, role=label, extra_info=extra_info, turn_number=current_turn)
-                                if prev_node_idx is not None:
-                                    G.add_edge(prev_node_idx, node_counter)
-                                prev_node_idx = node_counter
-                                node_counter += 1
-                                
-                                # Update last_role for turn tracking
-                                last_role = role
-                            
-                            def render_graph(G):
-                                """Render the conversation graph as panels with arrows"""
-                                lines = []
-                                node_list = list(G.nodes(data=True))
-                                for i, (idx, data) in enumerate(node_list):
-                                    role = data.get("role", "unknown")
-                                    extra_info = data.get("extra_info", "")
-                                    turn_number = data.get("turn_number", 0)
-                                    if turn_number == 0:
-                                        turn_number = 1  # Default to 1 if not set
-                                    
-                                    # Color based on role type
-                                    if "Tool:" in role:
-                                        role_fmt = f"[bold magenta]{role}[/bold magenta]"
-                                        border_style = "magenta"
-                                    elif role == "user":
-                                        role_fmt = f"[bold cyan]{role.title()}[/bold cyan]"
-                                        border_style = "cyan"
-                                    else:
-                                        role_fmt = f"[bold yellow]{role}[/bold yellow]"
-                                        border_style = "yellow"
-                                    
-                                    # Add turn number to the beginning (except for user messages)
-                                    if role == "user" or role.lower() == "user":
-                                        panel_content = role_fmt
-                                    else:
-                                        panel_content = f"[bold red][{turn_number}][/bold red] {role_fmt}"
-                                    if extra_info:
-                                        panel_content += extra_info
-                                        
-                                    from rich.panel import Panel
-                                    panel = Panel(
-                                        panel_content,
-                                        expand=False,
-                                        border_style=border_style
-                                    )
-                                    lines.append(panel)
-                                    if i < len(node_list) - 1:
-                                        lines.append("[dim]   │\n   │\n   ▼[/dim]")
-                                return lines
-                            
-                            console.print(f"\n[bold]Conversation Graph for {full_agent_name}:[/bold]")
-                            console.print("-" * (20 + len(full_agent_name)))
-                            
-                            if len(G.nodes) == 0:
-                                console.print("[yellow]No messages to display in graph.[/yellow]")
-                            else:
-                                for item in render_graph(G):
-                                    console.print(item)
-                            console.print()
-                            return True
-                            
-                        except Exception as e:
-                            console.print(f"[red]Error displaying graph: {e}[/red]")
-                            return False
-                    else:
-                        console.print(f"[yellow]No history found for {full_agent_name} [{agent_id}][/yellow]")
-                        return True
-        
-        # Fall back to regular AGENT_MANAGER lookup
-        agent_name = AGENT_MANAGER.get_agent_by_id(agent_id)
-        if not agent_name:
-            console.print(f"[yellow]No agent found with ID '{agent_id}'[/yellow]")
-            console.print("[dim]Use '/history' to see available agents with IDs[/dim]")
-            return True
-        
-        console.print(f"[cyan]Showing graph for {agent_name} [{agent_id}][/cyan]")
-        return self._handle_single_agent_graph(agent_name)
+        # Fallback behavior
+        upper = key.upper()
+        if any(m in upper for m in ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASS", "PRIVATE")):
+            return f"{key}=HIDDEN_BY_POLICY"
 
-    def handle_all(self, args: Optional[List[str]] = None) -> bool:
-        """Show graphs for all agents with history."""
-        return self._handle_multi_agent_graph()
+        # Respect allow-list semantics for env-like keys
+        if self._env_allow and upper not in self._env_allow:
+            return f"{key}=HIDDEN_BY_POLICY"
 
-    def handle_timeline(self, args: Optional[List[str]] = None) -> bool:
-        """Show a unified timeline view of all agent interactions."""
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        from rich.table import Table
-        import datetime
-        
-        all_histories = AGENT_MANAGER.get_all_histories()
-        
-        if not all_histories:
-            console.print("[yellow]No agents have conversation history[/yellow]")
-            return True
-        
-        # Collect all messages with timestamps and agent info
-        timeline_events = []
-        for display_name, history in all_histories.items():
-            for idx, msg in enumerate(history):
-                # Extract agent ID from display name
-                agent_id = None
-                if "[" in display_name and "]" in display_name:
-                    agent_id = display_name[display_name.rindex("[")+1:display_name.rindex("]")]
-                    agent_base_name = display_name[:display_name.rindex("[")].strip()
-                else:
-                    agent_base_name = display_name
-                
-                timeline_events.append({
-                    'agent': agent_base_name,
-                    'agent_id': agent_id or "?",
-                    'index': idx,
-                    'role': msg.get('role', 'unknown'),
-                    'content': msg.get('content', ''),
-                    'tool_calls': msg.get('tool_calls', []),
-                    'timestamp': idx  # Using index as pseudo-timestamp
-                })
-        
-        # Sort by pseudo-timestamp (in real implementation, would use actual timestamps)
-        timeline_events.sort(key=lambda x: x['timestamp'])
-        
-        # Create timeline table
-        table = Table(
-            title="[bold cyan]Unified Agent Timeline[/bold cyan]",
-            show_header=True,
-            header_style="bold yellow"
-        )
-        table.add_column("Time", style="dim", width=6)
-        table.add_column("Agent", style="magenta", width=25)
-        table.add_column("Role", style="cyan", width=10)
-        table.add_column("Action", style="green")
-        
-        for event in timeline_events:
-            # Format time (using index as pseudo-time)
-            time_str = f"T+{event['timestamp']:03d}"
-            
-            # Format agent with ID
-            agent_str = f"{event['agent']} [{event['agent_id']}]"
-            
-            # Format action based on role
-            if event['role'] == 'user':
-                action = f"User: {event['content'][:80]}..." if len(event['content']) > 80 else f"User: {event['content']}"
-            elif event['role'] == 'assistant':
-                if event['tool_calls']:
-                    tools = [tc.get('function', {}).get('name', '?') for tc in event['tool_calls'][:3]]
-                    action = f"Called tools: {', '.join(tools)}"
-                    if len(event['tool_calls']) > 3:
-                        action += f" (+{len(event['tool_calls'])-3} more)"
-                else:
-                    action = f"Response: {event['content'][:60]}..." if len(event['content']) > 60 else f"Response: {event['content']}"
-            elif event['role'] == 'tool':
-                action = f"Tool result: {event['content'][:60]}..." if len(event['content']) > 60 else f"Tool result: {event['content']}"
-            else:
-                action = f"{event['role']}: {event['content'][:60]}..." if len(event['content']) > 60 else f"{event['role']}: {event['content']}"
-            
-            # Color role
-            role_style = {
-                "user": "cyan",
-                "assistant": "yellow",
-                "tool": "magenta",
-                "system": "blue"
-            }.get(event['role'], "white")
-            
-            table.add_row(
-                time_str,
-                agent_str,
-                f"[{role_style}]{event['role']}[/{role_style}]",
-                action
-            )
-        
-        console.print(table)
-        console.print(f"\n[bold]Total events: {len(timeline_events)}[/bold]")
-        return True
+        return f"{key}={val}"
 
-    def handle_stats(self, args: Optional[List[str]] = None) -> bool:
-        """Show detailed statistics about agent conversations."""
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        from rich.table import Table
-        from collections import Counter
-        
-        all_histories = AGENT_MANAGER.get_all_histories()
-        
-        if not all_histories:
-            console.print("[yellow]No agents have conversation history[/yellow]")
-            return True
-        
-        # Create statistics table
-        stats_table = Table(
-            title="[bold cyan]Agent Conversation Statistics[/bold cyan]",
-            show_header=True,
-            header_style="bold yellow"
-        )
-        stats_table.add_column("Agent", style="cyan")
-        stats_table.add_column("Messages", style="green", justify="right")
-        stats_table.add_column("User", style="cyan", justify="right")
-        stats_table.add_column("Assistant", style="yellow", justify="right")
-        stats_table.add_column("Tools", style="magenta", justify="right")
-        stats_table.add_column("Tool Calls", style="blue", justify="right")
-        stats_table.add_column("Avg Length", style="white", justify="right")
-        
-        total_stats = Counter()
-        
-        for display_name, history in sorted(all_histories.items()):
-            if not history:
-                continue
-                
-            # Count message types
-            role_counts = Counter(msg.get('role', 'unknown') for msg in history)
-            
-            # Count total tool calls
-            total_tool_calls = sum(
-                len(msg.get('tool_calls', [])) 
-                for msg in history 
-                if msg.get('role') == 'assistant'
-            )
-            
-            # Calculate average message length
-            content_lengths = [
-                len(str(msg.get('content', ''))) 
-                for msg in history 
-                if msg.get('content')
-            ]
-            avg_length = sum(content_lengths) / len(content_lengths) if content_lengths else 0
-            
-            # Add to totals
-            total_stats.update(role_counts)
-            total_stats['total_tool_calls'] += total_tool_calls
-            total_stats['total_messages'] += len(history)
-            
-            stats_table.add_row(
-                display_name,
-                str(len(history)),
-                str(role_counts.get('user', 0)),
-                str(role_counts.get('assistant', 0)),
-                str(role_counts.get('tool', 0)),
-                str(total_tool_calls),
-                f"{avg_length:.0f}"
-            )
-        
-        # Add totals row
-        stats_table.add_section()
-        stats_table.add_row(
-            "[bold]TOTAL[/bold]",
-            f"[bold]{total_stats['total_messages']}[/bold]",
-            f"[bold]{total_stats.get('user', 0)}[/bold]",
-            f"[bold]{total_stats.get('assistant', 0)}[/bold]",
-            f"[bold]{total_stats.get('tool', 0)}[/bold]",
-            f"[bold]{total_stats.get('total_tool_calls', 0)}[/bold]",
-            ""
-        )
-        
-        console.print(stats_table)
-        
-        # Additional insights
-        console.print("\n[bold]Insights:[/bold]")
-        if total_stats['total_messages'] > 0:
-            user_ratio = total_stats.get('user', 0) / total_stats['total_messages'] * 100
-            assistant_ratio = total_stats.get('assistant', 0) / total_stats['total_messages'] * 100
-            tool_ratio = total_stats.get('tool', 0) / total_stats['total_messages'] * 100
-            
-            console.print(f"• Message distribution: User {user_ratio:.1f}%, Assistant {assistant_ratio:.1f}%, Tools {tool_ratio:.1f}%")
-            
-            if total_stats.get('assistant', 0) > 0:
-                tools_per_assistant = total_stats.get('total_tool_calls', 0) / total_stats.get('assistant', 0)
-                console.print(f"• Average tool calls per assistant message: {tools_per_assistant:.2f}")
-        
-        console.print(f"• Active agents: {len(all_histories)}")
-        console.print(f"• Total conversations: {sum(1 for h in all_histories.values() if h)}")
-        
-        return True
+    def sanitize_text(self, text: str) -> str:
+        if not text:
+            return ""
 
-    def handle_export(self, args: Optional[List[str]] = None) -> bool:
-        """Export graph data to various formats."""
-        if not args:
-            console.print("[yellow]Export format required[/yellow]")
-            console.print("Usage: /graph export <format> [filename]")
-            console.print("Formats: json, dot, mermaid")
-            return True
-        
-        format_type = args[0].lower()
-        filename = args[1] if len(args) > 1 else None
-        
-        if format_type not in ["json", "dot", "mermaid"]:
-            console.print(f"[red]Unknown export format: {format_type}[/red]")
-            console.print("Supported formats: json, dot, mermaid")
-            return False
-        
-        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-        import json
-        import datetime
-        
-        all_histories = AGENT_MANAGER.get_all_histories()
-        
-        if not all_histories:
-            console.print("[yellow]No conversation history to export[/yellow]")
-            return True
-        
-        # Generate default filename if not provided
-        if not filename:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"cai_graph_{timestamp}.{format_type}"
-        
+        cleaned = str(text)
+        cleaned = self._SECRET_VALUE.sub("HIDDEN_BY_POLICY", cleaned)
+
+        def _kv_replace(match: re.Match[str]) -> str:
+            key = match.group(1)
+            val = match.group(2)
+            return self._mask_key_value(key, val)
+
+        cleaned = self._KEY_VALUE.sub(_kv_replace, cleaned)
+
+        if not self._allow_private_ip:
+            cleaned = self._PRIVATE_IPV4.sub("PRIVATE_IP_REDACTED", cleaned)
+
+        return cleaned
+
+
+# ---------------------------------------------------------------------------
+# Topology builder (data computation only)
+# ---------------------------------------------------------------------------
+
+class TopologyBuilder:
+    """Compute graph nodes/edges from memory and agent history sources."""
+
+    _IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+    _PORT = re.compile(r"\b(?:port|tcp|udp|:)(\d{1,5})\b", re.IGNORECASE)
+    _SERVICE = re.compile(r"\b(http|https|ssh|ftp|smb|rdp|mysql|postgres|mssql|redis|ldap|kerberos|dns)\b", re.IGNORECASE)
+    _CVSS = re.compile(r"(?i)cvss\s*[:=]?\s*([0-9](?:\.[0-9])?)")
+
+    def __init__(self, memory_manager: Any = None, redactor: Optional[PrivacyRedactor] = None) -> None:
+        self.memory_manager = memory_manager
+        self.redactor = redactor or PrivacyRedactor()
+
+    # -- source gathering ---------------------------------------------------
+
+    def _runtime_memory(self) -> Any:
+        if self.memory_manager is not None:
+            return self.memory_manager
         try:
-            if format_type == "json":
-                # Export as JSON
-                export_data = {
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "agents": {}
+            from cai.repl.commands.memory import RUNTIME_MEMORY
+
+            return RUNTIME_MEMORY
+        except Exception:
+            return None
+
+    def _collect_memory_events(self, query: str, limit: int = 200) -> List[Dict[str, Any]]:
+        mm = self._runtime_memory()
+        if mm is None:
+            return []
+
+        get_context = getattr(mm, "get_context", None)
+        if not callable(get_context):
+            return []
+
+        try:
+            ctx = get_context(query, limit=limit)
+            events = getattr(ctx, "events", []) or []
+        except Exception:
+            return []
+
+        rows: List[Dict[str, Any]] = []
+        for ev in events:
+            rows.append(
+                {
+                    "topic": str(getattr(ev, "topic", "general")),
+                    "content": str(getattr(ev, "content", "")),
+                    "tags": list(getattr(ev, "tags", []) or []),
+                    "agent_id": str(getattr(ev, "agent_id", "default")),
+                    "created_at": str(getattr(ev, "created_at", "")),
                 }
-                
-                for agent_name, history in all_histories.items():
-                    export_data["agents"][agent_name] = {
-                        "message_count": len(history),
-                        "messages": history
-                    }
-                
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(export_data, f, indent=2)
-                    
-            elif format_type == "dot":
-                # Export as Graphviz DOT format
-                dot_content = ["digraph CAI_Conversations {"]
-                dot_content.append('  rankdir=TB;')
-                dot_content.append('  node [shape=box];')
-                
-                node_id = 0
-                for agent_name, history in all_histories.items():
-                    dot_content.append(f'\n  subgraph "cluster_{agent_name.replace(" ", "_")}" {{')
-                    dot_content.append(f'    label="{agent_name}";')
-                    
-                    prev_node = None
-                    for msg in history:
-                        if msg.get('role') == 'system':
-                            continue
-                            
-                        role = msg.get('role', 'unknown')
-                        node_name = f"node_{node_id}"
-                        
-                        if role == 'user':
-                            dot_content.append(f'    {node_name} [label="{role}", color=blue];')
-                        elif role == 'assistant':
-                            dot_content.append(f'    {node_name} [label="{role}", color=green];')
-                        elif role == 'tool':
-                            dot_content.append(f'    {node_name} [label="{role}", color=red];')
-                        
-                        if prev_node:
-                            dot_content.append(f'    {prev_node} -> {node_name};')
-                        
-                        prev_node = node_name
-                        node_id += 1
-                    
-                    dot_content.append('  }')
-                
-                dot_content.append('}')
-                
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(dot_content))
-                    
-            elif format_type == "mermaid":
-                # Export as Mermaid diagram
-                mermaid_content = ["graph TD"]
-                
-                node_id = 0
-                for agent_name, history in all_histories.items():
-                    agent_safe_name = agent_name.replace(" ", "_").replace("[", "").replace("]", "")
-                    
-                    prev_node = None
-                    for msg in history:
-                        if msg.get('role') == 'system':
-                            continue
-                            
-                        role = msg.get('role', 'unknown')
-                        node_name = f"{agent_safe_name}_{node_id}"
-                        
-                        if role == 'user':
-                            mermaid_content.append(f'    {node_name}["{role}"]:::user')
-                        elif role == 'assistant':
-                            tools = len(msg.get('tool_calls', []))
-                            label = f"{role} ({tools} tools)" if tools > 0 else role
-                            mermaid_content.append(f'    {node_name}["{label}"]:::assistant')
-                        elif role == 'tool':
-                            mermaid_content.append(f'    {node_name}["{role}"]:::tool')
-                        
-                        if prev_node:
-                            mermaid_content.append(f'    {prev_node} --> {node_name}')
-                        
-                        prev_node = node_name
-                        node_id += 1
-                
-                # Add styling
-                mermaid_content.extend([
-                    "",
-                    "classDef user fill:#3498db,stroke:#2c3e50,color:#fff",
-                    "classDef assistant fill:#2ecc71,stroke:#27ae60,color:#fff", 
-                    "classDef tool fill:#e74c3c,stroke:#c0392b,color:#fff"
-                ])
-                
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(mermaid_content))
-            
-            console.print(f"[green]Successfully exported to {filename}[/green]")
-            
-            # Show usage hints based on format
-            if format_type == "dot":
-                console.print("[dim]To render: dot -Tpng {filename} -o output.png[/dim]")
-            elif format_type == "mermaid":
-                console.print("[dim]Use with Mermaid Live Editor: https://mermaid.live[/dim]")
-                
-        except Exception as e:
-            console.print(f"[red]Error exporting graph: {e}[/red]")
+            )
+        return rows
+
+    def _collect_agent_histories(self) -> Dict[str, List[Dict[str, Any]]]:
+        try:
+            from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
+            all_histories = AGENT_MANAGER.get_all_histories() or {}
+        except Exception:
+            all_histories = {}
+
+        rows: Dict[str, List[Dict[str, Any]]] = {}
+        for name, hist in all_histories.items():
+            safe_msgs: List[Dict[str, Any]] = []
+            for msg in hist or []:
+                if isinstance(msg, dict):
+                    safe_msgs.append(dict(msg))
+            rows[str(name)] = safe_msgs
+        return rows
+
+    # -- criticality and color ---------------------------------------------
+
+    def _criticality_from_text(self, text: str) -> str:
+        match = self._CVSS.search(text)
+        if match:
+            try:
+                score = float(match.group(1))
+                if score >= 9.0:
+                    return "critical"
+                if score >= 7.0:
+                    return "high"
+                if score >= 4.0:
+                    return "medium"
+                return "low"
+            except Exception:
+                pass
+
+        t = text.lower()
+        if any(k in t for k in ("critical", "rce", "domain admin", "full compromise")):
+            return "critical"
+        if any(k in t for k in ("high", "privilege escalation", "credential dump", "lateral movement")):
+            return "high"
+        if any(k in t for k in ("medium", "misconfiguration", "weak tls")):
+            return "medium"
+        if any(k in t for k in ("low", "info", "informational")):
+            return "low"
+        return "info"
+
+    @staticmethod
+    def _color_for_criticality(level: str) -> str:
+        return {
+            "critical": "#9B1C1C",
+            "high": "#C2410C",
+            "medium": "#B7791F",
+            "low": "#2B6CB0",
+            "info": "#4A5568",
+        }.get(level, "#4A5568")
+
+    # -- graph builders -----------------------------------------------------
+
+    def build_network_graph(self) -> GraphDocument:
+        events = self._collect_memory_events("host ip port service scan nmap")
+        hosts: Dict[str, GraphNode] = {}
+        ports: Dict[str, GraphNode] = {}
+        services: Dict[str, GraphNode] = {}
+        edges: List[GraphEdge] = []
+
+        for row in events:
+            text = self.redactor.sanitize_text(row.get("content", ""))
+            crit = self._criticality_from_text(text)
+
+            ip_matches = self._IPV4.findall(text)
+            port_matches = self._PORT.findall(text)
+            svc_matches = self._SERVICE.findall(text)
+
+            for ip in ip_matches:
+                host_id = f"host::{ip}"
+                if host_id not in hosts:
+                    hosts[host_id] = GraphNode(
+                        id=host_id,
+                        label=ip,
+                        kind="host",
+                        criticality=crit,
+                        color=self._color_for_criticality(crit),
+                        metadata={"source": "memory"},
+                    )
+
+                for port in port_matches:
+                    p = int(port)
+                    if p < 1 or p > 65535:
+                        continue
+                    port_id = f"port::{ip}:{p}"
+                    if port_id not in ports:
+                        ports[port_id] = GraphNode(
+                            id=port_id,
+                            label=f"{ip}:{p}",
+                            kind="port",
+                            criticality=crit,
+                            color=self._color_for_criticality(crit),
+                        )
+                    edges.append(GraphEdge(source=host_id, target=port_id, relation="exposes", layer="network"))
+
+                    for svc in svc_matches:
+                        svc_label = svc.lower()
+                        svc_id = f"svc::{ip}:{p}:{svc_label}"
+                        if svc_id not in services:
+                            services[svc_id] = GraphNode(
+                                id=svc_id,
+                                label=svc_label,
+                                kind="service",
+                                criticality=crit,
+                                color=self._color_for_criticality(crit),
+                            )
+                        edges.append(GraphEdge(source=port_id, target=svc_id, relation="runs", layer="network"))
+
+        nodes = list(hosts.values()) + list(ports.values()) + list(services.values())
+        return GraphDocument(
+            graph_type="network",
+            title="Engagement Network Topology",
+            generated_at=datetime.now(tz=timezone.utc).isoformat(),
+            nodes=nodes,
+            edges=edges,
+        )
+
+    def build_attack_path_graph(self) -> GraphDocument:
+        histories = self._collect_agent_histories()
+        nodes: List[GraphNode] = []
+        edges: List[GraphEdge] = []
+
+        stage_keywords = [
+            ("recon", "Reconnaissance"),
+            ("scan", "Scanning"),
+            ("enum", "Enumeration"),
+            ("exploit", "Exploitation"),
+            ("privesc", "Privilege Escalation"),
+            ("lateral", "Lateral Movement"),
+            ("exfil", "Exfiltration"),
+            ("report", "Reporting"),
+        ]
+
+        counter = 0
+        prev_node_id: Optional[str] = None
+
+        for agent_name, msgs in histories.items():
+            for msg in msgs:
+                role = msg.get("role", "unknown")
+                if role not in ("user", "assistant", "tool"):
+                    continue
+
+                content = self.redactor.sanitize_text(str(msg.get("content", "")))
+                label = "Step"
+                for key, stage in stage_keywords:
+                    if key in content.lower():
+                        label = stage
+                        break
+
+                crit = self._criticality_from_text(content)
+                node_id = f"atk::{counter}"
+                node = GraphNode(
+                    id=node_id,
+                    label=f"{label} ({agent_name})",
+                    kind="attack_step",
+                    criticality=crit,
+                    color=self._color_for_criticality(crit),
+                    metadata={
+                        "agent": agent_name,
+                        "role": role,
+                        "snippet": content[:200],
+                    },
+                )
+                nodes.append(node)
+
+                if prev_node_id is not None:
+                    edges.append(GraphEdge(source=prev_node_id, target=node_id, relation="next", layer="attack"))
+                prev_node_id = node_id
+                counter += 1
+
+        return GraphDocument(
+            graph_type="attack",
+            title="Chronological Attack Path",
+            generated_at=datetime.now(tz=timezone.utc).isoformat(),
+            nodes=nodes,
+            edges=edges,
+        )
+
+    def build_knowledge_graph(self) -> GraphDocument:
+        events = self._collect_memory_events("credential password db finding vulnerability leak")
+
+        nodes: Dict[str, GraphNode] = {}
+        edges: List[GraphEdge] = []
+
+        db_re = re.compile(r"\b(mysql|postgres(?:ql)?|mssql|mongodb|redis)\b", re.IGNORECASE)
+        cred_re = re.compile(r"(?i)\b(password|credential|hash|token|api key)\b")
+        vuln_re = re.compile(r"(?i)\b(cve-\d{4}-\d+|sqli|xss|rce|lfi|ssrf|auth bypass)\b")
+
+        for row in events:
+            text = self.redactor.sanitize_text(row.get("content", ""))
+            crit = self._criticality_from_text(text)
+            finding_id = f"finding::{abs(hash(text)) % 10_000_000}"
+            if finding_id not in nodes:
+                nodes[finding_id] = GraphNode(
+                    id=finding_id,
+                    label=(text[:72] + "...") if len(text) > 75 else text,
+                    kind="finding",
+                    criticality=crit,
+                    color=self._color_for_criticality(crit),
+                    metadata={"topic": row.get("topic", "")},
+                )
+
+            db_match = db_re.search(text)
+            if db_match:
+                db = db_match.group(1).lower()
+                db_id = f"db::{db}"
+                if db_id not in nodes:
+                    nodes[db_id] = GraphNode(
+                        id=db_id,
+                        label=db,
+                        kind="database",
+                        criticality=crit,
+                        color=self._color_for_criticality(crit),
+                    )
+                edges.append(GraphEdge(source=finding_id, target=db_id, relation="targets", layer="knowledge"))
+
+            if cred_re.search(text):
+                cred_id = f"cred::{abs(hash(text + 'cred')) % 10_000_000}"
+                if cred_id not in nodes:
+                    nodes[cred_id] = GraphNode(
+                        id=cred_id,
+                        label="Credential Artifact",
+                        kind="credential",
+                        criticality=crit,
+                        color=self._color_for_criticality(crit),
+                    )
+                edges.append(GraphEdge(source=cred_id, target=finding_id, relation="enables", layer="knowledge"))
+
+            vuln_match = vuln_re.search(text)
+            if vuln_match:
+                vuln = vuln_match.group(1).lower()
+                vuln_id = f"vuln::{vuln}"
+                if vuln_id not in nodes:
+                    nodes[vuln_id] = GraphNode(
+                        id=vuln_id,
+                        label=vuln,
+                        kind="vulnerability",
+                        criticality=crit,
+                        color=self._color_for_criticality(crit),
+                    )
+                edges.append(GraphEdge(source=vuln_id, target=finding_id, relation="evidence", layer="knowledge"))
+
+        return GraphDocument(
+            graph_type="knowledge",
+            title="Finding Relationship Knowledge Graph",
+            generated_at=datetime.now(tz=timezone.utc).isoformat(),
+            nodes=list(nodes.values()),
+            edges=edges,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Rendering and exporting (presentation only)
+# ---------------------------------------------------------------------------
+
+class MermaidRenderer:
+    @staticmethod
+    def render(doc: GraphDocument) -> str:
+        lines = ["flowchart TD"]
+        for node in doc.nodes:
+            safe_label = node.label.replace('"', "'").replace("\n", " ")
+            lines.append(f"  {node.id.replace('::', '_')}[\"{safe_label}\"]")
+            lines.append(f"  style {node.id.replace('::', '_')} fill:{node.color},stroke:#1a202c,stroke-width:1px")
+        for edge in doc.edges:
+            lines.append(
+                f"  {edge.source.replace('::', '_')} -->|{edge.relation}| {edge.target.replace('::', '_')}"
+            )
+        return "\n".join(lines)
+
+
+class AsciiRenderer:
+    @staticmethod
+    def render(doc: GraphDocument) -> str:
+        out: List[str] = [f"{doc.title} ({doc.graph_type})"]
+        out.append("=" * min(80, len(out[0]) + 8))
+
+        edge_map: Dict[str, List[GraphEdge]] = {}
+        for e in doc.edges:
+            edge_map.setdefault(e.source, []).append(e)
+
+        for n in doc.nodes:
+            out.append(f"[{n.kind}] {n.label}  [{n.criticality}]")
+            for e in edge_map.get(n.id, []):
+                target = next((x for x in doc.nodes if x.id == e.target), None)
+                tlabel = target.label if target else e.target
+                out.append(f"  -> ({e.relation}) {tlabel}")
+        return "\n".join(out)
+
+
+class DataExporter:
+    @staticmethod
+    def to_json(doc: GraphDocument, out: Path) -> Path:
+        payload = {
+            "graph_type": doc.graph_type,
+            "title": doc.title,
+            "generated_at": doc.generated_at,
+            "nodes": [n.model_dump() for n in doc.nodes],
+            "edges": [e.model_dump() for e in doc.edges],
+        }
+        out.write_text(json.dumps(payload, indent=2))
+        return out
+
+    @staticmethod
+    def to_graphml(doc: GraphDocument, out: Path) -> Path:
+        def esc(v: str) -> str:
+            return (
+                str(v)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+            )
+
+        lines: List[str] = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">',
+            '  <key id="d0" for="node" attr.name="label" attr.type="string"/>',
+            '  <key id="d1" for="node" attr.name="kind" attr.type="string"/>',
+            '  <key id="d2" for="node" attr.name="criticality" attr.type="string"/>',
+            '  <key id="d3" for="edge" attr.name="relation" attr.type="string"/>',
+            '  <graph id="G" edgedefault="directed">',
+        ]
+
+        for n in doc.nodes:
+            lines.append(f'    <node id="{esc(n.id)}">')
+            lines.append(f'      <data key="d0">{esc(n.label)}</data>')
+            lines.append(f'      <data key="d1">{esc(n.kind)}</data>')
+            lines.append(f'      <data key="d2">{esc(n.criticality)}</data>')
+            lines.append("    </node>")
+
+        for i, e in enumerate(doc.edges):
+            lines.append(f'    <edge id="e{i}" source="{esc(e.source)}" target="{esc(e.target)}">')
+            lines.append(f'      <data key="d3">{esc(e.relation)}</data>')
+            lines.append("    </edge>")
+
+        lines.extend(["  </graph>", "</graphml>"])
+        out.write_text("\n".join(lines))
+        return out
+
+
+class VisualExporter:
+    """Graphviz-based visual exporter (PNG/SVG)."""
+
+    @staticmethod
+    def to_dot(doc: GraphDocument) -> str:
+        lines: List[str] = ["digraph Engagement {", "  rankdir=LR;"]
+        for n in doc.nodes:
+            label = n.label.replace('"', "'")
+            lines.append(
+                f'  "{n.id}" [label="{label}", style="filled", fillcolor="{n.color}", color="#1a202c", fontname="Helvetica"];'
+            )
+        for e in doc.edges:
+            rel = e.relation.replace('"', "'")
+            lines.append(f'  "{e.source}" -> "{e.target}" [label="{rel}", color="#2d3748", fontname="Helvetica"];')
+        lines.append("}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def export(doc: GraphDocument, out: Path, fmt: str) -> Path:
+        dot = VisualExporter.to_dot(doc)
+        fmt = fmt.lower()
+        if fmt not in ("png", "svg"):
+            raise ValueError("Visual format must be png or svg")
+
+        with tempfile.NamedTemporaryFile("w", suffix=".dot", delete=False) as tf:
+            tf.write(dot)
+            dot_path = Path(tf.name)
+
+        try:
+            cmd = ["dot", f"-T{fmt}", str(dot_path), "-o", str(out)]
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            if proc.returncode != 0:
+                raise RuntimeError(proc.stderr.strip() or "dot command failed")
+            return out
+        finally:
+            try:
+                dot_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Command
+# ---------------------------------------------------------------------------
+
+class GraphCommand(FrameworkCommand):
+    """Interactive engagement topology mapper command."""
+
+    name = "graph"
+    description = "Build and export engagement topology graphs"
+    aliases = ["/graph", "/g"]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.add_subcommand("all", "Build all graph layers", self._sub_all)
+        self.add_subcommand("network", "Build network graph", self._sub_network)
+        self.add_subcommand("attack", "Build attack path graph", self._sub_attack)
+        self.add_subcommand("knowledge", "Build knowledge graph", self._sub_knowledge)
+        self.add_subcommand("stats", "Show graph statistics", self._sub_stats)
+        self.add_subcommand("export", "Export graphs to files", self._sub_export)
+
+    @property
+    def help(self) -> str:
+        return (
+            "graph [all|network|attack|knowledge|stats|export] [options]\n\n"
+            "Options:\n"
+            "  --format mermaid|ascii|json|graphml|png|svg\n"
+            "  --output <path>\n"
+            "  --layer network|attack|knowledge  (for export)\n"
+            "\n"
+            "Examples:\n"
+            "  /graph network --format mermaid\n"
+            "  /graph attack --format ascii\n"
+            "  /graph export --layer knowledge --format svg\n"
+        )
+
+    async def execute(self, args: List[str]) -> bool:
+        if not args:
+            return await self._sub_all([])
+
+        sub = args[0].lower()
+        handler = getattr(self, f"_sub_{sub}", None)
+        if handler is None:
+            console.print(f"[red]graph: unknown sub-command '{sub}'[/red]")
+            console.print(self.help)
             return False
-        
+        return await handler(args[1:])
+
+    def _builder(self) -> TopologyBuilder:
+        return TopologyBuilder(memory_manager=self.memory)
+
+    def _workspace_report_dir(self) -> Path:
+        try:
+            from cai.tools.workspace import get_project_space
+
+            return get_project_space().ensure_initialized().resolve() / ".cai" / "reports"
+        except Exception:
+            return Path.cwd().resolve() / ".cai" / "reports"
+
+    @staticmethod
+    def _parse_options(args: List[str]) -> Dict[str, str]:
+        opts: Dict[str, str] = {"format": "mermaid"}
+        i = 0
+        while i < len(args):
+            tok = args[i]
+            if tok in ("--format", "-f") and i + 1 < len(args):
+                opts["format"] = args[i + 1].lower()
+                i += 2
+            elif tok in ("--output", "-o") and i + 1 < len(args):
+                opts["output"] = args[i + 1]
+                i += 2
+            elif tok == "--layer" and i + 1 < len(args):
+                opts["layer"] = args[i + 1].lower()
+                i += 2
+            else:
+                # positional fallback as format
+                if "format" not in opts or opts["format"] == "mermaid":
+                    opts["format"] = tok.lower()
+                i += 1
+        return opts
+
+    def _render_terminal(self, doc: GraphDocument, fmt: str) -> bool:
+        fmt = fmt.lower()
+        if fmt == "mermaid":
+            body = MermaidRenderer.render(doc)
+            console.print(Panel(body, title=f"{doc.title} [Mermaid]", border_style="cyan", box=box.ROUNDED))
+            return True
+        if fmt == "ascii":
+            body = AsciiRenderer.render(doc)
+            console.print(Panel(body, title=f"{doc.title} [ASCII]", border_style="cyan", box=box.ROUNDED))
+            return True
+        return False
+
+    async def _render_or_export_single(self, doc: GraphDocument, opts: Dict[str, str], default_stem: str) -> bool:
+        fmt = opts.get("format", "mermaid").lower()
+
+        if fmt in ("mermaid", "ascii"):
+            return self._render_terminal(doc, fmt)
+
+        out_dir = self._workspace_report_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = Path(opts["output"]).expanduser().resolve() if "output" in opts else out_dir / f"{default_stem}.{fmt}"
+
+        try:
+            if fmt == "json":
+                DataExporter.to_json(doc, out_path)
+            elif fmt == "graphml":
+                DataExporter.to_graphml(doc, out_path)
+            elif fmt in ("png", "svg"):
+                VisualExporter.export(doc, out_path, fmt)
+            else:
+                console.print(f"[red]Unsupported format: {fmt}[/red]")
+                return False
+        except Exception as exc:
+            console.print(f"[red]graph export failed: {exc}[/red]")
+            return False
+
+        console.print(f"[green]Graph exported:[/green] {out_path}")
         return True
 
+    # -- subcommands --------------------------------------------------------
 
-# Register the command
-register_command(GraphCommand())
+    async def _sub_network(self, args: List[str]) -> bool:
+        opts = self._parse_options(args)
+        doc = self._builder().build_network_graph()
+        return await self._render_or_export_single(doc, opts, "network_topology")
+
+    async def _sub_attack(self, args: List[str]) -> bool:
+        opts = self._parse_options(args)
+        doc = self._builder().build_attack_path_graph()
+        return await self._render_or_export_single(doc, opts, "attack_path")
+
+    async def _sub_knowledge(self, args: List[str]) -> bool:
+        opts = self._parse_options(args)
+        doc = self._builder().build_knowledge_graph()
+        return await self._render_or_export_single(doc, opts, "knowledge_graph")
+
+    async def _sub_all(self, args: List[str]) -> bool:
+        opts = self._parse_options(args)
+        fmt = opts.get("format", "mermaid")
+
+        builder = self._builder()
+        docs = [
+            builder.build_network_graph(),
+            builder.build_attack_path_graph(),
+            builder.build_knowledge_graph(),
+        ]
+
+        if fmt in ("mermaid", "ascii"):
+            ok = True
+            for doc in docs:
+                ok = self._render_terminal(doc, fmt) and ok
+            return ok
+
+        # For file formats, export all as separate files.
+        all_ok = True
+        for doc in docs:
+            stem = {
+                "network": "network_topology",
+                "attack": "attack_path",
+                "knowledge": "knowledge_graph",
+            }.get(doc.graph_type, "graph")
+            local_opts = dict(opts)
+            if "output" in local_opts:
+                # If output is set for --all, treat it as directory.
+                od = Path(local_opts["output"]).expanduser().resolve()
+                od.mkdir(parents=True, exist_ok=True)
+                local_opts["output"] = str(od / f"{stem}.{fmt}")
+            all_ok = (await self._render_or_export_single(doc, local_opts, stem)) and all_ok
+
+        return all_ok
+
+    async def _sub_stats(self, args: List[str]) -> bool:
+        builder = self._builder()
+        docs = [
+            builder.build_network_graph(),
+            builder.build_attack_path_graph(),
+            builder.build_knowledge_graph(),
+        ]
+
+        table = Table(title="Topology Mapper Statistics", box=box.ROUNDED, show_header=True, header_style="bold")
+        table.add_column("Layer", style="cyan")
+        table.add_column("Nodes", style="yellow", justify="right")
+        table.add_column("Edges", style="green", justify="right")
+        table.add_column("Critical", style="red", justify="right")
+
+        for d in docs:
+            critical = sum(1 for n in d.nodes if n.criticality == "critical")
+            table.add_row(d.graph_type, str(len(d.nodes)), str(len(d.edges)), str(critical))
+
+        console.print(table)
+        return True
+
+    async def _sub_export(self, args: List[str]) -> bool:
+        opts = self._parse_options(args)
+        layer = opts.get("layer", "network")
+
+        builder = self._builder()
+        if layer == "network":
+            doc = builder.build_network_graph()
+            return await self._render_or_export_single(doc, opts, "network_topology")
+        if layer == "attack":
+            doc = builder.build_attack_path_graph()
+            return await self._render_or_export_single(doc, opts, "attack_path")
+        if layer == "knowledge":
+            doc = builder.build_knowledge_graph()
+            return await self._render_or_export_single(doc, opts, "knowledge_graph")
+        if layer == "all":
+            return await self._sub_all(args)
+
+        console.print("[red]graph export: --layer must be network|attack|knowledge|all[/red]")
+        return False
+
+
+GRAPH_COMMAND_INSTANCE = GraphCommand()
+register_command(GRAPH_COMMAND_INSTANCE)
