@@ -12,6 +12,7 @@ This module provides the framework's pre-flight and mission-control layer:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 from asyncio import Queue
 from dataclasses import dataclass, field
@@ -22,6 +23,8 @@ import json
 import os
 from pathlib import Path
 import signal
+import shlex
+import shutil
 import subprocess
 import traceback
 import types
@@ -136,9 +139,19 @@ class SessionLogWriter:
 class CerebroMissionControl:
     """Async pre-flight and mission-control orchestrator."""
 
-    def __init__(self, workspace_root: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        workspace_root: Optional[Path] = None,
+        *,
+        init_only: bool = False,
+        open_mode: bool = False,
+        dry_run: bool = False,
+    ) -> None:
         default_workspace = Path(os.getenv("CIR_WORKSPACE", "/workspace"))
         self.workspace_root = (workspace_root or default_workspace).resolve()
+        self.init_only = bool(init_only)
+        self.open_mode = bool(open_mode)
+        self.dry_run = bool(dry_run)
         self.logger: CerebroLogger = get_cerebro_logger()
         self.status = EngineStatus()
         self.stop_event = asyncio.Event()
@@ -187,9 +200,24 @@ class CerebroMissionControl:
         self.scope = await self._load_scope()
         await self._hydrate_ground_truths(self.scope)
         await self._initialize_cmcd()
+        if self.dry_run:
+            await self._run_dry_run_validation()
         self.status.cmcd = "ready"
-        self.status.mission = "active"
+        self.status.mission = "initialized" if self.init_only else "active"
         await self.event_queue.put(MissionEvent(kind="mission_bootstrap_complete"))
+        if self.init_only:
+            self.logger.audit(
+                "Init-only pre-flight completed",
+                actor="main",
+                data={
+                    "workspace": str(self.workspace_root),
+                    "scope_source": self.scope.source,
+                    "cmcd_path": str(self.cmcd_path),
+                },
+                tags=["main", "bootstrap", "init-only"],
+            )
+            self.stop_event.set()
+            return
         self._dashboard_task = asyncio.create_task(self._dashboard_loop(), name="main-dashboard")
         self._transfer_watch_task = asyncio.create_task(self._transfer_request_watcher(), name="transfer-watch")
         self._background_tasks = [task for task in [self._dashboard_task, self._transfer_watch_task] if task is not None]
@@ -206,23 +234,57 @@ class CerebroMissionControl:
 
     async def _initialize_hardware(self) -> HardwareProfile:
         self._set_cuda_environment()
+        strict = os.getenv("CAI_PREFLIGHT_STRICT", "true").lower() != "false"
+        if self.open_mode:
+            strict = False
+
         ram_total_gb, ram_available_gb = self._read_ram_profile()
-        gpu_name, gpu_vram_mb = self._read_gpu_profile()
-        if ram_total_gb < _MIN_RAM_GB:
+        gpu_name = "unknown"
+        gpu_vram_mb = 0.0
+        cuda_ready = False
+        gpu_error = ""
+        try:
+            gpu_name, gpu_vram_mb = self._read_gpu_profile()
+            cuda_ready = True
+        except Exception as exc:
+            gpu_error = str(exc)
+
+        if strict and ram_total_gb < _MIN_RAM_GB:
             raise PreFlightError(
                 f"RAM check failed: detected {ram_total_gb:.2f} GB; expected at least {_MIN_RAM_GB:.0f} GB"
             )
-        if _GPU_NAME_HINT not in gpu_name and gpu_vram_mb < 30_000:
+        if strict and (_GPU_NAME_HINT not in gpu_name and gpu_vram_mb < 30_000):
             raise PreFlightError(
                 f"GPU check failed: expected RTX 5090-class GPU, detected '{gpu_name}' ({gpu_vram_mb:.0f} MiB VRAM)"
             )
+
+        if not strict:
+            warnings: list[str] = []
+            if ram_total_gb < _MIN_RAM_GB:
+                warnings.append(
+                    f"degraded_ram:{ram_total_gb:.2f}GB<{_MIN_RAM_GB:.0f}GB"
+                )
+            if _GPU_NAME_HINT not in gpu_name and gpu_vram_mb < 30_000:
+                warnings.append(
+                    f"degraded_gpu:{gpu_name}:{gpu_vram_mb:.0f}MiB"
+                )
+            if gpu_error:
+                warnings.append(f"gpu_probe_error:{gpu_error}")
+            if warnings:
+                self.logger.finding(
+                    "Hardware pre-flight running in open/degraded mode",
+                    actor="main",
+                    data={"warnings": warnings},
+                    tags=["hardware", "preflight", "degraded"],
+                )
+
         profile = HardwareProfile(
             ram_total_gb=ram_total_gb,
             ram_available_gb=ram_available_gb,
             gpu_name=gpu_name,
             gpu_vram_mb=gpu_vram_mb,
             cuda_visible_devices=os.environ.get("CUDA_VISIBLE_DEVICES", "0"),
-            cuda_ready=True,
+            cuda_ready=cuda_ready,
         )
         self.logger.action(
             "Hardware pre-flight complete",
@@ -288,6 +350,36 @@ class CerebroMissionControl:
         )
         return MemorySuite(bus=bus, storage=storage, search=search, vector_provider=vector_provider)
 
+    async def _run_dry_run_validation(self) -> None:
+        """Validate resource and tool readiness before simulated execution."""
+        from cai.tools.validation import validate_resource_health
+
+        tool_name = os.getenv("CAI_DRY_RUN_TOOL", "python3")
+        health = await validate_resource_health(
+            min_disk_free_mb=512,
+            min_memory_free_mb=1024,
+            max_cpu_load_1m=24.0,
+        )
+        binary_path = shutil.which(tool_name)
+        status = {
+            "tool": tool_name,
+            "binary_path": binary_path,
+            "validator_ok": bool(health.get("ok", False)),
+            "simulated_execution": bool(binary_path),
+        }
+        self.memory_suite.bus.set_logic(
+            "mission.dry_run.status",
+            status,
+            importance=4,
+            agent_id="main",
+        )
+        self.logger.audit(
+            "Dry-run validation completed",
+            actor="main",
+            data={"validator": health, "dry_run": status},
+            tags=["dry-run", "validator", "catr"],
+        )
+
     async def _initialize_logistics(self) -> LogisticsSuite:
         staged_dir = self.workspace_root / "staged"
         loot_dir = self.workspace_root / "loot"
@@ -327,6 +419,10 @@ class CerebroMissionControl:
     async def _load_scope(self) -> MissionScope:
         scope_path = self.workspace_root / "scope.json"
         env_scope = os.getenv("CAI_SCOPE_JSON", "").strip()
+        env_scope_source = os.getenv("CAI_SCOPE_SOURCE", "").strip()
+        if env_scope and env_scope_source:
+            payload = json.loads(env_scope)
+            return MissionScope(source=env_scope_source, payload=payload)
         if scope_path.exists():
             payload = json.loads(scope_path.read_text(encoding="utf-8"))
             return MissionScope(source=str(scope_path), payload=payload)
@@ -741,6 +837,103 @@ class CerebroMissionControl:
         return transfer_module
 
 
+def _read_cai_version() -> str:
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    try:
+        for line in pyproject_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("version") and "=" in stripped:
+                return stripped.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return "0.0.0"
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="cai-main",
+        description="Cerebro mission-control entrypoint (Open architecture).",
+    )
+    parser.add_argument("--version", action="store_true", help="Show CAI version and exit")
+    parser.add_argument("--init-only", action="store_true", help="Run pre-flight initialization and exit")
+    parser.add_argument("--list-tools", action="store_true", help="List host and Docker tool availability via Validator")
+    parser.add_argument("--scope", type=str, default="", help="Path to mission scope JSON file")
+    parser.add_argument("--workspace", type=str, default=os.getenv("CIR_WORKSPACE", "/workspace"), help="Workspace root path")
+    parser.add_argument("--dry-run", action="store_true", help="Run dry-run validator checks without mission execution")
+    parser.add_argument("--open-mode", action="store_true", help="Allow degraded hardware mode for initialization")
+    return parser
+
+
+def _resolve_scope_into_env(scope_path: str, workspace_root: Path) -> None:
+    guard = PathGuard(workspace_root, lambda _event, _payload: None)
+    resolved = guard.validate_path(scope_path, action="cli_scope", mode="read")
+    payload = json.loads(resolved.read_text(encoding="utf-8"))
+    os.environ["CAI_SCOPE_JSON"] = json.dumps(payload, ensure_ascii=True)
+    os.environ["CAI_SCOPE_SOURCE"] = f"cli:{resolved}"
+
+
+async def _list_tools_with_validator(workspace_root: Path) -> int:
+    from cai.tools.validation import validate_resource_health
+
+    tools = [
+        "python3", "curl", "nmap", "tcpdump", "sqlmap", "nikto", "ssh", "docker"
+    ]
+    health = await validate_resource_health(
+        min_disk_free_mb=256,
+        min_memory_free_mb=512,
+        max_cpu_load_1m=32.0,
+    )
+
+    docker_binary = shutil.which("docker")
+    docker_available = bool(docker_binary)
+    docker_check_cmd = "command -v " + " ".join(shlex.quote(tool) for tool in tools)
+    docker_presence: dict[str, bool] = {tool: False for tool in tools}
+    docker_error = ""
+
+    if docker_available:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "docker",
+                "run",
+                "--rm",
+                "--pull",
+                "never",
+                "kalilinux/kali-rolling:latest",
+                "sh",
+                "-lc",
+                docker_check_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout_raw, stderr_raw = await asyncio.wait_for(proc.communicate(), timeout=20)
+            stdout = stdout_raw.decode("utf-8", errors="replace")
+            if int(proc.returncode or 1) == 0:
+                for line in stdout.splitlines():
+                    name = Path(line.strip()).name
+                    if name in docker_presence:
+                        docker_presence[name] = True
+            else:
+                docker_error = stderr_raw.decode("utf-8", errors="replace").strip()
+        except Exception as exc:
+            docker_error = str(exc)
+
+    print(json.dumps({
+        "validator_gate": "validate_resource_health",
+        "validator": health,
+        "tools": [
+            {
+                "name": tool,
+                "host_available": bool(shutil.which(tool)),
+                "docker_available": docker_presence.get(tool, False) if docker_available else False,
+            }
+            for tool in tools
+        ],
+        "docker_error": docker_error,
+        "workspace": str(workspace_root),
+    }, indent=2, ensure_ascii=True))
+    return 0 if health.get("ok") else 2
+
+
 async def amain() -> int:
     """Async main entrypoint used by console scripts and tests."""
     controller = CerebroMissionControl()
@@ -748,9 +941,61 @@ async def amain() -> int:
 
 
 def main() -> int:
-    """Synchronous wrapper around :func:`amain`."""
+    """CLI wrapper around mission control entrypoint."""
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    if args.version:
+        console.print(_read_cai_version())
+        return 0
+
+    workspace_root = Path(str(args.workspace)).resolve()
+    os.environ["CIR_WORKSPACE"] = str(workspace_root)
+
+    if args.scope:
+        try:
+            _resolve_scope_into_env(args.scope, workspace_root)
+        except Exception as exc:
+            console.print(
+                Panel(
+                    str(exc),
+                    title="Scope Validation Failure",
+                    border_style="red",
+                )
+            )
+            return 2
+
+    if args.init_only and not args.scope and not os.getenv("CAI_SCOPE_JSON") and not (workspace_root / "scope.json").exists():
+        os.environ["CAI_SCOPE_JSON"] = json.dumps(
+            {
+                "targets": [],
+                "authorized_cidrs": [],
+                "boundaries": {"mode": "init_only"},
+            },
+            ensure_ascii=True,
+        )
+
+    if args.list_tools:
+        try:
+            return asyncio.run(_list_tools_with_validator(workspace_root))
+        except Exception as exc:
+            console.print(
+                Panel(
+                    str(exc),
+                    title="Tool Listing Failure",
+                    border_style="red",
+                )
+            )
+            return 1
+
     try:
-        return asyncio.run(amain())
+        controller = CerebroMissionControl(
+            workspace_root=workspace_root,
+            init_only=bool(args.init_only),
+            open_mode=bool(args.open_mode),
+            dry_run=bool(args.dry_run),
+        )
+        return asyncio.run(controller.run())
     except KeyboardInterrupt:
         console.print("[yellow]Interrupted by user.[/yellow]")
         return 130
