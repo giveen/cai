@@ -418,6 +418,41 @@ TOOL_CATALOG = {
         "dependencies": [],
         "description": "Check platform and sandbox resource health before heavy tasks",
     },
+    "list_assets": {
+        "module": "cai.tools.workspace",
+        "name": "list_assets",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "List structured workspace assets across logs, artifacts, findings, work, and evidence",
+    },
+    "categorize_artifact": {
+        "module": "cai.tools.workspace",
+        "name": "categorize_artifact",
+        "phase": PHASE_SYSTEM,
+        "dependencies": [],
+        "description": "Move and classify raw artifacts into evidence subfolders with forensic labels",
+    },
+    "get_summary": {
+        "module": "cai.tools.workspace",
+        "name": "get_summary",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "Get workspace metadata summary including file count and recency",
+    },
+    "semantic_search": {
+        "module": "cai.tools.workspace",
+        "name": "semantic_search",
+        "phase": PHASE_RECON,
+        "dependencies": [],
+        "description": "Search workspace text artifacts by keyword relevance",
+    },
+    "stage_for_archive": {
+        "module": "cai.tools.workspace",
+        "name": "stage_for_archive",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "Flag files for retention as trash or critical evidence",
+    },
 }
 
 
