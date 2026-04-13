@@ -247,6 +247,7 @@ format-command = "ruff format --stdin-filename {filename}"
 
 [project.scripts]
 cai = "cai.cli:main"
+cerebro-ai = "cai.cli:main"
 cai-replay = "tools.replay:main"
 cai-asciinema = "tools.asciinema:main"
 cai-gif = "tools.gif:main"
