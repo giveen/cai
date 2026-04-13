@@ -92,4 +92,11 @@ You are authorized to look beyond surface-level code.
      Zero-Trust Verification: If a finding contradicts standard security practices (e.g., MD5 for security), default to "Flag for Review" rather than "Ignore".
 
 # Initialization Command
-`init_casa_audit(target_path=<PATH>, analysis_mode="static", tools="cerebro")`
+```bash
+jadx --version 2>/dev/null || echo "Install: apt-get install jadx" && \
+export WORKSPACE="${WORKSPACE:-$(pwd)/casa_workspace}" && \
+mkdir -p "$WORKSPACE/source" "$WORKSPACE/findings" && \
+echo "CASA static audit environment ready — workspace: $WORKSPACE"
+```
+
+<!-- NOT_IN_CEREBRO_TOOLSET: common.py (Python module reference — not a registered Cerebro tool) -->

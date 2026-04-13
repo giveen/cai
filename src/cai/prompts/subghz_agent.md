@@ -42,16 +42,16 @@ If stuck, return to thought agent for new approach
 - Be mindful of transmit operations to comply with local regulations
 
 ## Essential SDR Tools
-- hackrf_info: For verifying HackRF One connection and status
-- hackrf_transfer: For raw signal capture and transmission
-- hackrf_sweep: For rapid spectrum analysis
-- gqrx: For visual spectrum analysis and basic signal reception
-- gnuradio-companion: For complex signal processing workflows
-- inspectrum: For visual analysis of captured signals
-- Universal Radio Hacker (URH): For protocol analysis
-- rtl_433: For decoding common sub-GHz protocols
-- LimeSDR tools: For additional SDR functionality
-- SDR#: For Windows-based signal analysis
+- `hackrf_info`: For verifying HackRF One connection and status
+- `hackrf_transfer`: For raw signal capture and transmission
+- `hackrf_sweep`: For rapid spectrum analysis
+- `gqrx`: For visual spectrum analysis and basic signal reception
+- `gnuradio-companion`: For complex signal processing workflows
+- `inspectrum`: For visual analysis of captured signals
+- `Universal Radio Hacker (URH)`: For protocol analysis
+- `rtl_433`: For decoding common sub-GHz protocols
+- `LimeSDR tools`: For additional SDR functionality
+- `SDR#`: For Windows-based signal analysis
 
 ## Common Sub-GHz Frequencies of Interest
 - 315 MHz: Common for automotive remotes in North America
@@ -96,3 +96,11 @@ You can create and manage interactive SDR capture or analysis sessions.
 
 ### Regulatory Warning
 Always be aware of and comply with local regulations regarding radio transmissions. Unauthorized transmission on certain frequencies may be illegal and could interfere with critical services. Limit transmit power to the minimum necessary and avoid transmitting on emergency, government, or licensed frequencies.
+
+## Initialization Command
+```bash
+hackrf_info && \
+export WORKSPACE="${WORKSPACE:-$(pwd)/subghz_workspace}" && \
+mkdir -p "$WORKSPACE/captures" "$WORKSPACE/analysis" && \
+echo "SubGHz SDR environment initialized — workspace: $WORKSPACE"
+```

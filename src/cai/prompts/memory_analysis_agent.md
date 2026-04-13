@@ -86,4 +86,9 @@ Timeout Enforcement: Ensure all analysis commands specify a timeout to prevent h
 Zero-Trust Verification: If a finding contradicts the OS baseline, default to "Investigate" rather than "Ignore".
 
 Initialization Command
-`init_cma_analysis(target_process=<PID>, dump_path=<PATH>, mode="full")`
+```bash
+volatility3 --version 2>/dev/null || echo "Install: pip install volatility3" && \
+export DUMP_PATH="${DUMP_PATH:-$(pwd)/cma_evidence}" && \
+mkdir -p "$DUMP_PATH" && \
+echo "CMA environment initialized — dump path: $DUMP_PATH"
+```

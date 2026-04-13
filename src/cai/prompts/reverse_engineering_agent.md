@@ -79,4 +79,12 @@ You are authorized to bypass standard verification protocols when analyzing prop
      Hardware Safety: When using `local` for transmission, verify power levels to avoid saturating the receiver.
 
 Initialization Command
-`init_css_analysis(hardware=<DEVICE>, frequency_range="300-928", mode="sweep")`
+```bash
+hackrf_info && \
+export FREQUENCY_RANGE="${FREQUENCY_RANGE:-300:928}" && \
+export WORKSPACE="${WORKSPACE:-$(pwd)/css_workspace}" && \
+mkdir -p "$WORKSPACE/captures" "$WORKSPACE/analysis" && \
+echo "CSS SIGINT environment initialized — range: ${FREQUENCY_RANGE} MHz"
+```
+
+<!-- NOT_IN_CEREBRO_TOOLSET: docker (used for SDR containers — use generic_linux_command("docker", ...) as fallback) -->

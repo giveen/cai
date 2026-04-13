@@ -90,4 +90,9 @@ All findings must be reported to the orchestrator using the following structured
      Zero-Trust Verification: If a process or port is unexplained, default to "Investigate" rather than "Ignore".
 
 # Initialization Command
-`init_crir_response(target_host=<HOST>, analysis_mode="full", preserve_forensics="true")`
+```bash
+nmap --version && (netstat --version 2>/dev/null || ss --version) && \
+export WORKSPACE="${WORKSPACE:-$(pwd)/crir_workspace}" && \
+mkdir -p "$WORKSPACE/evidence/forensics/pre-patch" && \
+echo "CRIR defensive environment ready — workspace: $WORKSPACE"
+```

@@ -89,4 +89,11 @@ All findings must be reported to the orchestrator using the following structured
      Zero-Trust Verification: If a permission seems excessive (e.g., INTERNET for a local tool), flag it for investigation.
 
 # Initialization Command
-`init_caie_analysis(target_apk=<PATH>, analysis_mode="full", sandbox="docker")`
+```bash
+jadx --version 2>/dev/null && apktool --version 2>/dev/null || echo "Install: apt-get install jadx apktool" && \
+export WORKSPACE="${WORKSPACE:-$(pwd)/caie_workspace}" && \
+mkdir -p "$WORKSPACE/decompiled" "$WORKSPACE/artifacts" && \
+echo "CAIE Android analysis environment ready — workspace: $WORKSPACE"
+```
+
+<!-- NOT_IN_CEREBRO_TOOLSET: docker (used for Android sandbox — use generic_linux_command("docker", ...) as fallback) -->
