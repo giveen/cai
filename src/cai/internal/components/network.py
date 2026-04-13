@@ -1,912 +1,559 @@
 """Cerebro Protocol Intelligence Engine (CPIE).
 
-Structured network auditing, topology mapping, and packet intelligence for the
-Cerebro-AI suite.
+Transparent, high-velocity network intelligence for the Cerebro-AI suite.
 
-Responsibilities
-----------------
-* Maintain a stateful network map of discovered hosts, ports, services, and
-  traffic volume.
-* Distinguish internal vs external zones using COSE mission scope data.
-* Audit established connections and related PIDs without disrupting traffic.
-* Perform DPI using optional backends (scapy / pyshark) with a built-in parser
-  fallback so analysis still works on bare Ubuntu environments.
-* Detect beaconing, exfiltration, and ARP poisoning indicators.
-* Export topology and sample hashes to /workspace/loot/network/topology.json via
-  PathGuard-backed writer.
-* Provide MODE_CRITIQUE evasion guidance when probing is reset or blocked.
-
-Back-compat
------------
-``process()`` is preserved for callers that still expect a simple status dict.
+Key responsibilities:
+- Async host liveness probing with high concurrency
+- Service discovery and raw banner identification over standard asyncio streams
+- RAM-resident live network map with immediate CCMB + CHPE commits
+- Plain-text forensic audit logging with raw hex dumps of initial responses
+- External-tool execution gated by validation.py and binary availability checks
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict, deque
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
-import hashlib
+import importlib.util
 import ipaddress
 import json
 import logging
 import os
 from pathlib import Path
-import socket
-import struct
+import shutil
+import subprocess
+import sys
 import threading
-import time
-from typing import Any, Deque, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, cast
 
-from cai.tools.reconnaissance.filesystem import PathGuard as FilesystemPathGuard
+_SCHEMA_WORKSPACE_ROOT = Path(os.getenv("CIR_WORKSPACE", Path.cwd())).resolve()
+os.environ.setdefault("CIR_WORKSPACE", str(_SCHEMA_WORKSPACE_ROOT))
 
 try:
     import psutil  # type: ignore
-    _PSUTIL_AVAILABLE = True
 except Exception:  # pragma: no cover
     psutil = None  # type: ignore[assignment]
-    _PSUTIL_AVAILABLE = False
 
-try:
-    import scapy.all as scapy  # type: ignore
-    _SCAPY_AVAILABLE = True
-except Exception:  # pragma: no cover
-    scapy = None  # type: ignore[assignment]
-    _SCAPY_AVAILABLE = False
+from cai.internal.components.schema import (
+    CerebroFinding,
+    ExecutionTelemetry,
+    ToolRequest,
+    ToolResult,
+    VulnerabilityDetails,
+)
+from cai.memory.memory import CerebroMemoryBus
+from cai.memory.storage import CerebroStorageHandler, EvidenceRecord
+from cai.tools.reconnaissance.filesystem import PathGuard as FilesystemPathGuard
+from cai.tools.validation import validate_resource_health
 
-try:
-    import pyshark  # type: ignore
-    _PYSHARK_AVAILABLE = True
-except Exception:  # pragma: no cover
-    pyshark = None  # type: ignore[assignment]
-    _PYSHARK_AVAILABLE = False
+CerebroConfig = Any
 
-try:
-    import cupy as cp  # type: ignore
-    _CUPY_AVAILABLE = True
-except Exception:  # pragma: no cover
-    cp = None  # type: ignore[assignment]
-    _CUPY_AVAILABLE = False
 
-try:
-    import numpy as np  # type: ignore
-    _NUMPY_AVAILABLE = True
-except Exception:  # pragma: no cover
-    np = None  # type: ignore[assignment]
-    _NUMPY_AVAILABLE = False
+def _load_config_factory() -> Callable[[], Any]:
+    _CONFIG_MODULE_PATH = Path(__file__).resolve().parents[2] / "util" / "config.py"
+    _CONFIG_SPEC = importlib.util.spec_from_file_location("cai.util.config", _CONFIG_MODULE_PATH)
+    if _CONFIG_SPEC is None or _CONFIG_SPEC.loader is None:  # pragma: no cover
+        raise ImportError(f"Unable to load Cerebro config module from {_CONFIG_MODULE_PATH}")
+    _CONFIG_MODULE = importlib.util.module_from_spec(_CONFIG_SPEC)
+    sys.modules.setdefault("cai.util.config", _CONFIG_MODULE)
+    _CONFIG_SPEC.loader.exec_module(_CONFIG_MODULE)
+    _CONFIG_MODULE.CerebroConfig.model_rebuild()
+    return cast(Callable[[], Any], _CONFIG_MODULE.get_cerebro_config)
 
-try:
-    from cai.agents.usecase import MissionProfile
-except Exception:  # pragma: no cover
-    MissionProfile = Any  # type: ignore[misc,assignment]
 
-try:
-    from cai.tools.misc.reasoning import MODE_CRITIQUE, REASONING_TOOL
-    _REASONING_AVAILABLE = True
-except Exception:  # pragma: no cover
-    MODE_CRITIQUE = "MODE_CRITIQUE"
-    REASONING_TOOL = None  # type: ignore[assignment]
-    _REASONING_AVAILABLE = False
+get_cerebro_config = _load_config_factory()
 
 
 _CPIE_LOGGER = logging.getLogger("cai.cpie")
 
-_DEFAULT_WORKSPACE = Path(os.getenv("CIR_WORKSPACE", "/workspace")).resolve()
-_TOPOLOGY_PATH = "loot/network/topology.json"
-_FLOW_LOG_CAPACITY = int(os.getenv("CPIE_FLOW_LOG_CAPACITY", "200000"))
-_BEACON_WINDOW = int(os.getenv("CPIE_BEACON_WINDOW", "12"))
-_EXFIL_BYTES_THRESHOLD = int(os.getenv("CPIE_EXFIL_BYTES_THRESHOLD", str(50 * 1024 * 1024)))
-_CRITICALITY_HIGH = 0.75
-
-
-@dataclass
-class ServiceFingerprint:
-    port: int
-    protocol: str
-    service: str
-    banner: str = ""
-    pid: Optional[int] = None
-
-
-@dataclass
-class HostRecord:
-    host: str
-    zone: str
-    first_seen: str
-    last_seen: str
-    open_ports: List[int] = field(default_factory=list)
-    services: List[ServiceFingerprint] = field(default_factory=list)
-    traffic_bytes: int = 0
-    sample_hashes: List[str] = field(default_factory=list)
-    asset_criticality: float = 0.0
-    tags: List[str] = field(default_factory=list)
-
-
-@dataclass
-class ConnectionRecord:
-    local_address: str
-    remote_address: str
-    status: str
-    pid: Optional[int]
-    process_name: str = "unknown"
-    zone: str = "unknown"
-
-
-@dataclass
-class TrafficObservation:
-    timestamp: float
-    src_ip: str
-    dst_ip: str
-    protocol: str
-    src_port: Optional[int]
-    dst_port: Optional[int]
-    payload_size: int
-    flags: str = ""
-    sample_sha256: str = ""
-    banner: str = ""
-    mac_src: str = ""
-    mac_dst: str = ""
-
-
-@dataclass
-class NetworkAlert:
-    alert_type: str
-    severity: str
-    message: str
-    host: Optional[str] = None
-    critique: Optional[Dict[str, Any]] = None
-    created_at: str = field(default_factory=lambda: datetime.now(tz=UTC).isoformat())
-
-
-@dataclass
-class PacketParseResult:
-    observations: List[TrafficObservation]
-    raw_sha256: str
-    anomalies: List[NetworkAlert]
+_DEFAULT_READ_TIMEOUT = 1.0
+_DEFAULT_CONNECT_TIMEOUT = 1.5
+_DEFAULT_PROBE_PORTS = (22, 80, 443, 445, 53)
+_DEFAULT_SERVICE_PORTS = (21, 22, 25, 53, 80, 110, 139, 143, 443, 445, 993, 995, 3306, 3389, 5432, 6379, 8080, 8443)
+_BANNER_READ_BYTES = 2048
 
 
 class _NetworkPathGuardViolation(PermissionError):
-    """Raised when CPIE tries to write outside the workspace."""
+    """Raised when CPIE attempts to write outside the workspace."""
 
 
-class _TopologyWriter:
-    """PathGuard-backed topology exporter scoped to loot/network."""
+class _NetworkAuditWriter:
+    """PathGuard-backed audit and evidence writer for CPIE."""
 
     def __init__(self, workspace_root: Path) -> None:
         self.workspace_root = workspace_root.resolve()
         self._guard = FilesystemPathGuard(self.workspace_root, self._audit)
         self._lock = threading.Lock()
 
-    def write_json(self, relative_path: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    def append_json_line(self, relative_path: str, payload: Dict[str, Any]) -> Path:
+        resolved = self._validate(relative_path, mode="write")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(payload, ensure_ascii=True, default=str) + "\n"
+        with self._lock:
+            with resolved.open("a", encoding="utf-8") as handle:
+                handle.write(line)
+        return resolved
+
+    def write_text(self, relative_path: str, content: str) -> Path:
+        resolved = self._validate(relative_path, mode="write")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            resolved.write_text(content, encoding="utf-8")
+        return resolved
+
+    def write_bytes(self, relative_path: str, content: bytes) -> Path:
+        resolved = self._validate(relative_path, mode="write")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            resolved.write_bytes(content)
+        return resolved
+
+    def _validate(self, relative_path: str, *, mode: str) -> Path:
         try:
-            resolved = self._guard.validate_path(relative_path, action="cpie_write", mode="write")
+            return self._guard.validate_path(relative_path, action="cpie_write", mode=mode)
         except Exception as exc:
             raise _NetworkPathGuardViolation(str(exc)) from exc
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        body = json.dumps(dict(payload), ensure_ascii=True, indent=2, default=str)
-        with self._lock:
-            resolved.write_text(body, encoding="utf-8")
-        return {"ok": True, "path": str(resolved), "bytes_written": len(body.encode("utf-8"))}
 
     @staticmethod
     def _audit(*_args: Any, **_kwargs: Any) -> None:
-        pass
+        return
 
 
-class CerebroNetworkEngine:
-    """Stateful network topology and protocol intelligence engine."""
+class CerebroProtocolEngine:
+    """High-velocity network discovery and protocol identification engine."""
 
     def __init__(
         self,
         *,
         workspace_root: Optional[str] = None,
-        mission_profile: Optional[MissionProfile] = None,
-        retrospective_capacity: int = _FLOW_LOG_CAPACITY,
+        config: Optional["CerebroConfig"] = None,
+        memory_bus: Optional[CerebroMemoryBus] = None,
+        storage_handler: Optional[CerebroStorageHandler] = None,
+        max_concurrency: Optional[int] = None,
+        connect_timeout: float = _DEFAULT_CONNECT_TIMEOUT,
+        read_timeout: float = _DEFAULT_READ_TIMEOUT,
     ) -> None:
-        self.workspace_root = Path(workspace_root or str(_DEFAULT_WORKSPACE)).resolve()
-        self.mission_profile = mission_profile
-        self._writer = _TopologyWriter(self.workspace_root)
-        self._hosts: Dict[str, HostRecord] = {}
-        self._flow_log: Deque[TrafficObservation] = deque(maxlen=max(1000, retrospective_capacity))
-        self._alerts: Deque[NetworkAlert] = deque(maxlen=256)
-        self._arp_claims: Dict[str, Set[str]] = defaultdict(set)
-        self._beacon_history: Dict[Tuple[str, str, str, Optional[int]], Deque[float]] = defaultdict(lambda: deque(maxlen=_BEACON_WINDOW))
-        self._lock = threading.Lock()
+        self.config = config or get_cerebro_config()
+        self.config.ensure_workspace_dirs()
+        self.workspace_root = Path(workspace_root or str(self.config.workspace_root)).resolve()
+        self.contract_root = Path(os.getenv("CIR_WORKSPACE", str(self.workspace_root))).resolve()
+        self.path_guard = FilesystemPathGuard(self.contract_root, self._pathguard_audit)
+        self.writer = _NetworkAuditWriter(self.contract_root)
+        self.memory_bus = memory_bus or CerebroMemoryBus.get_instance(workspace_root=str(self.workspace_root))
+        self.storage_handler = storage_handler or CerebroStorageHandler.get_instance(workspace_root=str(self.workspace_root))
+        self.audit_log_path = "logs/network_audit.json"
+        self.connect_timeout = float(connect_timeout)
+        self.read_timeout = float(read_timeout)
+        self.max_concurrency = max_concurrency or self._derive_max_concurrency()
+        self._semaphore = asyncio.Semaphore(self.max_concurrency)
+        self._lock = asyncio.Lock()
+        self._live_network_map: Dict[str, Dict[str, Any]] = {}
 
-    async def discover_host(
+    async def ping_sweep(
+        self,
+        targets: Sequence[str] | str,
+        *,
+        probe_ports: Optional[Sequence[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Probe targets for liveness using transparent TCP connects.
+
+        Since asyncio streams operate at the TCP layer, liveness is determined by
+        connectability to one or more probe ports rather than ICMP.
+        """
+        hosts = self._expand_targets(targets)
+        ports = list(probe_ports or _DEFAULT_PROBE_PORTS)
+        tasks = [asyncio.create_task(self._probe_host_liveness(host, ports)) for host in hosts]
+        results = await asyncio.gather(*tasks)
+        live_hosts = [result for result in results if result.get("alive")]
+        return live_hosts
+
+    async def service_discovery(
         self,
         host: str,
         *,
-        open_ports: Optional[Sequence[int]] = None,
-        services: Optional[Sequence[ServiceFingerprint]] = None,
-        traffic_bytes: int = 0,
-    ) -> HostRecord:
-        return await asyncio.to_thread(
-            self._discover_host_sync,
-            host,
-            list(open_ports or []),
-            list(services or []),
-            int(traffic_bytes),
-        )
+        ports: Optional[Sequence[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Identify open ports and collect high-fidelity service fingerprints."""
+        scan_ports = list(ports or _DEFAULT_SERVICE_PORTS)
+        tasks = [asyncio.create_task(self._transparent_identification(host, port)) for port in scan_ports]
+        results = await asyncio.gather(*tasks)
+        return [result for result in results if result.get("open")]
 
-    async def audit_established_connections(self) -> List[ConnectionRecord]:
-        return await asyncio.to_thread(self._audit_established_connections_sync)
-
-    async def ingest_raw_sample(
-        self,
-        raw_bytes: bytes,
-        *,
-        source_hint: str = "inline",
-    ) -> PacketParseResult:
-        return await asyncio.to_thread(self._ingest_raw_sample_sync, raw_bytes, source_hint)
-
-    async def analyze_pcap(self, pcap_path: str) -> PacketParseResult:
-        return await asyncio.to_thread(self._analyze_pcap_sync, pcap_path)
-
-    async def export_topology(self) -> Dict[str, Any]:
-        payload = await asyncio.to_thread(self._build_topology_payload)
-        return await asyncio.to_thread(self._writer.write_json, _TOPOLOGY_PATH, payload)
-
-    def get_network_map(self) -> Dict[str, HostRecord]:
-        with self._lock:
-            return {host: self._clone_host(record) for host, record in self._hosts.items()}
-
-    def latest_alerts(self) -> List[NetworkAlert]:
-        with self._lock:
-            return list(self._alerts)
-
-    def retrospective_search(self, indicator: str) -> List[TrafficObservation]:
-        with self._lock:
-            needle = indicator.lower()
-            return [
-                obs for obs in self._flow_log
-                if needle in obs.src_ip.lower()
-                or needle in obs.dst_ip.lower()
-                or needle in obs.banner.lower()
-                or needle in obs.sample_sha256.lower()
-            ]
-
-    def asset_criticality(self, host: str) -> float:
-        with self._lock:
-            record = self._hosts.get(host)
-            return record.asset_criticality if record else 0.0
-
-    def _discover_host_sync(
+    async def banner_grab(
         self,
         host: str,
-        open_ports: List[int],
-        services: List[ServiceFingerprint],
-        traffic_bytes: int,
-    ) -> HostRecord:
-        now = datetime.now(tz=UTC).isoformat()
-        zone = self._classify_zone(host)
-        with self._lock:
-            record = self._hosts.get(host)
-            if record is None:
-                record = HostRecord(host=host, zone=zone, first_seen=now, last_seen=now)
-                self._hosts[host] = record
-            record.last_seen = now
-            record.zone = zone
-            record.traffic_bytes += max(0, traffic_bytes)
-            merged_ports = set(record.open_ports)
-            merged_ports.update(open_ports)
-            record.open_ports = sorted(merged_ports)
-            if services:
-                existing = {(svc.port, svc.protocol, svc.service) for svc in record.services}
-                for svc in services:
-                    key = (svc.port, svc.protocol, svc.service)
-                    if key not in existing:
-                        record.services.append(svc)
-                        existing.add(key)
-            record.asset_criticality = self._score_asset_criticality(record)
-            record.tags = self._derive_tags(record)
-            return self._clone_host(record)
-
-    def _audit_established_connections_sync(self) -> List[ConnectionRecord]:
-        if not _PSUTIL_AVAILABLE or psutil is None:
-            return []
-        records: List[ConnectionRecord] = []
-        try:
-            connections = psutil.net_connections(kind="inet")
-        except Exception as exc:
-            _CPIE_LOGGER.debug("CPIE connection audit failed: %s", exc)
-            return []
-        for conn in connections:
-            if conn.status != "ESTABLISHED":
-                continue
-            pid = conn.pid
-            pname = "unknown"
-            if pid:
-                try:
-                    pname = psutil.Process(pid).name()
-                except Exception:
-                    pass
-            local_addr = self._format_addr(conn.laddr)
-            remote_addr = self._format_addr(conn.raddr)
-            zone = self._classify_zone(conn.raddr.ip) if conn.raddr else "internal"
-            record = ConnectionRecord(
-                local_address=local_addr,
-                remote_address=remote_addr,
-                status=conn.status,
-                pid=pid,
-                process_name=pname,
-                zone=zone,
-            )
-            records.append(record)
-            if conn.raddr:
-                self._discover_host_sync(
-                    conn.raddr.ip,
-                    [conn.raddr.port],
-                    [ServiceFingerprint(port=conn.raddr.port, protocol="tcp", service=pname, pid=pid)],
-                    0,
+        port: int,
+        *,
+        protocol_hint: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Open a raw stream and capture an initial service response."""
+        async with self._semaphore:
+            started_at = datetime.now(tz=UTC).isoformat(timespec="milliseconds")
+            telemetry_before = self._capture_execution_telemetry()
+            writer: Optional[asyncio.StreamWriter] = None
+            response = b""
+            error_message = ""
+            connected = False
+            identified_protocol = protocol_hint or self._guess_protocol_from_port(port)
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(host, port),
+                    timeout=self.connect_timeout,
                 )
-        return records
-
-    def _ingest_raw_sample_sync(self, raw_bytes: bytes, source_hint: str) -> PacketParseResult:
-        sha256 = hashlib.sha256(raw_bytes).hexdigest()
-        observations = self._parse_frames(raw_bytes, sha256)
-        anomalies = self._evaluate_observations(observations)
-        with self._lock:
-            for obs in observations:
-                self._flow_log.append(obs)
-                self._update_topology_from_observation(obs)
-            for alert in anomalies:
-                self._push_alert(alert)
-        return PacketParseResult(observations=observations, raw_sha256=sha256, anomalies=anomalies)
-
-    def _analyze_pcap_sync(self, pcap_path: str) -> PacketParseResult:
-        path = Path(pcap_path)
-        raw = path.read_bytes()
-        if _SCAPY_AVAILABLE and scapy is not None:
-            try:
-                observations = self._parse_with_scapy(path)
-                sha256 = hashlib.sha256(raw).hexdigest()
-                anomalies = self._evaluate_observations(observations)
-                with self._lock:
-                    for obs in observations:
-                        self._flow_log.append(obs)
-                        self._update_topology_from_observation(obs)
-                    for alert in anomalies:
-                        self._push_alert(alert)
-                return PacketParseResult(observations=observations, raw_sha256=sha256, anomalies=anomalies)
+                connected = True
+                request_payload = self._build_banner_probe(host, port, identified_protocol)
+                if request_payload:
+                    writer.write(request_payload)
+                    await writer.drain()
+                response = await asyncio.wait_for(reader.read(_BANNER_READ_BYTES), timeout=self.read_timeout)
             except Exception as exc:
-                _CPIE_LOGGER.debug("CPIE scapy parser failed: %s", exc)
-        if _PYSHARK_AVAILABLE and pyshark is not None:
-            try:
-                observations = self._parse_with_pyshark(path)
-                sha256 = hashlib.sha256(raw).hexdigest()
-                anomalies = self._evaluate_observations(observations)
-                with self._lock:
-                    for obs in observations:
-                        self._flow_log.append(obs)
-                        self._update_topology_from_observation(obs)
-                    for alert in anomalies:
-                        self._push_alert(alert)
-                return PacketParseResult(observations=observations, raw_sha256=sha256, anomalies=anomalies)
-            except Exception as exc:
-                _CPIE_LOGGER.debug("CPIE pyshark parser failed: %s", exc)
-        return self._ingest_raw_sample_sync(raw, str(path))
+                error_message = str(exc)
+            finally:
+                if writer is not None:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
 
-    def _build_topology_payload(self) -> Dict[str, Any]:
-        with self._lock:
-            hosts = {
-                host: {
-                    "zone": record.zone,
-                    "first_seen": record.first_seen,
-                    "last_seen": record.last_seen,
-                    "open_ports": record.open_ports,
-                    "services": [
-                        {
-                            "port": svc.port,
-                            "protocol": svc.protocol,
-                            "service": svc.service,
-                            "banner": svc.banner,
-                            "pid": svc.pid,
-                        }
-                        for svc in record.services
-                    ],
-                    "traffic_bytes": record.traffic_bytes,
-                    "sample_hashes": record.sample_hashes[-50:],
-                    "asset_criticality": round(record.asset_criticality, 4),
-                    "tags": record.tags,
-                }
-                for host, record in self._hosts.items()
+            hex_dump = response.hex()
+            banner_text = response.decode("utf-8", errors="replace").strip()
+            identified_protocol = self._identify_protocol(port, response, identified_protocol)
+            result = {
+                "host": host,
+                "port": int(port),
+                "open": connected,
+                "protocol": identified_protocol,
+                "banner": banner_text,
+                "hex_dump": hex_dump,
+                "raw_bytes": response,
+                "error": error_message,
+                "started_at": started_at,
+                "telemetry": telemetry_before.model_dump(mode="json"),
             }
-            alerts = [
-                {
-                    "alert_type": alert.alert_type,
-                    "severity": alert.severity,
-                    "message": alert.message,
-                    "host": alert.host,
-                    "critique": alert.critique,
-                    "created_at": alert.created_at,
-                }
-                for alert in self._alerts
-            ]
-            flow_size = len(self._flow_log)
-        return {
-            "generated_at": datetime.now(tz=UTC).isoformat(),
-            "hosts": hosts,
-            "alerts": alerts,
-            "retrospective_flow_log_size": flow_size,
-            "gpu_acceleration": _CUPY_AVAILABLE,
-        }
+            await self._log_interaction(host=host, port=port, result=result)
+            return result
 
-    def _evaluate_observations(self, observations: List[TrafficObservation]) -> List[NetworkAlert]:
-        alerts: List[NetworkAlert] = []
-        for obs in observations:
-            self._track_beacon_pattern(obs)
-            if obs.protocol == "ARP" and obs.banner:
-                self._arp_claims[obs.dst_ip].add(obs.banner)
-                if len(self._arp_claims[obs.dst_ip]) > 1:
-                    alerts.append(self._make_alert(
-                        "arp_poisoning",
-                        "high",
-                        f"Multiple MACs claim IP {obs.dst_ip}: {sorted(self._arp_claims[obs.dst_ip])}",
-                        host=obs.dst_ip,
-                    ))
-            if obs.zone if hasattr(obs, 'zone') else False:
-                pass
-            if self._is_potential_exfil(obs):
-                alerts.append(self._make_alert(
-                    "data_exfiltration",
-                    "high",
-                    f"Outbound transfer {obs.payload_size} bytes from {obs.src_ip} to external {obs.dst_ip}",
-                    host=obs.src_ip,
-                ))
-            if obs.flags and ("RST" in obs.flags or "UNREACHABLE" in obs.flags):
-                alerts.append(self._make_alert(
-                    "scan_blocked",
-                    "medium",
-                    f"Probe to {obs.dst_ip}:{obs.dst_port or 0} was reset or unreachable.",
-                    host=obs.dst_ip,
-                    critique=self._evasion_critique(obs),
-                ))
-        alerts.extend(self._detect_beacon_alerts())
-        return alerts
-
-    def _track_beacon_pattern(self, obs: TrafficObservation) -> None:
-        key = (obs.src_ip, obs.dst_ip, obs.protocol, obs.dst_port)
-        self._beacon_history[key].append(obs.timestamp)
-
-    def _detect_beacon_alerts(self) -> List[NetworkAlert]:
-        alerts: List[NetworkAlert] = []
-        for key, timestamps in list(self._beacon_history.items()):
-            if len(timestamps) < 4:
-                continue
-            intervals = [b - a for a, b in zip(timestamps, list(timestamps)[1:])]
-            if not intervals:
-                continue
-            score = self._pattern_regularity_score(intervals)
-            if score >= 0.9:
-                src_ip, dst_ip, protocol, dst_port = key
-                alerts.append(self._make_alert(
-                    "c2_beaconing",
-                    "high",
-                    f"Highly regular {protocol} traffic from {src_ip} to {dst_ip}:{dst_port or 0}",
-                    host=src_ip,
-                ))
-        return alerts
-
-    def _pattern_regularity_score(self, intervals: List[float]) -> float:
-        if len(intervals) < 2:
-            return 0.0
-        if _CUPY_AVAILABLE and cp is not None:
-            arr = cp.asarray(intervals, dtype=cp.float32)
-            mean = float(cp.mean(arr).get())
-            std = float(cp.std(arr).get())
-        elif _NUMPY_AVAILABLE and np is not None:
-            arr = np.asarray(intervals, dtype=np.float32)
-            mean = float(arr.mean())
-            std = float(arr.std())
-        else:
-            mean = sum(intervals) / len(intervals)
-            variance = sum((x - mean) ** 2 for x in intervals) / len(intervals)
-            std = variance ** 0.5
-        if mean <= 0.0:
-            return 0.0
-        coeff_var = std / mean
-        return max(0.0, 1.0 - coeff_var)
-
-    def _is_potential_exfil(self, obs: TrafficObservation) -> bool:
-        return (
-            self._classify_zone(obs.dst_ip) == "external"
-            and obs.payload_size >= _EXFIL_BYTES_THRESHOLD
-            and self._classify_zone(obs.src_ip) == "internal"
-        )
-
-    def _evasion_critique(self, obs: TrafficObservation) -> Optional[Dict[str, Any]]:
-        base = {
-            "recommendation": "Pivot to slower timing templates, lower parallelism, and vary source ports.",
-            "host": obs.dst_ip,
-            "port": obs.dst_port,
-            "flags": obs.flags,
-        }
-        if _REASONING_AVAILABLE and REASONING_TOOL is not None:
-            try:
-                result = REASONING_TOOL.reason(
-                    mode=MODE_CRITIQUE,
-                    objective="Provide evasion critique for blocked or detected network probing",
-                    context=f"Destination {obs.dst_ip}:{obs.dst_port or 0} returned {obs.flags}",
-                    prior_output=(
-                        "Suggest slower timing templates, different source ports, longer inter-packet jitter, "
-                        "or protocol pivots that reduce scan visibility."
-                    ),
-                    options=[
-                        "Slower timing templates",
-                        "Alternate source ports",
-                        "Reduced parallelism",
-                        "Protocol pivot",
-                    ],
-                    fetch_facts=False,
-                )
-                base["mode_critique"] = result
-            except Exception as exc:
-                base["mode_critique_error"] = str(exc)
-        return base
-
-    def _update_topology_from_observation(self, obs: TrafficObservation) -> None:
-        self._discover_host_sync(
-            obs.src_ip,
-            [obs.src_port] if obs.src_port else [],
-            [],
-            obs.payload_size,
-        )
-        dst_services = []
-        if obs.dst_port:
-            dst_services = [ServiceFingerprint(
-                port=obs.dst_port,
-                protocol=obs.protocol.lower(),
-                service=self._service_guess(obs.dst_port, obs.banner),
-                banner=obs.banner,
-            )]
-        record = self._discover_host_sync(
-            obs.dst_ip,
-            [obs.dst_port] if obs.dst_port else [],
-            dst_services,
-            obs.payload_size,
-        )
-        host_record = self._hosts.get(obs.dst_ip)
-        if host_record is not None and obs.sample_sha256:
-            if obs.sample_sha256 not in host_record.sample_hashes:
-                host_record.sample_hashes.append(obs.sample_sha256)
-                host_record.sample_hashes = host_record.sample_hashes[-200:]
-            host_record.asset_criticality = self._score_asset_criticality(host_record)
-            host_record.tags = self._derive_tags(host_record)
-
-    def _score_asset_criticality(self, record: HostRecord) -> float:
-        score = 0.0
-        ports = set(record.open_ports)
-        services = " ".join(f"{svc.service} {svc.banner}" for svc in record.services).lower()
-        if {88, 389, 445}.issubset(ports) or "domain controller" in services or "kerberos" in services:
-            score += 0.65
-        if any(port in ports for port in (1433, 1521, 3306, 5432, 27017)) or "database" in services:
-            score += 0.45
-        if 5985 in ports or 5986 in ports or "winrm" in services:
-            score += 0.15
-        if record.traffic_bytes > 100 * 1024 * 1024:
-            score += 0.20
-        if record.zone == "internal":
-            score += 0.05
-        return min(1.0, score)
-
-    def _derive_tags(self, record: HostRecord) -> List[str]:
-        tags: Set[str] = set()
-        ports = set(record.open_ports)
-        services = " ".join(f"{svc.service} {svc.banner}" for svc in record.services).lower()
-        if {88, 389, 445}.issubset(ports) or "domain controller" in services:
-            tags.add("domain-controller")
-        if any(port in ports for port in (1433, 3306, 5432, 27017)) or "database" in services:
-            tags.add("database-server")
-        if record.asset_criticality >= _CRITICALITY_HIGH:
-            tags.add("high-value")
-        if record.zone == "external":
-            tags.add("target")
-        else:
-            tags.add("trusted")
-        return sorted(tags)
-
-    def _classify_zone(self, host: str) -> str:
-        if not host:
-            return "unknown"
-        if self.mission_profile is None:
-            if host.startswith(("10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "192.168.")):
-                return "internal"
-            return "external"
-        try:
-            ip_obj = ipaddress.ip_address(host)
-            auth = self.mission_profile.authorized_surface
-            for entry in getattr(auth, "ips", []):
-                if entry == host:
-                    return "external"
-            for entry in getattr(auth, "cidr_ranges", []):
-                try:
-                    if ip_obj in ipaddress.ip_network(entry, strict=False):
-                        return "external"
-                except ValueError:
-                    continue
-            return "internal"
-        except ValueError:
-            domains = getattr(getattr(self.mission_profile, "authorized_surface", None), "domains", []) if self.mission_profile else []
-            return "external" if host in domains else "internal"
-
-    def _make_alert(
+    async def execute_external_tool(
         self,
-        alert_type: str,
-        severity: str,
-        message: str,
-        *,
-        host: Optional[str] = None,
-        critique: Optional[Dict[str, Any]] = None,
-    ) -> NetworkAlert:
-        return NetworkAlert(alert_type=alert_type, severity=severity, message=message, host=host, critique=critique)
+        tool_name: str,
+        *args: str,
+    ) -> ToolResult:
+        """Execute an external discovery binary after validator + binary checks."""
+        health = await validate_resource_health(
+            min_disk_free_mb=512,
+            min_memory_free_mb=1024,
+            max_cpu_load_1m=12.0,
+        )
+        if not health.get("ok"):
+            raise RuntimeError(f"validation.py resource gate failed for {tool_name}: {health}")
+        binary_path = shutil.which(tool_name)
+        if not binary_path:
+            raise FileNotFoundError(f"External discovery tool not available: {tool_name}")
 
-    def _push_alert(self, alert: NetworkAlert) -> None:
-        if self._alerts and self._alerts[-1].alert_type == alert.alert_type and self._alerts[-1].message == alert.message:
-            return
-        self._alerts.append(alert)
+        request = ToolRequest(
+            tool_name=tool_name,
+            parameters={"args": list(args), "binary_path": binary_path},
+            requester_agent="cpie",
+        )
+        proc = await asyncio.create_subprocess_exec(
+            binary_path,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_raw, stderr_raw = await proc.communicate()
+        telemetry = self._capture_execution_telemetry()
+        result = ToolResult(
+            request_id=request.request_id,
+            tool_name=tool_name,
+            stdout=stdout_raw.decode("utf-8", errors="replace"),
+            stderr=stderr_raw.decode("utf-8", errors="replace"),
+            exit_code=int(proc.returncode or 0),
+            telemetry=telemetry,
+            artifacts={"binary_path": binary_path, "args": list(args)},
+        )
+        await self._log_external_tool(request=request, result=result)
+        return result
 
-    def _parse_frames(self, raw_bytes: bytes, sha256: str) -> List[TrafficObservation]:
-        # Heuristic: try PCAP first, then raw ethernet frame.
-        if len(raw_bytes) >= 24 and raw_bytes[:4] in {b"\xd4\xc3\xb2\xa1", b"\xa1\xb2\xc3\xd4", b"\x4d\x3c\xb2\xa1", b"\xa1\xb2\x3c\x4d"}:
-            return self._parse_pcap(raw_bytes, sha256)
-        obs = self._parse_ethernet_frame(raw_bytes, time.time(), sha256)
-        return [obs] if obs else []
+    async def get_live_network_map(self) -> Dict[str, Dict[str, Any]]:
+        """Return the in-memory network state map."""
+        async with self._lock:
+            return json.loads(json.dumps(self._live_network_map, default=str))
 
-    def _parse_pcap(self, raw_bytes: bytes, sha256: str) -> List[TrafficObservation]:
-        observations: List[TrafficObservation] = []
-        if len(raw_bytes) < 24:
-            return observations
-        magic = raw_bytes[:4]
-        little = magic in {b"\xd4\xc3\xb2\xa1", b"\x4d\x3c\xb2\xa1"}
-        endian = "<" if little else ">"
-        offset = 24
-        while offset + 16 <= len(raw_bytes):
-            ts_sec, ts_usec, incl_len, _orig_len = struct.unpack(endian + "IIII", raw_bytes[offset:offset + 16])
-            offset += 16
-            if offset + incl_len > len(raw_bytes):
-                break
-            packet = raw_bytes[offset:offset + incl_len]
-            offset += incl_len
-            timestamp = ts_sec + (ts_usec / 1_000_000.0)
-            obs = self._parse_ethernet_frame(packet, timestamp, sha256)
-            if obs:
-                observations.append(obs)
-        return observations
+    async def process(self, target: str) -> Dict[str, Any]:
+        """Backward-compatible wrapper that performs discovery on a target."""
+        liveness = await self.ping_sweep([target])
+        services = await self.service_discovery(target)
+        return {
+            "ok": True,
+            "live": liveness,
+            "services": services,
+            "target": target,
+        }
 
-    def _parse_ethernet_frame(self, packet: bytes, timestamp: float, sha256: str) -> Optional[TrafficObservation]:
-        if len(packet) < 14:
-            return None
-        dst_mac = self._mac(packet[0:6])
-        src_mac = self._mac(packet[6:12])
-        eth_type = struct.unpack("!H", packet[12:14])[0]
-        payload = packet[14:]
-        if eth_type == 0x0806:
-            return self._parse_arp(payload, timestamp, sha256, src_mac, dst_mac)
-        if eth_type == 0x0800:
-            return self._parse_ipv4(payload, timestamp, sha256, src_mac, dst_mac)
-        return None
+    async def _probe_host_liveness(self, host: str, probe_ports: Sequence[int]) -> Dict[str, Any]:
+        for port in probe_ports:
+            result = await self.banner_grab(host, port)
+            if result.get("open") and not result.get("error"):
+                await self._update_live_network_map(host, result)
+                return {
+                    "host": host,
+                    "alive": True,
+                    "responsive_port": port,
+                    "protocol": result.get("protocol"),
+                }
+        return {"host": host, "alive": False}
 
-    def _parse_arp(self, payload: bytes, timestamp: float, sha256: str, src_mac: str, dst_mac: str) -> Optional[TrafficObservation]:
-        if len(payload) < 28:
-            return None
-        sender_mac = self._mac(payload[8:14])
-        sender_ip = socket.inet_ntoa(payload[14:18])
-        target_ip = socket.inet_ntoa(payload[24:28])
-        return TrafficObservation(
-            timestamp=timestamp,
-            src_ip=sender_ip,
-            dst_ip=target_ip,
-            protocol="ARP",
-            src_port=None,
-            dst_port=None,
-            payload_size=len(payload),
-            sample_sha256=sha256,
-            banner=sender_mac,
-            mac_src=src_mac,
-            mac_dst=dst_mac,
+    async def _transparent_identification(self, host: str, port: int) -> Dict[str, Any]:
+        result = await self.banner_grab(host, port)
+        if not result.get("open") or result.get("error"):
+            return result
+        await self._update_live_network_map(host, result)
+        await self._commit_service_finding(host, port, result)
+        return result
+
+    async def _update_live_network_map(self, host: str, result: Dict[str, Any]) -> None:
+        async with self._lock:
+            host_entry = self._live_network_map.setdefault(
+                host,
+                {
+                    "host": host,
+                    "first_seen": datetime.now(tz=UTC).isoformat(timespec="milliseconds"),
+                    "last_seen": datetime.now(tz=UTC).isoformat(timespec="milliseconds"),
+                    "services": {},
+                },
+            )
+            host_entry["last_seen"] = datetime.now(tz=UTC).isoformat(timespec="milliseconds")
+            host_entry["services"][str(result["port"])] = {
+                "protocol": result.get("protocol"),
+                "banner": result.get("banner"),
+                "hex_dump": result.get("hex_dump"),
+            }
+
+    async def _commit_service_finding(self, host: str, port: int, result: Dict[str, Any]) -> None:
+        evidence_rel = f"loot/network/banners/{self._safe_host(host)}_{port}.txt"
+        evidence_text = "\n".join(
+            [
+                f"host={host}",
+                f"port={port}",
+                f"protocol={result.get('protocol', 'unknown')}",
+                f"banner={result.get('banner', '')}",
+                f"hex_dump={result.get('hex_dump', '')}",
+            ]
+        )
+        evidence_path = self.writer.write_text(evidence_rel, evidence_text)
+
+        finding = CerebroFinding(
+            target_id=host,
+            service_vector=f"tcp/{port} {result.get('protocol', 'unknown')}",
+            vulnerability_details=VulnerabilityDetails(
+                severity="Info",
+                title="Transparent Service Discovery",
+                summary=(
+                    f"Open service identified on {host}:{port} with protocol "
+                    f"{result.get('protocol', 'unknown')} and captured banner data."
+                ),
+            ),
+            evidence_pointer=evidence_path,
+            validation_status="Confirmed",
+            tags=["network", "service_discovery", result.get("protocol", "unknown")],
         )
 
-    def _parse_ipv4(self, payload: bytes, timestamp: float, sha256: str, src_mac: str, dst_mac: str) -> Optional[TrafficObservation]:
-        if len(payload) < 20:
-            return None
-        ihl = (payload[0] & 0x0F) * 4
-        protocol_num = payload[9]
-        src_ip = socket.inet_ntoa(payload[12:16])
-        dst_ip = socket.inet_ntoa(payload[16:20])
-        ip_payload = payload[ihl:]
-        protocol = {1: "ICMP", 6: "TCP", 17: "UDP"}.get(protocol_num, f"IP-{protocol_num}")
-        src_port = None
-        dst_port = None
-        flags = ""
-        banner = ""
-        if protocol == "TCP" and len(ip_payload) >= 20:
-            src_port, dst_port = struct.unpack("!HH", ip_payload[:4])
-            tcp_flags = ip_payload[13]
-            flags = self._tcp_flags(tcp_flags)
-            banner = self._payload_banner(ip_payload[(ip_payload[12] >> 4) * 4:])
-        elif protocol == "UDP" and len(ip_payload) >= 8:
-            src_port, dst_port = struct.unpack("!HH", ip_payload[:4])
-            banner = self._payload_banner(ip_payload[8:])
-        elif protocol == "ICMP" and len(ip_payload) >= 2:
-            icmp_type = ip_payload[0]
-            icmp_code = ip_payload[1]
-            flags = self._icmp_flag(icmp_type, icmp_code)
-        return TrafficObservation(
-            timestamp=timestamp,
-            src_ip=src_ip,
-            dst_ip=dst_ip,
-            protocol=protocol,
-            src_port=src_port,
-            dst_port=dst_port,
-            payload_size=len(ip_payload),
-            flags=flags,
-            sample_sha256=sha256,
-            banner=banner,
-            mac_src=src_mac,
-            mac_dst=dst_mac,
+        self.memory_bus.set_logic(
+            f"host.{self._safe_host(host)}.port.{port}.protocol",
+            result.get("protocol", "unknown"),
+            importance=4,
+            agent_id="cpie",
+        )
+        self.memory_bus.set_logic(
+            f"host.{self._safe_host(host)}.port.{port}.banner",
+            result.get("banner", ""),
+            importance=3,
+            agent_id="cpie",
+        )
+        self.storage_handler.append_now(
+            EvidenceRecord(
+                topic=f"network.service.{host}:{port}",
+                finding=finding.to_jsonl(),
+                source="cpie",
+                tags=[host, str(port), str(result.get("protocol", "unknown"))],
+                artifacts={"evidence_pointer": str(evidence_path)},
+            )
         )
 
-    def _parse_with_scapy(self, path: Path) -> List[TrafficObservation]:
-        packets = scapy.rdpcap(str(path))
-        sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
-        observations: List[TrafficObservation] = []
-        for pkt in packets:
-            if not pkt.haslayer("IP"):
-                continue
-            ip = pkt["IP"]
-            protocol = "TCP" if pkt.haslayer("TCP") else "UDP" if pkt.haslayer("UDP") else "ICMP" if pkt.haslayer("ICMP") else str(ip.proto)
-            src_port = int(pkt.sport) if hasattr(pkt, "sport") else None
-            dst_port = int(pkt.dport) if hasattr(pkt, "dport") else None
-            flags = str(pkt["TCP"].flags) if pkt.haslayer("TCP") else ""
-            observations.append(TrafficObservation(
-                timestamp=float(pkt.time),
-                src_ip=str(ip.src),
-                dst_ip=str(ip.dst),
-                protocol=protocol,
-                src_port=src_port,
-                dst_port=dst_port,
-                payload_size=len(bytes(pkt.payload)),
-                flags=flags,
-                sample_sha256=sha256,
-                banner=self._payload_banner(bytes(pkt.payload)),
-            ))
-        return observations
+    async def _log_interaction(self, host: str, port: int, result: Dict[str, Any]) -> None:
+        event = {
+            "timestamp": datetime.now(tz=UTC).isoformat(timespec="milliseconds"),
+            "host": host,
+            "port": port,
+            "protocol": result.get("protocol"),
+            "open": result.get("open"),
+            "banner": result.get("banner"),
+            "hex_dump": result.get("hex_dump"),
+            "error": result.get("error"),
+            "telemetry": result.get("telemetry"),
+        }
+        await asyncio.to_thread(self.writer.append_json_line, self.audit_log_path, event)
 
-    def _parse_with_pyshark(self, path: Path) -> List[TrafficObservation]:
-        capture = pyshark.FileCapture(str(path), keep_packets=False)
-        sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
-        observations: List[TrafficObservation] = []
-        for pkt in capture:
+    async def _log_external_tool(self, request: ToolRequest, result: ToolResult) -> None:
+        event = {
+            "timestamp": datetime.now(tz=UTC).isoformat(timespec="milliseconds"),
+            "event": "external_tool_execution",
+            "request": request.model_dump(mode="json"),
+            "result": result.model_dump(mode="json"),
+        }
+        await asyncio.to_thread(self.writer.append_json_line, self.audit_log_path, event)
+
+    def _derive_max_concurrency(self) -> int:
+        configured = os.getenv("CAI_NETWORK_MAX_CONCURRENCY")
+        if configured:
             try:
-                src_ip = pkt.ip.src
-                dst_ip = pkt.ip.dst
-            except Exception:
-                continue
-            protocol = str(pkt.highest_layer)
-            src_port = int(getattr(pkt, protocol.lower()).srcport) if hasattr(getattr(pkt, protocol.lower(), None), "srcport") else None
-            dst_port = int(getattr(pkt, protocol.lower()).dstport) if hasattr(getattr(pkt, protocol.lower(), None), "dstport") else None
-            observations.append(TrafficObservation(
-                timestamp=float(pkt.sniff_timestamp),
-                src_ip=src_ip,
-                dst_ip=dst_ip,
-                protocol=protocol,
-                src_port=src_port,
-                dst_port=dst_port,
-                payload_size=int(getattr(pkt, "length", 0)),
-                sample_sha256=sha256,
-            ))
-        capture.close()
-        return observations
+                return max(16, min(512, int(configured)))
+            except ValueError:
+                pass
+        reserve_gb = self.config.ram.system_reserve_gb
+        derived = int(reserve_gb * 4)
+        return max(64, min(256, derived))
 
-    @staticmethod
-    def _payload_banner(payload: bytes) -> str:
-        try:
-            text = payload[:120].decode("utf-8", errors="ignore")
-        except Exception:
-            return ""
-        return " ".join(text.split())
+    def _expand_targets(self, targets: Sequence[str] | str) -> List[str]:
+        raw_targets = [targets] if isinstance(targets, str) else list(targets)
+        expanded: List[str] = []
+        for target in raw_targets:
+            try:
+                network = ipaddress.ip_network(target, strict=False)
+                expanded.extend(str(host) for host in network.hosts())
+            except ValueError:
+                expanded.append(str(target))
+        return expanded
 
-    @staticmethod
-    def _format_addr(addr: Any) -> str:
-        if not addr:
-            return ""
-        return f"{addr.ip}:{addr.port}"
+    def _build_banner_probe(self, host: str, port: int, protocol: str) -> bytes:
+        protocol_lower = protocol.lower()
+        if protocol_lower in {"http", "https"}:
+            return f"HEAD / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode("ascii", errors="ignore")
+        if protocol_lower == "smtp":
+            return b"EHLO cerebro.local\r\n"
+        if protocol_lower == "pop3":
+            return b"CAPA\r\n"
+        if protocol_lower == "imap":
+            return b"a1 CAPABILITY\r\n"
+        if protocol_lower == "redis":
+            return b"*1\r\n$4\r\nPING\r\n"
+        if protocol_lower == "dns":
+            return b""
+        if protocol_lower == "smb":
+            return bytes.fromhex(
+                "00000054ff534d4272000000001843c8000000000000000000000000"
+                "00000000000000006200025043204e4554574f524b2050524f4752414d"
+                "20312e3000024c414e4d414e312e30000257696e646f777320666f722057"
+                "6f726b67726f75707320332e316100024c4d312e325830303200024c414e"
+                "4d414e322e3100024e54204c4d20302e313200"
+            )
+        return b"\r\n"
 
-    @staticmethod
-    def _mac(raw: bytes) -> str:
-        return ":".join(f"{b:02x}" for b in raw)
-
-    @staticmethod
-    def _tcp_flags(value: int) -> str:
-        flags = []
-        if value & 0x01:
-            flags.append("FIN")
-        if value & 0x02:
-            flags.append("SYN")
-        if value & 0x04:
-            flags.append("RST")
-        if value & 0x08:
-            flags.append("PSH")
-        if value & 0x10:
-            flags.append("ACK")
-        if value & 0x20:
-            flags.append("URG")
-        return "|".join(flags)
-
-    @staticmethod
-    def _icmp_flag(icmp_type: int, icmp_code: int) -> str:
-        if icmp_type == 3:
-            return f"UNREACHABLE:{icmp_code}"
-        return f"ICMP:{icmp_type}:{icmp_code}"
-
-    @staticmethod
-    def _service_guess(port: int, banner: str) -> str:
-        if banner:
-            lower = banner.lower()
-            if "kerberos" in lower:
-                return "kerberos"
-            if "ldap" in lower:
-                return "ldap"
-            if "mysql" in lower:
-                return "mysql"
-            if "postgres" in lower:
-                return "postgres"
+    def _guess_protocol_from_port(self, port: int) -> str:
         mapping = {
+            21: "ftp",
+            22: "ssh",
+            25: "smtp",
             53: "dns",
             80: "http",
-            88: "kerberos",
-            135: "rpc",
-            139: "netbios",
-            389: "ldap",
+            110: "pop3",
+            139: "smb",
+            143: "imap",
             443: "https",
             445: "smb",
+            993: "imap",
+            995: "pop3",
             3306: "mysql",
+            3389: "rdp",
             5432: "postgresql",
-            1433: "mssql",
-            5985: "winrm",
-            5986: "winrm-ssl",
+            6379: "redis",
+            8080: "http",
+            8443: "https",
         }
-        return mapping.get(port, "unknown")
+        return mapping.get(int(port), "raw")
 
-    @staticmethod
-    def _clone_host(record: HostRecord) -> HostRecord:
-        return HostRecord(
-            host=record.host,
-            zone=record.zone,
-            first_seen=record.first_seen,
-            last_seen=record.last_seen,
-            open_ports=list(record.open_ports),
-            services=[ServiceFingerprint(**svc.__dict__) for svc in record.services],
-            traffic_bytes=record.traffic_bytes,
-            sample_hashes=list(record.sample_hashes),
-            asset_criticality=record.asset_criticality,
-            tags=list(record.tags),
+    def _identify_protocol(self, port: int, response: bytes, fallback: str) -> str:
+        if not response:
+            return fallback
+        response_upper = response.upper()
+        if response.startswith(b"SSH-"):
+            return "ssh"
+        if b"HTTP/" in response_upper or b"SERVER:" in response_upper:
+            return "http"
+        if response.startswith(b"\xffSMB") or b"NT LM 0.12" in response_upper or b"SMB" in response_upper:
+            return "smb"
+        if response.startswith(b"220") and b"SMTP" in response_upper:
+            return "smtp"
+        if response.startswith(b"+OK"):
+            return "pop3"
+        if b"* OK" in response_upper or b"CAPABILITY" in response_upper:
+            return "imap"
+        if response.startswith(b"-ERR") or b"REDIS" in response_upper:
+            return "redis"
+        if b"RDP" in response_upper or port == 3389:
+            return "rdp"
+        return fallback
+
+    def _capture_execution_telemetry(self) -> ExecutionTelemetry:
+        ram_total_gb = self.config.total_system_ram_gb
+        ram_used_gb = 0.0
+        ram_pct = 0.0
+        if psutil is not None:
+            try:
+                vm = psutil.virtual_memory()
+                ram_total_gb = round(vm.total / (1024 ** 3), 2)
+                ram_used_gb = round(vm.used / (1024 ** 3), 2)
+                ram_pct = round(float(vm.percent), 1)
+            except Exception:
+                pass
+
+        vram_used_mb = 0.0
+        vram_total_mb = float(self.config.gpu.target_vram_mb)
+        vram_pct = 0.0
+        gpu_name = self.config.gpu.target_gpu_name
+        try:
+            output = subprocess.check_output(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.used,memory.total",
+                    "--format=csv,noheader,nounits",
+                ],
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+            ).decode("utf-8", errors="replace").strip().splitlines()
+            if output:
+                parts = [part.strip() for part in output[0].split(",")]
+                if len(parts) >= 3:
+                    gpu_name = parts[0]
+                    vram_used_mb = float(parts[1])
+                    vram_total_mb = float(parts[2])
+                    if vram_total_mb > 0:
+                        vram_pct = round((vram_used_mb / vram_total_mb) * 100.0, 1)
+        except Exception:
+            pass
+
+        return ExecutionTelemetry(
+            ram_used_gb=ram_used_gb,
+            ram_total_gb=ram_total_gb,
+            ram_pct=ram_pct,
+            vram_used_mb=vram_used_mb,
+            vram_total_mb=vram_total_mb,
+            vram_pct=vram_pct,
+            gpu_name=gpu_name,
         )
 
+    @staticmethod
+    def _safe_host(host: str) -> str:
+        return host.replace(":", "_").replace("/", "_").replace(".", "_")
 
-cerebro_network_engine = CerebroNetworkEngine()
-
-
-def process() -> dict:
-    """Legacy status hook preserved for compatibility."""
-    return {
-        "status": True,
-        "mode": "cpie",
-        "hosts": len(cerebro_network_engine.get_network_map()),
-        "alerts": len(cerebro_network_engine.latest_alerts()),
-    }
+    @staticmethod
+    def _pathguard_audit(_event: str, _payload: Any) -> None:
+        return
 
 
-__all__ = [
-    "CerebroNetworkEngine",
-    "ServiceFingerprint",
-    "HostRecord",
-    "ConnectionRecord",
-    "TrafficObservation",
-    "NetworkAlert",
-    "PacketParseResult",
-    "cerebro_network_engine",
-    "process",
-]
+CerebroNetworkEngine = CerebroProtocolEngine
+
+
+__all__ = ["CerebroNetworkEngine", "CerebroProtocolEngine"]

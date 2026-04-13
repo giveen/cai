@@ -405,9 +405,9 @@ for _meta in get_all_tools():
 
 
 dfir_agent = Agent(
-    name="DFIR Agent",
+    name="OS Auditor (COSA)",
     instructions=create_system_prompt_renderer(dfir_agent_system_prompt),
-    description="Agent that specializes in digital forensics and incident response.",
+    description="Configuration integrity, privilege analysis, and internal state mapping specialist.",
     model=OpenAIChatCompletionsModel(
         model=os.getenv("CAI_MODEL", "alias1"),
         openai_client=AsyncOpenAI(),

@@ -767,9 +767,9 @@ for _meta in get_all_tools():
 
 
 network_security_analyzer_agent = Agent(
-    name="Network Security Analyzer",
+    name="Network Analyst (CPIE)",
     instructions=create_system_prompt_renderer(network_security_analyzer_prompt),
-    description="CPIE-compatible network traffic analysis specialist with forensic protocol intelligence focus.",
+    description="High-speed protocol analysis and service fingerprinting specialist for transparent network auditing.",
     model=OpenAIChatCompletionsModel(
         model=os.getenv("CAI_MODEL", "alias1"),
         openai_client=AsyncOpenAI(),
