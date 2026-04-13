@@ -353,14 +353,30 @@ def load_prompt_template(template_path: str) -> str:
 
 
 def create_system_prompt_renderer(base_instructions: str) -> Callable[..., str]:
-    """Return a renderer that applies contextual variables to prompt templates."""
+    """Return a renderer that applies contextual variables to prompt templates.
+
+    Agent system prompts may contain bash-style default-value expansions such as
+    ``${WORKSPACE:-$(pwd)/foo}`` inside shell code blocks.  Mako's lexer would
+    attempt to evaluate the content of ``${…}`` as a Python expression, which
+    raises a ``SyntaxException`` for bash-specific syntax like ``:-``.
+
+    To handle this robustly, the function first attempts to compile the prompt
+    text as a Mako template.  If compilation fails, it falls back to a simple
+    renderer that returns the raw prompt string, optionally applying Python
+    ``.format()`` substitutions if keyword arguments are provided.
+    """
     if Template is not None:
-        template = Template(base_instructions)
+        try:
+            template = Template(base_instructions)
 
-        def _render(**kwargs: Any) -> str:
-            return template.render(**kwargs)
+            def _render_mako(**kwargs: Any) -> str:
+                return template.render(**kwargs)
 
-        return _render
+            return _render_mako
+        except Exception:
+            # Prompt contains bash-style ${VAR:-default} or other Mako-
+            # incompatible syntax — fall through to the plain renderer.
+            pass
 
     def _fallback(**kwargs: Any) -> str:
         try:
