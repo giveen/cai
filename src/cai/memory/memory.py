@@ -19,7 +19,7 @@ from pathlib import Path
 import re
 import sqlite3
 import threading
-from typing import Any
+from typing import Any, Optional
 import uuid
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -380,4 +380,400 @@ class MemoryManager:
         return masked
 
 
-__all__ = ["ContextWindow", "MemoryEvent", "MemoryManager"]
+__all__ = ["ContextWindow", "MemoryEvent", "MemoryManager", "CerebroMemoryBus"]
+
+
+# =============================================================================
+# CerebroMemoryBus — Cerebro Central Memory Bus (CCMB)
+# =============================================================================
+
+import json
+import logging
+import os
+
+try:
+    import msgpack as _msgpack  # type: ignore
+    _MSGPACK_AVAILABLE = True
+except ImportError:
+    _msgpack = None  # type: ignore
+    _MSGPACK_AVAILABLE = False
+
+_CCMB_LOG = logging.getLogger("CerebroMemoryBus")
+_DEFAULT_BUS_WORKSPACE = Path(os.getenv("CIR_WORKSPACE", "/workspace")).resolve()
+
+# Importance threshold above which a Logic node is automatically mirrored to
+# Semantic memory.
+_MIRROR_IMPORTANCE_THRESHOLD = 3
+
+
+class CerebroMemoryBus:
+    """Cerebro Central Memory Bus (CCMB).
+
+    Singleton coordinator that unifies:
+    - :class:`~cai.memory.logic.CerebroLogicEngine` (structured fact/state nodes)
+    - Episodic :class:`MemoryManager` (short-term event stream)
+    - Semantic :class:`MemoryManager` (long-term pattern store)
+
+    Key capabilities
+    ----------------
+    * ``commit()`` — synchronised snapshot across all sub-modules.
+    * ``set_logic(key, value, importance=N)`` — writes to Logic engine and
+      auto-mirrors high-importance facts to Semantic memory.
+    * ``cross_query(query)`` — retrieves correlated results from Episodic and
+      Logic tiers simultaneously.
+    * Background saver daemon that periodically flushes RAM state to
+      ``/workspace/memory/`` via a PathGuard-backed writer.
+    * Health telemetry with automatic summarisation when Episodic history
+      exceeds a configurable size threshold.
+    """
+
+    _instance: Optional["CerebroMemoryBus"] = None
+    _instance_lock: threading.Lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Singleton factory
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def get_instance(
+        cls,
+        *,
+        workspace_root: Optional[str] = None,
+        episodic_size: int = 500,
+        episodic_db_path: str = ".cai/memory/episodic.db",
+        semantic_db_path: str = ".cai/memory/semantic.db",
+        auto_summarise_threshold: int = 400,
+        mirror_importance: int = _MIRROR_IMPORTANCE_THRESHOLD,
+    ) -> "CerebroMemoryBus":
+        """Return the process-wide singleton, creating it on first call."""
+        with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = cls(
+                    workspace_root=workspace_root,
+                    episodic_size=episodic_size,
+                    episodic_db_path=episodic_db_path,
+                    semantic_db_path=semantic_db_path,
+                    auto_summarise_threshold=auto_summarise_threshold,
+                    mirror_importance=mirror_importance,
+                )
+            return cls._instance
+
+    # ------------------------------------------------------------------
+    # Construction
+    # ------------------------------------------------------------------
+
+    def __init__(
+        self,
+        *,
+        workspace_root: Optional[str] = None,
+        episodic_size: int = 500,
+        episodic_db_path: str = ".cai/memory/episodic.db",
+        semantic_db_path: str = ".cai/memory/semantic.db",
+        auto_summarise_threshold: int = 400,
+        mirror_importance: int = _MIRROR_IMPORTANCE_THRESHOLD,
+    ) -> None:
+        self.workspace_root = Path(
+            workspace_root or str(_DEFAULT_BUS_WORKSPACE)
+        ).resolve()
+        self._mirror_importance = max(1, mirror_importance)
+        self._auto_summarise_threshold = max(10, auto_summarise_threshold)
+        self._lock = threading.RLock()
+
+        # --- Sub-system initialisation ---------------------------------
+        # Deferred import avoids any circular-import risk at module level.
+        from cai.memory.logic import CerebroLogicEngine  # noqa: PLC0415
+        self.logic = CerebroLogicEngine(workspace_root=str(self.workspace_root))
+
+        self.episodic = MemoryManager(
+            short_term_size=episodic_size,
+            db_relative_path=episodic_db_path,
+        )
+        self.semantic = MemoryManager(
+            short_term_size=200,
+            db_relative_path=semantic_db_path,
+        )
+
+        # --- PathGuard-backed writer ------------------------------------
+        self._writer = _BusWriter(self.workspace_root)
+
+        # --- Background saver state ------------------------------------
+        self._saver_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self._commit_count = 0
+
+        _CCMB_LOG.info(
+            "[CCMB] Memory Bus initialised. workspace=%s  mirror_threshold=%d",
+            self.workspace_root,
+            self._mirror_importance,
+        )
+
+    # ------------------------------------------------------------------
+    # Logic / state interface
+    # ------------------------------------------------------------------
+
+    def set_logic(
+        self,
+        key: str,
+        value: Any,
+        *,
+        importance: int = 1,
+        parents: Optional[list[str]] = None,
+        meta: Optional[dict[str, Any]] = None,
+        agent_id: str = "default",
+    ) -> None:
+        """Write a fact to the Logic engine.
+
+        If *importance* >= the bus mirror threshold the fact is also committed
+        to Semantic memory for long-term pattern recognition.
+        """
+        self.logic.set(key, value, parents=parents, meta=meta)
+
+        if importance >= self._mirror_importance:
+            self.semantic.add_event(
+                content=f"{key} = {value}",
+                topic=key.split(".")[0] if "." in key else key,
+                importance=min(5, importance),
+                agent_id=agent_id,
+                tags=[key],
+                persist=True,
+            )
+            _CCMB_LOG.debug("[CCMB] Logic node mirrored to semantic: %s", key)
+
+    def get_logic(self, key: str, default: Any = None) -> Any:
+        """Shorthand for ``self.logic.get(key, default)``."""
+        return self.logic.get(key, default)
+
+    # ------------------------------------------------------------------
+    # Cross-tier query
+    # ------------------------------------------------------------------
+
+    def cross_query(
+        self,
+        query: str,
+        *,
+        logic_prefix: Optional[str] = None,
+        episodic_limit: int = 10,
+        semantic_limit: int = 10,
+    ) -> dict[str, Any]:
+        """Correlated retrieval across Logic and Episodic tiers.
+
+        Returns a dict with keys:
+        - ``logic_nodes``: matching Logic facts (filtered by *logic_prefix* if
+          supplied, otherwise all nodes whose key contains a token from *query*)
+        - ``episodic``: :class:`ContextWindow` from Episodic memory
+        - ``semantic``: :class:`ContextWindow` from Semantic memory
+        """
+        # Logic tier -------------------------------------------------------
+        if logic_prefix:
+            logic_hits = self.logic.search(logic_prefix)
+        else:
+            q_lower = query.lower()
+            logic_hits = {
+                k: v
+                for k, v in self.logic.search("").items()
+                if any(token in k.lower() for token in q_lower.split() if len(token) > 2)
+            }
+
+        # Episodic tier ----------------------------------------------------
+        episodic_ctx = self.episodic.get_context(query, limit=episodic_limit)
+
+        # Semantic tier ----------------------------------------------------
+        semantic_ctx = self.semantic.get_context(query, limit=semantic_limit)
+
+        return {
+            "query": query,
+            "logic_nodes": logic_hits,
+            "episodic": episodic_ctx,
+            "semantic": semantic_ctx,
+        }
+
+    # ------------------------------------------------------------------
+    # Synchronised snapshot (commit)
+    # ------------------------------------------------------------------
+
+    def commit(self) -> dict[str, Any]:
+        """Flush all sub-module state to disk atomically.
+
+        Returns a summary dict with paths and counts.
+        """
+        with self._lock:
+            ts = datetime.now(tz=UTC).isoformat(timespec="milliseconds")
+            results: dict[str, Any] = {"committed_at": ts}
+
+            # 1. Logic snapshot ------------------------------------------
+            try:
+                logic_path = self.logic.snapshot()
+                results["logic_snapshot"] = str(logic_path)
+            except Exception as exc:
+                results["logic_snapshot_error"] = str(exc)
+                _CCMB_LOG.warning("[CCMB] Logic snapshot failed: %s", exc)
+
+            # 2. Episodic summary to disk ---------------------------------
+            try:
+                episodic_summary = self.episodic.summarize()
+                self._writer.write_text(
+                    "memory/episodic_summary.txt", episodic_summary
+                )
+                results["episodic_summary_path"] = str(
+                    self.workspace_root / "memory/episodic_summary.txt"
+                )
+            except Exception as exc:
+                results["episodic_summary_error"] = str(exc)
+                _CCMB_LOG.warning("[CCMB] Episodic summary failed: %s", exc)
+
+            # 3. Bus manifest (JSON or msgpack) ---------------------------
+            try:
+                manifest = {
+                    "committed_at": ts,
+                    "commit_seq": self._commit_count,
+                    "workspace": str(self.workspace_root),
+                    "health": self._health_snapshot(),
+                }
+                if _MSGPACK_AVAILABLE and _msgpack is not None:
+                    raw = _msgpack.packb(manifest, use_bin_type=True)
+                    self._writer.write_bytes("memory/bus_manifest.msgpack", raw)
+                    results["manifest_format"] = "msgpack"
+                else:
+                    raw_text = json.dumps(manifest, indent=2, default=str)
+                    self._writer.write_text("memory/bus_manifest.json", raw_text)
+                    results["manifest_format"] = "json"
+            except Exception as exc:
+                results["manifest_error"] = str(exc)
+                _CCMB_LOG.warning("[CCMB] Manifest write failed: %s", exc)
+
+            self._commit_count += 1
+            _CCMB_LOG.info("[CCMB] commit #%d completed", self._commit_count)
+            return results
+
+    # ------------------------------------------------------------------
+    # Health telemetry
+    # ------------------------------------------------------------------
+
+    def health(self) -> dict[str, Any]:
+        """Return a telemetry snapshot of all sub-module saturation levels."""
+        return self._health_snapshot()
+
+    def _health_snapshot(self) -> dict[str, Any]:
+        short_term_used = len(self.episodic._short_term)  # noqa: SLF001
+        short_term_max = self.episodic._short_term.maxlen or 1  # noqa: SLF001
+        episodic_saturated = short_term_used >= self._auto_summarise_threshold
+
+        if episodic_saturated:
+            _CCMB_LOG.info(
+                "[CCMB] Episodic saturation event triggered (%d/%d). Summarising.",
+                short_term_used,
+                short_term_max,
+            )
+            self._trigger_summarisation()
+
+        return {
+            "episodic_short_term_used": short_term_used,
+            "episodic_short_term_max": short_term_max,
+            "episodic_saturation_pct": round(
+                100 * short_term_used / short_term_max, 1
+            ),
+            "episodic_auto_summarised": episodic_saturated,
+            "logic_node_count": len(self.logic._nodes),  # noqa: SLF001
+            "commit_count": self._commit_count,
+        }
+
+    def _trigger_summarisation(self) -> None:
+        """Summarise and drain old short-term episodic events."""
+        summary_text = self.episodic.summarize(
+            max_events=self._auto_summarise_threshold,
+            include_short_term=True,
+            include_long_term=False,
+        )
+        # Store the compressed summary as a single high-importance semantic event.
+        self.semantic.add_event(
+            content=summary_text,
+            topic="auto_summarisation",
+            importance=4,
+            agent_id="ccmb",
+            tags=["summary", "episodic"],
+        )
+        # Clear short-term to free RAM.
+        self.episodic.clear(short_term=True, long_term=False)
+
+    # ------------------------------------------------------------------
+    # Background saver
+    # ------------------------------------------------------------------
+
+    def start_background_saver(self, interval_seconds: float = 30.0) -> None:
+        """Start a daemon thread that calls :meth:`commit` every *interval_seconds*."""
+        with self._lock:
+            if self._saver_thread and self._saver_thread.is_alive():
+                return
+            self._stop_event.clear()
+            self._saver_thread = threading.Thread(
+                target=self._saver_loop,
+                args=(max(1.0, interval_seconds),),
+                daemon=True,
+                name="ccmb-saver",
+            )
+            self._saver_thread.start()
+            _CCMB_LOG.info(
+                "[CCMB] Background saver started (interval=%.0fs)", interval_seconds
+            )
+
+    def stop_background_saver(self) -> None:
+        """Signal the background saver to stop and wait for it to exit."""
+        self._stop_event.set()
+        if self._saver_thread:
+            self._saver_thread.join(timeout=5.0)
+            self._saver_thread = None
+        _CCMB_LOG.info("[CCMB] Background saver stopped")
+
+    def _saver_loop(self, interval: float) -> None:
+        while not self._stop_event.wait(timeout=interval):
+            try:
+                self.commit()
+            except Exception as exc:  # pragma: no cover
+                _CCMB_LOG.warning("[CCMB] Background commit failed: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def close(self) -> None:
+        """Stop background tasks and close sub-system resources."""
+        self.stop_background_saver()
+        self.episodic.close()
+        self.semantic.close()
+        _CCMB_LOG.info("[CCMB] Memory Bus closed")
+
+
+# ---------------------------------------------------------------------------
+# Internal PathGuard-backed writer (no circular import risk)
+# ---------------------------------------------------------------------------
+
+class _BusWriter:
+    """PathGuard-backed writer for bus-level persistence."""
+
+    def __init__(self, workspace_root: Path) -> None:
+        # Deferred import breaks any potential circular dependency.
+        from cai.tools.reconnaissance.filesystem import PathGuard as _FPG  # noqa: PLC0415
+        self.workspace_root = workspace_root.resolve()
+        self._guard = _FPG(self.workspace_root, self._audit)
+
+    def write_text(self, relative_path: str, content: str) -> None:
+        resolved = self._safe_resolve(relative_path, mode="write")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        resolved.write_text(content, encoding="utf-8")
+
+    def write_bytes(self, relative_path: str, payload: bytes) -> None:
+        resolved = self._safe_resolve(relative_path, mode="write")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        resolved.write_bytes(payload)
+
+    def _safe_resolve(self, relative_path: str, *, mode: str) -> Path:
+        try:
+            return self._guard.validate_path(
+                relative_path, action="ccmb_write", mode=mode
+            )
+        except PermissionError as exc:
+            raise PermissionError(f"PathGuard violation: {exc}") from exc
+
+    @staticmethod
+    def _audit(_event: str, _payload: Any) -> None:
+        return

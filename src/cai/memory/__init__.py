@@ -11,7 +11,14 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from cai.memory.logic import MemorySummary, summarize_events
-from cai.memory.search import MemorySearch, SearchHit
+from cai.memory.search import (
+    CADEResponse,
+    CADEResult,
+    CerebroSearchEngine,
+    MemorySearch,
+    SearchHit,
+    TraceabilityMeta,
+)
 from cai.memory.storage import EvidenceRecord, StorageBackend, WorkspaceJSONStore
 
 
@@ -77,11 +84,15 @@ class MemoryManager:
 
 
 __all__ = [
+    "CADEResponse",
+    "CADEResult",
+    "CerebroSearchEngine",
     "EvidenceRecord",
     "MemoryManager",
     "MemorySummary",
     "QueryResult",
     "SearchHit",
     "StorageBackend",
+    "TraceabilityMeta",
     "WorkspaceJSONStore",
 ]

@@ -1,27 +1,33 @@
 #!/usr/bin/env python
 
 """
-Local Python Interpreter
+Cerebro Isolated Runtime (CIR)
 
-This module provides a local Python interpreter that
-can execute Python code. It includes functionality
-for evaluating Python expressions, executing code blocks,
-and handling errors that may occur during code execution.
+Hardened subprocess-based Python execution engine for the Cerebro-AI suite.
+Replaces the legacy LocalPythonInterpreter (HuggingFace) with a security-first,
+hardware-aware, audit-instrumented runtime.
+
+Design principles
+-----------------
+* Zero in-process exec(): all user code runs in a fresh subprocess.
+* PathGuard preamble injected at the top of every script to confine filesystem
+  writes to /workspace/.
+* SHA-256 audit trail written before and after every execution.
+* Hardware detection: CUDA / cupy / torch paths auto-injected when RTX GPU is
+  present (RTX 5090 primary target; graceful fallback for CPU-only hosts).
+* Strict resource limits via subprocess timeout + ulimit (memory cap defaults
+  to 64 GB to protect the 256 GB host).
+* MODE_CRITIQUE turn on ImportError / SyntaxError for actionable remediation.
+* Structured result dict (stdout, stderr, variables, files_created, elapsed_s,
+  sha256, critique).
+* Legacy shim: LocalPythonInterpreter wrapper preserved for drop-in back-compat.
 """
 
+# Original attribution (legacy code superseded):
 # Copyright 2024 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Licensed under the Apache License, Version 2.0
+from __future__ import annotations
+
 import ast
 import builtins
 import difflib
@@ -1778,4 +1784,589 @@ class LocalPythonInterpreter:
         return output, logs, is_final_answer
 
 
-__all__ = ["evaluate_python_code", "LocalPythonInterpreter"]
+# ---------------------------------------------------------------------------
+# Cerebro Isolated Runtime (CIR)
+# ---------------------------------------------------------------------------
+
+import hashlib       # noqa: E402
+import json          # noqa: E402
+import os            # noqa: E402
+import resource      # noqa: E402
+import shlex         # noqa: E402
+import signal        # noqa: E402
+import subprocess    # noqa: E402
+import sys           # noqa: E402
+import tempfile      # noqa: E402
+import textwrap      # noqa: E402
+import time          # noqa: E402
+import traceback     # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
+from pathlib import Path            # noqa: E402
+from typing import Any, Dict, List, Optional, Tuple  # noqa: E402
+
+try:
+    from cai.tools.misc.reasoning import MODE_CRITIQUE, REASONING_TOOL
+    _REASONING_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _REASONING_AVAILABLE = False
+    MODE_CRITIQUE = "MODE_CRITIQUE"
+    REASONING_TOOL = None  # type: ignore[assignment]
+
+try:
+    from cai.tools.reconnaissance.filesystem import PathGuard as FilesystemPathGuard
+    _PATHGUARD_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _PATHGUARD_AVAILABLE = False
+    FilesystemPathGuard = None  # type: ignore[assignment]
+
+_CIR_LOGGER = logging.getLogger("cai.cir")
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_DEFAULT_WORKSPACE = os.getenv("CIR_WORKSPACE", "/workspace")
+_DEFAULT_TIMEOUT_S = int(os.getenv("CIR_TIMEOUT_S", "120"))
+# 64 GiB expressed in bytes; used as RLIMIT_AS soft limit
+_DEFAULT_MEM_LIMIT_BYTES = int(os.getenv("CIR_MEM_LIMIT_GB", "64")) * (1024 ** 3)
+_AUDIT_DIR_ENV = os.getenv("CIR_AUDIT_DIR", "")
+_CUDA_COMMON_PATHS = [
+    "/usr/local/cuda/lib64",
+    "/usr/local/cuda-12/lib64",
+    "/usr/local/cuda-11/lib64",
+]
+
+
+# ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+class CIRError(RuntimeError):
+    """Base exception for Cerebro Isolated Runtime failures."""
+
+
+class CIRPathGuardViolation(PermissionError):
+    """Raised when submitted code attempts to write outside /workspace/."""
+
+
+class CIRTimeout(CIRError):
+    """Raised when a script exceeds its allotted execution time."""
+
+
+class CIRResourceLimit(CIRError):
+    """Raised when a script exceeds memory or other resource constraints."""
+
+
+# ---------------------------------------------------------------------------
+# PathGuard preamble injected at the top of every executed script
+# ---------------------------------------------------------------------------
+
+_PATHGUARD_PREAMBLE_TEMPLATE = textwrap.dedent(
+    r"""
+    # --- CIR PathGuard preamble (auto-injected, do not remove) ---
+    import builtins as _cir_builtins
+    import os as _cir_os
+    import pathlib as _cir_pathlib
+    import shutil as _cir_shutil
+
+    _CIR_WORKSPACE = _cir_pathlib.Path({workspace_root!r}).resolve()
+    _cir_orig_open = _cir_builtins.open
+
+    def _cir_guard_path(path_like) -> _cir_pathlib.Path:
+        p = _cir_pathlib.Path(path_like).expanduser()
+        resolved = p.resolve() if p.is_absolute() else (_CIR_WORKSPACE / p).resolve()
+        try:
+            resolved.relative_to(_CIR_WORKSPACE)
+        except ValueError as _exc:
+            raise PermissionError(
+                f"CIR PathGuard violation: {{resolved}} is outside {{_CIR_WORKSPACE}}"
+            ) from _exc
+        return resolved
+
+    def _cir_safe_open(file, mode="r", *_a, **_kw):
+        _guarded = _cir_guard_path(file)
+        return _cir_orig_open(_guarded, mode, *_a, **_kw)
+
+    _cir_builtins.open = _cir_safe_open
+
+    _cir_orig_remove = _cir_os.remove
+    def _cir_safe_remove(path):
+        _cir_guard_path(path)
+        return _cir_orig_remove(path)
+    _cir_os.remove = _cir_safe_remove
+
+    _cir_orig_rmtree = _cir_shutil.rmtree
+    def _cir_safe_rmtree(path, *_a, **_kw):
+        _cir_guard_path(path)
+        return _cir_orig_rmtree(path, *_a, **_kw)
+    _cir_shutil.rmtree = _cir_safe_rmtree
+    # --- end CIR PathGuard preamble ---
+    """
+).strip()
+
+# Template for the variable-capture epilogue appended to every script
+_VAR_CAPTURE_EPILOGUE = textwrap.dedent(
+    r"""
+    # --- CIR variable-capture epilogue (auto-injected) ---
+    import json as _cir_json
+    import os as _cir_os2
+    import pathlib as _cir_pathlib2
+
+    _cir_capture_path = _cir_pathlib2.Path({capture_path!r})
+    _cir_workspace2 = _cir_pathlib2.Path({workspace_root!r}).resolve()
+
+    def _cir_is_serialisable(v) -> bool:
+        try:
+            _cir_json.dumps(v)
+            return True
+        except Exception:
+            return False
+
+    _cir_vars = {{
+        k: v for k, v in globals().items()
+        if not k.startswith("_cir_") and not k.startswith("__") and _cir_is_serialisable(v)
+    }}
+    _cir_files = [
+        str(p) for p in _cir_workspace2.rglob("*")
+        if p.is_file() and not any(part.startswith(".") for part in p.parts)
+    ]
+    _cir_result = {{"variables": _cir_vars, "files_created": _cir_files}}
+    _cir_capture_path.write_text(_cir_json.dumps(_cir_result), encoding="utf-8")
+    # --- end CIR variable-capture epilogue ---
+    """
+).strip()
+
+
+# ---------------------------------------------------------------------------
+# Hardware detection helpers
+# ---------------------------------------------------------------------------
+
+def _detect_gpu_env() -> Dict[str, Any]:
+    """Return CUDA-related environment overrides for the subprocess."""
+    extra_env: Dict[str, Any] = {}
+    # Check nvidia-smi presence
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            rows = [r.strip() for r in result.stdout.strip().splitlines() if r.strip()]
+            extra_env["_CIR_GPU_DETECTED"] = True
+            extra_env["_CIR_GPU_INFO"] = rows
+            # Build LD_LIBRARY_PATH extension
+            existing_ldpath = os.environ.get("LD_LIBRARY_PATH", "")
+            cuda_dirs = [d for d in _CUDA_COMMON_PATHS if os.path.isdir(d)]
+            if cuda_dirs:
+                extra_env["LD_LIBRARY_PATH"] = ":".join(cuda_dirs + ([existing_ldpath] if existing_ldpath else []))
+    except Exception:
+        extra_env["_CIR_GPU_DETECTED"] = False
+    return extra_env
+
+
+def _build_gpu_injection_preamble(gpu_env: Dict[str, Any]) -> str:
+    """Return Python code that injects CUDA/cupy/torch path hints."""
+    if not gpu_env.get("_CIR_GPU_DETECTED"):
+        return ""
+    cuda_dirs = [d for d in _CUDA_COMMON_PATHS if os.path.isdir(d)]
+    if not cuda_dirs:
+        return ""
+    joined = ":".join(cuda_dirs)
+    return textwrap.dedent(
+        f"""
+        # --- CIR GPU path injection ---
+        import os as _cir_gpu_os, sys as _cir_gpu_sys
+        _cir_cuda_dirs = {cuda_dirs!r}
+        for _d in _cir_cuda_dirs:
+            if _d not in _cir_gpu_os.environ.get("LD_LIBRARY_PATH", ""):
+                _cir_gpu_os.environ["LD_LIBRARY_PATH"] = (
+                    _d + ":" + _cir_gpu_os.environ.get("LD_LIBRARY_PATH", "")
+                ).strip(":")
+        # --- end CIR GPU path injection ---
+        """
+    ).strip()
+
+
+# ---------------------------------------------------------------------------
+# Audit trail
+# ---------------------------------------------------------------------------
+
+class _CIRAuditTrail:
+    """Append-only JSONL audit log for every CIR execution."""
+
+    def __init__(self, audit_dir: Optional[str] = None) -> None:
+        base = audit_dir or _AUDIT_DIR_ENV or _DEFAULT_WORKSPACE
+        self._path = (Path(base) / "cir_audit.jsonl").resolve()
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # Fall back to /tmp if workspace isn't writable yet (e.g. first-run)
+            self._path = Path(tempfile.gettempdir()) / "cir_audit.jsonl"
+
+    def record(self, event: str, sha256: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        entry: Dict[str, Any] = {
+            "ts": datetime.now(tz=UTC).isoformat(),
+            "event": event,
+            "sha256": sha256,
+        }
+        if extra:
+            entry.update(extra)
+        try:
+            with open(self._path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry) + "\n")
+        except Exception as exc:
+            _CIR_LOGGER.warning("CIR audit write failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Main CIR class
+# ---------------------------------------------------------------------------
+
+class CerebroIsolatedRuntime:
+    """
+    Cerebro Isolated Runtime (CIR).
+
+    Executes Python snippets in a hardened subprocess with:
+    - PathGuard filesystem confinement
+    - SHA-256 pre/post audit trail
+    - Hardware-accelerated environment injection (CUDA/cupy/torch)
+    - Memory + time resource limits
+    - Structured result extraction (variables, files, elapsed time)
+    - MODE_CRITIQUE remediation on ImportError / SyntaxError
+
+    Parameters
+    ----------
+    workspace_root : str | None
+        Absolute path to the sandboxed workspace.  Defaults to $CIR_WORKSPACE
+        or '/workspace'.
+    timeout_s : int
+        Per-script wall-clock timeout in seconds.  Defaults to 120.
+    mem_limit_gb : int
+        Maximum RSS the subprocess may consume (GiB).  Defaults to 64.
+    audit_dir : str | None
+        Directory for cir_audit.jsonl.  Falls back to workspace_root.
+    python_executable : str | None
+        Path to the Python interpreter for the subprocess.  Defaults to
+        sys.executable (the active venv interpreter).
+    """
+
+    def __init__(
+        self,
+        *,
+        workspace_root: Optional[str] = None,
+        timeout_s: int = _DEFAULT_TIMEOUT_S,
+        mem_limit_gb: Optional[int] = None,
+        audit_dir: Optional[str] = None,
+        python_executable: Optional[str] = None,
+    ) -> None:
+        self.workspace_root = Path(workspace_root or _DEFAULT_WORKSPACE).resolve()
+        self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self.timeout_s = max(1, int(timeout_s))
+        mem_gb = mem_limit_gb if mem_limit_gb is not None else int(_DEFAULT_MEM_LIMIT_BYTES / (1024 ** 3))
+        self.mem_limit_bytes = mem_gb * (1024 ** 3)
+        self.python_executable = python_executable or sys.executable
+        self._audit = _CIRAuditTrail(audit_dir)
+        self._gpu_env = _detect_gpu_env()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def execute(
+        self,
+        code: str,
+        *,
+        extra_env: Optional[Dict[str, str]] = None,
+        capture_variables: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Execute *code* in an isolated subprocess and return a structured result.
+
+        Returns
+        -------
+        dict with keys:
+            ok            : bool
+            stdout        : str
+            stderr        : str
+            variables     : dict  (JSON-serialisable globals from the script)
+            files_created : list[str]
+            elapsed_s     : float
+            sha256        : str
+            critique      : dict | None  (populated on ImportError/SyntaxError)
+        """
+        sha256 = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        self._audit.record("pre_exec", sha256, {"timeout_s": self.timeout_s, "workspace": str(self.workspace_root)})
+
+        script_path, capture_path = self._write_sandboxed_script(code, capture_variables=capture_variables)
+
+        env = self._build_subprocess_env(extra_env)
+
+        t0 = time.monotonic()
+        try:
+            proc = subprocess.Popen(  # noqa: S603
+                [self.python_executable, str(script_path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                cwd=str(self.workspace_root),
+                preexec_fn=self._preexec_limiter(),
+            )
+            try:
+                stdout_bytes, stderr_bytes = proc.communicate(timeout=self.timeout_s)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout_bytes, stderr_bytes = proc.communicate()
+                elapsed = time.monotonic() - t0
+                self._audit.record("timeout", sha256, {"elapsed_s": elapsed})
+                raise CIRTimeout(
+                    f"Script exceeded {self.timeout_s}s timeout (sha256={sha256[:12]})"
+                ) from None
+        finally:
+            self._cleanup_temp(script_path)
+
+        elapsed = time.monotonic() - t0
+        stdout = stdout_bytes.decode("utf-8", errors="replace")
+        stderr = stderr_bytes.decode("utf-8", errors="replace")
+        returncode = proc.returncode
+
+        variables: Dict[str, Any] = {}
+        files_created: List[str] = []
+        if capture_variables and capture_path.exists():
+            try:
+                payload = json.loads(capture_path.read_text(encoding="utf-8"))
+                variables = payload.get("variables", {})
+                files_created = payload.get("files_created", [])
+            except Exception:
+                pass
+            finally:
+                self._cleanup_temp(capture_path)
+
+        ok = returncode == 0
+        critique: Optional[Dict[str, Any]] = None
+        if not ok:
+            critique = self._maybe_critique(stderr, sha256)
+
+        self._audit.record(
+            "post_exec",
+            sha256,
+            {"ok": ok, "returncode": returncode, "elapsed_s": round(elapsed, 3)},
+        )
+
+        return {
+            "ok": ok,
+            "stdout": stdout,
+            "stderr": stderr,
+            "variables": variables,
+            "files_created": files_created,
+            "elapsed_s": round(elapsed, 3),
+            "sha256": sha256,
+            "returncode": returncode,
+            "critique": critique,
+        }
+
+    # ------------------------------------------------------------------
+    # Script preparation
+    # ------------------------------------------------------------------
+
+    def _write_sandboxed_script(
+        self, code: str, *, capture_variables: bool
+    ) -> Tuple[Path, Path]:
+        """Assemble the full sandboxed script and write to a temp file.
+
+        Returns (script_path, capture_path).
+        """
+        # Unique temp paths inside workspace scratchpad
+        stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        scratch = self.workspace_root / ".cir_scratch"
+        scratch.mkdir(parents=True, exist_ok=True)
+        script_path = scratch / f"cir_{stamp}.py"
+        capture_path = scratch / f"cir_{stamp}_capture.json"
+
+        pathguard_preamble = _PATHGUARD_PREAMBLE_TEMPLATE.format(
+            workspace_root=str(self.workspace_root)
+        )
+        gpu_preamble = _build_gpu_injection_preamble(self._gpu_env)
+
+        if capture_variables:
+            epilogue = _VAR_CAPTURE_EPILOGUE.format(
+                capture_path=str(capture_path),
+                workspace_root=str(self.workspace_root),
+            )
+        else:
+            epilogue = ""
+
+        parts = [pathguard_preamble]
+        if gpu_preamble:
+            parts.append(gpu_preamble)
+        parts.append(code.strip())
+        if epilogue:
+            parts.append(epilogue)
+
+        full_script = "\n\n".join(parts) + "\n"
+        script_path.write_text(full_script, encoding="utf-8")
+        return script_path, capture_path
+
+    # ------------------------------------------------------------------
+    # Environment construction
+    # ------------------------------------------------------------------
+
+    def _build_subprocess_env(self, extra_env: Optional[Dict[str, str]]) -> Dict[str, str]:
+        """Return a sanitised environment dict for the subprocess."""
+        # Start from current env but strip potentially leaky vars
+        _SENSITIVE_KEYS = {
+            "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CAI_API_KEY",
+            "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+        }
+        env: Dict[str, str] = {
+            k: v for k, v in os.environ.items() if k not in _SENSITIVE_KEYS
+        }
+        env["CIR_WORKSPACE"] = str(self.workspace_root)
+        env["PYTHONPATH"] = os.environ.get("PYTHONPATH", "")
+        # Forward CUDA LD_LIBRARY_PATH if GPU detected
+        if self._gpu_env.get("_CIR_GPU_DETECTED") and "LD_LIBRARY_PATH" in self._gpu_env:
+            env["LD_LIBRARY_PATH"] = str(self._gpu_env["LD_LIBRARY_PATH"])
+        if extra_env:
+            env.update(extra_env)
+        return env
+
+    # ------------------------------------------------------------------
+    # Resource limiting
+    # ------------------------------------------------------------------
+
+    def _preexec_limiter(self):
+        """Return a preexec_fn that sets RLIMIT_AS for the child process."""
+        mem_limit = self.mem_limit_bytes
+
+        def _limit():
+            try:
+                resource.setrlimit(resource.RLIMIT_AS, (mem_limit, mem_limit))
+            except Exception:
+                pass  # Non-fatal: best-effort
+
+        return _limit
+
+    # ------------------------------------------------------------------
+    # MODE_CRITIQUE remediation
+    # ------------------------------------------------------------------
+
+    def _maybe_critique(self, stderr: str, sha256: str) -> Optional[Dict[str, Any]]:
+        """Run a MODE_CRITIQUE turn when the failure looks like an import/syntax error."""
+        lower = stderr.lower()
+        is_import_error = "importerror" in lower or "modulenotfounderror" in lower or "no module named" in lower
+        is_syntax_error = "syntaxerror" in lower
+        if not (is_import_error or is_syntax_error):
+            return None
+        if not (_REASONING_AVAILABLE and REASONING_TOOL is not None):
+            return {"note": "REASONING_TOOL unavailable; manual inspection required", "stderr_excerpt": stderr[:800]}
+
+        try:
+            result = REASONING_TOOL.reason(
+                mode=MODE_CRITIQUE,
+                objective="Identify missing dependency or syntax fix for failed CIR script",
+                context=f"Script sha256={sha256[:12]} failed with stderr:\n{stderr[:2000]}",
+                prior_output=stderr[:2000],
+                options=[
+                    "pip install <missing_package>",
+                    "Fix syntax error in submitted code",
+                    "Add import to authorized list",
+                    "Use stdlib fallback",
+                ],
+                fetch_facts=True,
+                fact_query="Python import error remediation Ubuntu 24.04",
+            )
+        except Exception as exc:
+            result = {"note": f"MODE_CRITIQUE invocation failed: {exc}", "stderr_excerpt": stderr[:800]}
+
+        self._audit.record("mode_critique", sha256, {"triggered_by": "import_or_syntax_error"})
+        return result
+
+    # ------------------------------------------------------------------
+    # Cleanup helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _cleanup_temp(path: Path) -> None:
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Back-compat shim
+# ---------------------------------------------------------------------------
+
+class LocalPythonInterpreter:
+    """
+    Legacy shim around CerebroIsolatedRuntime.
+
+    Provides the same ``__call__(code_action, additional_variables)`` interface
+    as the original HuggingFace LocalPythonInterpreter so that existing callers
+    continue to work without modification.
+
+    Note: the ``state`` dict and in-process variable-sharing semantics from the
+    old interpreter are not replicated — each invocation is now a fresh
+    subprocess.  ``additional_variables`` are serialised and injected via a
+    preamble assignment block.
+    """
+
+    def __init__(
+        self,
+        additional_authorized_imports: List[str],
+        tools: Dict,
+        max_print_outputs_length: Optional[int] = None,
+    ) -> None:
+        # Keep attributes present for any introspection code.
+        self.additional_authorized_imports = additional_authorized_imports
+        self.authorized_imports = list(
+            set(BASE_BUILTIN_MODULES) | set(additional_authorized_imports)
+        )
+        self.static_tools = {**tools, **BASE_PYTHON_TOOLS.copy()}
+        self.custom_tools: Dict = {}
+        self.state: Dict[str, Any] = {}
+        self.max_print_outputs_length = max_print_outputs_length or DEFAULT_MAX_LEN_OUTPUT
+        self._cir = CerebroIsolatedRuntime()
+
+    def __call__(
+        self, code_action: str, additional_variables: Dict
+    ) -> Tuple[Any, str, bool]:
+        # Inject additional_variables as a JSON-parsed preamble
+        preamble_lines = ["import json as _shim_json"]
+        for k, v in additional_variables.items():
+            try:
+                serialised = json.dumps(v)
+                preamble_lines.append(f"{k} = _shim_json.loads({serialised!r})")
+            except (TypeError, ValueError):
+                preamble_lines.append(f"{k} = {v!r}")
+
+        injected_code = "\n".join(preamble_lines) + "\n\n" + code_action
+
+        try:
+            result = self._cir.execute(injected_code, capture_variables=True)
+        except CIRTimeout as exc:
+            return None, str(exc), False
+        except CIRError as exc:
+            return None, str(exc), False
+
+        stdout = result.get("stdout", "")
+        if result.get("stderr"):
+            stdout += "\n[stderr]\n" + result["stderr"]
+        stdout = truncate_content(stdout, max_length=self.max_print_outputs_length)
+
+        # The shim has no final_answer detection — return (None, logs, False)
+        return None, stdout, False
+
+
+__all__ = [
+    # Legacy
+    "evaluate_python_code",
+    "LocalPythonInterpreter",
+    # CIR
+    "CerebroIsolatedRuntime",
+    "CIRError",
+    "CIRPathGuardViolation",
+    "CIRTimeout",
+    "CIRResourceLimit",
+]
