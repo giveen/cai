@@ -409,7 +409,7 @@ dfir_agent = Agent(
     instructions=create_system_prompt_renderer(dfir_agent_system_prompt),
     description="Configuration integrity, privilege analysis, and internal state mapping specialist.",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
         openai_client=AsyncOpenAI(),
     ),
     tools=_tools,

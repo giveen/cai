@@ -507,7 +507,7 @@ class CerebroValidationAgent:
 
 
 load_dotenv()
-_api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
+_api_key = os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))
 _prompt = load_prompt_template("prompts/system_triage_agent.md")
 
 _tools: List[Any] = []
@@ -526,7 +526,7 @@ retester_agent = Agent(
     description="CVRE agent specializing in vulnerability validation, regression, and remediation verification.",
     tools=_tools,
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
         openai_client=AsyncOpenAI(api_key=_api_key),
     ),
 )

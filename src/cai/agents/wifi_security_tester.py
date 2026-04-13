@@ -608,7 +608,7 @@ wifi_security_agent = Agent(
     tools=_tools,
     model=OpenAIChatCompletionsModel(
         model=os.getenv("CAI_MODEL", "gpt-4o-mini"),
-        openai_client=AsyncOpenAI(api_key=os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", ""))),
+        openai_client=AsyncOpenAI(api_key=os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", ""))),
     ),
 )
 

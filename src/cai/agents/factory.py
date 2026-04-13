@@ -21,6 +21,7 @@ from uuid import uuid4
 
 from openai import AsyncOpenAI
 
+from cai.agents.registry import AgentRegistry as PersonaAgentRegistry
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.all_tools import get_tool, get_tools_for_agent
 from cai.tools.reconnaissance.filesystem import PathGuard
@@ -177,6 +178,14 @@ class CerebroAgentFactory:
         "generic_intelligence": "supervisor",
     }
 
+    _ROLE_ALIASES: Mapping[str, str] = {
+        "redteam_agent": "red_teamer",
+        "red_team_agent": "red_teamer",
+        "redteam": "red_teamer",
+        "blue_team_agent": "blue_teamer",
+        "generic": "generic_intelligence",
+    }
+
     def __init__(
         self,
         *,
@@ -189,12 +198,17 @@ class CerebroAgentFactory:
         self._workspace_paths = self._build_workspace_paths(workspace_root)
         self._redaction = CerebroRedaction()
         self._path_guard = PathGuard(self._workspace_paths.repo_root, self._pathguard_audit)
+        self._persona_registry = PersonaAgentRegistry(
+            prompts_root=self._workspace_paths.prompts_root,
+            logger=self._logger,
+        )
 
         self._records: Dict[str, AgentDiscoveryRecord] = {}
         self._providers: Dict[str, Type[CerebroBaseAgentProvider]] = {}
         self._singletons: Dict[str, Agent] = {}
         self._live_agents: Dict[str, Agent] = {}
         self._agent_roles_by_uuid: Dict[str, str] = {}
+        self._last_missing_persona_paths: Dict[str, tuple[str, ...]] = {}
 
         self._singleton_roles = set(self._SINGLETON_DEFAULTS)
         if singleton_roles:
@@ -244,6 +258,7 @@ class CerebroAgentFactory:
 
         provider_cls = self._providers.get(normalized_role)
         if provider_cls is None:
+            missing_paths = self._collect_missing_persona_paths(normalized_role)
             return self._fallback_generic(
                 role=normalized_role,
                 reason="role_not_discovered",
@@ -253,6 +268,7 @@ class CerebroAgentFactory:
                 metadata=metadata,
                 model_override=model_override,
                 custom_name=custom_name,
+                missing_persona_paths=missing_paths,
             )
 
         agent_uuid = str(uuid4())
@@ -293,6 +309,7 @@ class CerebroAgentFactory:
                 metadata={**(metadata or {}), "init_error": str(exc)},
                 model_override=model_override,
                 custom_name=custom_name,
+                missing_persona_paths=self._last_missing_persona_paths.get(normalized_role, ()),
             )
 
         context = CerebroContext(
@@ -389,7 +406,7 @@ class CerebroAgentFactory:
         model_override: Optional[str],
         custom_name: Optional[str],
     ) -> Agent:
-        model_name = model_override or os.getenv(f"CAI_{role.upper()}_MODEL") or os.getenv("CAI_MODEL", "alias1")
+        model_name = model_override or os.getenv(f"CAI_{role.upper()}_MODEL") or os.getenv("CAI_MODEL", "cerebro1")
         api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
 
         runtime_model = OpenAIChatCompletionsModel(
@@ -442,14 +459,34 @@ class CerebroAgentFactory:
     def _hydrate_prompt(self, role: str, metadata: Mapping[str, Any], base_agent: Agent) -> str:
         template_text: Optional[str] = None
         record = self._records.get(role)
-        candidates = record.prompt_candidates if record else self._prompt_candidates(role=role, stem=role)
+        stem = role
+        if record and record.module_path:
+            stem = record.module_path.rsplit(".", 1)[-1]
+        candidates = record.prompt_candidates if record else self._prompt_candidates(role=role, stem=stem)
 
-        for relative_path in candidates:
+        resolution = self._persona_registry.resolve_prompt_paths(
+            role=role,
+            stem=stem,
+            candidates=candidates,
+        )
+        if resolution.missing:
+            self._last_missing_persona_paths[role] = tuple(str(path) for path in resolution.searched_paths)
+        else:
+            self._last_missing_persona_paths.pop(role, None)
+
+        if resolution.selected_path is not None:
             try:
-                template_text = load_prompt_template(relative_path)
-                break
+                template_text = load_prompt_template(str(resolution.selected_path))
             except FileNotFoundError:
-                continue
+                template_text = None
+
+        if template_text is None:
+            for relative_path in candidates:
+                try:
+                    template_text = load_prompt_template(relative_path)
+                    break
+                except FileNotFoundError:
+                    continue
 
         if template_text is None:
             if isinstance(base_agent.instructions, str):
@@ -505,6 +542,7 @@ class CerebroAgentFactory:
         metadata: Optional[Mapping[str, Any]],
         model_override: Optional[str],
         custom_name: Optional[str],
+        missing_persona_paths: Sequence[str] = (),
     ) -> Agent:
         fallback_uuid = str(uuid4())
         fallback_role = "generic_intelligence"
@@ -519,10 +557,12 @@ class CerebroAgentFactory:
         runtime_metadata = dict(runtime_metadata)
         runtime_metadata["failover_reason"] = reason
         runtime_metadata["requested_role"] = role
+        runtime_metadata["missing_persona_paths"] = list(missing_persona_paths)
+        runtime_metadata["missing_persona_file"] = missing_persona_paths[0] if missing_persona_paths else ""
 
         base_prompt = self._hydrate_prompt(fallback_role, runtime_metadata, _generic_template_agent())
         toolbox = self._build_toolbox(fallback_role, allow_subghz=False, extra_tools=None)
-        model_name = model_override or os.getenv("CAI_MODEL", "alias1")
+        model_name = model_override or os.getenv("CAI_MODEL", "cerebro1")
         api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
 
         generic_agent = Agent(
@@ -560,8 +600,26 @@ class CerebroAgentFactory:
             "spawn_failover",
             fallback_role,
             fallback_uuid,
-            {"requested_role": role, "reason": reason},
+            {
+                "requested_role": role,
+                "reason": reason,
+                "missing_persona_file": runtime_metadata["missing_persona_file"],
+                "missing_persona_paths": runtime_metadata["missing_persona_paths"],
+            },
         )
+        if missing_persona_paths:
+            audit = getattr(self._logger, "audit", None)
+            if callable(audit):
+                audit(
+                    "generic_intelligence failover due to missing persona file",
+                    actor="CALM",
+                    data={
+                        "requested_role": role,
+                        "missing_persona_file": missing_persona_paths[0],
+                        "searched_persona_paths": list(missing_persona_paths),
+                    },
+                    tags=["agent_factory", "spawn_failover", "persona_missing"],
+                )
         return generic_agent
 
     def _inject_mcp_tools(self, runtime_agent: Agent, role: str) -> None:
@@ -610,16 +668,21 @@ class CerebroAgentFactory:
         )
 
     def _prompt_candidates(self, *, role: str, stem: str) -> tuple[str, ...]:
-        return (
-            f"prompts/{role}.md",
-            f"prompts/system_{role}.md",
-            f"prompts/{stem}.md",
-            f"prompts/system_{stem}.md",
-            "prompts/system_reasoner_supporter.md",
-        )
+        return self._persona_registry.prompt_candidates(role=role, stem=stem)
 
     def _normalize_role(self, value: str) -> str:
-        return value.strip().lower().replace("-", "_").replace(" ", "_")
+        normalized = self._persona_registry.normalize_role(value)
+        return self._ROLE_ALIASES.get(normalized, normalized)
+
+    def _collect_missing_persona_paths(self, role: str) -> tuple[str, ...]:
+        normalized_role = self._normalize_role(role)
+        resolution = self._persona_registry.resolve_prompt_paths(
+            role=normalized_role,
+            stem=normalized_role,
+        )
+        missing = tuple(str(path) for path in resolution.searched_paths)
+        self._last_missing_persona_paths[normalized_role] = missing
+        return missing
 
     def _log_lifecycle_event(self, event: str, role: str, agent_uuid: str, data: Mapping[str, Any]) -> None:
         payload = {
@@ -650,7 +713,7 @@ def _generic_template_agent() -> Agent:
         instructions="You are a safe and capable cybersecurity assistant.",
         description="Template holder for failover hydration.",
         model=OpenAIChatCompletionsModel(
-            model=os.getenv("CAI_MODEL", "alias1"),
+            model=os.getenv("CAI_MODEL", "cerebro1"),
             openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")),
             agent_name="Generic Intelligence Agent Template",
             agent_id="template",

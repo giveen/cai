@@ -190,7 +190,6 @@ from ..tracing import generation_span
 from ..tracing.span_data import GenerationSpanData
 from ..tracing.spans import Span
 from ..usage import Usage
-from ..version import __version__
 from .fake_id import FAKE_RESPONSES_ID
 from .interface import Model, ModelTracing
 
@@ -204,7 +203,7 @@ litellm.suppress_debug_info = True
 if os.getenv("CAI_MODEL") == "o3-mini" or os.getenv("CAI_MODEL") == "gemini-1.5-pro":
     litellm.drop_params = True
 
-_USER_AGENT = f"Agents/Python {__version__}"
+_USER_AGENT = "Cerebro-AI Auditor"
 _HEADERS = {"User-Agent": _USER_AGENT}
 
 # Global registry to track active model instances
@@ -2808,10 +2807,10 @@ class OpenAIChatCompletionsModel(Model):
         # Determine provider based on model string
         model_str = str(kwargs["model"]).lower()
 
-        if "alias" in model_str and "alias1.5" not in model_str:  # NOTE: exclude alias1.5
-            kwargs["api_base"] = "https://api.aliasrobotics.com:666/"
+        if "cerebro" in model_str and "cerebro1.5" not in model_str:  # NOTE: exclude cerebro1.5
+            kwargs["api_base"] = "https://api.cerebro-ai.com:666/"
             kwargs["custom_llm_provider"] = "openai"
-            kwargs["api_key"] = os.getenv("ALIAS_API_KEY", "REDACTED_ALIAS_KEY")
+            kwargs["api_key"] = os.getenv("CEREBRO_API_KEY", "REDACTED_CEREBRO_KEY")
         elif "/" in model_str:
             # Handle provider/model format
             provider = model_str.split("/")[0]
@@ -2940,7 +2939,7 @@ class OpenAIChatCompletionsModel(Model):
             elif "gemini" in model_str:
                 kwargs.pop("parallel_tool_calls", None)
             elif "qwen" in model_str or ":" in model_str:
-                # Handle Ollama-served models with custom formats (e.g., alias1)
+                # Handle Ollama-served models with custom formats (e.g., cerebro1)
                 # These typically need the Ollama provider
                 litellm.drop_params = True
                 kwargs.pop("parallel_tool_calls", None)
@@ -3983,7 +3982,7 @@ class OpenAIChatCompletionsModel(Model):
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
             # Determine API key
-            api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
+            api_key = os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))
             self._client = AsyncOpenAI(api_key=api_key)
         return self._client
 

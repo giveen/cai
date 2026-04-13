@@ -537,7 +537,7 @@ one_tool_agent = Agent(
   instructions=create_system_prompt_renderer(_one_tool_prompt),
   tools=_tools,
   model=OpenAIChatCompletionsModel(
-    model=os.getenv("CAI_MODEL", "alias1"),
+    model=os.getenv("CAI_MODEL", "cerebro1"),
     openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")),
   ),
 )

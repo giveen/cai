@@ -429,7 +429,7 @@ class CerebroCodeSynthesisAgent:
 
 # Compatibility exports for existing runtime discovery.
 load_dotenv()
-_model_name = os.getenv("CAI_MODEL", "alias1")
+_model_name = os.getenv("CAI_MODEL", "cerebro1")
 _tools = []
 for _meta in get_all_tools():
     if not getattr(_meta, "enabled", False):

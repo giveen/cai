@@ -190,7 +190,7 @@ class CerebroPromptHUD:
                 return self._model_provider() or "model"
             except Exception:
                 pass
-        return self._cfg_get("CAI_MODEL") or "alias1"
+        return self._cfg_get("CAI_MODEL") or "cerebro1"
 
     def _resolve_agent_status(self) -> str:
         if self._agent_status_provider is not None:

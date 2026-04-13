@@ -367,8 +367,8 @@ class CerebroLabOperativeAgent:
 
 
 load_dotenv()
-model_name = os.getenv("CAI_MODEL", "alias1")
-api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
+model_name = os.getenv("CAI_MODEL", "cerebro1")
+api_key = os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))
 
 htb_agent_system_prompt = load_prompt_template("prompts/system_htb_agent.md")
 

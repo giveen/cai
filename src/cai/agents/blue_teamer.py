@@ -364,7 +364,7 @@ blueteam_agent = Agent(
     instructions=create_system_prompt_renderer(blueteam_agent_system_prompt),
     description="Agent that specializes in autonomous system defense and resilience operations.",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
         openai_client=AsyncOpenAI(),
     ),
     tools=_tools,

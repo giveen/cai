@@ -325,7 +325,7 @@ class CerebroKeyRegistry:
 
         return [
             "reasoner",
-            "alias1",
+            "cerebro1",
             "gpt-4o",
             "claude-3-7-sonnet",
             "gemini-2.5-pro",

@@ -682,10 +682,16 @@ class CerebroToolRegistry:
             for meta in self._metadata.values():
                 if meta.enabled:
                     phase_counts[meta.phase] = phase_counts.get(meta.phase, 0) + 1
+            phase_summary = ", ".join(
+                f"{phase}={count}" for phase, count in sorted(phase_counts.items())
+            )
 
             self._logger.audit(
-                f"CerebroToolRegistry initialized: {enabled_count}/{len(self._metadata)} tools enabled",
-                data={"phase_breakdown": phase_counts},
+                (
+                    "CerebroToolRegistry initialized: "
+                    f"{enabled_count}/{len(self._metadata)} tools enabled"
+                    + (f" ({phase_summary})" if phase_summary else "")
+                ),
                 tags=["registry"],
             )
         except Exception:

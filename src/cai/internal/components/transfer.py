@@ -463,9 +463,9 @@ cost_agent = Agent(
                    and direct tool mapping for raw throughput.""",
     tools=_tools,
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
         openai_client=AsyncOpenAI(
-            api_key=os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-placeholder"))
+            api_key=os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-placeholder"))
         ),
     )
 )

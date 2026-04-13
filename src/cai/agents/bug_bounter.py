@@ -513,7 +513,7 @@ class CerebroVulnerabilityResearcher:
 
 
 load_dotenv()
-api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
+api_key = os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))
 _prompt = load_prompt_template("prompts/system_bug_bounter.md")
 _tools = []
 for _meta in get_all_tools():
@@ -534,7 +534,7 @@ bug_bounter_agent = Agent(
     input_guardrails=input_guardrails,
     output_guardrails=output_guardrails,
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
         openai_client=AsyncOpenAI(api_key=api_key),
     ),
 )

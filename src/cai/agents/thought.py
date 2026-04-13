@@ -546,13 +546,13 @@ def cec_think_act_observe(
 
 
 load_dotenv(override=False)
-api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
+api_key = os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))
 
 thought_agent_system_prompt = load_prompt_template("prompts/system_thought_router.md")
 thought_agent = Agent(
     name="ThoughtAgent",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
         openai_client=AsyncOpenAI(api_key=api_key),
     ),
     description="State-aware Cerebro Executive Cortex router for concise mission planning.",

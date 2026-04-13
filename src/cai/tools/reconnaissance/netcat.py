@@ -486,7 +486,7 @@ class CerebroNetcatTool:
             os.getenv("USER", ""),
             os.getenv("LOGNAME", ""),
             "jabbatheduck",
-            "aliasrobotics",
+            "cerebro-ai",
         }
         for marker in markers:
             marker = marker.strip()

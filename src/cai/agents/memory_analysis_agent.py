@@ -379,7 +379,7 @@ memory_analysis_agent = Agent(
     description="Autonomous forensic memory analyst for volatile compromise investigation.",
     tools=_tools,
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
         openai_client=AsyncOpenAI(),
     ),
 )

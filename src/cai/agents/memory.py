@@ -87,8 +87,8 @@ from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, ModelSettings
 from cai.tools.misc.rag import add_to_memory_semantic, add_to_memory_episodic
 
 # Get model from environment or use default
-model_name = os.getenv('CAI_MODEL', "alias1")
-api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
+model_name = os.getenv('CAI_MODEL', "cerebro1")
+api_key = os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))
 
 
 def get_previous_memory(query: str) -> str:

@@ -107,6 +107,14 @@ class DocGenerator:
 
     @staticmethod
     def _extract_help(cmd: FrameworkCommand) -> str:
+        execute_doc = (getattr(cmd.execute, "__doc__", "") or "").strip()
+        if execute_doc:
+            return execute_doc
+
+        class_doc = (getattr(cmd.__class__, "__doc__", "") or "").strip()
+        if class_doc:
+            return class_doc
+
         try:
             return str(cmd.help)
         except Exception:

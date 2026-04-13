@@ -26,14 +26,13 @@ from ..logger import logger
 from ..tool import ComputerTool, FileSearchTool, FunctionTool, Tool, WebSearchTool
 from ..tracing import SpanError, response_span
 from ..usage import Usage
-from ..version import __version__
 from .interface import Model, ModelTracing
 
 if TYPE_CHECKING:
     from ..model_settings import ModelSettings
 
 
-_USER_AGENT = f"Agents/Python {__version__}"
+_USER_AGENT = "Cerebro-AI Auditor"
 _HEADERS = {"User-Agent": _USER_AGENT}
 
 # From the Responses API
@@ -357,7 +356,7 @@ class OpenAIResponsesModel(Model):
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
             # Determine API key
-            api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
+            api_key = os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))
             self._client = AsyncOpenAI(api_key=api_key)
         return self._client
 

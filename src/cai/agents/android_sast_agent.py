@@ -399,7 +399,7 @@ class CerebroAndroidSASTAgent:
 
 
 load_dotenv()
-model_name = os.getenv("CAI_MODEL", "alias1")
+model_name = os.getenv("CAI_MODEL", "cerebro1")
 tools = []
 for _meta in get_all_tools():
     if not getattr(_meta, "enabled", False):

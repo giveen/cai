@@ -771,7 +771,7 @@ network_security_analyzer_agent = Agent(
     instructions=create_system_prompt_renderer(network_security_analyzer_prompt),
     description="High-speed protocol analysis and service fingerprinting specialist for transparent network auditing.",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
         openai_client=AsyncOpenAI(),
     ),
     tools=_tools,

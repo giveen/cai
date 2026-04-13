@@ -170,7 +170,6 @@ class CerebroMissionControl:
 
     async def run(self) -> int:
         """Run pre-flight, then enter the mission loop until shutdown."""
-        self._install_signal_handlers()
         try:
             await self._preflight()
             await self._mission_loop()
@@ -790,14 +789,6 @@ class CerebroMissionControl:
     def _logic_safe_key(raw: str) -> str:
         return raw.replace("/", "_").replace(":", "_").replace(" ", "_")
 
-    def _install_signal_handlers(self) -> None:
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(sig, self.stop_event.set)
-            except NotImplementedError:  # pragma: no cover
-                signal.signal(sig, lambda *_args: self.stop_event.set())
-
     @staticmethod
     def _pathguard_audit(_event: str, _payload: Any) -> None:
         return
@@ -862,6 +853,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Run dry-run validator checks without mission execution")
     parser.add_argument("--open-mode", action="store_true", help="Allow degraded hardware mode for initialization")
     return parser
+
+
+def _register_main_thread_signals(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event) -> None:
+    """Register SIGINT/SIGTERM handlers in the main thread before loop run."""
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, lambda: loop.call_soon_threadsafe(stop_event.set))
+        except NotImplementedError:  # pragma: no cover
+            signal.signal(sig, lambda *_args: loop.call_soon_threadsafe(stop_event.set))
 
 
 def _resolve_scope_into_env(scope_path: str, workspace_root: Path) -> None:
@@ -940,7 +940,7 @@ async def amain() -> int:
     return await controller.run()
 
 
-def main() -> int:
+def main(*, register_main_thread_signals: bool = False) -> int:
     """CLI wrapper around mission control entrypoint."""
     parser = _build_parser()
     args = parser.parse_args()
@@ -995,6 +995,17 @@ def main() -> int:
             open_mode=bool(args.open_mode),
             dry_run=bool(args.dry_run),
         )
+
+        if register_main_thread_signals:
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                _register_main_thread_signals(loop, controller.stop_event)
+                return loop.run_until_complete(controller.run())
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+
         return asyncio.run(controller.run())
     except KeyboardInterrupt:
         console.print("[yellow]Interrupted by user.[/yellow]")
@@ -1011,4 +1022,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
+    raise SystemExit(main(register_main_thread_signals=True))

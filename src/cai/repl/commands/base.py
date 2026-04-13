@@ -434,7 +434,14 @@ def get_command(name: str) -> Optional[FrameworkCommand]:
 
 def handle_command(command: str, args: Optional[List[str]] = None) -> bool:
     """Convenience dispatcher: look up *command* and call its ``handle()``."""
-    cmd = get_command(command)
-    if cmd:
-        return cmd.handle(args)
-    return False
+    try:
+        from cai.internal.dispatcher import GLOBAL_COMMAND_DISPATCHER
+
+        result = GLOBAL_COMMAND_DISPATCHER.dispatch(command, list(args or []))
+        return bool(result.exit_code == 0)
+    except Exception:
+        # Safety fallback to legacy direct dispatch path.
+        cmd = get_command(command)
+        if cmd:
+            return cmd.handle(args)
+        return False

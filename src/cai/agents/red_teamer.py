@@ -567,8 +567,8 @@ class CerebroFieldAgent:
 # ---------------------------------------------------------------------------
 
 load_dotenv()
-_model_name = os.getenv("CAI_MODEL", "alias1")
-_api_key = os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))
+_model_name = os.getenv("CAI_MODEL", "cerebro1")
+_api_key = os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))
 
 _redteam_system_prompt = load_prompt_template("prompts/system_red_team_agent.md")
 

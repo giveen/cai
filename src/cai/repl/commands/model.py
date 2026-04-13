@@ -67,7 +67,7 @@ class ModelSelectionState(BaseModel):
     """Persisted model selection for current workspace."""
 
     schema_version: str = "1.0"
-    selected_model: str = "alias1"
+    selected_model: str = "cerebro1"
     provider: str = "openai"
     parameters: Dict[str, Any] = Field(default_factory=dict)
     updated_at: str = Field(default_factory=lambda: datetime.now(tz=UTC).isoformat())
@@ -328,9 +328,9 @@ class ModelOrchestrator:
 
         # Alias models are first-class to preserve backward compatibility.
         entries.setdefault(
-            "alias1",
+            "cerebro1",
             ModelDescriptor(
-                id="alias1",
+                id="cerebro1",
                 provider="openai",
                 category="Alias",
                 description="Commercial cybersecurity default",
@@ -340,9 +340,9 @@ class ModelOrchestrator:
             ),
         )
         entries.setdefault(
-            "alias1-fast",
+            "cerebro1-fast",
             ModelDescriptor(
-                id="alias1-fast",
+                id="cerebro1-fast",
                 provider="openai",
                 category="Alias",
                 description="Faster low-latency alias profile",
@@ -362,7 +362,7 @@ class ModelOrchestrator:
         return self._model_cache.get(model_id)
 
     def current_selection(self) -> ModelSelectionState:
-        env_model = os.getenv("CAI_MODEL", "alias1")
+        env_model = os.getenv("CAI_MODEL", "cerebro1")
         if self._selection_path.exists():
             try:
                 obj = json.loads(self._selection_path.read_text(encoding="utf-8"))

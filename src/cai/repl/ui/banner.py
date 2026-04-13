@@ -146,7 +146,7 @@ class CerebroBanner:
         return f"{py_platform.system()} {py_platform.release()} / {py_platform.machine()}"
 
     def _resolve_brain_info(self) -> str:
-        model = os.getenv("CAI_MODEL", "alias1")
+        model = os.getenv("CAI_MODEL", "cerebro1")
         provider = self._infer_provider(model)
         return f"{provider}: {model}"
 

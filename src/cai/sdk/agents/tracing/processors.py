@@ -10,6 +10,8 @@ from typing import Any
 
 import httpx
 
+from cai.util.config import should_suppress_openai_api_key_warning
+
 from ..logger import logger
 from .processor_interface import TracingExporter, TracingProcessor
 from .spans import Span
@@ -90,6 +92,11 @@ class BackendSpanExporter(TracingExporter):
             return
 
         if not self.api_key:
+            if should_suppress_openai_api_key_warning():
+                logger.debug(
+                    "OPENAI_API_KEY warning suppressed in TRANSPARENT local-provider mode"
+                )
+                return
             logger.warning("OPENAI_API_KEY is not set, skipping trace export")
             return
 

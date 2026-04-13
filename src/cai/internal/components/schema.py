@@ -192,6 +192,18 @@ class ToolRequest(CerebroSchemaModel):
     timeout_seconds: Optional[float] = Field(default=None, gt=0.0)
 
 
+class CommandInvocation(CerebroSchemaModel):
+    """Normalized command invocation contract for REPL dispatch."""
+
+    request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    command: str = Field(min_length=1)
+    args: List[str] = Field(default_factory=list)
+    force: bool = False
+    help_requested: bool = False
+    help_target: Optional[str] = None
+    user: str = Field(default="unknown")
+
+
 class ToolResult(CerebroSchemaModel):
     """Standardized tool execution result with explicit telemetry."""
 
@@ -283,6 +295,7 @@ __all__ = [
     "CerebroFinding",
     "CerebroLogicNode",
     "CerebroSchemaModel",
+    "CommandInvocation",
     "CredentialLoot",
     "EngineHealth",
     "ExecutionTelemetry",

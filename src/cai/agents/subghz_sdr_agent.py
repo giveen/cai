@@ -549,8 +549,8 @@ subghz_sdr_agent = Agent(
     instructions=create_system_prompt_renderer(_prompt),
     tools=_tools,
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
-        openai_client=AsyncOpenAI(api_key=os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-placeholder"))),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
+        openai_client=AsyncOpenAI(api_key=os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-placeholder"))),
     ),
 )
 

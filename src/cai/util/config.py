@@ -33,6 +33,42 @@ _RTX_5090_VRAM_WORKING_SET_MB = 28_672
 _RTX_5090_VRAM_RESERVE_MB = 4_096
 
 
+def _is_local_provider_configured() -> bool:
+    """Return True when environment indicates a local LLM provider."""
+    model_value = os.getenv("CAI_MODEL", "").strip().lower()
+    local_prefixes = (
+        "ollama",
+        "litellm",
+        "llama",
+        "llama.cpp",
+        "vllm",
+        "local",
+        "deepseek",
+    )
+    if any(model_value.startswith(prefix) for prefix in local_prefixes):
+        return True
+
+    local_env_markers = (
+        "LITELLM_SERVER",
+        "LITELLM_BASE_URL",
+        "OLLAMA_URL",
+        "OLLAMA_API_BASE",
+        "OLLAMA_BASE_URL",
+        "CAI_LOCAL_MODEL",
+        "LLM_LOCAL",
+        "LLAMA_CPP_SERVER",
+    )
+    return any(bool(os.getenv(key, "").strip()) for key in local_env_markers)
+
+
+def should_suppress_openai_api_key_warning() -> bool:
+    """Suppress OPENAI_API_KEY warning in transparent local-provider mode."""
+    audit_mode = os.getenv("AUDIT_MODE", os.getenv("CAI_AUDIT_MODE", "TRANSPARENT"))
+    if str(audit_mode).strip().upper() != "TRANSPARENT":
+        return False
+    return _is_local_provider_configured()
+
+
 def _detect_total_system_ram_gb() -> float:
     """Detect total system RAM in GiB, defaulting to 256 GiB when unknown."""
     if psutil is not None:
@@ -318,4 +354,5 @@ __all__ = [
     "PathHierarchy",
     "RamSegmentation",
     "get_cerebro_config",
+    "should_suppress_openai_api_key_warning",
 ]

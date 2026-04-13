@@ -176,7 +176,7 @@ _SYSTEM_ENTRIES: List[ConfigEntry] = [
     ConfigEntry(name="CTF_INSIDE",   description="Conquer CTF from inside container",   default="true",
                 value_type="bool"),
     # Core CAI
-    ConfigEntry(name="CAI_MODEL",        description="Default model for all agents",      default="alias1"),
+    ConfigEntry(name="CAI_MODEL",        description="Default model for all agents",      default="cerebro1"),
     ConfigEntry(name="CAI_DEBUG",        description="Debug level (0=off,1=verbose,2=cli)", default="1",
                 value_type="int", min_val=0, max_val=2),
     ConfigEntry(name="CAI_BRIEF",        description="Enable brief output mode",           default="false",

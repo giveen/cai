@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import random
 import re
 import shlex
 import shutil
@@ -68,12 +67,7 @@ _BLOCKED_FLAGS = {
     "--post-file",
     "--body-file",
 }
-_USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:136.0) Gecko/20100101 Firefox/136.0",
-    "Authorized-Audit-Browser/1.0 (+https://cerebro.local/authorized-audit)",
-]
+_USER_AGENTS = ["Cerebro-AI Auditor"]
 
 
 class DownloadArtifact(BaseModel):
@@ -470,9 +464,8 @@ class CerebroWgetTool:
 
     @staticmethod
     def _select_user_agent(profile: str) -> str:
-        if (profile or "").strip().lower() == "auditor":
-            return _USER_AGENTS[-1]
-        return random.choice(_USER_AGENTS)
+        _ = profile
+        return _USER_AGENTS[0]
 
     def _update_progress_from_line(self, state: _JobState, line: str) -> None:
         if not line:

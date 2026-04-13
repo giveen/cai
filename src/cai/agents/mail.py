@@ -554,8 +554,8 @@ csce_agent = Agent(
     model_settings=ModelSettings(temperature=0, tool_choice="required"),
     tools=[],
     model=OpenAIChatCompletionsModel(
-        model=os.getenv("CAI_MODEL", "alias1"),
-        openai_client=AsyncOpenAI(api_key=os.getenv("ALIAS_API_KEY", os.getenv("OPENAI_API_KEY", "sk-alias-1234567890"))),
+        model=os.getenv("CAI_MODEL", "cerebro1"),
+        openai_client=AsyncOpenAI(api_key=os.getenv("CEREBRO_API_KEY", os.getenv("OPENAI_API_KEY", "sk-cerebro-1234567890"))),
     ),
 )
 
