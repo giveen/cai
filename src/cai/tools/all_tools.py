@@ -390,6 +390,34 @@ TOOL_CATALOG = {
         "dependencies": [],
         "description": "Export cross-agent handoff memo from a checkpoint",
     },
+    "validate_json_schema": {
+        "module": "cai.tools.validation",
+        "name": "validate_json_schema",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "Validate JSON payloads against strict registered schemas",
+    },
+    "verify_target_availability": {
+        "module": "cai.tools.validation",
+        "name": "verify_target_availability",
+        "phase": PHASE_RECON,
+        "dependencies": [],
+        "description": "Verify target reachability before major scans",
+    },
+    "validate_semantic_result": {
+        "module": "cai.tools.validation",
+        "name": "validate_semantic_result",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "Deterministically corroborate findings to reduce false positives",
+    },
+    "validate_resource_health": {
+        "module": "cai.tools.validation",
+        "name": "validate_resource_health",
+        "phase": PHASE_SYSTEM,
+        "dependencies": [],
+        "description": "Check platform and sandbox resource health before heavy tasks",
+    },
 }
 
 
