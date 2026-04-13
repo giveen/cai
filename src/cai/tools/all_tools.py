@@ -362,6 +362,34 @@ TOOL_CATALOG = {
         "dependencies": [],
         "description": "Get RAG system status",
     },
+    "session_checkpoint": {
+        "module": "cai.tools.sessions",
+        "name": "session_checkpoint",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "Save semantic engagement checkpoint for handoff and recovery",
+    },
+    "session_resume": {
+        "module": "cai.tools.sessions",
+        "name": "session_resume",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "Resume previously saved engagement checkpoint",
+    },
+    "session_list": {
+        "module": "cai.tools.sessions",
+        "name": "session_list",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "List available engagement checkpoints in current workspace",
+    },
+    "session_export": {
+        "module": "cai.tools.sessions",
+        "name": "session_export",
+        "phase": PHASE_META,
+        "dependencies": [],
+        "description": "Export cross-agent handoff memo from a checkpoint",
+    },
 }
 
 
