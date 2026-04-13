@@ -19,7 +19,12 @@ from cai.memory.search import (
     SearchHit,
     TraceabilityMeta,
 )
-from cai.memory.storage import EvidenceRecord, StorageBackend, WorkspaceJSONStore
+from cai.memory.storage import (
+    CerebroStorageHandler,
+    EvidenceRecord,
+    StorageBackend,
+    WorkspaceJSONStore,
+)
 
 
 class QueryResult(BaseModel):
@@ -87,6 +92,7 @@ __all__ = [
     "CADEResponse",
     "CADEResult",
     "CerebroSearchEngine",
+    "CerebroStorageHandler",
     "EvidenceRecord",
     "MemoryManager",
     "MemorySummary",
