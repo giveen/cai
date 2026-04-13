@@ -1,458 +1,280 @@
-"""
-Module for displaying the CAI banner and welcome message.
-"""
-# Standard library imports
+"""Cerebro-AI startup banner and onboarding UI utilities."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+import hashlib
 import os
-import glob
-import logging
+from pathlib import Path
+import platform as py_platform
+import random
 import sys
-from configparser import ConfigParser
+import time
+from typing import List, Optional
 
-# Third-party imports
-import requests  # pylint: disable=import-error
-from rich.console import Console  # pylint: disable=import-error
-from rich.panel import Panel  # pylint: disable=import-error
-from rich.table import Table  # pylint: disable=import-error
+from rich import box
+from rich.align import Align
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
-# For reading TOML files
+from cai.memory import MemoryManager
+from cai.repl.commands.config import CONFIG_STORE
+from cai.repl.commands.platform import get_system_auditor
+from cai.tools.workspace import get_project_space
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:
-    try:
-        import tomli as tomllib
-    except ImportError:
-        # If tomli is not available, we'll handle it in the get_version function
-        pass
+    import tomli as tomllib  # type: ignore[import-not-found]
 
 
-def get_version():
-    """Get the CAI version from pyproject.toml."""
-    version = "unknown"
-    try:
-        # Determine which TOML parser to use
-        if sys.version_info >= (3, 11):
-            toml_parser = tomllib
-        else:
-            try:
-                import tomli as toml_parser
-            except ImportError:
-                logging.warning("Could not import tomli. Falling back to manual parsing.")
-                # Simple manual parsing for version only
-                with open('pyproject.toml', 'r', encoding='utf-8') as f:
-                    for line in f:
-                        if line.strip().startswith('version = '):
-                            # Extract version from line like 'version = "0.4.0"'
-                            version = line.split('=')[1].strip().strip('"\'')
-                            return version
-                return version
-                
-        # Use proper TOML parser if available
-        with open('pyproject.toml', 'rb') as f:
-            config = toml_parser.load(f)
-        version = config.get('project', {}).get('version', 'unknown')
-    except Exception as e:  # pylint: disable=broad-except
-        logging.warning("Could not read version from pyproject.toml: %s", e)
-    return version
+@dataclass(frozen=True)
+class BannerPalette:
+    logo_colors: List[str]
+    accent: str
+    legal: str
+    ok: str
+    warn: str
 
 
-def get_supported_models_count():
-    """Get the count of supported models (with function calling)."""
-    try:
-        # Fetch model data from LiteLLM repository
-        response = requests.get(
-            "https://raw.githubusercontent.com/BerriAI/litellm/main/"
-            "model_prices_and_context_window.json",
-            timeout=2
+@dataclass(frozen=True)
+class BannerMetadata:
+    version: str
+    system: str
+    brain: str
+    workspace_status: str
+    memory_status: str
+    workspace_root: str
+    startup_ms: int
+
+
+class CerebroBanner:
+    """High-impact startup renderer for Cerebro-AI REPL."""
+
+    _TIPS = [
+        "Tip: Use /mcp list to verify active tool servers before a scan run.",
+        "Tip: Keep target seed files in shared/ and let agents write findings in private/.",
+        "Tip: Use /workspace dashboard to review engagement isolation and artifacts.",
+        "Tip: Launch risky tooling through /virtualization exec to contain blast radius.",
+        "Tip: Use /run --max-turns to cap orchestration loops during noisy engagements.",
+        "Tip: Use /platform --refresh before reporting host capability assumptions.",
+    ]
+
+    _ASCII_LINES = [
+        r"   ________                     __                ___    ____",
+        r"  / ____/ /___  _____________  / /_  _________   /   |  /  _/",
+        r" / /   / / __ \/ ___/ ___/ _ \/ __ \/ ___/ __ \ / /| |  / /  ",
+        r"/ /___/ / /_/ / /  / /  /  __/ /_/ / /  / /_/ // ___ |_/ /   ",
+        r"\____/_/\____/_/  /_/   \___/_.___/_/   \____//_/  |_/___/   ",
+    ]
+
+    def __init__(self, console: Optional[Console] = None) -> None:
+        self.console = console or Console()
+        self.palette = BannerPalette(
+            logo_colors=["#0B3C6D", "#115E82", "#117B8A", "#14919B", "#17A2B8"],
+            accent="#17A2B8",
+            legal="#7FA9C3",
+            ok="#4CC38A",
+            warn="#E0A458",
         )
 
-        if response.status_code == 200:
-            model_data = response.json()
+    def display(self) -> None:
+        start = time.perf_counter()
+        metadata = self._collect_metadata(start)
 
-            # Count models with function calling support
-            function_calling_models = sum(
-                1 for model_info in model_data.values()
-                if model_info.get("supports_function_calling", False)
-            )
+        loading_line = Text("Initializing enterprise context ", style=f"bold {self.palette.accent}")
+        loading_line.append("●", style=self.palette.logo_colors[1])
+        loading_line.append("●", style=self.palette.logo_colors[2])
+        loading_line.append("●", style=self.palette.logo_colors[3])
+        self.console.print(loading_line)
 
-            # Try to get Ollama models count
-            try:
-                from cai.util import get_ollama_api_base
-                ollama_api_base = get_ollama_api_base()
-                
-                # Add authentication headers for Ollama Cloud if using OPENAI_BASE_URL
-                headers = {}
-                if "ollama.com" in ollama_api_base:
-                    api_key = os.getenv("OPENAI_API_KEY")
-                    if api_key:
-                        headers["Authorization"] = f"Bearer {api_key}"
-                
-                ollama_response = requests.get(
-                    f"{ollama_api_base.replace('/v1', '')}/api/tags",
-                    headers=headers,
-                    timeout=1
-                )
+        logo_panel = self._render_logo_panel()
+        status_panel = self._render_status_panel(metadata)
+        legal_panel = self._render_legal_panel()
+        tip_panel = self._render_tip_panel(metadata)
 
-                if ollama_response.status_code == 200:
-                    ollama_data = ollama_response.json()
-                    ollama_models = len(
-                        ollama_data.get(
-                            'models', ollama_data.get('items', [])
-                        )
-                    )
-                    return function_calling_models + ollama_models
-            except Exception:  # pylint: disable=broad-except
-                logging.debug("Could not fetch Ollama models")
-                # Continue without Ollama models
+        self.console.print(logo_panel)
+        self.console.print(status_panel)
+        self.console.print(legal_panel)
+        self.console.print(tip_panel)
 
-            return function_calling_models
-    except Exception:  # pylint: disable=broad-except
-        logging.warning("Could not fetch model data from LiteLLM")
+    def _collect_metadata(self, start: float) -> BannerMetadata:
+        version = self._resolve_version()
+        system = self._resolve_system_info()
+        brain = self._resolve_brain_info()
+        workspace_status, workspace_root = self._workspace_health()
+        memory_status = self._memory_health()
+        startup_ms = int((time.perf_counter() - start) * 1000)
 
-    # Default count if we can't fetch the data
-    return "many"
+        return BannerMetadata(
+            version=version,
+            system=system,
+            brain=brain,
+            workspace_status=workspace_status,
+            memory_status=memory_status,
+            workspace_root=workspace_root,
+            startup_ms=startup_ms,
+        )
+
+    def _resolve_version(self) -> str:
+        cfg_version = CONFIG_STORE.get("CAI_VERSION")
+        if cfg_version and cfg_version != "Not set":
+            return cfg_version
+
+        pyproject = Path.cwd() / "pyproject.toml"
+        try:
+            with pyproject.open("rb") as handle:
+                data = tomllib.load(handle)
+            return str(data.get("project", {}).get("version", "unknown"))
+        except Exception:
+            return "unknown"
+
+    def _resolve_system_info(self) -> str:
+        try:
+            auditor = get_system_auditor()
+            cached = getattr(auditor, "_cache", None)
+            if cached is not None:
+                os_name = f"{cached.os.distribution} {cached.os.version}".strip()
+                arch = cached.architecture.machine or "unknown"
+                return f"{os_name} / {arch}"
+        except Exception:
+            pass
+
+        return f"{py_platform.system()} {py_platform.release()} / {py_platform.machine()}"
+
+    def _resolve_brain_info(self) -> str:
+        model = os.getenv("CAI_MODEL", "alias1")
+        provider = self._infer_provider(model)
+        return f"{provider}: {model}"
+
+    @staticmethod
+    def _infer_provider(model: str) -> str:
+        lowered = model.lower()
+        if lowered.startswith(("claude", "anthropic")):
+            return "Brain: Claude"
+        if lowered.startswith(("gpt", "o1", "o3", "o4", "openai")):
+            return "Brain: OpenAI"
+        if lowered.startswith(("gemini", "google")):
+            return "Brain: Gemini"
+        if lowered.startswith(("llama", "qwen", "mistral", "ollama", "deepseek")):
+            return "Brain: Local"
+        return "Brain: Adaptive"
+
+    def _workspace_health(self) -> tuple[str, str]:
+        try:
+            root = get_project_space().ensure_initialized().resolve()
+            shared = root / "shared"
+            private = root / "private"
+            if shared.exists() and private.exists():
+                return "healthy", str(root)
+            return "active (legacy layout)", str(root)
+        except Exception:
+            fallback = os.getenv("WORKSPACE_ROOT", str(Path.cwd()))
+            return "degraded", fallback
+
+    def _memory_health(self) -> str:
+        try:
+            manager = MemoryManager()
+            storage_root = manager.initialize()
+            evidence_path = storage_root / "evidence.jsonl"
+            if evidence_path.exists():
+                return "healthy"
+            return "initializing"
+        except Exception:
+            return "degraded"
+
+    def _render_logo_panel(self) -> Panel:
+        logo = Text()
+        for idx, line in enumerate(self._ASCII_LINES):
+            color = self.palette.logo_colors[min(idx, len(self.palette.logo_colors) - 1)]
+            logo.append(line + "\n", style=f"bold {color}")
+
+        subtitle = Text("Enterprise Agentic Security Framework", style=f"bold {self.palette.accent}")
+        composed = Group(Align.center(logo), Align.center(subtitle))
+        return Panel(
+            composed,
+            border_style=self.palette.logo_colors[2],
+            box=box.ROUNDED,
+            padding=(1, 2),
+            title="Cerebro-AI",
+        )
+
+    def _render_status_panel(self, meta: BannerMetadata) -> Panel:
+        table = Table(box=box.SIMPLE_HEAVY, expand=True, show_header=True)
+        table.add_column("Signal", style=f"bold {self.palette.accent}", width=20)
+        table.add_column("Value", style="white")
+
+        table.add_row("Version", meta.version)
+        table.add_row("System", meta.system)
+        table.add_row("Provider", meta.brain)
+        table.add_row("Workspace", self._health_text(meta.workspace_status))
+        table.add_row("Memory", self._health_text(meta.memory_status))
+        table.add_row("Workspace Root", meta.workspace_root)
+        table.add_row("Render Time", f"{meta.startup_ms} ms")
+
+        return Panel(table, title="Operational Status", border_style=self.palette.logo_colors[1])
+
+    def _render_legal_panel(self) -> Panel:
+        legal = Text()
+        legal.append("Cerebro-AI: Enterprise Agentic Security Framework\n", style=f"bold {self.palette.legal}")
+        legal.append("Copyright (c) 2026. All rights reserved.", style=self.palette.legal)
+        return Panel(legal, border_style=self.palette.legal, box=box.MINIMAL)
+
+    def _render_tip_panel(self, meta: BannerMetadata) -> Panel:
+        tip = self._pick_tip(meta)
+        tip_text = Text(tip, style="white")
+        return Panel(tip_text, title="Pro Tip", border_style=self.palette.logo_colors[3])
+
+    def _pick_tip(self, meta: BannerMetadata) -> str:
+        seed_material = f"{meta.workspace_root}|{datetime.now(tz=UTC).date().isoformat()}|{time.time_ns()}"
+        seed = int(hashlib.sha256(seed_material.encode("utf-8")).hexdigest(), 16)
+        rng = random.Random(seed)
+        return self._TIPS[rng.randrange(len(self._TIPS))]
+
+    def _health_text(self, state: str) -> str:
+        lowered = state.lower()
+        if "healthy" in lowered:
+            return f"[{self.palette.ok}]{state}[/{self.palette.ok}]"
+        if "active" in lowered or "initial" in lowered:
+            return f"[{self.palette.warn}]{state}[/{self.palette.warn}]"
+        return f"[{self.palette.warn}]{state}[/{self.palette.warn}]"
 
 
-def count_tools():
-    """Count the number of tools in the CAI framework."""
-    try:
-        # Count Python files in the tools directory
-        tool_files = glob.glob("cai/tools/**/*.py", recursive=True)
-        # Exclude __init__.py and other non-tool files
-        tool_files = [
-            f for f in tool_files
-            if not f.endswith("__init__.py") and not f.endswith("__pycache__")
-        ]
-        return len(tool_files)
-    except Exception:  # pylint: disable=broad-except
-        logging.warning("Could not count tools")
-        return "50+"
+def display_banner(console: Console) -> None:
+    """CLI compatibility entrypoint for startup banner rendering."""
+    CerebroBanner(console).display()
 
 
-def count_agents():
-    """Count the number of agents in the CAI framework."""
-    try:
-        # Count Python files in the agents directory
-        agent_files = glob.glob("cai/agents/**/*.py", recursive=True)
-        # Exclude __init__.py and other non-agent files
-        agent_files = [
-            f for f in agent_files
-            if not f.endswith("__init__.py") and not f.endswith("__pycache__")
-        ]
-        return len(agent_files)
-    except Exception:  # pylint: disable=broad-except
-        logging.warning("Could not count agents")
-        return "20+"
+def display_quick_guide(console: Console) -> None:
+    """Render concise enterprise quick start guidance."""
+    guide = Table(title="Cerebro-AI Quick Guide", box=box.SIMPLE_HEAVY)
+    guide.add_column("Action", style="cyan", no_wrap=True)
+    guide.add_column("Command", style="white")
+
+    guide.add_row("Create engagement", "/workspace new client_name")
+    guide.add_row("Switch engagement", "/workspace switch client_name")
+    guide.add_row("Launch sandbox", "/virtualization up kalilinux/kali-rolling")
+    guide.add_row("Run contained command", "/virtualization exec nmap -sV target")
+    guide.add_row("Inspect tool servers", "/mcp list")
+    guide.add_row("Show model governance", "/model")
+
+    console.print(Panel(guide, border_style="#14919B"))
 
 
-def count_ctf_memories():
-    """Count the number of CTF memories in the CAI framework."""
-    # This is a placeholder - adjust the actual counting logic based on your
-    # framework structure
-    return "100+"
-
-
-def display_banner(console: Console):
-    """
-    Display a stylized CAI banner with Alias Robotics corporate colors.
-
-    Args:
-        console: Rich console for output
-    """
-    version = get_version()
-
-    # Original banner with Alias Robotics colors (blue and white)
-    # Use noqa to ignore line length for the ASCII art
-    banner = f"""
-[bold blue]                CCCCCCCCCCCCC      ++++++++   ++++++++      IIIIIIIIII
-[bold blue]             CCC::::::::::::C  ++++++++++       ++++++++++  I::::::::I
-[bold blue]           CC:::::::::::::::C ++++++++++         ++++++++++ I::::::::I
-[bold blue]          C:::::CCCCCCCC::::C +++++++++    ++     +++++++++ II::::::II
-[bold blue]         C:::::C       CCCCCC +++++++     +++++     +++++++   I::::I
-[bold blue]        C:::::C                +++++     +++++++     +++++    I::::I
-[bold blue]        C:::::C                ++++                   ++++    I::::I
-[bold blue]        C:::::C                 ++                     ++     I::::I
-[bold blue]        C:::::C                  +   +++++++++++++++   +      I::::I
-[bold blue]        C:::::C                    +++++++++++++++++++        I::::I
-[bold blue]        C:::::C                     +++++++++++++++++         I::::I
-[bold blue]         C:::::C       CCCCCC        +++++++++++++++          I::::I
-[bold blue]          C:::::CCCCCCCC::::C         +++++++++++++         II::::::II
-[bold blue]           CC:::::::::::::::C           +++++++++           I::::::::I
-[bold blue]             CCC::::::::::::C             +++++             I::::::::I
-[bold blue]                CCCCCCCCCCCCC               ++              IIIIIIIIII
-
-[bold blue]                              Cybersecurity AI (CAI), v{version}[/bold blue]
-[white]                                  Bug bounty-ready AI[/white]
-    """
-
-    console.print(banner, end="")
-
-    # # Create a table showcasing CAI framework capabilities
-    # #
-    # # reconsider in the future if necessary
-    # display_framework_capabilities(console)
-
-
-def display_framework_capabilities(console: Console):
-    """
-    Display a table showcasing CAI framework capabilities in Metasploit style.
-
-    Args:
-        console: Rich console for output
-    """
-    # Create the main table
-    table = Table(
-        title="",
-        box=None,
-        show_header=False,
-        show_edge=False,
-        padding=(0, 2)
+def display_welcome_tips(console: Console) -> None:
+    """Backwards-compatible helper for startup tips."""
+    tip = CerebroBanner(console)._pick_tip(
+        BannerMetadata(
+            version="unknown",
+            system="unknown",
+            brain="unknown",
+            workspace_status="unknown",
+            memory_status="unknown",
+            workspace_root=os.getenv("WORKSPACE_ROOT", str(Path.cwd())),
+            startup_ms=0,
+        )
     )
-
-    table.add_column("Category", style="bold cyan")
-    table.add_column("Count", style="bold yellow")
-    table.add_column("Description", style="white")
-
-    # Add rows for different capabilities
-    table.add_row(
-        "AI Models",
-        str(get_supported_models_count()),
-        "Supported AI models including GPT-4, Claude, Llama"
-    )
-
-    # table.add_row(
-    #     "Tools",
-    #     str(count_tools()),
-    #     "Cybersecurity tools for reconnaissance and scanning"
-    # )
-
-    table.add_row(
-        "Agents",
-        str(count_agents()),
-        "Specialized AI agents for different cybersecurity tasks"
-    )
-
-    # Add the table to a panel for better visual separation
-    capabilities_panel = Panel(
-        table,
-        title="[bold blue]CAI Features[/bold blue]",
-        border_style="blue",
-        padding=(1, 2)
-    )
-
-    console.print(capabilities_panel)
-
-
-def display_welcome_tips(console: Console):
-    """
-    Display welcome message with tips for using the REPL.
-
-    Args:
-        console: Rich console for output
-    """
-    console.print(Panel(
-        "[white]• Use arrow keys ↑↓ to navigate command history[/white]\n"
-        "[white]• Press Tab for command completion[/white]\n"
-        "[white]• Type /help for available commands[/white]\n"
-        "[white]• Type /help aliases for command shortcuts[/white]\n"
-        "[white]• Press Ctrl+L to clear the screen[/white]\n"
-        "[white]• Press Esc+Enter to add a new line (multiline input)[/white]\n"
-        "[white]• Press Ctrl+C to exit[/white]",
-        title="Quick Tips",
-        border_style="blue"
-    ))
-
-
-def display_agent_overview(console: Console):
-    """
-    Display a quick overview of available agents.
-    
-    Args:
-        console: Rich console for output
-    """
-    from rich.table import Table
-    
-    # Create agents table
-    agents_table = Table(
-        title="",
-        box=None,
-        show_header=True,
-        header_style="bold yellow",
-        show_edge=False,
-        padding=(0, 1)
-    )
-    
-    agents_table.add_column("Agent", style="cyan", width=25)
-    agents_table.add_column("Specialization", style="white")
-    agents_table.add_column("Best For", style="green")
-    
-    # Add agent rows
-    agents = [
-        ("one_tool_agent", "Basic CTF solver", "CTF challenges, Linux operations"),
-        ("red_teamer", "Offensive security", "Penetration testing, exploitation"),
-        ("blue_teamer", "Defensive security", "System defense, monitoring"),
-        ("bug_bounter", "Bug bounty hunter", "Web security, API testing"),
-        ("dfir", "Digital forensics", "Incident response, analysis"),
-        ("network_traffic_analyzer", "Network security", "Traffic analysis, monitoring"),
-        ("flag_discriminator", "CTF flag extraction", "Finding and validating flags"),
-        ("codeagent", "Code specialist", "Exploit development, analysis"),
-        ("thought", "Strategic planning", "High-level analysis, planning"),
-    ]
-    
-    for agent, spec, best_for in agents:
-        agents_table.add_row(agent, spec, best_for)
-    
-    # Create the panel
-    agent_panel = Panel(
-        agents_table,
-        title="[bold yellow]🤖 Available Security Agents[/bold yellow]",
-        border_style="yellow",
-        padding=(1, 2),
-        title_align="center"
-    )
-    
-    console.print(agent_panel)
-
-
-def display_quick_guide(console: Console):
-    """Display the quick guide with comprehensive command reference."""
-    # Display help panel instead
-    from rich.panel import Panel
-    from rich.text import Text
-    from rich.columns import Columns
-    from rich.console import Group  # <-- Fix: import Group
-
-    help_text = Text.assemble(
-        ("CAI Command Reference", "bold cyan underline"), "\n\n",
-        ("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "dim"), "\n",
-        ("AGENT MANAGEMENT", "bold yellow"), " (/a)\n",
-        ("  CAI>/agent list", "green"), " - List all available agents\n",
-        ("  CAI>/agent select [NAME]", "green"), " - Switch to specific agent\n",
-        ("  CAI>/agent info [NAME]", "green"), " - Show agent details\n",
-        ("  CAI>/parallel add [NAME]", "green"), " - Configure parallel agents\n\n",
-        
-        ("MEMORY & HISTORY", "bold yellow"), "\n",
-        ("  CAI>/memory list", "green"), " - List saved memories\n",
-        ("  CAI>/history", "green"), " - View conversation history\n",
-        ("  CAI>/compact", "green"), " - AI-powered conversation summary\n",
-        ("  CAI>/flush", "green"), " - Clear conversation history\n\n",
-        
-        ("ENVIRONMENT", "bold yellow"), "\n",
-        ("  CAI>/workspace set [NAME]", "green"), " - Set workspace directory\n",
-        ("  CAI>/config", "green"), " - Manage environment variables\n",
-        ("  CAI>/virt run [IMAGE]", "green"), " - Run Docker containers\n\n",
-        
-        ("TOOLS & INTEGRATION", "bold yellow"), "\n",
-        ("  CAI>/mcp load [TYPE] [CONFIG]", "green"), " - Load MCP servers\n",
-        ("  CAI>/shell [COMMAND]", "green"), " or $ - Execute shell commands\n",
-        ("  CAI>/model [NAME]", "green"), " - Change AI model\n\n",
-        
-        ("QUICK SHORTCUTS", "bold yellow"), "\n",
-        ("  ESC + ENTER", "green"), " - Multi-line input\n",
-        ("  TAB", "green"), " - Command completion\n",
-        ("  ↑/↓", "green"), " - Command history\n",
-        ("  Ctrl+C", "green"), " - Interrupt/Exit\n",
-        ("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "dim"), "\n",
-    )
-    
-    # Get current environment variable values
-    current_model = os.getenv('CAI_MODEL', "alias1")
-    current_agent_type = os.getenv('CAI_AGENT_TYPE', "one_tool_agent")
-    
-    config_text = Text.assemble(
-        ("Quick Start Workflows", "bold cyan underline"), "\n\n",
-        ("🎯 CTF Challenge", "bold yellow"), "\n",
-        ("  1. CAI> /agent select redteam_agent", "green"), "\n",
-        ("  2. CAI> /workspace set ctf_name", "green"), "\n",
-        ("  3. CAI> Describe the challenge...", "green"), "\n\n",
-        
-        ("🐛 Bug Bounty", "bold yellow"), "\n",
-        ("  1. CAI> /agent select bug_bounter_agent", "green"), "\n",
-        ("  2. CAI> /model claude-3-7-sonnet", "green"), "\n",
-        ("  3. CAI> Test https://example.com", "green"), "\n\n",
-        
-        ("CAI collects pseudonymized data to improve our research.\n"
-         "Your privacy is protected in compliance with GDPR.\n"
-         "Continue to start, or press Ctrl-C to exit.", "yellow"), "\n\n",
-        
-        ("🔍 Parallel Recon", "bold yellow"), "\n",
-        ("  1. CAI> /parallel add red_teamer", "green"), "\n",
-        ("  2. CAI> /parallel add network_traffic_analyzer", "green"), "\n",
-        ("  3. CAI> Scan 192.168.1.0/24", "green"), "\n\n",
-        
-        ("🛠️ MCP Tools Integration", "bold yellow"), "\n",
-        ("  1. CAI> /mcp load sse http://localhost:3000", "green"), "\n",
-        ("  2. CAI> /mcp add server_name agent_name", "green"), "\n",
-        ("  3. CAI> Use the new tools...", "green"), "\n\n",
-        
-        ("Environment Variables:", "bold yellow"), "\n",
-        ("  CAI_MODEL", "green"), f" = {current_model}\n",
-        ("  CAI_AGENT_TYPE", "green"), f" = {current_agent_type}\n",
-        ("  CAI_PARALLEL", "green"), f" = {os.getenv('CAI_PARALLEL', '1')}\n",
-        ("  CAI_STREAM", "green"), f" = {os.getenv('CAI_STREAM', 'true')}\n",
-        ("  CAI_WORKSPACE", "green"), f" = {os.getenv('CAI_WORKSPACE', 'default')}\n\n",
-        
-        ("💡 Pro Tips:", "bold yellow"), "\n",
-        ("• Use /help for detailed command help\n", "dim"),
-        ("• Use /help quick for this guide\n", "dim"),
-        ("• Use /help commands for all commands\n", "dim"),
-        ("• Use $ prefix for quick shell: $ ls\n", "dim"),
-    )
-    
-    # Create additional tips panels
-    ollama_tip = Panel(
-        "To use Ollama models, configure OLLAMA_API_BASE\n"
-        "before startup.\n\n"
-        "Default: host.docker.internal:8000/v1",
-        title="[bold yellow]Ollama Configuration[/bold yellow]",
-        border_style="yellow",
-        padding=(1, 2),
-        title_align="center"
-    )
-    
-    # Simplified privacy notice
-    privacy_notice = Text.assemble(
-        ("CAI collects pseudonymized data to improve our research.\n"
-         "Your privacy is protected in compliance with GDPR.\n"
-         "Continue to start, or press Ctrl-C to exit.", "yellow"), "\n\n",
-    )
-    
-    context_tip = Panel(
-        Text.assemble(
-            ("🔒 Security-Focused AI Framework\n\n", "bold white"),
-            "For optimal cybersecurity AI performance, use\n", 
-            ("alias1", "bold green"), 
-            " - specifically designed for cybersecurity\n"
-            "tasks with superior domain knowledge.\n\n",
-            ("alias1", "bold green"), 
-            " outperforms general-purpose models in:\n",
-            "• Vulnerability assessment\n",
-            "• Penetration testing and bug bounty\n",
-            "• Security analysis\n",
-            "• Threat detection\n\n",
-            "Learn more about ", 
-            ("alias1", "bold green"), 
-            " and its privacy-first approach:\n",
-            ("https://news.aliasrobotics.com/alias1-a-privacy-first-cybersecurity-ai/", "blue underline")
-        ),
-        title="[bold yellow]🛡️ Alias1 - best model for cybersecurity [/bold yellow]",
-        border_style="yellow",
-        padding=(1, 2),
-        title_align="center"
-    )
-    # Combine tips into a group
-    # tips_group = Group(ollama_tip, context_tip, privacy_notice)
-    tips_group = Group(context_tip)
-    
-    # Create a three-column panel layout
-    console.print(Panel(
-        Columns(
-            [help_text, config_text, tips_group],
-            column_first=True,
-            expand=True,
-            align="center"
-        ),
-        title="[bold]🚀 CAI defacto scaffolding for cybersecurity agents - Type /help for detailed documentation[/bold]",
-        border_style="blue",
-        padding=(1, 2),
-        title_align="center"
-    ), end="")
+    console.print(Panel(tip, title="Pro Tip", border_style="#14919B"))
