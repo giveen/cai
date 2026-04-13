@@ -34,7 +34,9 @@ from rich.text import Text
 
 
 APP_NAME = "Cerebro-AI"
-APP_COMMAND = "cerebro-ai"
+# Use the invoked program name (e.g. `cai`) for help text so examples
+# match what the user actually typed. Fall back to `cai` if argv is empty.
+APP_COMMAND = Path(sys.argv[0]).name if len(sys.argv) > 0 else "cai"
 
 console = Console()
 
@@ -93,10 +95,11 @@ def _render_help() -> None:
         Text(
             "\n".join(
                 [
-                    f"{APP_COMMAND} repl",
-                    f"{APP_COMMAND} run <prompt>",
-                    f"{APP_COMMAND} workspace <cmd>",
-                    f"{APP_COMMAND} doctor",
+                    f"{APP_COMMAND}                # Start interactive REPL (default)",
+                    f"{APP_COMMAND} repl           # Start interactive REPL",
+                    f"{APP_COMMAND} run <prompt>   # Run a single prompt non-interactively",
+                    f"{APP_COMMAND} workspace <cmd> # Workspace subcommands (dashboard, new, etc.)",
+                    f"{APP_COMMAND} doctor         # Run platform/environment diagnostics",
                     "",
                     "Global flags:",
                     "  --workspace <path>  set active case folder",
@@ -104,14 +107,14 @@ def _render_help() -> None:
                     "  --debug             verbose diagnostics",
                     "",
                     "Examples:",
+                    f"  {APP_COMMAND}",
                     f"  {APP_COMMAND} repl --workspace ./cases/acme",
                     f"  {APP_COMMAND} run \"Summarize the latest findings\"",
                     f"  {APP_COMMAND} workspace new acme_q2",
                     f"  {APP_COMMAND} doctor --json",
                 ]
-            ),
-            style="white",
-        ),
+            )
+        , style="white"),
         title=f"{APP_NAME} CLI",
         border_style="cyan",
     )
@@ -243,7 +246,7 @@ async def _dispatch_repl(opts: GlobalOptions) -> int:
 
     while True:
         try:
-            line = await asyncio.to_thread(Prompt.ask, "[bold cyan]cerebro-ai[/bold cyan]")
+            line = await asyncio.to_thread(Prompt.ask, f"[bold cyan]{APP_COMMAND}[/bold cyan]")
         except (EOFError, KeyboardInterrupt):
             console.print("\n[dim]Session closed.[/dim]")
             return 0
@@ -381,9 +384,14 @@ async def _async_main(argv: Optional[Sequence[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
 
-    if args.help or args.command is None:
+    # If user asked for help explicitly, show help. If no subcommand was
+    # provided, treat invocation with no args as a desire to enter the REPL.
+    if getattr(args, "help", False):
         _render_help()
         return 0
+
+    if args.command is None:
+        args.command = "repl"
 
     global_opts = GlobalOptions(
         workspace=args.workspace,
@@ -393,30 +401,46 @@ async def _async_main(argv: Optional[Sequence[str]] = None) -> int:
     _configure_workspace_env(global_opts.workspace)
     _apply_global_flags(global_opts)
 
+    # Attempt to load a workspace-scoped .env file (if present).  We call
+    # load_dotenv again after the workspace has been configured so that
+    # environment variables stored inside the workspace (e.g. a local
+    # LLM endpoint or CAI_MODEL) are loaded into the process and used by
+    # the EnvironmentAuditor checks below.
+    try:
+        from dotenv import load_dotenv  # type: ignore
+
+        workspace_env_root = os.getenv("WORKSPACE_ROOT") or global_opts.workspace
+        if workspace_env_root:
+            dotenv_path = Path(workspace_env_root) / ".env"
+            if dotenv_path.exists():
+                load_dotenv(dotenv_path=str(dotenv_path), override=True)
+    except Exception:
+        pass
+
     bootstrap = _bootstrap_config_and_env()
     _ensure_runtime_prerequisites(bootstrap, args.command)
 
     if args.command == "repl":
         if getattr(args, "help", False):
-            console.print("[cyan]Usage:[/cyan] cerebro-ai repl [--workspace <path>] [--silent] [--debug]")
+            console.print(f"[cyan]Usage:[/cyan] {APP_COMMAND} repl [--workspace <path>] [--silent] [--debug]")
             return 0
         return await _dispatch_repl(global_opts)
 
     if args.command == "run":
         if getattr(args, "help", False):
-            console.print("[cyan]Usage:[/cyan] cerebro-ai run <prompt> [--workspace <path>] [--silent] [--debug]")
+            console.print(f"[cyan]Usage:[/cyan] {APP_COMMAND} run <prompt> [--workspace <path>] [--silent] [--debug]")
             return 0
         return await _dispatch_run(args.prompt)
 
     if args.command == "workspace":
         if getattr(args, "help", False):
-            console.print("[cyan]Usage:[/cyan] cerebro-ai workspace <cmd> [args]")
+            console.print(f"[cyan]Usage:[/cyan] {APP_COMMAND} workspace <cmd> [args]")
             return 0
         return await _dispatch_workspace(args.workspace_args)
 
     if args.command == "doctor":
         if getattr(args, "help", False):
-            console.print("[cyan]Usage:[/cyan] cerebro-ai doctor [--json]")
+            console.print(f"[cyan]Usage:[/cyan] {APP_COMMAND} doctor [--json]")
             return 0
         return await _dispatch_doctor(bool(args.json))
 

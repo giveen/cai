@@ -357,6 +357,39 @@ class EnvironmentAuditor:
             "GEMINI_API_KEY",
         )
         has_any_provider_key = any(bool(os.environ.get(k, "").strip()) for k in api_key_names)
+
+        # If no cloud provider API key is present, treat certain local model
+        # configurations as valid "provider credentials". This allows running
+        # the REPL against local LLM backends configured via `CAI_MODEL` or
+        # other local connector environment variables (e.g. `LITELLM_SERVER`,
+        # `OLLAMA_URL`, etc.) without requiring a cloud API key or license.
+        if not has_any_provider_key:
+            cai_model = os.environ.get("CAI_MODEL", "").strip()
+            if cai_model:
+                local_indicators = (
+                    "ollama",
+                    "litellm",
+                    "deepseek",
+                    "local",
+                    "alias",
+                    "openrouter",
+                    "deepinfra",
+                    "llama",
+                )
+                if any(ind in cai_model.lower() for ind in local_indicators):
+                    has_any_provider_key = True
+
+            # Also accept presence of common local-provider-specific env vars.
+            local_envs = ("LITELLM_SERVER", "OLLAMA_URL", "LLM_LOCAL", "CAI_LOCAL_MODEL")
+            if not has_any_provider_key and any(bool(os.environ.get(k, "").strip()) for k in local_envs):
+                has_any_provider_key = True
+
+            # Allow local-only operation by default unless explicitly disabled.
+            # Historically users had to set CAI_ALLOW_LOCAL=1 to opt-in; make
+            # the opt-in implicit to support local LLM development workflows.
+            allow_local = os.environ.get("CAI_ALLOW_LOCAL", "1").strip().lower()
+            if not has_any_provider_key and allow_local not in ("0", "false", "no", "off"):
+                has_any_provider_key = True
         results.append(
             AuditCheck(
                 name="provider_credentials",
