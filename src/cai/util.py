@@ -28,6 +28,13 @@ except Exception:  # pragma: no cover - optional dependency
     Template = None
 
 
+# Allow ``cai.util`` to expose submodules from ``src/cai/util/`` while keeping
+# backward compatibility with the existing ``src/cai/util.py`` module API.
+_UTIL_SUBMODULE_DIR = Path(__file__).with_suffix("")
+if _UTIL_SUBMODULE_DIR.is_dir():
+    __path__ = [str(_UTIL_SUBMODULE_DIR)]
+
+
 # ---------------------------------------------------------------------------
 # Runtime and telemetry constants
 # ---------------------------------------------------------------------------
