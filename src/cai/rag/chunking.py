@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -107,3 +108,160 @@ def fingerprint_chunks(
 
 
 __all__ = ["chunk_text", "fingerprint_chunks"]
+
+
+# ---------------------------------------------------------------------------
+# Logic-Aware Chunking
+# ---------------------------------------------------------------------------
+
+_PY_BLOCK_START = re.compile(r"^(def |class )", re.MULTILINE)
+_NMAP_HOST = re.compile(r"^Nmap scan report for ", re.MULTILINE)
+_LOG_TS = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}")
+_XML_TAG = re.compile(r"^<[a-zA-Z]")
+
+
+def _detect_block_type(text: str) -> str:
+    t = text.lstrip()
+    if t.startswith("def ") or t.startswith("class "):
+        return "python"
+    if "Nmap scan report for" in text[:60]:
+        return "nmap"
+    if t.startswith("```"):
+        return "code_fence"
+    if _LOG_TS.match(t):
+        return "log"
+    if _XML_TAG.match(t):
+        return "xml"
+    if t.startswith("{") or t.startswith("["):
+        return "json"
+    return "prose"
+
+
+def _split_into_blocks(text: str) -> List[str]:
+    """Split text on recognised semantic boundaries."""
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        return []
+    blocks: List[str] = []
+    current: List[str] = []
+    in_fence = False
+
+    def _flush() -> None:
+        if current:
+            blocks.append("".join(current))
+            current.clear()
+
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            if not in_fence:
+                _flush()
+                in_fence = True
+                current.append(line)
+            else:
+                current.append(line)
+                in_fence = False
+                _flush()
+            continue
+        if in_fence:
+            current.append(line)
+            continue
+        if _PY_BLOCK_START.match(line):
+            _flush()
+            current.append(line)
+            continue
+        if _NMAP_HOST.match(line):
+            _flush()
+            current.append(line)
+            continue
+        # blank line is a soft paragraph boundary
+        if not stripped:
+            current.append(line)
+            _flush()
+            continue
+        current.append(line)
+
+    _flush()
+    return [b for b in blocks if b.strip()]
+
+
+def _merge_and_split_blocks(
+    blocks: List[str],
+    max_chunk_size: int = 4000,
+    overlap_lines: int = 2,
+) -> List[str]:
+    """Merge small blocks up to ``max_chunk_size``; split oversized ones."""
+    result: List[str] = []
+    bucket = ""
+    for block in blocks:
+        if len(block) > max_chunk_size:
+            if bucket.strip():
+                result.append(bucket)
+                bucket = ""
+            sub_lines = block.splitlines(keepends=True)
+            chunk_lines: List[str] = []
+            char_count = 0
+            for line in sub_lines:
+                if char_count + len(line) > max_chunk_size and chunk_lines:
+                    result.append("".join(chunk_lines))
+                    chunk_lines = chunk_lines[-overlap_lines:] if overlap_lines else []
+                    char_count = sum(len(ln) for ln in chunk_lines)
+                chunk_lines.append(line)
+                char_count += len(line)
+            if chunk_lines:
+                result.append("".join(chunk_lines))
+        elif len(bucket) + len(block) <= max_chunk_size:
+            bucket += block
+        else:
+            if bucket.strip():
+                result.append(bucket)
+            bucket = block
+    if bucket.strip():
+        result.append(bucket)
+    return result
+
+
+def logic_aware_chunk(
+    text: str,
+    max_chunk_size: int = 4000,
+    overlap_lines: int = 2,
+) -> List[Dict[str, Any]]:
+    """Chunk text by preserving semantic technical blocks.
+
+    Recognises and keeps together:
+
+    - Python functions/classes (``def``/``class`` at column 0)
+    - Nmap host entries (``Nmap scan report for …``)
+    - Markdown fenced code blocks (triple-backtick)
+    - Timestamped log entries (ISO datetime prefix)
+    - XML/JSON root objects
+
+    Falls back to paragraph splitting then to character splitting for
+    plain prose.  Returns the same dict schema as :func:`chunk_text`:
+    ``{"text": str, "start": int, "end": int, "index": int, "block_type": str}``.
+    """
+    if not text:
+        return []
+    raw = str(text)
+    blocks = _split_into_blocks(raw)
+    merged = _merge_and_split_blocks(blocks, max_chunk_size=max_chunk_size, overlap_lines=overlap_lines)
+    out: List[Dict[str, Any]] = []
+    cursor = 0
+    for i, block in enumerate(merged):
+        idx = raw.find(block, cursor)
+        if idx == -1:
+            idx = cursor
+        start = idx
+        end = start + len(block)
+        out.append({
+            "text": block,
+            "start": start,
+            "end": end,
+            "index": i,
+            "block_type": _detect_block_type(block),
+        })
+        cursor = max(cursor, start + 1)
+    return out
+
+
+__all__ = ["chunk_text", "fingerprint_chunks", "logic_aware_chunk"]

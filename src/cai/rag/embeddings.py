@@ -164,8 +164,81 @@ _PROVIDERS: Dict[str, Any] = {
     "local-deterministic": LocalDeterministicEmbeddingsProvider,
     "deterministic": LocalDeterministicEmbeddingsProvider,
     "openai": OpenAIEmbeddingsProvider,
+    "cuda": None,  # registered below after class definition
+    "sentence-transformers": None,
 }
 
+
+class CUDAEmbeddingsProvider(EmbeddingsProvider):
+    """Sentence-transformers provider with explicit RTX 5090 / CUDA device mapping.
+
+    Processes texts in large batches suitable for cold-start indexing of
+    10,000+ chunks in parallel on the GPU. Falls back to CPU then to the
+    ``LocalDeterministicEmbeddingsProvider`` when sentence-transformers
+    or CUDA is unavailable.
+
+    Set ``CAI_CUDA_MODEL`` env var to choose the ST model
+    (default: ``BAAI/bge-m3``).
+    """
+
+    _DEFAULT_CUDA_BATCH: int = 256
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(config=config)
+        self._model: Optional[Any] = None
+        self._device: str = "cpu"
+        self._load_model()
+
+    def _load_model(self) -> None:
+        """Lazy-load the sentence-transformer model onto CUDA when available."""
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore
+            import torch  # type: ignore
+
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            model_name = self.config.model_name
+            if model_name in ("local-deterministic", "local", "cuda", "sentence-transformers"):
+                model_name = os.getenv("CAI_CUDA_MODEL", "BAAI/bge-m3")
+            self._model = SentenceTransformer(model_name, device=device)
+            self._device = device
+        except Exception:
+            self._model = None
+            self._device = "cpu"
+
+    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+        if self._model is None:
+            _cfg = {
+                "vector_dim": self.config.vector_dim,
+                "batch_size": self.config.batch_size,
+                "normalize": self.config.normalize,
+                "deterministic_seed": self.config.deterministic_seed,
+            }
+            return LocalDeterministicEmbeddingsProvider(config=_cfg).embed_texts(texts)
+        batch_size = max(self._DEFAULT_CUDA_BATCH, int(self.config.batch_size))
+        results: List[List[float]] = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            encoded = self._model.encode(
+                batch,
+                batch_size=batch_size,
+                show_progress_bar=False,
+                normalize_embeddings=bool(self.config.normalize),
+                convert_to_numpy=True,
+            )
+            results.extend(row.tolist() for row in encoded)
+        return results
+
+    @property
+    def device(self) -> str:
+        """Returns the active torch device string (e.g. ``'cuda:0'`` or ``'cpu'``)."""
+        return self._device
+
+
+# Register CUDA provider now that the class is defined
+_PROVIDERS["cuda"] = CUDAEmbeddingsProvider
+_PROVIDERS["sentence-transformers"] = CUDAEmbeddingsProvider
 
 def get_embeddings_provider(name: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> EmbeddingsProvider:
     """Factory that returns an `EmbeddingsProvider` instance.
@@ -190,6 +263,7 @@ def get_embeddings_provider(name: Optional[str] = None, config: Optional[Dict[st
 
 
 __all__ = [
+    "CUDAEmbeddingsProvider",
     "EmbeddingsConfig",
     "EmbeddingsProvider",
     "LocalDeterministicEmbeddingsProvider",

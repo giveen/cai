@@ -244,6 +244,8 @@ class RetrieverPipeline:
         wakeup_index: Optional[Any] = None,
         wakeup_k: int = 3,
         wakeup_boost: float = 10.0,
+        audit_log: bool = True,
+        ccmb_integration: bool = False,
     ):
         self.dense = dense
         self.sparse = sparse
@@ -252,6 +254,11 @@ class RetrieverPipeline:
         self.wakeup_index = wakeup_index
         self.wakeup_k = int(wakeup_k)
         self.wakeup_boost = float(wakeup_boost)
+        self.audit_log = bool(audit_log)
+        self.ccmb_integration = bool(ccmb_integration)
+        # Lazy-init fidelity tracker and audit writer on first retrieve()
+        self._fidelity: Any = None
+        self._hw_monitor: Any = None
 
     def retrieve(self, query: str, top_k: int = 10, rerank_top_k: Optional[int] = None, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
         lists = []
@@ -305,8 +312,37 @@ class RetrieverPipeline:
                 combined = merged_list[:top_k]
 
         if self.reranker:
-            return self.reranker.rerank(query, combined, top_k=rerank_top_k or top_k)
-        return combined
+            reranked = self.reranker.rerank(query, combined, top_k=rerank_top_k or top_k)
+            return self._post_retrieve(query, reranked)
+        return self._post_retrieve(query, combined)
+
+    def _post_retrieve(
+        self,
+        query: str,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Emit audit events and optional CCMB write after retrieval completes."""
+        if self.audit_log:
+            try:
+                if self._fidelity is None:
+                    from cai.rag.metrics import RetrievalFidelityTracker  # type: ignore
+                    self._fidelity = RetrievalFidelityTracker()
+                self._fidelity.record(query=query, results=results)
+            except Exception:
+                pass
+        if self.ccmb_integration:
+            try:
+                from cai.memory.memory import CerebroMemoryBus  # type: ignore
+                bus = CerebroMemoryBus.get_instance()
+                summary = f"RAG:{query[:80]}" if len(query) > 80 else f"RAG:{query}"
+                bus.commit(summary, {
+                    "source": "retriever_pipeline",
+                    "hit_count": len(results),
+                    "top_id": results[0].get("id") or results[0].get("text", "")[:60] if results else None,
+                })
+            except Exception:
+                pass
+        return results
 
 
 __all__ = [

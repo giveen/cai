@@ -248,3 +248,130 @@ def shutdown_all() -> None:
 
 
 __all__ = ["get_ingestor", "shutdown_all", "IngestionManager"]
+
+
+# ---------------------------------------------------------------------------
+# PathGuardIngestionManager — PathGuard-gated file reads + hot-loading
+# ---------------------------------------------------------------------------
+
+
+def _naive_chunk(text: str, size: int = 2000, overlap: int = 200) -> List[str]:
+    step = max(1, size - overlap)
+    return [text[i : i + size] for i in range(0, len(text), step)]
+
+
+class PathGuardIngestionManager:
+    """IngestionManager wrapper that gates all file reads through PathGuard.
+
+    Provides hot-loading: a background thread polls ``loot_dir`` and
+    automatically ingests any new files that appear without requiring a
+    restart.
+    """
+
+    def __init__(
+        self,
+        ingestor: IngestionManager,
+        workspace: Optional[str] = None,
+        loot_dir: Optional[str] = None,
+        poll_interval: float = 2.0,
+        collection: str = "loot",
+        chunk_size: int = 2000,
+        chunk_overlap: int = 200,
+    ) -> None:
+        self.ingestor = ingestor
+        self.workspace = workspace or os.getenv("CIR_WORKSPACE", "/workspace")
+        self.loot_dir = loot_dir or os.path.join(self.workspace, "loot")
+        self.poll_interval = float(poll_interval)
+        self.collection = collection
+        self.chunk_size = int(chunk_size)
+        self.chunk_overlap = int(chunk_overlap)
+        self._seen_files: set = set()
+        self._stop = threading.Event()
+        self._poll_thread: Optional[threading.Thread] = None
+        self._pg = None  # PathGuard; deferred import to avoid circular imports
+
+    def _get_pathguard(self):
+        if self._pg is None:
+            try:
+                from cai.tools.reconnaissance.filesystem import PathGuard  # type: ignore
+                self._pg = PathGuard(root=self.workspace)
+            except Exception:
+                self._pg = None
+        return self._pg
+
+    def _safe_read(self, filepath: str) -> Optional[str]:
+        """Read file through PathGuard; returns None on access denial."""
+        pg = self._get_pathguard()
+        if pg is not None:
+            try:
+                resolved = str(pg.resolve(filepath))
+            except Exception:
+                return None
+        else:
+            import os.path as _osp
+            resolved_raw = _osp.realpath(filepath)
+            workspace_real = _osp.realpath(self.workspace)
+            if not (resolved_raw == workspace_real or
+                    resolved_raw.startswith(workspace_real + os.sep)):
+                return None
+            resolved = resolved_raw
+        try:
+            with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+        except Exception:
+            return None
+
+    def ingest_file(self, filepath: str, collection: Optional[str] = None) -> int:
+        """Ingest a single file through PathGuard. Returns chunk count enqueued."""
+        text = self._safe_read(filepath)
+        if not text:
+            return 0
+        col = collection or self.collection
+        chunks = _naive_chunk(text, self.chunk_size, self.chunk_overlap)
+        for i, chunk in enumerate(chunks):
+            self.ingestor.enqueue(
+                col,
+                id_point=f"{filepath}::{i}",
+                texts=[chunk],
+                metadata=[{"source": filepath, "chunk_index": i}],
+            )
+        return len(chunks)
+
+    def start_hot_loader(self) -> None:
+        """Start the background hot-loader thread."""
+        if self._poll_thread is not None and self._poll_thread.is_alive():
+            return
+        self._stop.clear()
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop, daemon=True, name="pg-hot-loader"
+        )
+        self._poll_thread.start()
+
+    def stop_hot_loader(self) -> None:
+        self._stop.set()
+        if self._poll_thread:
+            self._poll_thread.join(timeout=self.poll_interval + 1.0)
+
+    def _poll_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                if os.path.isdir(self.loot_dir):
+                    for fname in os.listdir(self.loot_dir):
+                        fpath = os.path.join(self.loot_dir, fname)
+                        if fpath not in self._seen_files and os.path.isfile(fpath):
+                            self._seen_files.add(fpath)
+                            try:
+                                self.ingest_file(fpath)
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+            self._stop.wait(self.poll_interval)
+
+
+__all__ = [
+    "get_ingestor",
+    "shutdown_all",
+    "IngestionManager",
+    "PathGuardIngestionManager",
+]
