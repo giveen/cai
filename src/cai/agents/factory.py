@@ -1,198 +1,706 @@
-"""
-Generic agent factory module for creating agent instances dynamically.
+"""Cerebro Agent Lifecycle Manager (CALM).
+
+This module provides a commercial-grade factory for dynamic, lazy, and
+safety-aware agent instantiation.
 """
 
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 import importlib
+import logging
 import os
-from typing import Callable, Dict
+from pathlib import Path
+import pkgutil
+import re
+import threading
+from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Sequence, Type
+from uuid import uuid4
 
 from openai import AsyncOpenAI
 
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
-from cai.sdk.agents.logger import logger
+from cai.tools.all_tools import get_tool, get_tools_for_agent
+from cai.tools.reconnaissance.filesystem import PathGuard
+from cai.tools.workspace import get_project_space
+from cai.util import create_system_prompt_renderer, load_prompt_template
+
+try:
+    from cai.repl.ui.logging import get_cerebro_logger
+except Exception:  # pragma: no cover - optional logger
+    get_cerebro_logger = None
 
 
-def create_generic_agent_factory(
-    agent_module_path: str, agent_var_name: str
-) -> Callable[[str|None, str|None], Agent]:
-    """
-    Create a generic factory function for any agent.
+@dataclass(frozen=True)
+class WorkspacePaths:
+    """Workspace paths injected into every agent context."""
 
-    Args:
-        agent_module_path: Full module path to the agent (e.g., 'cai.agents.one_tool')
-        agent_var_name: Name of the agent variable in the module (e.g., 'one_tool_agent')
+    repo_root: Path
+    active_workspace: Path
+    prompts_root: Path
+    evidence_root: Path
+    reports_root: Path
 
-    Returns:
-        A factory function that creates new instances of the agent
-    """
 
-    def factory(model_override: str | None = None, custom_name: str | None = None, agent_id: str | None = None):
-        # Import the module
-        module = importlib.import_module(agent_module_path)
+@dataclass
+class CerebroRedaction:
+    """System-wide redaction engine used for context-safe rendering."""
 
-        # Get the original agent instance
-        original_agent = getattr(module, agent_var_name)
+    replacements: Mapping[re.Pattern[str], str] = field(
+        default_factory=lambda: {
+            re.compile(r"(?i)\\b(api[_-]?key|token|password|secret)\\s*[:=]\\s*[^\\s]+"):
+                r"\\1=[REDACTED_SECRET]",
+            re.compile(r"(?i)\\b[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}\\b"):
+                "[REDACTED_EMAIL]",
+        }
+    )
 
-        # Get model configuration - check multiple sources
-        model_name = model_override  # First priority: explicit override
-        
-        if not model_name:
-            # Second priority: agent-specific environment variable
-            agent_key = agent_var_name.upper()
-            model_name = os.getenv(f"CAI_{agent_key}_MODEL")
-        
-        if not model_name:
-            # Third priority: global CAI_MODEL
-            model_name = os.environ.get("CAI_MODEL", "alias1")
-            
-            
-        api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
+    def scrub(self, value: str) -> str:
+        text = value
+        for pattern, replacement in self.replacements.items():
+            text = pattern.sub(replacement, text)
+        return text
 
-        # Create a new model instance with the original agent name
-        # Custom name is only for display purposes, not for the model
-        new_model = OpenAIChatCompletionsModel(
-            model=model_name,
-            openai_client=AsyncOpenAI(api_key=api_key),
-            agent_name=original_agent.name,  # Always use original agent name
-            agent_id=agent_id,
-            agent_type=agent_var_name,  # Pass the agent type for registry
+
+@dataclass(frozen=True)
+class CerebroToolbox:
+    """Role-filtered toolbox containing callable tool handles."""
+
+    role: str
+    tool_functions: Mapping[str, Any]
+
+    def as_list(self) -> list[Any]:
+        return list(self.tool_functions.values())
+
+
+@dataclass(frozen=True)
+class CerebroContext:
+    """Injected context with workspace, security, and runtime metadata."""
+
+    agent_uuid: str
+    role: str
+    workspace: WorkspacePaths
+    toolbox: CerebroToolbox
+    redaction: CerebroRedaction
+    path_guard: PathGuard
+    metadata: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class AgentDiscoveryRecord:
+    """Static discovery output created without importing agent modules."""
+
+    role: str
+    module_path: str
+    preferred_export: str
+    prompt_candidates: tuple[str, ...]
+
+
+class CerebroBaseAgentProvider(ABC):
+    """Type-safe provider contract for lazy agent materialization."""
+
+    role: str
+    module_path: str
+    preferred_export: str
+
+    @abstractmethod
+    def load_base_agent(self) -> Agent:
+        """Load and return the base agent template."""
+
+
+class LazyModuleAgentProvider(CerebroBaseAgentProvider):
+    """Provider that imports module only at spawn time."""
+
+    role = "generic"
+    module_path = ""
+    preferred_export = ""
+
+    def load_base_agent(self) -> Agent:
+        module = importlib.import_module(self.module_path)
+
+        if self.preferred_export:
+            candidate = getattr(module, self.preferred_export, None)
+            if isinstance(candidate, Agent):
+                return candidate
+
+        agent_candidates: list[tuple[str, Agent]] = []
+        for attr_name in dir(module):
+            if attr_name.startswith("_"):
+                continue
+            attr = getattr(module, attr_name)
+            if isinstance(attr, Agent):
+                agent_candidates.append((attr_name, attr))
+
+        if not agent_candidates:
+            raise RuntimeError(f"No Agent instance found in module '{self.module_path}'")
+
+        agent_candidates.sort(key=lambda item: (0 if item[0].endswith("_agent") else 1, item[0]))
+        return agent_candidates[0][1]
+
+
+class CerebroAgentFactory:
+    """CALM factory for secure lifecycle management of specialized agents."""
+
+    _MODULE_ROLE_ALIASES: Mapping[str, str] = {
+        "web_pentester": "web_pentester",
+        "dfir": "forensic_analyst",
+        "blue_teamer": "blue_teamer",
+        "red_teamer": "red_teamer",
+        "codeagent": "code_synthesis_engine",
+        "bug_bounter": "vulnerability_researcher",
+        "network_traffic_analyzer": "network_traffic_analyzer",
+        "memory_analysis_agent": "memory_analyst",
+        "android_sast_agent": "android_sast_auditor",
+        "wifi_security_tester": "wifi_security_tester",
+        "subghz_sdr_agent": "subghz_specialist",
+    }
+
+    _SINGLETON_DEFAULTS = {
+        "code_synthesis_engine",
+        "codeagent",
+    }
+
+    _SYSTEM_TOOL_ROLE_MAP: Mapping[str, str] = {
+        "web_pentester": "researcher",
+        "forensic_analyst": "analyzer",
+        "blue_teamer": "blue_team",
+        "red_teamer": "red_team",
+        "code_synthesis_engine": "executor",
+        "vulnerability_researcher": "researcher",
+        "network_traffic_analyzer": "analyzer",
+        "memory_analyst": "analyzer",
+        "android_sast_auditor": "analyzer",
+        "wifi_security_tester": "researcher",
+        "subghz_specialist": "researcher",
+        "generic_intelligence": "supervisor",
+    }
+
+    def __init__(
+        self,
+        *,
+        workspace_root: str | Path | None = None,
+        singleton_roles: Optional[Iterable[str]] = None,
+    ) -> None:
+        self._lock = threading.RLock()
+        self._logger = get_cerebro_logger() if get_cerebro_logger else logging.getLogger(__name__)
+
+        self._workspace_paths = self._build_workspace_paths(workspace_root)
+        self._redaction = CerebroRedaction()
+        self._path_guard = PathGuard(self._workspace_paths.repo_root, self._pathguard_audit)
+
+        self._records: Dict[str, AgentDiscoveryRecord] = {}
+        self._providers: Dict[str, Type[CerebroBaseAgentProvider]] = {}
+        self._singletons: Dict[str, Agent] = {}
+        self._live_agents: Dict[str, Agent] = {}
+        self._agent_roles_by_uuid: Dict[str, str] = {}
+
+        self._singleton_roles = set(self._SINGLETON_DEFAULTS)
+        if singleton_roles:
+            self._singleton_roles.update(self._normalize_role(role) for role in singleton_roles)
+
+        self._discover_agents()
+
+    @property
+    def roles(self) -> list[str]:
+        return sorted(self._providers.keys())
+
+    @property
+    def workspace_paths(self) -> WorkspacePaths:
+        return self._workspace_paths
+
+    def register_provider(self, role: str, provider_cls: Type[CerebroBaseAgentProvider]) -> None:
+        """Register a provider class for a role with ABC type-safety checks."""
+        if not isinstance(provider_cls, type) or not issubclass(provider_cls, CerebroBaseAgentProvider):
+            raise TypeError("provider_cls must be a subclass of CerebroBaseAgentProvider")
+        normalized = self._normalize_role(role)
+        self._providers[normalized] = provider_cls
+
+    def create_agent(
+        self,
+        role: str,
+        *,
+        user_name: Optional[str] = None,
+        target_ip: Optional[str] = None,
+        project_id: Optional[str] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+        model_override: Optional[str] = None,
+        custom_name: Optional[str] = None,
+        allow_subghz: bool = False,
+        extra_tools: Optional[Sequence[str]] = None,
+        singleton: Optional[bool] = None,
+    ) -> Agent:
+        """Spawn a role agent with hydrated prompt and injected CerebroContext."""
+        normalized_role = self._normalize_role(role)
+        use_singleton = normalized_role in self._singleton_roles if singleton is None else singleton
+
+        with self._lock:
+            if use_singleton and normalized_role in self._singletons:
+                existing = self._singletons[normalized_role]
+                existing_uuid = getattr(existing, "cerebro_agent_uuid", "unknown")
+                self._log_lifecycle_event("spawn_reuse", normalized_role, existing_uuid, {"singleton": True})
+                return existing
+
+        provider_cls = self._providers.get(normalized_role)
+        if provider_cls is None:
+            return self._fallback_generic(
+                role=normalized_role,
+                reason="role_not_discovered",
+                user_name=user_name,
+                target_ip=target_ip,
+                project_id=project_id,
+                metadata=metadata,
+                model_override=model_override,
+                custom_name=custom_name,
+            )
+
+        agent_uuid = str(uuid4())
+        runtime_metadata = self._compose_metadata(
+            agent_uuid=agent_uuid,
+            role=normalized_role,
+            user_name=user_name,
+            target_ip=target_ip,
+            project_id=project_id,
+            metadata=metadata,
         )
-        
-        # Mark as parallel agent if running in parallel mode
-        parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
-        if parallel_count > 1 and agent_id and agent_id.startswith("P"):
-            new_model._is_parallel_agent = True
-
-        # Clone the agent with the new model
-        cloned_agent = original_agent.clone(model=new_model)
-        
-        # Update agent name if custom name was provided
-        if custom_name:
-            cloned_agent.name = custom_name
-            
-        # Check if this agent has any MCP tools configured
-        try:
-            from cai.repl.commands.mcp import get_mcp_tools_for_agent
-            
-            # Get MCP tools for this agent and add them
-            mcp_tools = get_mcp_tools_for_agent(agent_var_name)
-            if mcp_tools:
-                # Ensure the agent has tools list
-                if not hasattr(cloned_agent, 'tools'):
-                    cloned_agent.tools = []
-                
-                # Remove any existing tools with the same names to avoid duplicates
-                existing_tool_names = {t.name for t in mcp_tools}
-                cloned_agent.tools = [t for t in cloned_agent.tools if t.name not in existing_tool_names]
-                
-                # Add the MCP tools
-                cloned_agent.tools.extend(mcp_tools)
-                
-        except ImportError:
-            # MCP command not available, skip
-            pass
-            
-        return cloned_agent
-
-    return factory
-
-
-def discover_agent_factories() -> Dict[str, Callable[[], Agent]]:
-    """
-    Dynamically discover all agents and create factories for them.
-
-    Returns:
-        Dictionary mapping agent names to factory functions
-    """
-    import pkgutil
-
-    import cai.agents
-
-    agent_factories = {}
-
-    # Scan the agents module for all agent definitions
-    for importer, modname, ispkg in pkgutil.iter_modules(
-        cai.agents.__path__, cai.agents.__name__ + "."
-    ):
-        if ispkg:
-            continue  # Skip packages like 'patterns' and 'meta'
 
         try:
-            # Import the module
-            module = importlib.import_module(modname)
+            provider = provider_cls()
+            base_agent = provider.load_base_agent()
+            hydrated_instructions = self._hydrate_prompt(normalized_role, runtime_metadata, base_agent)
+            toolbox = self._build_toolbox(
+                normalized_role,
+                allow_subghz=allow_subghz,
+                extra_tools=extra_tools,
+            )
+            runtime_agent = self._clone_runtime_agent(
+                base_agent=base_agent,
+                role=normalized_role,
+                agent_uuid=agent_uuid,
+                hydrated_instructions=hydrated_instructions,
+                toolbox=toolbox,
+                model_override=model_override,
+                custom_name=custom_name,
+            )
+        except Exception as exc:  # pragma: no cover - failover path
+            return self._fallback_generic(
+                role=normalized_role,
+                reason=f"init_failure:{type(exc).__name__}",
+                user_name=user_name,
+                target_ip=target_ip,
+                project_id=project_id,
+                metadata={**(metadata or {}), "init_error": str(exc)},
+                model_override=model_override,
+                custom_name=custom_name,
+            )
 
-            # Look for Agent instances
-            for attr_name in dir(module):
-                if attr_name.startswith("_"):
-                    continue
+        context = CerebroContext(
+            agent_uuid=agent_uuid,
+            role=normalized_role,
+            workspace=self._workspace_paths,
+            toolbox=toolbox,
+            redaction=self._redaction,
+            path_guard=self._path_guard,
+            metadata=runtime_metadata,
+        )
 
-                attr = getattr(module, attr_name)
-                if isinstance(attr, Agent):
-                    # Create a factory for this agent
-                    agent_name = attr_name.lower()
-                    agent_factories[agent_name] = create_generic_agent_factory(modname, attr_name)
+        setattr(runtime_agent, "cerebro_context", context)
+        setattr(runtime_agent, "cerebro_agent_uuid", agent_uuid)
+        setattr(runtime_agent, "cerebro_role", normalized_role)
 
-        except Exception:
-            # Skip modules that fail to import
-            continue
+        with self._lock:
+            self._live_agents[agent_uuid] = runtime_agent
+            self._agent_roles_by_uuid[agent_uuid] = normalized_role
+            if use_singleton:
+                self._singletons[normalized_role] = runtime_agent
 
-    # Also scan patterns subdirectory
-    patterns_path = os.path.join(os.path.dirname(cai.agents.__file__), "patterns")
-    if os.path.exists(patterns_path):
-        for importer, modname, ispkg in pkgutil.iter_modules(
-            [patterns_path], cai.agents.__name__ + ".patterns."
-        ):
-            if ispkg:
+        self._log_lifecycle_event("spawn", normalized_role, agent_uuid, {"singleton": use_singleton})
+        return runtime_agent
+
+    def destroy_agent(self, agent_uuid: str) -> bool:
+        """Destroy a previously spawned agent and emit lifecycle event."""
+        with self._lock:
+            agent = self._live_agents.pop(agent_uuid, None)
+            role = self._agent_roles_by_uuid.pop(agent_uuid, "unknown")
+            if agent is None:
+                return False
+
+            for key, singleton_agent in list(self._singletons.items()):
+                if getattr(singleton_agent, "cerebro_agent_uuid", None) == agent_uuid:
+                    del self._singletons[key]
+
+        self._log_lifecycle_event("destroy", role, agent_uuid, {})
+        return True
+
+    def get_registered_roles(self) -> list[str]:
+        return self.roles
+
+    def _discover_agents(self) -> None:
+        import cai.agents as agents_pkg
+
+        for _, module_name, is_pkg in pkgutil.iter_modules(agents_pkg.__path__, agents_pkg.__name__ + "."):
+            if is_pkg:
+                continue
+            stem = module_name.rsplit(".", 1)[-1]
+            if stem in {"factory", "__init__"}:
                 continue
 
+            role = self._normalize_role(self._MODULE_ROLE_ALIASES.get(stem, stem))
+            preferred_export = f"{stem}_agent"
+            record = AgentDiscoveryRecord(
+                role=role,
+                module_path=module_name,
+                preferred_export=preferred_export,
+                prompt_candidates=self._prompt_candidates(role=role, stem=stem),
+            )
+            self._records[role] = record
+            provider_cls = self._build_provider_class(record)
+            self.register_provider(role, provider_cls)
+
+        # Ensure failover role always exists in registry surface.
+        if "generic_intelligence" not in self._providers:
+            generic_record = AgentDiscoveryRecord(
+                role="generic_intelligence",
+                module_path="",
+                preferred_export="",
+                prompt_candidates=self._prompt_candidates(role="generic_intelligence", stem="generic"),
+            )
+            self._records[generic_record.role] = generic_record
+
+    def _build_provider_class(self, record: AgentDiscoveryRecord) -> Type[CerebroBaseAgentProvider]:
+        attrs: Dict[str, Any] = {
+            "role": record.role,
+            "module_path": record.module_path,
+            "preferred_export": record.preferred_export,
+            "__doc__": f"Lazy provider for role '{record.role}'",
+        }
+        class_name = "CALM" + "".join(part.capitalize() for part in record.role.split("_")) + "Provider"
+        return type(class_name, (LazyModuleAgentProvider,), attrs)
+
+    def _clone_runtime_agent(
+        self,
+        *,
+        base_agent: Agent,
+        role: str,
+        agent_uuid: str,
+        hydrated_instructions: str,
+        toolbox: CerebroToolbox,
+        model_override: Optional[str],
+        custom_name: Optional[str],
+    ) -> Agent:
+        model_name = model_override or os.getenv(f"CAI_{role.upper()}_MODEL") or os.getenv("CAI_MODEL", "alias1")
+        api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
+
+        runtime_model = OpenAIChatCompletionsModel(
+            model=model_name,
+            openai_client=AsyncOpenAI(api_key=api_key),
+            agent_name=base_agent.name,
+            agent_id=agent_uuid,
+            agent_type=role,
+        )
+
+        runtime_agent = base_agent.clone(
+            model=runtime_model,
+            instructions=hydrated_instructions,
+            tools=toolbox.as_list(),
+        )
+
+        if custom_name:
+            runtime_agent.name = custom_name
+
+        self._inject_mcp_tools(runtime_agent, role)
+        return runtime_agent
+
+    def _build_toolbox(
+        self,
+        role: str,
+        *,
+        allow_subghz: bool,
+        extra_tools: Optional[Sequence[str]],
+    ) -> CerebroToolbox:
+        system_role = self._SYSTEM_TOOL_ROLE_MAP.get(role, "analyzer")
+        tool_meta = get_tools_for_agent(system_role)
+        loaded: Dict[str, Any] = {}
+
+        for meta in tool_meta:
+            if role == "blue_teamer" and ("subghz" in meta.name.lower()) and not allow_subghz:
+                continue
             try:
-                module = importlib.import_module(modname)
-
-                for attr_name in dir(module):
-                    if attr_name.startswith("_"):
-                        continue
-
-                    attr = getattr(module, attr_name)
-                    if isinstance(attr, Agent):
-                        agent_name = attr_name.lower()
-                        agent_factories[agent_name] = create_generic_agent_factory(
-                            modname, attr_name
-                        )
-
+                loaded[meta.name] = get_tool(meta.name)
             except Exception:
                 continue
 
-    return agent_factories
+        for explicit_name in extra_tools or ():
+            try:
+                loaded[explicit_name] = get_tool(explicit_name)
+            except Exception:
+                continue
 
+        return CerebroToolbox(role=role, tool_functions=loaded)
 
-# Global registry of agent factories
-AGENT_FACTORIES = None
+    def _hydrate_prompt(self, role: str, metadata: Mapping[str, Any], base_agent: Agent) -> str:
+        template_text: Optional[str] = None
+        record = self._records.get(role)
+        candidates = record.prompt_candidates if record else self._prompt_candidates(role=role, stem=role)
 
+        for relative_path in candidates:
+            try:
+                template_text = load_prompt_template(relative_path)
+                break
+            except FileNotFoundError:
+                continue
 
-def get_agent_factory(agent_name: str) -> Callable[[], Agent]:
-    """
-    Get a factory function for creating instances of the specified agent.
+        if template_text is None:
+            if isinstance(base_agent.instructions, str):
+                template_text = base_agent.instructions
+            else:
+                template_text = "You are the Cerebro Generic Intelligence Agent. Operate safely and explain rationale."
 
-    Args:
-        agent_name: Name of the agent
+        renderer = create_system_prompt_renderer(template_text)
+        hydrated = renderer(**metadata)
 
-    Returns:
-        Factory function that creates new agent instances
+        header_lines = [
+            "# Session Metadata",
+            f"- user_name: {metadata.get('user_name', 'unknown')}",
+            f"- target_ip: {metadata.get('target_ip', 'unknown')}",
+            f"- project_id: {metadata.get('project_id', 'unknown')}",
+            f"- session_uuid: {metadata.get('session_uuid', 'unknown')}",
+            "",
+        ]
+        return "\n".join(header_lines) + hydrated
 
-    Raises:
-        ValueError: If agent not found
-    """
-    global AGENT_FACTORIES
+    def _compose_metadata(
+        self,
+        *,
+        agent_uuid: str,
+        role: str,
+        user_name: Optional[str],
+        target_ip: Optional[str],
+        project_id: Optional[str],
+        metadata: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "user_name": user_name or os.getenv("USER") or os.getenv("USERNAME") or "unknown",
+            "target_ip": target_ip or os.getenv("CAI_TARGET_IP") or "unknown",
+            "project_id": project_id or os.getenv("CAI_PROJECT_ID") or "unknown",
+            "session_uuid": agent_uuid,
+            "role": role,
+            "workspace_root": str(self._workspace_paths.repo_root),
+            "active_workspace": str(self._workspace_paths.active_workspace),
+            "timestamp_utc": datetime.now(tz=UTC).isoformat(),
+        }
+        if metadata:
+            payload.update(dict(metadata))
+        return payload
 
-    # Lazy initialization
-    if AGENT_FACTORIES is None:
-        AGENT_FACTORIES = discover_agent_factories()
+    def _fallback_generic(
+        self,
+        *,
+        role: str,
+        reason: str,
+        user_name: Optional[str],
+        target_ip: Optional[str],
+        project_id: Optional[str],
+        metadata: Optional[Mapping[str, Any]],
+        model_override: Optional[str],
+        custom_name: Optional[str],
+    ) -> Agent:
+        fallback_uuid = str(uuid4())
+        fallback_role = "generic_intelligence"
+        runtime_metadata = self._compose_metadata(
+            agent_uuid=fallback_uuid,
+            role=fallback_role,
+            user_name=user_name,
+            target_ip=target_ip,
+            project_id=project_id,
+            metadata=metadata,
+        )
+        runtime_metadata = dict(runtime_metadata)
+        runtime_metadata["failover_reason"] = reason
+        runtime_metadata["requested_role"] = role
 
-    agent_name_lower = agent_name.lower()
+        base_prompt = self._hydrate_prompt(fallback_role, runtime_metadata, _generic_template_agent())
+        toolbox = self._build_toolbox(fallback_role, allow_subghz=False, extra_tools=None)
+        model_name = model_override or os.getenv("CAI_MODEL", "alias1")
+        api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
 
-    if agent_name_lower not in AGENT_FACTORIES:
-        raise ValueError(
-            f"Agent '{agent_name}' not found. Available agents: {list(AGENT_FACTORIES.keys())}"
+        generic_agent = Agent(
+            name=custom_name or "Generic Intelligence Agent",
+            instructions=base_prompt,
+            description="Fallback continuity agent used when specialized initialization fails.",
+            model=OpenAIChatCompletionsModel(
+                model=model_name,
+                openai_client=AsyncOpenAI(api_key=api_key),
+                agent_name="Generic Intelligence Agent",
+                agent_id=fallback_uuid,
+                agent_type=fallback_role,
+            ),
+            tools=toolbox.as_list(),
         )
 
-    return AGENT_FACTORIES[agent_name_lower]
+        context = CerebroContext(
+            agent_uuid=fallback_uuid,
+            role=fallback_role,
+            workspace=self._workspace_paths,
+            toolbox=toolbox,
+            redaction=self._redaction,
+            path_guard=self._path_guard,
+            metadata=runtime_metadata,
+        )
+        setattr(generic_agent, "cerebro_context", context)
+        setattr(generic_agent, "cerebro_agent_uuid", fallback_uuid)
+        setattr(generic_agent, "cerebro_role", fallback_role)
+
+        with self._lock:
+            self._live_agents[fallback_uuid] = generic_agent
+            self._agent_roles_by_uuid[fallback_uuid] = fallback_role
+
+        self._log_lifecycle_event(
+            "spawn_failover",
+            fallback_role,
+            fallback_uuid,
+            {"requested_role": role, "reason": reason},
+        )
+        return generic_agent
+
+    def _inject_mcp_tools(self, runtime_agent: Agent, role: str) -> None:
+        try:
+            mcp_module = importlib.import_module("cai.repl.commands.mcp")
+            get_mcp_tools_for_agent = getattr(mcp_module, "get_mcp_tools_for_agent", None)
+            if not callable(get_mcp_tools_for_agent):
+                return
+            mcp_tools = get_mcp_tools_for_agent(role)
+            if not isinstance(mcp_tools, (list, tuple)):
+                return
+            if not mcp_tools:
+                return
+
+            existing = list(getattr(runtime_agent, "tools", []) or [])
+            existing_by_name = {getattr(tool, "name", ""): tool for tool in existing}
+            for mcp_tool in mcp_tools:
+                existing_by_name[getattr(mcp_tool, "name", "")] = mcp_tool
+            runtime_agent.tools = list(existing_by_name.values())
+        except Exception:
+            return
+
+    def _pathguard_audit(self, event: str, payload: Mapping[str, Any]) -> None:
+        data = {"event": event, **dict(payload)}
+        audit = getattr(self._logger, "audit", None)
+        if callable(audit):
+            audit(
+                "PathGuard event",
+                actor="CALM",
+                data=data,
+                tags=["pathguard", event],
+            )
+
+    def _build_workspace_paths(self, workspace_root: str | Path | None) -> WorkspacePaths:
+        repo_root = Path(workspace_root).expanduser().resolve() if workspace_root else Path.cwd().resolve()
+        active_workspace = get_project_space().ensure_initialized().resolve()
+        src_root = Path(__file__).resolve().parents[1]
+        prompts_root = src_root / "prompts"
+
+        return WorkspacePaths(
+            repo_root=repo_root,
+            active_workspace=active_workspace,
+            prompts_root=prompts_root,
+            evidence_root=active_workspace / "evidence",
+            reports_root=active_workspace / "reports",
+        )
+
+    def _prompt_candidates(self, *, role: str, stem: str) -> tuple[str, ...]:
+        return (
+            f"prompts/{role}.md",
+            f"prompts/system_{role}.md",
+            f"prompts/{stem}.md",
+            f"prompts/system_{stem}.md",
+            "prompts/system_reasoner_supporter.md",
+        )
+
+    def _normalize_role(self, value: str) -> str:
+        return value.strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _log_lifecycle_event(self, event: str, role: str, agent_uuid: str, data: Mapping[str, Any]) -> None:
+        payload = {
+            "event": event,
+            "role": role,
+            "agent_uuid": agent_uuid,
+            "workspace": str(self._workspace_paths.active_workspace),
+            **dict(data),
+        }
+
+        audit = getattr(self._logger, "audit", None)
+        if callable(audit):
+            audit(
+                f"Lifecycle Event: {event}",
+                actor="CALM",
+                data=payload,
+                tags=["lifecycle", "agent_factory", event],
+            )
+            return
+
+        logging.getLogger(__name__).info("Lifecycle Event %s", payload)
+
+
+def _generic_template_agent() -> Agent:
+    """Internal helper used exclusively for prompt hydration fallback path."""
+    return Agent(
+        name="Generic Intelligence Agent Template",
+        instructions="You are a safe and capable cybersecurity assistant.",
+        description="Template holder for failover hydration.",
+        model=OpenAIChatCompletionsModel(
+            model=os.getenv("CAI_MODEL", "alias1"),
+            openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")),
+            agent_name="Generic Intelligence Agent Template",
+            agent_id="template",
+            agent_type="generic_intelligence",
+        ),
+        tools=[],
+    )
+
+
+_GLOBAL_FACTORY: Optional[CerebroAgentFactory] = None
+
+
+def get_cerebro_agent_factory() -> CerebroAgentFactory:
+    """Compatibility accessor for a process-wide CALM instance."""
+    global _GLOBAL_FACTORY
+    if _GLOBAL_FACTORY is None:
+        _GLOBAL_FACTORY = CerebroAgentFactory()
+    return _GLOBAL_FACTORY
+
+
+def get_agent_factory(agent_role: str):
+    """Compatibility shim exposing callable factories per role."""
+    factory = get_cerebro_agent_factory()
+
+    def _spawn(
+        model_override: str | None = None,
+        custom_name: str | None = None,
+        agent_id: str | None = None,
+    ) -> Agent:
+        metadata: Dict[str, Any] = {}
+        if agent_id:
+            metadata["requested_agent_id"] = agent_id
+        return factory.create_agent(
+            agent_role,
+            model_override=model_override,
+            custom_name=custom_name,
+            metadata=metadata,
+        )
+
+    return _spawn
+
+
+__all__ = [
+    "WorkspacePaths",
+    "CerebroRedaction",
+    "CerebroToolbox",
+    "CerebroContext",
+    "CerebroBaseAgentProvider",
+    "LazyModuleAgentProvider",
+    "CerebroAgentFactory",
+    "get_cerebro_agent_factory",
+    "get_agent_factory",
+]
