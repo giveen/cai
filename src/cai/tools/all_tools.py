@@ -161,6 +161,20 @@ TOOL_CATALOG = {
         "dependencies": [],
         "description": "Read file contents",
     },
+    "read_file": {
+        "module": "cai.tools.reconnaissance.filesystem",
+        "name": "read_file",
+        "phase": PHASE_RECON,
+        "dependencies": [],
+        "description": "Read file contents with size guardrails and redaction",
+    },
+    "write_file": {
+        "module": "cai.tools.reconnaissance.filesystem",
+        "name": "write_file",
+        "phase": PHASE_RECON,
+        "dependencies": [],
+        "description": "Write workspace-scoped files and log integrity hashes",
+    },
     "find_file": {
         "module": "cai.tools.reconnaissance.filesystem",
         "name": "find_file",

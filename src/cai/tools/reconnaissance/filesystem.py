@@ -11,8 +11,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import stat
+import tempfile
 import threading
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
@@ -32,12 +34,20 @@ _MAX_LIST_DEPTH = 6
 _MAX_SEARCH_DEPTH = 8
 _DEFAULT_READ_BYTES = 8192
 _MAX_READ_BYTES = 64 * 1024
+_MAX_SAFE_READ_SIZE = 10 * 1024 * 1024
+_HEAD_TAIL_BYTES = 4096
 _MAX_RESULTS = 250
 _HASH_CHUNK_SIZE = 1024 * 1024
 _TEXT_EXTENSIONS = {
     ".cfg", ".cnf", ".conf", ".csv", ".env", ".ini", ".json", ".jsonl", ".log",
     ".md", ".py", ".service", ".sh", ".sql", ".txt", ".xml", ".yaml", ".yml",
 }
+_SENSITIVE_READ_NAMES = {"shadow", "gshadow", "passwd", "master.passwd", "sam", "security", "ntds.dit"}
+_PII_PATTERNS = (
+    (re.compile(r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b"), "[REDACTED_EMAIL]"),
+    (re.compile(r"(?<!\d)(?:\+?\d[\d\s().-]{7,}\d)(?!\d)"), "[REDACTED_PHONE]"),
+    (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[REDACTED_SSN]"),
+)
 
 
 @dataclass(frozen=True)
@@ -67,13 +77,38 @@ class PathGuard:
     def __init__(self, workspace_root: Path, audit_callback: Any) -> None:
         self._root = workspace_root.resolve()
         self._audit_callback = audit_callback
+        self._temp_roots = self._build_temp_roots()
 
     def resolve(self, candidate: str | os.PathLike[str], *, action: str) -> Path:
+        return self.validate_path(candidate, action=action, mode="read")
+
+    def validate_path(self, candidate: str | os.PathLike[str], *, action: str, mode: str) -> Path:
         raw = Path(candidate).expanduser() if str(candidate).strip() else self._root
         resolved = (self._root / raw).resolve() if not raw.is_absolute() else raw.resolve()
+        if mode == "read" and self._is_sensitive_system_path(resolved):
+            self._audit_callback(
+                "sensitive_file_blocked",
+                {
+                    "action": action,
+                    "requested_path": str(raw),
+                    "resolved_path": str(resolved),
+                    "message": "Sensitive file read blocked",
+                },
+            )
+            raise PermissionError("Sensitive file access blocked by PathGuard policy")
+
+        if self._is_within(self._root, resolved):
+            return resolved
+
+        if mode == "write" and any(self._is_within(temp_root, resolved) for temp_root in self._temp_roots):
+            return resolved
+
+        if mode == "read" and any(self._is_within(temp_root, resolved) for temp_root in self._temp_roots):
+            return resolved
+
         try:
             resolved.relative_to(self._root)
-        except ValueError as exc:
+        except ValueError:
             self._audit_callback(
                 "boundary_violation",
                 {
@@ -81,10 +116,46 @@ class PathGuard:
                     "requested_path": str(raw),
                     "resolved_path": str(resolved),
                     "message": "Boundary Violation",
+                    "mode": mode,
                 },
             )
-            raise PermissionError("Boundary Violation: requested path escapes the active workspace sandbox") from exc
+            raise PermissionError("Boundary Violation: requested path escapes the active workspace sandbox")
         return resolved
+
+    @staticmethod
+    def _is_within(root: Path, candidate: Path) -> bool:
+        try:
+            candidate.relative_to(root)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _is_sensitive_system_path(path: Path) -> bool:
+        lowered = path.name.lower()
+        if lowered in _SENSITIVE_READ_NAMES:
+            return True
+        posix_text = str(path).lower().replace("\\", "/")
+        return posix_text in {
+            "/etc/shadow",
+            "/etc/gshadow",
+            "/etc/passwd",
+            "/windows/system32/config/sam",
+            "/windows/system32/config/security",
+        }
+
+    @staticmethod
+    def _build_temp_roots() -> List[Path]:
+        roots = {
+            Path(tempfile.gettempdir()).resolve(),
+            Path("/var/tmp").resolve(),
+        }
+        env_tmp = os.getenv("TMPDIR", "").strip()
+        if env_tmp:
+            with_tmp = Path(env_tmp).expanduser()
+            if with_tmp.exists():
+                roots.add(with_tmp.resolve())
+        return sorted(roots)
 
 
 class CerebroFilesystemTool:
@@ -151,8 +222,14 @@ class CerebroFilesystemTool:
     def get_file_hash(self, *, file_path: str, algorithm: str = "sha256") -> Dict[str, Any]:
         return self._run_coro(self._get_file_hash_async(file_path=file_path, algorithm=algorithm))
 
+    def read_file(self, *, file_path: str, max_bytes: int = _DEFAULT_READ_BYTES) -> Dict[str, Any]:
+        return self._run_coro(self._read_file_async(file_path=file_path, max_bytes=max_bytes))
+
     def read_file_preview(self, *, file_path: str, max_bytes: int = _DEFAULT_READ_BYTES) -> Dict[str, Any]:
         return self._run_coro(self._read_file_preview_async(file_path=file_path, max_bytes=max_bytes))
+
+    def write_file(self, *, file_path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
+        return self._run_coro(self._write_file_async(file_path=file_path, content=content, encoding=encoding))
 
     def pwd(self) -> str:
         return self._redact_text(str(self._workspace))
@@ -275,7 +352,7 @@ class CerebroFilesystemTool:
 
     async def _read_file_preview_async(self, *, file_path: str, max_bytes: int) -> Dict[str, Any]:
         try:
-            candidate = self._guard.resolve(file_path, action="cat_file")
+            candidate = self._guard.validate_path(file_path, action="cat_file", mode="read")
             if not candidate.exists():
                 raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(candidate))
             if not candidate.is_file():
@@ -288,12 +365,78 @@ class CerebroFilesystemTool:
                 "path": self._display_path(candidate),
                 "size": int(stat_result.st_size),
                 "truncated": int(stat_result.st_size) > limit,
-                "preview": clean_data(self._redact_text(preview)),
+                "preview": clean_data(self._scrub_content(preview)),
             }
             await self._audit_async("read_file_preview", {"path": response["path"], "bytes": limit})
             return clean_data(response)
         except OSError as exc:
             semantic = self._semantic_os_error(exc, action="read file")
+            return self._error(semantic)
+
+    async def _read_file_async(self, *, file_path: str, max_bytes: int) -> Dict[str, Any]:
+        try:
+            candidate = self._guard.validate_path(file_path, action="read_file", mode="read")
+            if not candidate.exists():
+                raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(candidate))
+            if not candidate.is_file():
+                raise IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR), str(candidate))
+            stat_result = await asyncio.to_thread(candidate.stat)
+            file_size = int(stat_result.st_size)
+            limit = max(128, min(int(max_bytes), _MAX_READ_BYTES))
+            if file_size > _MAX_SAFE_READ_SIZE:
+                summary = await self._head_tail_summary(candidate, file_size=file_size)
+                response = {
+                    "ok": False,
+                    "path": self._display_path(candidate),
+                    "size": file_size,
+                    "mode": "summary",
+                    "summary": summary,
+                    "error": {
+                        "code": "file_too_large",
+                        "message": "File exceeds 10MB guardrail. Returning head/tail summary instead of full content.",
+                        "retryable": False,
+                        "category": "size_limit",
+                    },
+                }
+                await self._audit_async("read_file_summary", {"path": response["path"], "size": file_size})
+                return clean_data(response)
+
+            content = await self._read_full_text(candidate, limit=limit)
+            response = {
+                "ok": True,
+                "path": self._display_path(candidate),
+                "size": file_size,
+                "mode": "content",
+                "content": clean_data(self._scrub_content(content)),
+                "truncated": False,
+            }
+            await self._audit_async("read_file", {"path": response["path"], "size": file_size})
+            return clean_data(response)
+        except OSError as exc:
+            semantic = self._semantic_os_error(exc, action="read file")
+            return self._error(semantic)
+
+    async def _write_file_async(self, *, file_path: str, content: str, encoding: str) -> Dict[str, Any]:
+        try:
+            candidate = self._guard.validate_path(file_path, action="write_file", mode="write")
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            payload = content if isinstance(content, str) else str(content)
+            await self._write_text(candidate, payload, encoding=encoding or "utf-8")
+            stat_result = await asyncio.to_thread(candidate.stat)
+            digest = await self._hash_file(candidate)
+            evidence = {
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+                "path": self._display_path(candidate),
+                "sha256": digest,
+                "size": int(stat_result.st_size),
+                "modified_at": datetime.fromtimestamp(stat_result.st_mtime, tz=UTC).isoformat(),
+                "action": "write_file",
+            }
+            await self._append_jsonl(self._hash_log_path, evidence)
+            await self._audit_async("write_file", {"path": evidence["path"], "sha256": digest, "size": evidence["size"]})
+            return clean_data({"ok": True, **evidence, "evidence_log": self._display_path(self._hash_log_path)})
+        except OSError as exc:
+            semantic = self._semantic_os_error(exc, action="write file")
             return self._error(semantic)
 
     async def _walk_directory(self, root: Path, max_depth: int, include_hidden: bool) -> List[FileRecord]:
@@ -437,6 +580,62 @@ class CerebroFilesystemTool:
 
         return await asyncio.to_thread(_sync_read)
 
+    async def _read_full_text(self, path: Path, limit: int) -> str:
+        if aiofiles is not None:
+            try:
+                async with aiofiles.open(path, "rb") as handle:
+                    raw = await handle.read(_MAX_SAFE_READ_SIZE)
+                    return raw[:limit if len(raw) > limit else len(raw)].decode("utf-8", errors="replace") if limit < len(raw) else raw.decode("utf-8", errors="replace")
+            except Exception:
+                pass
+
+        def _sync_read() -> str:
+            with path.open("rb") as handle:
+                raw = handle.read(_MAX_SAFE_READ_SIZE)
+                return raw.decode("utf-8", errors="replace")
+
+        return await asyncio.to_thread(_sync_read)
+
+    async def _head_tail_summary(self, path: Path, *, file_size: int) -> Dict[str, Any]:
+        if aiofiles is not None:
+            try:
+                async with aiofiles.open(path, "rb") as handle:
+                    head = await handle.read(_HEAD_TAIL_BYTES)
+                    await handle.seek(max(0, file_size - _HEAD_TAIL_BYTES))
+                    tail = await handle.read(_HEAD_TAIL_BYTES)
+                    return {
+                        "head": clean_data(self._scrub_content(head.decode("utf-8", errors="replace"))),
+                        "tail": clean_data(self._scrub_content(tail.decode("utf-8", errors="replace"))),
+                    }
+            except Exception:
+                pass
+
+        def _sync_summary() -> Dict[str, Any]:
+            with path.open("rb") as handle:
+                head = handle.read(_HEAD_TAIL_BYTES)
+                handle.seek(max(0, file_size - _HEAD_TAIL_BYTES))
+                tail = handle.read(_HEAD_TAIL_BYTES)
+                return {
+                    "head": clean_data(self._scrub_content(head.decode("utf-8", errors="replace"))),
+                    "tail": clean_data(self._scrub_content(tail.decode("utf-8", errors="replace"))),
+                }
+
+        return await asyncio.to_thread(_sync_summary)
+
+    async def _write_text(self, path: Path, content: str, encoding: str) -> None:
+        if aiofiles is not None:
+            try:
+                async with aiofiles.open(path, "w", encoding=encoding) as handle:
+                    await handle.write(content)
+                return
+            except Exception:
+                pass
+
+        def _sync_write() -> None:
+            path.write_text(content, encoding=encoding)
+
+        await asyncio.to_thread(_sync_write)
+
     async def _hash_file(self, path: Path) -> str:
         digest = hashlib.sha256()
         if aiofiles is not None:
@@ -522,6 +721,12 @@ class CerebroFilesystemTool:
                 text = text.replace(token, "[REDACTED_USER]")
         return text
 
+    def _scrub_content(self, value: str) -> str:
+        text = self._redact_text(value)
+        for pattern, replacement in _PII_PATTERNS:
+            text = pattern.sub(replacement, text)
+        return clean_data(text)
+
     def _path_redactions(self) -> List[tuple[str, str]]:
         values = [
             (str(self._workspace), "[WORKSPACE_ROOT]"),
@@ -540,6 +745,13 @@ class CerebroFilesystemTool:
                 message="Boundary Violation: the requested path is outside the active workspace sandbox.",
                 retryable=False,
                 category="sandbox",
+            )
+        if "Sensitive file access blocked" in str(exc):
+            return SemanticError(
+                code="sensitive_file_blocked",
+                message="Sensitive system files are blocked by PathGuard policy and cannot be read through this tool.",
+                retryable=False,
+                category="policy",
             )
         if isinstance(exc, PermissionError) or exc.errno in {errno.EACCES, errno.EPERM}:
             return SemanticError(
@@ -682,16 +894,26 @@ def list_dir(path: str, args: str = "", ctf=None) -> str:
 def cat_file(file_path: str, args: str = "", ctf=None) -> str:
     _ = ctf
     parsed = _parse_args(args)
-    result = FILESYSTEM_TOOL.read_file_preview(
+    result = FILESYSTEM_TOOL.read_file(
         file_path=file_path,
         max_bytes=int(parsed["max_bytes"] or _DEFAULT_READ_BYTES),
     )
     if not result.get("ok"):
+        if result.get("mode") == "summary":
+            summary = result.get("summary") or {}
+            rendered = (
+                f"[SUMMARY ONLY]\nhead:\n{summary.get('head', '')}\n\n"
+                f"tail:\n{summary.get('tail', '')}"
+            )
+            return sanitize_tool_output("cat_file", rendered)
         return str((result.get("error") or {}).get("message", "Unable to read file"))
-    preview = str(result.get("preview", ""))
-    if result.get("truncated"):
-        preview += "\n\n[TRUNCATED: preview limited for safety]"
-    return sanitize_tool_output("cat_file", preview)
+    content = str(result.get("content", ""))
+    return sanitize_tool_output("cat_file", content)
+
+
+@function_tool
+def read_file(file_path: str, max_bytes: int = _DEFAULT_READ_BYTES) -> str:
+    return _json_result(FILESYSTEM_TOOL.read_file(file_path=file_path, max_bytes=max_bytes))
 
 
 @function_tool
@@ -719,6 +941,11 @@ def get_file_hash(file_path: str, algorithm: str = "sha256") -> str:
     return _json_result(FILESYSTEM_TOOL.get_file_hash(file_path=file_path, algorithm=algorithm))
 
 
+@function_tool
+def write_file(file_path: str, content: str, encoding: str = "utf-8") -> str:
+    return _json_result(FILESYSTEM_TOOL.write_file(file_path=file_path, content=content, encoding=encoding))
+
+
 __all__ = [
     "SemanticError",
     "PathGuard",
@@ -726,7 +953,9 @@ __all__ = [
     "FILESYSTEM_TOOL",
     "list_dir",
     "cat_file",
+    "read_file",
     "pwd_command",
     "find_file",
     "get_file_hash",
+    "write_file",
 ]
