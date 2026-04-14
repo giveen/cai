@@ -1,8 +1,8 @@
 services:
   cai:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: dockerized/Dockerfile
     container_name: cai
     network_mode: host
     privileged: true
@@ -10,6 +10,7 @@ services:
     # VPN Capabilities (Crucial for the HTB Refactor)
     cap_add:
       - NET_ADMIN
+      - NET_RAW
     devices:
       - /dev/net/tun:/dev/net/tun
 
@@ -20,8 +21,9 @@ services:
     
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CEREBRO_API_BASE=${CEREBRO_API_BASE:-http://host.docker.internal:8000/v1}
       - QDRANT_HOST=localhost # Since network_mode is host
-      - CAI_WEB=true
+      - CEREBRO_WEB=true
       - TEXTUAL_WEB_HOST=0.0.0.0
     
     stdin_open: true

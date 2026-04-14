@@ -14,6 +14,7 @@ RUN apt-get update && \
         python3 python3-pip python3-dev python3-venv \
         nodejs npm \
         curl wget git ca-certificates \
+        iputils-ping nmap net-tools dnsutils netcat-openbsd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -38,6 +39,9 @@ RUN apt-get update && \
      /tmp/msfinstall && \
      rm /tmp/msfinstall
 
+# Playwright dependency install can fail if the Metasploit apt source is left in a broken state.
+RUN rm -f /etc/apt/sources.list.d/metasploit-framework.list /usr/share/keyrings/metasploit-framework.gpg || true
+
 # FIX: pip system-packages warning
 RUN mkdir -p /root/.pip && \
     echo "[global]" > /root/.pip/pip.conf && \
@@ -47,11 +51,14 @@ RUN mkdir -p /root/.pip && \
 
 WORKDIR /opt/cai
 
-# Install CAI + browser automation dependencies in an isolated venv
+# Copy local repository source so the container runs workspace code.
+COPY . /opt/cai-src
+
+# Install local Cerebro code + browser dependencies in an isolated venv
 RUN python3 -m venv /opt/cai/.venv && \
     /opt/cai/.venv/bin/pip install --upgrade pip && \
-    /opt/cai/.venv/bin/pip install "cai-framework[browser]" playwright && \
-    /opt/cai/.venv/bin/python -m playwright install chromium
+    /opt/cai/.venv/bin/pip install -e "/opt/cai-src[browser]" playwright "litellm<1.83,>=1.68.0" "mcp>=1.27.0" && \
+    /opt/cai/.venv/bin/python -m playwright install --with-deps chromium
 
 # .env Template (overwritten if .env file present in logs)
 RUN echo 'OPENAI_API_KEY="sk-1234"' > /opt/cai/.env && \
@@ -59,7 +66,7 @@ RUN echo 'OPENAI_API_KEY="sk-1234"' > /opt/cai/.env && \
     echo 'DEEPSEEK_API_KEY=""' >> /opt/cai/.env && \
     echo 'OLLAMA_API_BASE=""' >> /opt/cai/.env && \
     echo 'PROMPT_TOOLKIT_NO_CPR=1' >> /opt/cai/.env && \
-    echo 'CAI_STREAM=false' >> /opt/cai/.env
+    echo 'CEREBRO_STREAM=false' >> /opt/cai/.env
 
 #  logs directory
 RUN mkdir -p /opt/cai/logs
