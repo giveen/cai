@@ -1158,11 +1158,17 @@ class ParallelCommand(Command):
         agents_to_merge: List[str],
         force_all: bool,
     ) -> Dict[str, List[dict]]:
-        return asyncio.run(
-            self._apply_per_worker_merge_summaries_async(
-                all_histories, agents_to_merge, force_all
-            )
+        coro = self._apply_per_worker_merge_summaries_async(
+            all_histories, agents_to_merge, force_all
         )
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # TUI context — run in a background thread so we don't nest asyncio.run()
+            # inside the running event loop, which would raise RuntimeError.
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                return executor.submit(asyncio.run, coro).result()
+        return asyncio.run(coro)
 
     def _collect_merge_histories(self, verbose_merge: bool) -> Dict[str, List[Any]]:
         """Gather agent histories for merge (parallel isolation + AGENT_MANAGER fallback)."""
