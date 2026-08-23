@@ -44,7 +44,8 @@ def _capture_remote_traffic_impl(
         error = stderr.read().decode().strip()
         raise RuntimeError(f"Failed to start tcpdump: {error}")
 
-    fifo_path = tempfile.mktemp()
+    fifo_dir = tempfile.mkdtemp(prefix="cai_cap_")
+    fifo_path = os.path.join(fifo_dir, "capture.fifo")
     os.mkfifo(fifo_path)
 
     def pipe_ssh_to_fifo():
@@ -114,9 +115,13 @@ def capture_remote_traffic(
     except Exception as e:
         raise RuntimeError(f"Unexpected error: {str(e)}")
     finally:
-        if fifo_path and os.path.exists(fifo_path):
+        if fifo_path:
             try:
-                os.unlink(fifo_path)
+                if os.path.exists(fifo_path):
+                    os.unlink(fifo_path)
+                fifo_dir = os.path.dirname(fifo_path)
+                if fifo_dir and os.path.isdir(fifo_dir):
+                    os.rmdir(fifo_dir)
             except OSError:
                 pass
 
@@ -140,9 +145,13 @@ def remote_capture_session(ip, username, password, interface, capture_filter="",
         )
         yield fifo_path
     finally:
-        if fifo_path and os.path.exists(fifo_path):
+        if fifo_path:
             try:
-                os.unlink(fifo_path)
+                if os.path.exists(fifo_path):
+                    os.unlink(fifo_path)
+                fifo_dir = os.path.dirname(fifo_path)
+                if fifo_dir and os.path.isdir(fifo_dir):
+                    os.rmdir(fifo_dir)
             except OSError:
                 pass
 

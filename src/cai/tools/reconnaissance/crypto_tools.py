@@ -41,7 +41,8 @@ def decode64(input_data: str, ctf=None) -> str:
     Returns:
         str: The decoded string
     """
-    command = f"base64 --decode {input_data}"
+    import shlex
+    command = f"echo {shlex.quote(input_data)} | base64 --decode"
     return run_command(command, ctf=ctf)
 
 
