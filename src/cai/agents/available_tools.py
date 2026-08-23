@@ -169,6 +169,11 @@ AVAILABLE_TOOLS = {
         "category": "web",
         "description": "Probe query-string parameters for SQL injection (error-based, boolean, time-based blind)",
     },
+    "cmdi_probe": {
+        "import": "from cai.tools.web.cmdi_probe import cmdi_probe",
+        "category": "web",
+        "description": "Probe URL parameters for OS command injection via time-based detection (sleep/ping payloads)",
+    },
 
     # ---------------------------------------------------------------
     # Search
