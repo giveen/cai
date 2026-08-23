@@ -666,6 +666,8 @@ def create_cai_api_app(
         # API requirement: underlying OpenAI chat completions must NOT stream.
         # Implement streaming via RunHooks (non-streaming model calls) instead of Runner.run_streamed.
         async def _gen():
+            # sse_stream_via_hooks persists session.history directly via the
+            # RunResult in its finally block, so no second inference pass needed.
             async for chunk in sse_stream_via_hooks(
                 session.agent,
                 composed,
@@ -674,22 +676,6 @@ def create_cai_api_app(
                 session=session,
             ):
                 yield chunk
-            # After finishing, persist history/state so subsequent calls see full context.
-            # We can't rely on agent.model.message_history (not all models expose it),
-            # so we run a non-streaming pass to reconstruct the conversation input list.
-            try:
-                from cai.sdk.agents.run import Runner, DEFAULT_MAX_TURNS as _DEF_TURNS
-
-                recon_result = await Runner.run(
-                    session.agent,
-                    composed,
-                    context=payload.context,
-                    max_turns=int(payload.max_turns) if isinstance(payload.max_turns, (int, float)) else _DEF_TURNS,
-                )
-                session.history = recon_result.to_input_list()
-            except Exception:
-                # Best-effort only; if it fails we keep the previous history.
-                pass
 
         headers = {
             "Cache-Control": "no-cache",

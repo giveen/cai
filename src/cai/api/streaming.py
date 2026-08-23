@@ -224,10 +224,14 @@ async def sse_stream_via_hooks(starting_agent, input_items, *, context=None, max
             msg_step = {"type": "message", "agent": getattr(result.last_agent, "name", None), "text": last_message}
             steps.append(msg_step)
             yield _sse("reasoning_step", msg_step)
-        # Persist steps into session for later UX summaries
+        # Persist steps and conversation history into session
         if session is not None:
             try:
                 session.last_steps = steps
+            except Exception:
+                pass
+            try:
+                session.history = result.to_input_list()
             except Exception:
                 pass
         yield _sse("final", {"steps": steps, "final_message": last_message, "final_output": final_output})
