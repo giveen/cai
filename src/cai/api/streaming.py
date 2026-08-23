@@ -197,12 +197,19 @@ async def sse_stream_via_hooks(starting_agent, input_items, *, context=None, max
             steps.append(item)
             yield _sse("reasoning_step", item)
     finally:
-        result: RunResult = await task
         if session is not None:
             try:
                 session.set_running_task(None)
             except Exception:
                 pass
+
+        try:
+            result: RunResult = await task
+        except Exception as e:
+            yield _sse("error", {"message": str(e)})
+            yield _sse("final", {"steps": steps, "final_message": last_message, "final_output": None})
+            return
+
         # Extract last assistant text message
         for it in result.new_items:
             if isinstance(it, MessageOutputItem):

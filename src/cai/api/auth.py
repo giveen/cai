@@ -351,7 +351,10 @@ class AuthManager:
         user = self.create_user(username, random_password)
 
         # Issue session token bound to this IP.
-        session = self._create_session_for_user(user, device_ip=ip_address, method="ip_pairing")
+        # Acquire lock: _create_session_for_user mutates _sessions_by_token and
+        # calls _save_to_disk_locked(), both of which require the lock to be held.
+        with self._lock:
+            session = self._create_session_for_user(user, device_ip=ip_address, method="ip_pairing")
         return user, random_password, session
 
     def login(
