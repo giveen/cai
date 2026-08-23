@@ -595,7 +595,7 @@ async def generic_linux_command(
                 return "Error: Blocked heredoc creation of script with command substitution in temporary directory."
         dangerous_patterns = [
             r"(?i)rm\s+-rf\s+/",
-            r"(?i):(){ :|:& };:",  # Fork bomb
+            r"(?i):\(\)\s*\{\s*:\|:&\s*\};:",  # Fork bomb
             r"(?i)curl.*\|.*sh",  # Curl pipe to shell
             r"(?i)wget.*\|.*bash",
             r"(?i)nc\s+[\d\.]+\s+\d+.*(-e|/bin/sh|/bin/bash)",  # Netcat reverse shell
