@@ -124,7 +124,19 @@ class QueueCommand(Command):
 
     def _move_in_queue(self, from_idx: int, to_idx: int) -> bool:
         """Move a queue item from one position to another (0-based)."""
-        queue_size = len(FALLBACK_QUEUE)
+        # Resolve the live queue backing the current mode
+        tui_queue = None
+        if os.getenv("CAI_TUI_MODE") == "true":
+            try:
+                from cai.tui.core.prompt_queue import PROMPT_QUEUE as TUI_QUEUE
+                tui_queue = TUI_QUEUE._queue
+            except ImportError:
+                pass
+        if tui_queue is None and TUI_PROMPT_QUEUE:
+            tui_queue = TUI_PROMPT_QUEUE._queue
+        active_queue = tui_queue if tui_queue is not None else FALLBACK_QUEUE
+
+        queue_size = len(active_queue)
 
         if queue_size == 0:
             console.print("[yellow]Queue is empty, nothing to move.[/yellow]")
@@ -148,10 +160,11 @@ class QueueCommand(Command):
             console.print("[yellow]Source and destination are the same, no change.[/yellow]")
             return True
 
-        item = FALLBACK_QUEUE.pop(from_idx)
-        FALLBACK_QUEUE.insert(to_idx, item)
+        item = active_queue.pop(from_idx)
+        active_queue.insert(to_idx, item)
 
-        prompt_short = item["prompt"][:50] + "..." if len(item["prompt"]) > 50 else item["prompt"]
+        raw_prompt = item.get("prompt", "") if isinstance(item, dict) else getattr(item, "prompt", str(item))
+        prompt_short = raw_prompt[:50] + "..." if len(raw_prompt) > 50 else raw_prompt
         move_panel = Panel(
             f"[bold #00ff9d]Item moved successfully[/bold #00ff9d]\n\n"
             f"[white]#{from_idx + 1} -> #{to_idx + 1}[/white]\n"
@@ -402,21 +415,31 @@ class QueueCommand(Command):
 
     def _add_to_queue(self, prompt: str, agent: Optional[str] = None) -> bool:
         """Add a prompt to the queue with an optional agent association."""
+        import asyncio
+
+        def _schedule(coro):
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(coro)
+                else:
+                    loop.run_until_complete(coro)
+            except RuntimeError:
+                pass
+
         queue_len = 0
 
         if os.getenv("CAI_TUI_MODE") == "true":
             try:
                 from cai.tui.core.prompt_queue import PROMPT_QUEUE as TUI_QUEUE
-                import asyncio
-                asyncio.create_task(TUI_QUEUE.add_prompt(prompt))
+                _schedule(TUI_QUEUE.add_prompt(prompt))
                 queue_len = len(TUI_QUEUE._queue) + 1
             except ImportError:
                 pass
 
         if queue_len == 0:
             if TUI_PROMPT_QUEUE:
-                import asyncio
-                asyncio.create_task(TUI_PROMPT_QUEUE.add_prompt(prompt))
+                _schedule(TUI_PROMPT_QUEUE.add_prompt(prompt))
                 queue_len = len(TUI_PROMPT_QUEUE._queue) + 1
             else:
                 item = {
