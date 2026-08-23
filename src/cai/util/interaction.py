@@ -108,7 +108,11 @@ def signal_handler(signum, frame):
         try:
             loop = asyncio.get_event_loop()
             if loop and not loop.is_closed():
-                pending = asyncio.all_tasks(loop) if hasattr(asyncio, 'all_tasks') else asyncio.Task.all_tasks(loop)
+                # asyncio.all_tasks() loop parameter removed in Python 3.12
+                try:
+                    pending = asyncio.all_tasks(loop)  # type: ignore[call-arg]
+                except TypeError:
+                    pending = asyncio.all_tasks()
                 for task in pending:
                     task.cancel()
         except Exception:
@@ -133,7 +137,11 @@ def signal_handler(signum, frame):
     try:
         loop = asyncio.get_event_loop()
         if loop and not loop.is_closed():
-            pending = asyncio.all_tasks(loop) if hasattr(asyncio, 'all_tasks') else asyncio.Task.all_tasks(loop)
+            # asyncio.all_tasks() loop parameter removed in Python 3.12
+            try:
+                pending = asyncio.all_tasks(loop)  # type: ignore[call-arg]
+            except TypeError:
+                pending = asyncio.all_tasks()
             for task in pending:
                 if not task.done():
                     task.cancel()
