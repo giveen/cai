@@ -214,7 +214,7 @@ def _repl_add_parallel_slot_name_variants(allowed: set[str]) -> None:
         agent_obj = available[reg_key]
         display_name = getattr(agent_obj, "name", config.agent_name)
         instance_num = 0
-        for c in PARALLEL_CONFIGS[:idx]:
+        for c in PARALLEL_CONFIGS[:idx - 1]:
             if c.agent_name == config.agent_name:
                 instance_num += 1
         instance_num += 1
@@ -831,10 +831,10 @@ class FlushCommand(Command):
 
                 # Count instances to get correct numbering
                 instance_num = 0
-                for c in PARALLEL_CONFIGS[:idx]:
+                for c in PARALLEL_CONFIGS[:idx - 1]:
                     if c.agent_name == config.agent_name:
                         instance_num += 1
-                instance_num += 1  # Current instance
+                instance_num += 1  # Count current config
 
                 # Build the instance name
                 if sum(1 for c in PARALLEL_CONFIGS if c.agent_name == config.agent_name) > 1:
