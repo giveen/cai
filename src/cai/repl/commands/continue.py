@@ -85,22 +85,34 @@ class ContinueCommand(Command):
                 frame = frame.f_back
             
             if message_history:
-                # Generate continuation advice
-                console.print("[cyan]🤖 Generating continuation prompt...[/cyan]")
-                continuation_prompt = asyncio.run(generate_continuation_advice(
-                    agent_name=getattr(agent, "name", "Agent") if agent else "Agent",
-                    message_history=message_history,
-                    console=console
-                ))
-                
-                # Queue the continuation prompt
+                console.print("[cyan]Generating continuation prompt...[/cyan]")
                 from cai.repl.commands.queue import add_to_queue
-                add_to_queue(continuation_prompt)
-                
-                # Set auto-run queue flag
-                os.environ["CAI_AUTO_RUN_QUEUE"] = "1"
-                
-                console.print("[cyan]✓ Continuation prompt queued. The agent will continue automatically.[/cyan]")
+
+                agent_name = getattr(agent, "name", "Agent") if agent else "Agent"
+                coro = generate_continuation_advice(
+                    agent_name=agent_name,
+                    message_history=message_history,
+                    console=console,
+                )
+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # TUI / async context — schedule as a task so we don't
+                    # call asyncio.run() inside an already-running loop.
+                    async def _enqueue():
+                        try:
+                            prompt = await coro
+                            add_to_queue(prompt)
+                            os.environ["CAI_AUTO_RUN_QUEUE"] = "1"
+                        except Exception:
+                            pass
+                    loop.create_task(_enqueue())
+                else:
+                    continuation_prompt = loop.run_until_complete(coro)
+                    add_to_queue(continuation_prompt)
+                    os.environ["CAI_AUTO_RUN_QUEUE"] = "1"
+
+                console.print("[cyan]Continuation prompt queued. The agent will continue automatically.[/cyan]")
             else:
                 # If no active conversation, just inform the user
                 console.print("[yellow]No active conversation to continue. Continuation mode is now enabled for future tasks.[/yellow]")
