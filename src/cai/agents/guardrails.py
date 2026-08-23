@@ -243,9 +243,6 @@ def get_injection_detector_agent():
         )
     return _injection_detector_agent
 
-# For backward compatibility
-injection_detector_agent = property(get_injection_detector_agent)
-
 
 @input_guardrail(name="prompt_injection_guard")
 async def prompt_injection_guardrail(
@@ -415,7 +412,7 @@ async def command_execution_guardrail(
     # Check for dangerous command patterns in output
     dangerous_commands = [
         r"(?i)rm\s+-rf\s+/",
-        r"(?i):(){ :|:& };:",  # Fork bomb
+        r"(?i):\(\)\s*\{\s*:\|:&\s*\};:",  # Fork bomb
         r"(?i)nc\s+\d+\.\d+\.\d+\.\d+",  # Netcat to IP
         r"(?i)curl.*\|.*sh",  # Curl pipe to shell
         r"(?i)wget.*\|.*bash",

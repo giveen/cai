@@ -3,6 +3,8 @@ Tool for executing code via LLM tool calls.
 """
 
 import os
+import re
+import shlex
 
 from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.sdk.agents import function_tool
@@ -89,10 +91,14 @@ code as many times as you want using `generic_linux_command` tool.
     # Normalize language to lowercase
     language = language.lower()
     ext = extensions.get(language, "txt")
+    # Sanitize filename to prevent shell injection
+    filename = re.sub(r'[^a-zA-Z0-9_.\-]', '_', filename)
     full_filename = f"{filename}.{ext}"
+    q_full = shlex.quote(full_filename)
+    q_name = shlex.quote(filename)
 
     # Create code file with content
-    create_cmd = f"cat << 'EOF' > {full_filename}\n{code}\nEOF"
+    create_cmd = f"cat << 'EOF' > {q_full}\n{code}\nEOF"
     # Don't stream the file creation and suppress output display
     result = run_command(
         create_cmd, ctf=ctf, stream=False, tool_name="_internal_file_creation", workspace_dir=cwd_pass
@@ -102,22 +108,22 @@ code as many times as you want using `generic_linux_command` tool.
 
     # Prepare execution command based on language
     if language in ["python", "py"]:
-        exec_cmd = f"python3 {full_filename}"
+        exec_cmd = f"python3 {q_full}"
     elif language in ["php"]:
-        exec_cmd = f"php {full_filename}"
+        exec_cmd = f"php {q_full}"
     elif language in ["bash", "sh", "shell"]:
-        exec_cmd = f"bash {full_filename}"
+        exec_cmd = f"bash {q_full}"
     elif language in ["ruby", "rb"]:
-        exec_cmd = f"ruby {full_filename}"
+        exec_cmd = f"ruby {q_full}"
     elif language in ["perl", "pl"]:
-        exec_cmd = f"perl {full_filename}"
+        exec_cmd = f"perl {q_full}"
     elif language in ["golang", "go"]:
-        temp_dir = f"/tmp/go_exec_{filename}"
+        temp_dir = shlex.quote(f"/tmp/go_exec_{filename}")
         run_command(
             f"mkdir -p {temp_dir}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
         )
         run_command(
-            f"cp {full_filename} {temp_dir}/main.go",
+            f"cp {q_full} {temp_dir}/main.go",
             ctf=ctf,
             stream=False,
             tool_name="_internal_setup",
@@ -132,53 +138,53 @@ code as many times as you want using `generic_linux_command` tool.
         )
         exec_cmd = f"cd {temp_dir} && go run main.go"
     elif language in ["javascript", "js"]:
-        exec_cmd = f"node {full_filename}"
+        exec_cmd = f"node {q_full}"
     elif language in ["typescript", "ts"]:
-        exec_cmd = f"ts-node {full_filename}"
+        exec_cmd = f"ts-node {q_full}"
     elif language in ["rust", "rs"]:
         # For Rust, we need to compile first
         run_command(
-            f"rustc {full_filename} -o {filename}",
+            f"rustc {q_full} -o {q_name}",
             ctf=ctf,
             stream=False,
             tool_name="_internal_setup",
             workspace_dir=cwd_pass,
         )
-        exec_cmd = f"./{filename}"
+        exec_cmd = f"./{q_name}"
     elif language in ["csharp", "cs"]:
         # For C#, compile with dotnet
         run_command(
-            f"dotnet build {full_filename}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
+            f"dotnet build {q_full}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
         )
-        exec_cmd = f"dotnet run {full_filename}"
+        exec_cmd = f"dotnet run {q_full}"
     elif language in ["java"]:
         # For Java, compile first
         run_command(
-            f"javac {full_filename}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
+            f"javac {q_full}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
         )
-        exec_cmd = f"java {filename}"
+        exec_cmd = f"java {q_name}"
     elif language in ["kotlin", "kt"]:
         # For Kotlin, compile first
         run_command(
-            f"kotlinc {full_filename} -include-runtime -d {filename}.jar",
+            f"kotlinc {q_full} -include-runtime -d {q_name}.jar",
             ctf=ctf,
             stream=False,
             tool_name="_internal_setup",
             workspace_dir=cwd_pass,
         )
-        exec_cmd = f"java -jar {filename}.jar"
+        exec_cmd = f"java -jar {q_name}.jar"
     elif language in ["c"]:
         # For C, compile with gcc
         run_command(
-            f"gcc {full_filename} -o {filename}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
+            f"gcc {q_full} -o {q_name}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
         )
-        exec_cmd = f"./{filename}"
+        exec_cmd = f"./{q_name}"
     elif language in ["cpp", "c++"]:
         # For C++, compile with g++
         run_command(
-            f"g++ {full_filename} -o {filename}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
+            f"g++ {q_full} -o {q_name}", ctf=ctf, stream=False, tool_name="_internal_setup", workspace_dir=cwd_pass
         )
-        exec_cmd = f"./{filename}"
+        exec_cmd = f"./{q_name}"
     else:
         return f"Unsupported language: {language}"
 
