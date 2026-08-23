@@ -2,6 +2,8 @@
 Here are the tools for netcat command
 """
 
+import shlex
+
 from cai.tools.common import run_command  # pylint: disable=import-error
 from cai.sdk.agents import function_tool
 
@@ -26,10 +28,8 @@ def netcat(host: str, port: int, data: str = "", args: str = "", ctf=None) -> st
         if port < 1 or port > 65535:
             return "Error: Port must be between 1 and 65535"
 
-        if data:
-            command = f'echo "{data}" | nc -w 3 {host} {port} {args}; exit'
-        else:
-            command = f'echo "" | nc -w 3 {host} {port} {args}; exit'
+        data_quoted = shlex.quote(data) if data else "''"
+        command = f'printf %s {data_quoted} | nc -w 3 {host} {port} {args}; exit'
 
         result = run_command(command, ctf=ctf)
 
