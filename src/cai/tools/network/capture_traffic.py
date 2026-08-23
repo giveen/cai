@@ -64,11 +64,7 @@ def _capture_remote_traffic_impl(
     thread = threading.Thread(target=pipe_ssh_to_fifo, daemon=True)
     thread.start()
 
-    print(f"Capture running. Data available at: {fifo_path}")
-    print(f"You can now use: tshark -r {fifo_path} -c 100 [options]")
-
-    subprocess.run(["tshark", "-r", fifo_path, "-c", "100"])
-
+    print(f"Capture running. FIFO available at: {fifo_path}")
     return fifo_path
 
 
@@ -95,10 +91,20 @@ def capture_remote_traffic(
         ConnectionError: If connection to the remote VM fails
         RuntimeError: If traffic capture fails to start
     """
+    fifo_path = None
     try:
-        return _capture_remote_traffic_impl(
+        fifo_path = _capture_remote_traffic_impl(
             ip, username, password, interface, capture_filter=capture_filter, port=port, timeout=timeout
         )
+        result = subprocess.run(
+            ["tshark", "-r", fifo_path, "-c", "100"],
+            capture_output=True, text=True, timeout=timeout + 30,
+        )
+        return result.stdout or result.stderr or "(no tshark output)"
+    except FileNotFoundError:
+        return f"[capture_remote_traffic] tshark not found. FIFO is at {fifo_path} if available."
+    except subprocess.TimeoutExpired:
+        return "[capture_remote_traffic] tshark timed out waiting for packets."
     except paramiko.AuthenticationException:
         raise ConnectionError("Authentication failed. Check username and password.")
     except paramiko.SSHException as e:
@@ -107,6 +113,12 @@ def capture_remote_traffic(
         raise ConnectionError(f"Connection timed out after {timeout} seconds")
     except Exception as e:
         raise RuntimeError(f"Unexpected error: {str(e)}")
+    finally:
+        if fifo_path and os.path.exists(fifo_path):
+            try:
+                os.unlink(fifo_path)
+            except OSError:
+                pass
 
 
 @contextmanager

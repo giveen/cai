@@ -560,9 +560,7 @@ class ParallelCommand(Command):
                 
                 # Schedule agent initialization
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.create_task(initialize_agent())
+                    asyncio.create_task(initialize_agent())
                 except Exception:
                     pass
 
