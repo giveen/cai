@@ -31,8 +31,11 @@ def _fetch(
     method: str = "GET",
     headers: dict[str, str] | None = None,
     timeout: float = 10,
-) -> tuple[int, dict[str, str], str]:
-    """Return (status, lowercase_headers, body_preview)."""
+) -> tuple[int, dict[str, str], str, list[tuple[str, str]]]:
+    """Return (status, lowercase_headers, body_preview, raw_header_pairs).
+
+    raw_header_pairs preserves duplicate headers (e.g. multiple Set-Cookie).
+    """
     parsed = urllib.parse.urlparse(url)
     path = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
     req_headers = {
@@ -48,9 +51,12 @@ def _fetch(
     try:
         conn.request(method, path, headers=req_headers)
         resp = conn.getresponse()
-        resp_headers = {k.lower(): v for k, v in resp.getheaders()}
+        raw_pairs = [(k.lower(), v) for k, v in resp.getheaders()]
+        resp_headers = {}
+        for k, v in raw_pairs:
+            resp_headers[k] = v  # last value wins for non-duplicate access
         body = resp.read(8192).decode("utf-8", errors="replace")
-        return resp.status, resp_headers, body
+        return resp.status, resp_headers, body, raw_pairs
     finally:
         conn.close()
 
@@ -215,7 +221,7 @@ def _run_tech_fingerprint(url: str, probe_paths: bool = True) -> str:
 
     # ─── Step 1: Fetch homepage ───────────────────────────────────────────────
     try:
-        status, resp_headers, body = _fetch(url)
+        status, resp_headers, body, raw_pairs = _fetch(url)
         details.append(f"Homepage [{status}]: {len(body)} bytes")
     except Exception as e:
         return f"Error fetching {url}: {e}"
@@ -242,10 +248,9 @@ def _run_tech_fingerprint(url: str, probe_paths: bool = True) -> str:
                     _add(category, tech)
 
     # ─── Step 3: Analyze Set-Cookie headers ──────────────────────────────────
-    # http.client returns multiple Set-Cookie as separate headers
-    # but the dict approach only keeps the last one; parse the raw list
+    # Use raw_pairs to see ALL Set-Cookie headers — the dict only keeps the last.
     all_cookies: list[str] = []
-    for k, v in resp_headers.items():
+    for k, v in raw_pairs:
         if k == "set-cookie":
             all_cookies.append(v.split(";")[0].strip())  # just name=value
 
@@ -270,7 +275,7 @@ def _run_tech_fingerprint(url: str, probe_paths: bool = True) -> str:
         for path, tech, category, expected_status in _PATH_PROBES:
             try:
                 probe_url = base_url + path
-                pstatus, pheaders, pbody = _fetch(probe_url, timeout=6)
+                pstatus, pheaders, pbody, _ = _fetch(probe_url, timeout=6)
                 if path == "/robots.txt" and pstatus == 200:
                     # Scan robots.txt for CMS hints
                     for pattern, rt, rc in _BODY_SIGNATURES:

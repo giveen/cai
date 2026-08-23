@@ -186,6 +186,37 @@ from .interface import Model, ModelTracing
 if TYPE_CHECKING:
     from ..model_settings import ModelSettings
 
+# --- Context-optimization constants and helpers -----------------------
+# Kept here as re-exports so existing imports continue to work.
+
+TOOL_OUTPUT_MAX_CHARS: int = 800
+TOOL_OUTPUT_MIN_CHARS: int = 100
+TOOL_OUTPUT_WEIGHT_TOKEN_THRESHOLD: int = 10_000
+TOOL_OUTPUT_WEIGHT_CONTEXT_THRESHOLD: float = 0.5
+
+
+def _truncate_tool_output(content: str, max_chars: int) -> str:
+    """Truncate a tool output to max_chars, preserving head and tail."""
+    if len(content) <= max_chars:
+        return content
+    head_size = max_chars // 2 - 100
+    tail_size = max_chars // 2 - 100
+    head = content[:head_size]
+    tail = content[-tail_size:]
+    omitted = len(content) - head_size - tail_size
+    return f"{head}\n\n[... TRUNCATED {omitted:,} chars for context optimization ...]\n\n{tail}"
+
+
+def _apply_dynamic_tool_output_weighting(
+    messages: list, model: str, context_limit: int
+) -> list:
+    """Apply dynamic tool output truncation when context usage is high.
+
+    Currently a pass-through; the compaction logic lives in auto_compactor.
+    """
+    return messages
+
+
 # --- Crash-prevention helpers -----------------------------------------
 
 def _get_first_choice(response):
@@ -332,6 +363,8 @@ def _is_effectively_empty_stream_accumulation(
     if state.function_calls:
         return False
     if streamed_tool_calls:
+        return False
+    if state.refusal_content_index_and_output:
         return False
     text = (output_text or "").strip()
     if not text and state.text_content_index_and_output:
@@ -553,6 +586,16 @@ class OpenAIChatCompletionsModel(Model):
     def get_full_display_name(self) -> str:
         """Get the full display name including ID."""
         return f"{self._display_name} [{self.agent_id}]"
+
+    def get_token_info(self) -> dict:
+        """Return agent metadata used by the TUI sidebar and token tracking."""
+        return {
+            "agent_name": getattr(self, "agent_name", None),
+            "agent_id": getattr(self, "agent_id", None),
+            "display_name": getattr(self, "_display_name", None),
+            "terminal_id": getattr(self, "_terminal_id", None),
+            "terminal_number": getattr(self, "_terminal_number", None),
+        }
     
     def __del__(self):
         """Clean up when the model instance is destroyed."""
@@ -1477,17 +1520,13 @@ class OpenAIChatCompletionsModel(Model):
                     if prompt_details:
                         cache_read = getattr(prompt_details, 'cached_tokens', None)
 
-            usage = (
-                Usage(
-                    requests=1,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    total_tokens=input_tokens + output_tokens,
-                    cache_creation_input_tokens=cache_creation,
-                    cache_read_input_tokens=cache_read,
-                )
-                if response.usage or input_tokens > 0
-                else Usage()
+            usage = Usage(
+                requests=1,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=input_tokens + output_tokens,
+                cache_creation_input_tokens=cache_creation,
+                cache_read_input_tokens=cache_read,
             )
             _trace_choice = _get_first_choice(response)
             if tracing.include_data() and _trace_choice:

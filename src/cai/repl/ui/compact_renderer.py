@@ -172,8 +172,8 @@ def _row_for_record(
     prefix.append("● ", style=left_style)
     prefix.append(record.agent_name or "Agent", style=f"bold {CAI_GREEN}")
     if (
-        is_parallel_session()
-        and record.agent_id
+        record.agent_id
+        and record.agent_id != "P0"
         and f"[{record.agent_id}]" not in (record.agent_name or "")
     ):
         prefix.append(f" [{record.agent_id}]", style=f"bold {GREY_HINT}")
@@ -372,8 +372,19 @@ class CompactCLIHandler:
         elif isinstance(event, TurnSummaryEvent):
             self._on_turn_summary(event)
 
+    def dismiss_for_final_output(self) -> None:
+        """Prepare for the final turn output (no-op; ownership released in flush)."""
+
     def flush(self) -> None:
         self._dismiss_live()
+        # Release ownership when no live block was running but ownership was
+        # claimed directly (e.g. via _owns_wait_hints set by callers).
+        if getattr(self, "_owns_wait_hints", False):
+            try:
+                from cai.util.wait_hints import set_compact_live_owner
+                set_compact_live_owner(False)
+            except Exception:
+                pass
 
     # ------------------------------ Public --------------------------------
 

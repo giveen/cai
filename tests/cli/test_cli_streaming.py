@@ -91,10 +91,19 @@ class TestCLIStreaming(unittest.TestCase):
 
     def get_combined_message_history(self):
         """Get combined message history from all agents."""
+        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+
+        # Try the registered-agent path first
         all_messages = []
         histories = get_all_agent_histories()
         for agent_name, history in histories.items():
             all_messages.extend(history)
+
+        # Fall back to reading _message_history directly when no agents are
+        # registered (e.g. after reset_registry() in setUp).
+        if not all_messages:
+            for history in AGENT_MANAGER._message_history.values():
+                all_messages.extend(history)
         return all_messages
 
     def add_to_test_message_history(self, msg):

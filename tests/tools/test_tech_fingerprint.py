@@ -6,9 +6,12 @@ from unittest.mock import patch
 from cai.tools.web.tech_fingerprint import _run_tech_fingerprint, _fetch
 
 
-def _make_fetch(status=200, headers=None, body=""):
+def _make_fetch(status=200, headers=None, body="", cookies=()):
+    """Build a fake _fetch that returns the 4-tuple signature (status, headers, body, raw_pairs)."""
     def _fake(url, method="GET", headers_arg=None, timeout=10):
-        return (status, headers or {}, body)
+        hdr = headers or {}
+        raw_pairs = list(hdr.items()) + [("set-cookie", c) for c in cookies]
+        return (status, hdr, body, raw_pairs)
     return _fake
 
 
@@ -133,8 +136,8 @@ def test_present_security_headers_reported():
 def test_env_exposure_detected_via_path_probe():
     def _probe_fetch(url, method="GET", headers_arg=None, timeout=10):
         if ".env" in url:
-            return (200, {}, "APP_KEY=base64:abcdef123456")
-        return (200, {}, "")
+            return (200, {}, "APP_KEY=base64:abcdef123456", [])
+        return (200, {}, "", [])
 
     with patch("cai.tools.web.tech_fingerprint._fetch", _probe_fetch):
         result = _run_tech_fingerprint("https://example.com", probe_paths=True)
@@ -145,8 +148,8 @@ def test_env_exposure_detected_via_path_probe():
 def test_git_exposure_detected_via_path_probe():
     def _probe_fetch(url, method="GET", headers_arg=None, timeout=10):
         if ".git/HEAD" in url:
-            return (200, {}, "ref: refs/heads/main")
-        return (200, {}, "")
+            return (200, {}, "ref: refs/heads/main", [])
+        return (200, {}, "", [])
 
     with patch("cai.tools.web.tech_fingerprint._fetch", _probe_fetch):
         result = _run_tech_fingerprint("https://example.com", probe_paths=True)

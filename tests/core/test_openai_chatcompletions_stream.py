@@ -75,6 +75,7 @@ async def test_stream_response_yields_events_for_text_content(monkeypatch) -> No
         )
         return resp, fake_stream()
 
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key-for-tests")
     monkeypatch.setattr(OpenAIChatCompletionsModel, "_fetch_response", patched_fetch_response)
     model = OpenAIProvider(use_responses=False).get_model(cai_model)
     output_events = []
@@ -165,6 +166,7 @@ async def test_stream_response_yields_events_for_refusal_content(monkeypatch) ->
         )
         return resp, fake_stream()
 
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key-for-tests")
     monkeypatch.setattr(OpenAIChatCompletionsModel, "_fetch_response", patched_fetch_response)
     model = OpenAIProvider(use_responses=False).get_model(cai_model)
     output_events = []
@@ -253,6 +255,7 @@ async def test_stream_response_yields_events_for_tool_call(monkeypatch) -> None:
         )
         return resp, fake_stream()
 
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key-for-tests")
     monkeypatch.setattr(OpenAIChatCompletionsModel, "_fetch_response", patched_fetch_response)
     model = OpenAIProvider(use_responses=False).get_model(cai_model)
     output_events = []

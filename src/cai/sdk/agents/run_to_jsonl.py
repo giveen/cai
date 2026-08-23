@@ -39,6 +39,42 @@ def _format_log_message(message, args) -> str:
             return str(message)
 
 
+class _NullRecorder:
+    """No-op recorder returned when session recording is disabled.
+
+    Implements the same interface as DataRecorder so callers never need
+    to null-check the result of get_session_recorder().
+    """
+
+    session_id: str = ""
+    filename: str = ""
+    workspace_name: str = ""
+
+    def log_user_message(self, *args, **kwargs):
+        pass
+
+    def log_assistant_message(self, *args, **kwargs):
+        pass
+
+    def rec_training_data(self, *args, **kwargs):
+        pass
+
+    def warning(self, *args, **kwargs):
+        pass
+
+    def error(self, *args, **kwargs):
+        pass
+
+    def info(self, *args, **kwargs):
+        pass
+
+    def debug(self, *args, **kwargs):
+        pass
+
+    def critical(self, *args, **kwargs):
+        pass
+
+
 def get_session_recorder(workspace_name=None):
     """
     Get the global session recorder instance.
@@ -48,13 +84,13 @@ def get_session_recorder(workspace_name=None):
         workspace_name (str | None): Optional workspace name.
 
     Returns:
-        DataRecorder: The session recorder instance.
+        DataRecorder | _NullRecorder: The session recorder instance.
     """
     global _session_recorder
 
     # Check if session recording is disabled (e.g., during replay)
     if os.environ.get("CAI_DISABLE_SESSION_RECORDING", "").lower() == "true":
-        return None
+        return _NullRecorder()
 
     if _session_recorder is None:
         _session_recorder = DataRecorder(workspace_name)

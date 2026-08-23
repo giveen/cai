@@ -142,7 +142,7 @@ _GRAY_COMPACT = "#aaaaaa"
 
 def _compact_sep_w(console) -> int:
     try:
-        w = console.size.width
+        w = int(console.size.width)
     except Exception:
         w = 72
     return max(16, min(w - 2, 80))

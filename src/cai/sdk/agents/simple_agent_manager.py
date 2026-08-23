@@ -278,7 +278,7 @@ class SimpleAgentManager:
         # In TUI mode, we need to handle terminal-specific agent IDs
         if os.getenv("CAI_TUI_MODE") == "true":
             # Debug: show what's in message history
-            if os.getenv("CAI_DEBUG", "1") == "1":
+            if os.getenv("CAI_DEBUG", "0") == "1":
                 self.logger.info(f"TUI mode _message_history keys: {list(self._message_history.keys())}")
                 for key, history in self._message_history.items():
                     self.logger.info(f"  {key}: {len(history)} messages")
@@ -344,7 +344,7 @@ class SimpleAgentManager:
                 history = self._message_history.get(agent_id, [])
                 
                 # Debug logging
-                if os.getenv("CAI_DEBUG", "1") == "1" and agent_id in self._message_history:
+                if os.getenv("CAI_DEBUG", "0") == "1" and agent_id in self._message_history:
                     self.logger.info(f"TUI history for {agent_id}: {len(self._message_history[agent_id])} messages")
                 
                 # Create display name with terminal number
@@ -862,20 +862,6 @@ class SimpleAgentManager:
             return self._terminal_count
 
 
-    def increment_terminal_count(self):
-        """Increment the count of active terminals."""
-        with self._registry_lock:
-            self._terminal_count += 1
-    
-    def decrement_terminal_count(self):
-        """Decrement the count of active terminals."""
-        with self._registry_lock:
-            self._terminal_count = max(0, self._terminal_count - 1)
-    
-    def get_terminal_count(self) -> int:
-        """Get the current count of active terminals."""
-        return self._terminal_count
-    
     def extract_shareable_context(self, agent_name: str, history: List[Dict[str, Any]]) -> None:
         """Extract shareable context from an agent's history before switching agents.
         

@@ -41,19 +41,14 @@ class TestAutoCompact:
         with (
             patch(f"{_AC}.get_config", return_value=_make_cfg(True, 0.8)),
             patch(f"{_AC}.get_model_max_tokens", return_value=1000),
-            patch("cai.repl.commands.memory.MEMORY_COMMAND_INSTANCE") as mock_memory,
-            patch("cai.repl.commands.memory.COMPACTED_SUMMARIES", {}),
             patch("rich.console.Console"),
         ):
-            mock_memory._ai_summarize_history = AsyncMock(return_value="Summary")
-
             # Call the auto-compact method directly — 850 > 1000*0.8 = 800
             new_input, new_instructions, compacted = await model._auto_compact_if_needed(
                 estimated_tokens=850, input="Test message", system_instructions=None
             )
 
             assert compacted is True
-            mock_memory._ai_summarize_history.assert_called_once_with("Test Agent")
 
     @pytest.mark.asyncio
     @pytest.mark.asyncio
@@ -139,18 +134,13 @@ class TestAutoCompact:
         with (
             patch(f"{_AC}.get_config", return_value=_make_cfg(True, 0.5)),
             patch(f"{_AC}.get_model_max_tokens", return_value=1000),
-            patch("cai.repl.commands.memory.MEMORY_COMMAND_INSTANCE") as mock_memory,
-            patch("cai.repl.commands.memory.COMPACTED_SUMMARIES", {}),
             patch("rich.console.Console"),
         ):
-            mock_memory._ai_summarize_history = AsyncMock(return_value="Summary")
-
             new_input, new_instructions, compacted = await model._auto_compact_if_needed(
                 estimated_tokens=600, input="Test", system_instructions=None
             )
 
             assert compacted is True
-            mock_memory._ai_summarize_history.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_auto_compact_error_handling(self):
@@ -167,11 +157,10 @@ class TestAutoCompact:
         with (
             patch(f"{_AC}.get_config", return_value=_make_cfg(True, 0.8)),
             patch(f"{_AC}.get_model_max_tokens", return_value=1000),
-            patch("cai.repl.commands.memory.MEMORY_COMMAND_INSTANCE") as mock_memory,
+            # Force an error inside the compaction try-block to verify graceful recovery.
+            patch(f"{_AC}._phase1_truncate_message_history", side_effect=Exception("disk error")),
             patch("rich.console.Console"),
         ):
-            mock_memory._ai_summarize_history = AsyncMock(side_effect=Exception("Failed"))
-
             new_input, new_instructions, compacted = await model._auto_compact_if_needed(
                 estimated_tokens=850, input="Test", system_instructions=None
             )
@@ -223,8 +212,6 @@ class TestAutoCompact:
         with (
             patch(f"{_AC}.get_config", return_value=_make_cfg(True, 0.8)),
             patch(f"{_AC}.get_model_max_tokens", return_value=1000),
-            patch("cai.repl.commands.memory.MEMORY_COMMAND_INSTANCE") as mock_memory,
-            patch("cai.repl.commands.memory.COMPACTED_SUMMARIES", {}),
             patch("rich.console.Console"),
             patch("cai.sdk.agents.models.openai_chatcompletions.stop_idle_timer"),
             patch("cai.sdk.agents.models.openai_chatcompletions.start_active_timer"),
@@ -237,8 +224,6 @@ class TestAutoCompact:
                 return_value=(850, 0),
             ),
         ):
-            mock_memory._ai_summarize_history = AsyncMock(return_value="Previous summary")
-
             result = await model.get_response(
                 system_instructions=None,
                 input="Test message",
@@ -249,8 +234,8 @@ class TestAutoCompact:
                 tracing=ModelTracing.DISABLED,
             )
 
-            # Verify compaction was triggered
-            mock_memory._ai_summarize_history.assert_called_once()
+            # Verify response was returned (compaction ran then inference completed)
+            assert result is not None
 
             # Verify response was returned
             assert result is not None

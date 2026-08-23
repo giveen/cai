@@ -8,7 +8,7 @@ from cai.util import cli_print_tool_output
 
 
 @pytest.fixture(autouse=True)
-def reset_cli_print_state():
+def reset_cli_print_state(monkeypatch):
     """Reset cli_print_tool_output state before each test"""
     # Clear any existing state
     if hasattr(cli_print_tool_output, "_displayed_commands"):
@@ -19,6 +19,15 @@ def reset_cli_print_state():
         cli_print_tool_output._seen_calls.clear()
     if hasattr(cli_print_tool_output, "_streaming_sessions"):
         cli_print_tool_output._streaming_sessions.clear()
+    if hasattr(cli_print_tool_output, "_output_hashes"):
+        cli_print_tool_output._output_hashes.clear()
+    if hasattr(cli_print_tool_output, "_displayed_call_ids"):
+        cli_print_tool_output._displayed_call_ids.clear()
+    # Compact mode is cached at startup and defaults to enabled, which causes
+    # cli_print_tool_output to return early without printing. Disable it here
+    # so the tool output reaches stdout for assertion.
+    import cai.util.streaming as _streaming
+    monkeypatch.setattr(_streaming, "_compact_suppresses_verbose", lambda: False)
     yield
 
 

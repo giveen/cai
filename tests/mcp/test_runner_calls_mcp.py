@@ -3,7 +3,7 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from cai.sdk.agents import Agent, ModelBehaviorError, Runner, UserError
+from cai.sdk.agents import Agent, Runner, UserError
 
 from tests.fake_model import FakeModel
 from tests.core.test_responses import get_function_tool_call, get_text_message
@@ -46,8 +46,12 @@ async def test_runner_calls_mcp_tool(streaming: bool):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_runner_asserts_when_mcp_tool_not_found(streaming: bool):
-    """Test that the runner asserts when an MCP tool is not found."""
+async def test_runner_handles_mcp_tool_not_found(streaming: bool):
+    """Runner returns a graceful error hint to the model when an unknown tool is called.
+
+    Instead of crashing with ModelBehaviorError, the runner injects a ToolCallOutputItem
+    that tells the model which tools are available, then lets it retry.
+    """
     server = FakeMCPServer()
     server.add_tool("test_tool_1", {})
     server.add_tool("test_tool_2", {})
@@ -61,20 +65,24 @@ async def test_runner_asserts_when_mcp_tool_not_found(streaming: bool):
 
     model.add_multiple_turn_outputs(
         [
-            # First turn: a message and tool call
+            # First turn: a message and a call to a non-existent tool
             [get_text_message("a_message"), get_function_tool_call("test_tool_doesnt_exist", "")],
-            # Second turn: text message
+            # Second turn: model recovers and sends a text message
             [get_text_message("done")],
         ]
     )
 
-    with pytest.raises(ModelBehaviorError):
-        if streaming:
-            result = Runner.run_streamed(agent, input="user_message")
-            async for _ in result.stream_events():
-                pass
-        else:
-            await Runner.run(agent, input="user_message")
+    # Should complete without raising — runner injects an error message and lets model retry
+    if streaming:
+        result = Runner.run_streamed(agent, input="user_message")
+        async for _ in result.stream_events():
+            pass
+    else:
+        result = await Runner.run(agent, input="user_message")
+        assert result is not None
+
+    # The server should NOT have been called for the non-existent tool
+    assert "test_tool_doesnt_exist" not in server.tool_calls
 
 
 @pytest.mark.asyncio
