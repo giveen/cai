@@ -55,7 +55,7 @@ class ReverseShellClient:
                 data = client_socket.recv(4096)
                 if not data:
                     break
-                decoded_data = data.decode()
+                decoded_data = data.decode(errors="replace")
                 self.command_history.append(decoded_data)
                 sys.stdout.write(decoded_data)
                 sys.stdout.flush()

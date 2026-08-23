@@ -25,7 +25,7 @@ def _capture_remote_traffic_impl(
 
     _, stdout, stderr = client.exec_command(f"ip link show {interface}")
     if stdout.channel.recv_exit_status() != 0:
-        error = stderr.read().decode().strip()
+        error = stderr.read().decode(errors="replace").strip()
         raise RuntimeError(f"Interface {interface} not found: {error}")
 
     _, stdout, stderr = client.exec_command("which tcpdump")
@@ -41,7 +41,7 @@ def _capture_remote_traffic_impl(
 
     time.sleep(1)
     if stdout.channel.exit_status_ready():
-        error = stderr.read().decode().strip()
+        error = stderr.read().decode(errors="replace").strip()
         raise RuntimeError(f"Failed to start tcpdump: {error}")
 
     fifo_dir = tempfile.mkdtemp(prefix="cai_cap_")

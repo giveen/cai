@@ -33,15 +33,13 @@ def execute_python_code(code: str, context: Optional[str] = None) -> str:
         # Capture output using StringIO
         stdout = io.StringIO()
         sys.stdout = stdout
+        try:
+            # nosec B102 # pylint: disable=exec-used
+            exec(code, globals(), local_vars)  # nosec 102
+        finally:
+            sys.stdout = sys.__stdout__
 
-        # Execute code once with captured output
-        # nosec B102 # pylint: disable=exec-used
-        exec(code, globals(), local_vars)  # nosec 102
-
-        # Restore stdout
-        sys.stdout = sys.__stdout__
         output = stdout.getvalue()
-
         # Return captured output or last expression value
         return output if output else str(local_vars.get("__builtins__", {}).get("_", None))
 
