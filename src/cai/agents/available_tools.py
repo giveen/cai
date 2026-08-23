@@ -61,7 +61,7 @@ AVAILABLE_TOOLS = {
         "description": "Get Shodan info for a specific host",
     },
     "secret_scanner": {
-        "import": "from cai.tools.reconnaissance.secret_scanner import secret_scanner",
+        "import": "from cai.tools.reconnaissance.secret_scanner import scan_for_secrets",
         "category": "recon",
         "description": "Scan files/directories for leaked secrets and credentials",
     },
