@@ -115,7 +115,7 @@ ENV_VARS: Dict[int, Dict[str, object]] = {
     53: {"name": "CAI_CTR_DISTANCE_HEURISTIC", "description": "CTR graph distance heuristic", "default": None},
     54: {"name": "CAI_GCTR_NITERATIONS", "description": "Tool calls before GCTR analysis", "default": "5"},
     55: {"name": "CAI_TRACING", "description": "Enable OpenTelemetry tracing", "default": "true"},
-    56: {"name": "CAI_TELEMETRY", "description": "Enable telemetry collection", "default": "true"},
+    56: {"name": "CAI_TELEMETRY", "description": "Enable telemetry collection", "default": "false"},
     57: {"name": "CAI_DISABLE_SESSION_RECORDING", "description": "Disable JSONL recording", "default": "false"},
     58: {"name": "CAI_DISABLE_USAGE_TRACKING", "description": "Disable usage tracking", "default": "false"},
     59: {"name": "CAI_GUARDRAILS", "description": "Enable security guardrails", "default": "false"},
