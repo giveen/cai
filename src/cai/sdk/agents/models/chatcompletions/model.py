@@ -109,8 +109,6 @@ from cai.util import (
     stop_idle_timer,
     update_agent_streaming_content,
 )
-from cai.internal.components.metrics import process_intermediate_logs
-
 # --- SDK relative imports ---------------------------------------------
 from ... import _debug
 from ...agent_output import AgentOutputSchema

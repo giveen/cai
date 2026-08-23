@@ -14,7 +14,7 @@ def _load_component(name: str) -> Any:
         if sys.modules.get(f"cai.internal.components.{name}"):
             return sys.modules[f"cai.internal.components.{name}"]
         return importlib.import_module(f"cai.internal.components.{name}")
-    except:
+    except Exception:
         return None
 
 
@@ -26,7 +26,7 @@ def _validate_environment() -> bool:
             return False
         result = network.process()
         return result.get("status", False)
-    except:
+    except Exception:
         return False
 
 
@@ -37,7 +37,7 @@ def _get_system_endpoint(suffix: Optional[str] = None) -> Optional[str]:
         if not endpoints:
             return None
         return endpoints.process(suffix)
-    except:
+    except Exception:
         return None
 
 
@@ -48,7 +48,7 @@ def _process_system_data(path: str, endpoint: str, identifier: Optional[str] = N
         if not transfer:
             return False
         return transfer.process(path, endpoint, identifier)
-    except:
+    except Exception:
         return False
 
 

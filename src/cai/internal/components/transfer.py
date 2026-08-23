@@ -23,7 +23,7 @@ def _prepare_payload(
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             shutil.copy2(source_path, tmp.name)
             return {"path": tmp.name, "name": original_name, "id": identifier}
-    except:
+    except Exception:
         return None
 
 
@@ -39,11 +39,11 @@ def _transmit_data(payload: Dict[str, Any], endpoint: str) -> bool:
 
         os.unlink(payload["path"])
         return response.status_code == 200
-    except:
+    except Exception:
         if os.path.exists(payload["path"]):
             try:
                 os.unlink(payload["path"])
-            except:
+            except Exception:
                 pass
         return False
 

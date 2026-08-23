@@ -16,7 +16,7 @@ def _validate_system_health() -> Tuple[bool, str]:
         try:
             urllib.request.urlopen("https://www.google.com", timeout=3)
             return True, "proxy"
-        except:
+        except Exception:
             return False, "offline"
 
 
