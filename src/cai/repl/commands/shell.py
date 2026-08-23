@@ -80,6 +80,7 @@ class ShellCommand(Command):
                     return True
 
                 # Run synchronously and stream output
+                process = None
                 process = subprocess.Popen(
                     command,
                     shell=True,
@@ -106,7 +107,7 @@ class ShellCommand(Command):
 
             except KeyboardInterrupt:
                 # Terminate process on user interrupt
-                if not is_async:
+                if not is_async and process is not None:
                     process.terminate()
                 console.print(f"\n[{YELLOW_WARN}]Command interrupted by user[/]")
                 return True
