@@ -1585,7 +1585,10 @@ def detect_sensitive_command(command: str) -> tuple[bool, str, str]:
     for pattern, reason, category in _SENSITIVE_PATTERNS:
         if not re.search(pattern, command, re.IGNORECASE):
             continue
-        if category == "sudo" and not _command_has_shell_level_sudo(command):
+        # The shell-level guard only applies to patterns that search for the
+        # literal word "sudo". Patterns for su/pkexec/doas use their own anchors
+        # and don't need it — applying the guard there would silently skip them.
+        if category == "sudo" and "sudo" in pattern and not _command_has_shell_level_sudo(command):
             continue
 
         tool_names = _BINARY_CHECK_CATEGORIES.get(category)
