@@ -1179,10 +1179,9 @@ class AgentCommand(Command):
                                 multi_terminal_shown = True
                                 return True
                 except Exception as e:
-                    # Log the error for debugging
-                    import traceback
-                    console.print(f"[dim]Debug: Error showing multi-terminal view: {str(e)}[/dim]")
                     if os.getenv("CAI_DEBUG"):
+                        import traceback
+                        console.print(f"[dim]Error showing multi-terminal view: {str(e)}[/dim]")
                         console.print(f"[dim]{traceback.format_exc()}[/dim]")
             
             # Only show single agent if multi-terminal wasn't shown
