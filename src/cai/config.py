@@ -194,35 +194,57 @@ class CAIConfig:
     @classmethod
     def from_env(cls) -> CAIConfig:
         """Load all configuration from environment variables. Called ONCE."""
+        def _safe_float(name: str, default: float) -> float:
+            try:
+                return float(os.getenv(name, str(default)))
+            except ValueError:
+                warnings.warn(
+                    f"{name} has an invalid value; using default {default}.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+                return default
+
+        def _safe_int(name: str, default: int) -> int:
+            try:
+                return int(os.getenv(name, str(default)))
+            except ValueError:
+                warnings.warn(
+                    f"{name} has an invalid value; using default {default}.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+                return default
+
         return cls(
             model=os.getenv("CAI_MODEL", "alias1"),
             agent_type=os.getenv("CAI_AGENT_TYPE", DEFAULT_AGENT_TYPE),
-            temperature=float(os.getenv("CAI_TEMPERATURE", "0.7")),
-            top_p=float(os.getenv("CAI_TOP_P", "1.0")),
+            temperature=_safe_float("CAI_TEMPERATURE", 0.7),
+            top_p=_safe_float("CAI_TOP_P", 1.0),
             max_tokens=(
-                int(os.getenv("CAI_MAX_TOKENS"))
+                _safe_int("CAI_MAX_TOKENS", 0) or None
                 if os.getenv("CAI_MAX_TOKENS")
                 else None
             ),
             reasoning_effort=os.getenv("CAI_REASONING_EFFORT"),
             max_turns=_parse_inf(os.getenv("CAI_MAX_TURNS", "inf")),
             max_interactions=_parse_inf(os.getenv("CAI_MAX_INTERACTIONS", "inf")),
-            price_limit=float(os.getenv("CAI_PRICE_LIMIT", "1")),
+            price_limit=_safe_float("CAI_PRICE_LIMIT", 1.0),
             auto_compact=_parse_bool(os.getenv("CAI_AUTO_COMPACT", "true")),
             auto_compact_threshold=min(
-                float(os.getenv("CAI_AUTO_COMPACT_THRESHOLD", "0.8")),
+                _safe_float("CAI_AUTO_COMPACT_THRESHOLD", 0.8),
                 AUTO_COMPACT_THRESHOLD_MAX,
             ),
             stream=_parse_bool(os.getenv("CAI_STREAM", "false")),
             tool_stream=_parse_bool(os.getenv("CAI_TOOL_STREAM", "true")),
-            parallel=int(os.getenv("CAI_PARALLEL", "1")),
+            parallel=_safe_int("CAI_PARALLEL", 1),
             compacted_memory=compacted_memory_env_enabled(),
-            debug=int(os.getenv("CAI_DEBUG", "1")),
+            debug=_safe_int("CAI_DEBUG", 1),
             debug_pricing=os.getenv("CAI_DEBUG_PRICING", "0") == "1",
             tracing=_parse_bool(os.getenv("CAI_TRACING", "true")),
             telemetry=os.getenv("CAI_TELEMETRY", "true").lower() != "false",
             guardrails=_parse_bool(os.getenv("CAI_GUARDRAILS", "false")),
-            tool_timeout=int(os.getenv("CAI_TOOL_TIMEOUT", "120")),
+            tool_timeout=_safe_int("CAI_TOOL_TIMEOUT", 120),
             tui_enabled=_parse_bool(os.getenv("CAI_TUI", "true")),
             tui_mode=os.getenv("CAI_TUI_MODE", "default"),
             tui_theme=os.getenv("CAI_THEME", "tokyo-night"),
@@ -231,9 +253,7 @@ class CAIConfig:
             ctf_name=os.getenv("CTF_NAME"),
             ctf_challenge=os.getenv("CTF_CHALLENGE"),
             plan_enabled=_parse_bool(os.getenv("CAI_PLAN", "false")),
-            orchestration_worker_max_turns=int(
-                os.getenv("CAI_ORCHESTRATION_WORKER_MAX_TURNS", "6")
-            ),
+            orchestration_worker_max_turns=_safe_int("CAI_ORCHESTRATION_WORKER_MAX_TURNS", 6),
             orchestration_mas_hint=_parse_bool(os.getenv("CAI_ORCHESTRATION_MAS_HINT", "true")),
             tool_registry_auto=_parse_bool(os.getenv("CAI_TOOL_REGISTRY_AUTO", "false")),
             continuation_fallback_model=os.getenv("CAI_CONTINUATION_FALLBACK_MODEL"),
@@ -243,8 +263,8 @@ class CAIConfig:
                 os.getenv("CAI_FETCH_ALLOW_INTERNAL", "false")
             ),
             fetch_user_agent=os.getenv("CAI_FETCH_USER_AGENT"),
-            fetch_max_bytes=int(os.getenv("CAI_FETCH_MAX_BYTES", "5242880")),
-            fetch_timeout=int(os.getenv("CAI_FETCH_TIMEOUT", "20")),
+            fetch_max_bytes=_safe_int("CAI_FETCH_MAX_BYTES", 5242880),
+            fetch_timeout=_safe_int("CAI_FETCH_TIMEOUT", 20),
             workspace_dir=os.getenv("CAI_WORKSPACE_DIR"),
             workspace_name=os.getenv("CAI_WORKSPACE"),
             alias_api_key=os.getenv("ALIAS_API_KEY"),
@@ -261,13 +281,13 @@ class CAIConfig:
             ssh_user=os.getenv("SSH_USER"),
             ssh_host=os.getenv("SSH_HOST"),
             ctf_inside=_parse_bool(os.getenv("CTF_INSIDE", "true")),
-            session_input_wait=float(os.getenv("CAI_SESSION_INPUT_WAIT", "5.0")),
+            session_input_wait=_safe_float("CAI_SESSION_INPUT_WAIT", 5.0),
             force_httpx=_parse_bool(os.getenv("CAI_FORCE_HTTPX", "false")),
             ollama_url=os.getenv("CAI_OLLAMA_URL"),
             api_host=os.getenv("CAI_API_HOST", "127.0.0.1"),
-            api_port=int(os.getenv("CAI_API_PORT", "8000")),
+            api_port=_safe_int("CAI_API_PORT", 8000),
             api_reload=os.getenv("CAI_API_RELOAD", "false").lower() == "true",
-            api_workers=int(os.getenv("CAI_API_WORKERS", "1")),
+            api_workers=_safe_int("CAI_API_WORKERS", 1),
             broadcast_mode=_parse_bool(os.getenv("CAI_BROADCAST_MODE", "false")),
             auto_run_queue=os.getenv("CAI_AUTO_RUN_QUEUE") == "1",
             auto_run_parallel=os.getenv("CAI_AUTO_RUN_PARALLEL") == "1",

@@ -12,6 +12,7 @@ import threading
 import os
 
 _CAI_DEBUG_DIR = os.path.join(os.path.expanduser("~"), ".cai", "debug")
+os.makedirs(_CAI_DEBUG_DIR, exist_ok=True)
 import pty
 import signal
 import time
@@ -1120,21 +1121,40 @@ def _run_local(
                 remaining = max(0, total_timeout - elapsed)
                 return f"{total_timeout}s|{remaining:.1f}s"
 
-            for line in iter(process.stdout.readline, ""):
-                if not line:
+            last_output_time = time.time()
+            idle_timeout = _get_idle_timeout()
+            while True:
+                elapsed = time.time() - process_start_time
+                if elapsed >= timeout:
+                    process.kill()
+                    process.wait()
+                    output_buffer.append(f"\n[Command timed out after {timeout} seconds]")
                     break
-                output_buffer.append(line)
-                buffer_size += 1
-                if buffer_size >= update_interval:
-                    current_output = "".join(output_buffer)
-                    elapsed = time.time() - process_start_time
-                    streaming_args = dict(tool_args)
-                    streaming_args["timeout_countdown"] = _format_countdown(elapsed, timeout)
-                    update_tool_streaming(tool_name, streaming_args, current_output, call_id, token_info)
-                    buffer_size = 0
+                ready, _, _ = select.select([process.stdout], [], [], 0.5)
+                if ready:
+                    line = process.stdout.readline()
+                    if not line:
+                        break
+                    last_output_time = time.time()
+                    output_buffer.append(line)
+                    buffer_size += 1
+                    if buffer_size >= update_interval:
+                        current_output = "".join(output_buffer)
+                        streaming_args = dict(tool_args)
+                        streaming_args["timeout_countdown"] = _format_countdown(elapsed, timeout)
+                        update_tool_streaming(tool_name, streaming_args, current_output, call_id, token_info)
+                        buffer_size = 0
+                else:
+                    if process.poll() is not None:
+                        break
+                    if time.time() - last_output_time > idle_timeout:
+                        process.terminate()
+                        process.wait()
+                        output_buffer.append(f"\n[Terminated: idle {idle_timeout}s, likely waiting for input]")
+                        break
 
             process.stdout.close()
-            return_code = process.wait(timeout=timeout)
+            return_code = process.wait(timeout=5) if process.poll() is None else (process.returncode or 0)
             process_execution_time = time.time() - process_start_time
 
             stderr_data = process.stderr.read()
@@ -1322,7 +1342,8 @@ async def run_command_async(
     _start_ts = time.time()
 
     from cai.cli import ctf_global
-    ctf = ctf_global
+    if ctf is None:
+        ctf = ctf_global
 
     # Wrap dispatch in try/except to emit ToolComplete/ToolError events [T]
     try:
@@ -1469,7 +1490,8 @@ def run_command(
     start_active_timer()
 
     from cai.cli import ctf_global
-    ctf = ctf_global
+    if ctf is None:
+        ctf = ctf_global
 
     parts = command.strip().split(" ", 1)
     cmd_name = parts[0] if parts else ""

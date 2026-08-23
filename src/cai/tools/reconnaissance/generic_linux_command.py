@@ -442,7 +442,7 @@ async def generic_linux_command(
                 env_info.append("🎯 CTF Environment: Active")
             else:
                 env_info.append("🎯 CTF Environment: Not available")
-        except:
+        except Exception:
             env_info.append("🎯 CTF Environment: Not available")
 
         # Check Container environment
@@ -477,8 +477,10 @@ async def generic_linux_command(
     if not command.strip():
         return "Error: No command provided"
 
-    # CRITICAL: Check for Unicode homograph bypass attempts
+    # Compute once — used twice below (homograph check and output sanitization).
     guardrails_enabled = os.getenv("CAI_GUARDRAILS", "false").lower() != "false"
+
+    # CRITICAL: Check for Unicode homograph bypass attempts
     if guardrails_enabled:
         has_homographs, normalized_command = detect_unicode_homographs(command)
         if has_homographs:
@@ -634,8 +636,7 @@ async def generic_linux_command(
                     for pattern in dangerous_decoded:
                         if re.search(pattern, decoded):
                             return f"Error: Blocked base64-encoded dangerous command. Decoded content contains: {pattern}"
-                except:
-                    # If we can't decode, be cautious
+                except Exception:
                     pass
         
         # Check for base32 encoded commands that might be dangerous (PoC5 mitigation)
@@ -665,8 +666,7 @@ async def generic_linux_command(
                     for pattern in dangerous_decoded:
                         if re.search(pattern, decoded):
                             return f"Error: Blocked base32-encoded dangerous command. Decoded content contains: {pattern}"
-                except:
-                    # If we can't decode, be cautious
+                except Exception:
                     pass
 
     # --- Sensitive command guard (interactive prompt in CLI mode) ---
@@ -826,9 +826,7 @@ async def generic_linux_command(
                 if isinstance(result, str):
                     result = apply_packet_capture_notice(command, result)
 
-    # Enhanced sanitization for curl/wget responses - respect CAI_GUARDRAILS setting
-    guardrails_enabled = os.getenv("CAI_GUARDRAILS", "false").lower() != "false"
-    
+    # Enhanced sanitization for curl/wget responses
     if guardrails_enabled and isinstance(result, str):
         # Special handling for curl/wget commands - their output is external content
         # Enhanced detection to catch piped commands (e.g., curl | xxd)
