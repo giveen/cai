@@ -107,11 +107,20 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                     "sh", "-c",
                     self.command,
                 ]
-                self.process = subprocess.Popen(
-                    docker_cmd_list,
-                    stdin=self.slave, stdout=self.slave, stderr=self.slave,
-                    preexec_fn=os.setsid, universal_newlines=True,
-                )
+                try:
+                    self.process = subprocess.Popen(
+                        docker_cmd_list,
+                        stdin=self.slave, stdout=self.slave, stderr=self.slave,
+                        preexec_fn=os.setsid, universal_newlines=True,
+                    )
+                except Exception:
+                    for fd in (self.master, self.slave):
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+                    self.master = self.slave = None
+                    raise
                 self.is_running = True
                 with self._buffer_lock:
                     self.output_buffer.append(
@@ -149,11 +158,20 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
         # --- Start Locally (Host) ---
         try:
             self.master, self.slave = pty.openpty()
-            self.process = subprocess.Popen(  # pylint: disable=subprocess-popen-preexec-fn, consider-using-with # noqa: E501
-                self.command, shell=True,  # nosec B602
-                stdin=self.slave, stdout=self.slave, stderr=self.slave,
-                cwd=self.workspace_dir, preexec_fn=os.setsid, universal_newlines=True,
-            )
+            try:
+                self.process = subprocess.Popen(  # pylint: disable=subprocess-popen-preexec-fn, consider-using-with # noqa: E501
+                    self.command, shell=True,  # nosec B602
+                    stdin=self.slave, stdout=self.slave, stderr=self.slave,
+                    cwd=self.workspace_dir, preexec_fn=os.setsid, universal_newlines=True,
+                )
+            except Exception:
+                for fd in (self.master, self.slave):
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                self.master = self.slave = None
+                raise
             self.is_running = True
             with self._buffer_lock:
                 self.output_buffer.append(f"[Session {self.session_id}] Started: {self.command}")
