@@ -13,6 +13,8 @@ import os
 
 _CAI_DEBUG_DIR = os.path.join(os.path.expanduser("~"), ".cai", "debug")
 os.makedirs(_CAI_DEBUG_DIR, exist_ok=True)
+# Gate verbose debug I/O behind CAI_DEBUG_TOOLS=true to avoid disk writes on every command.
+_DEBUG_TOOLS = os.getenv("CAI_DEBUG_TOOLS", "false").lower() == "true"
 import pty
 import signal
 import time
@@ -625,12 +627,13 @@ async def _run_local_async(
                 from cai.tui.core.terminal_tracking_async import get_current_terminal_id_async
                 from cai.tui.display.live_output_capture import get_live_output_capture
 
-                with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
+                if _DEBUG_TOOLS:
                     import datetime
-                    f.write(f"\n[{datetime.datetime.now().isoformat()}] TUI mode check in _run_local_async\n")
-                    f.write(f"  command: {command[:100]}\n")
-                    f.write(f"  stream: {stream}\n")
-                    f.write(f"  tool_name: {tool_name}\n")
+                    with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
+                        f.write(f"\n[{datetime.datetime.now().isoformat()}] TUI mode check in _run_local_async\n")
+                        f.write(f"  command: {command[:100]}\n")
+                        f.write(f"  stream: {stream}\n")
+                        f.write(f"  tool_name: {tool_name}\n")
 
                 terminal_id = get_current_terminal_id_async() or get_current_terminal_id()
 
@@ -640,22 +643,25 @@ async def _run_local_async(
                     if not terminal_id and token_info.get('terminal_number'):
                         terminal_id = f"terminal-{token_info['terminal_number']}"
 
-                with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
-                    f.write(f"  terminal_id resolved: {terminal_id}\n")
-                    f.write(f"  from async context: {get_current_terminal_id_async()}\n")
-                    f.write(f"  from thread local: {get_current_terminal_id()}\n")
+                if _DEBUG_TOOLS:
+                    with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
+                        f.write(f"  terminal_id resolved: {terminal_id}\n")
+                        f.write(f"  from async context: {get_current_terminal_id_async()}\n")
+                        f.write(f"  from thread local: {get_current_terminal_id()}\n")
                 if terminal_id:
                     capture = get_live_output_capture()
                     from cai.tui.core.terminal_console import get_terminal_output
                     terminal_output = get_terminal_output(terminal_id)
                     if terminal_output:
                         capture.register_terminal(terminal_id, terminal_output)
-                        with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
-                            f.write(f"  terminal_id found: {terminal_id}\n")
-                            f.write(f"  terminal_output registered: {terminal_output is not None}\n")
+                        if _DEBUG_TOOLS:
+                            with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
+                                f.write(f"  terminal_id found: {terminal_id}\n")
+                                f.write(f"  terminal_output registered: {terminal_output is not None}\n")
                     else:
-                        with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
-                            f.write(f"  ERROR: No terminal_output found for {terminal_id}\n")
+                        if _DEBUG_TOOLS:
+                            with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
+                                f.write(f"  ERROR: No terminal_output found for {terminal_id}\n")
 
                     if not tool_name:
                         parts = command.strip().split(" ", 1)
@@ -727,9 +733,9 @@ async def _run_local_async(
                         last_update_time = time.time()
                         start_time = time.time()
 
-                        if _get_config().tui_enabled:
+                        if _get_config().tui_enabled and _DEBUG_TOOLS:
+                            import datetime
                             with open(f"{_CAI_DEBUG_DIR}/cai_timeout_debug.log", "a") as f:
-                                import datetime
                                 f.write(f"\n[{datetime.datetime.now()}] Starting command with timeout {timeout}s: {command[:50]}...\n")
 
                         last_output = time.time()
@@ -774,14 +780,14 @@ async def _run_local_async(
                             return_code = process.returncode
                         return return_code
 
-                    if _get_config().tui_enabled:
+                    if _get_config().tui_enabled and _DEBUG_TOOLS:
                         with open(f"{_CAI_DEBUG_DIR}/cai_timeout_debug.log", "a") as f:
                             f.write(f"  Applying asyncio.wait_for with timeout={timeout}s\n")
 
                     return_code = await asyncio.wait_for(read_and_stream(), timeout=timeout)
 
                 except asyncio.TimeoutError:
-                    if _get_config().tui_enabled:
+                    if _get_config().tui_enabled and _DEBUG_TOOLS:
                         with open(f"{_CAI_DEBUG_DIR}/cai_timeout_debug.log", "a") as f:
                             f.write(f"  TIMEOUT TRIGGERED after {timeout}s! Killing process...\n")
 
@@ -1062,10 +1068,11 @@ def _run_local(
         try:
             from cai.tui.core.terminal_tracking import get_current_terminal_id
             from cai.tui.display.live_output_capture import get_live_output_capture
-            with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
+            if _DEBUG_TOOLS:
                 import datetime
-                f.write(f"\n[{datetime.datetime.now().isoformat()}] TUI mode check in _run_local (SYNC)\n")
-                f.write(f"  command: {command[:100]}\n  stream: {stream}\n  tool_name: {tool_name}\n")
+                with open(f"{_CAI_DEBUG_DIR}/cai_live_capture_debug.log", "a") as f:
+                    f.write(f"\n[{datetime.datetime.now().isoformat()}] TUI mode check in _run_local (SYNC)\n")
+                    f.write(f"  command: {command[:100]}\n  stream: {stream}\n  tool_name: {tool_name}\n")
             terminal_id = get_current_terminal_id()
             if terminal_id:
                 capture = get_live_output_capture()
