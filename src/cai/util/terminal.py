@@ -837,7 +837,7 @@ def parse_message_tool_call(message, tool_output=None):
                         import json
 
                         args_dict = json.loads(tool_call.function.arguments)
-                    except:
+                    except (json.JSONDecodeError, ValueError):
                         args_dict = {"raw_arguments": tool_call.function.arguments}
             elif isinstance(tool_call, dict):
                 if "function" in tool_call:
@@ -848,7 +848,7 @@ def parse_message_tool_call(message, tool_output=None):
                             import json
 
                             args_dict = json.loads(tool_call["function"]["arguments"])
-                        except:
+                        except (json.JSONDecodeError, ValueError):
                             args_dict = {"raw_arguments": tool_call["function"]["arguments"]}
                 elif tool_call.get("name"):
                     # Responses-API style: { "name", "arguments", "id" } without nested "function"

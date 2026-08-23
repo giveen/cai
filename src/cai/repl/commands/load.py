@@ -235,9 +235,9 @@ class LoadCommand(Command):
                                         }
                                         agent_name = agent_name_map.get(agent_type, agent_type.replace("_", " ").title())
                                         break
-                        except:
+                        except Exception:
                             pass
-                    
+
                     if agent_name:
                         console.print(f"[cyan]Loading to Terminal {terminal_num} agent: {agent_name}[/cyan]")
                     else:

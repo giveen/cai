@@ -186,7 +186,7 @@ def is_swarm_pattern(agent) -> bool:
                                         and target_handoff.agent_name == agent.name
                                     ):
                                         return True
-                        except:
+                        except Exception:
                             continue
 
     return False

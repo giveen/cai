@@ -58,7 +58,7 @@ def get_terminal_width():
     """Get the terminal width."""
     try:
         return shutil.get_terminal_size().columns
-    except:
+    except OSError:
         return 80  # Default width
 
 
@@ -144,9 +144,9 @@ def update_toolbar_in_background():
         context_usage = 0.0
         try:
             context_usage = float(os.getenv('CAI_CONTEXT_USAGE', '0.0'))
-        except:
+        except (ValueError, TypeError):
             pass
-            
+
         # Determine auto-compact display based on usage
         if auto_compact:
             if context_usage >= 0.8:  # Above 80%

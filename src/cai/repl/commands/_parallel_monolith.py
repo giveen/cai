@@ -563,9 +563,9 @@ class ParallelCommand(Command):
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
                         asyncio.create_task(initialize_agent())
-                except:
+                except Exception:
                     pass
-                    
+
                 # Focus the new terminal
                 app.terminal_grid.focus_terminal(new_terminal.terminal_id)
                 

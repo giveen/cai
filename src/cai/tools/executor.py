@@ -1349,7 +1349,7 @@ async def run_command_async(
     try:
         if session_id:
             import asyncio, functools
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             func = functools.partial(
                 run_command, command, ctf, stdout, async_mode, session_id,
                 timeout, stream, call_id, tool_name, args,
@@ -1396,7 +1396,7 @@ async def run_command_async(
 
         if ctf and _get_config().ctf_inside:
             import asyncio, functools
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             func = functools.partial(_run_ctf, ctf, command, stdout, timeout, _get_workspace_dir(), stream)
             result = await loop.run_in_executor(None, func)
             OUTPUT.emit(ToolCompleteEvent(
@@ -1408,7 +1408,7 @@ async def run_command_async(
 
         if is_ssh_env:
             import asyncio, functools
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             func = functools.partial(_run_ssh, command, stdout, timeout, _get_workspace_dir(), stream)
             result = await loop.run_in_executor(None, func)
             OUTPUT.emit(ToolCompleteEvent(

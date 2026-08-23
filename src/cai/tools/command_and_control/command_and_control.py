@@ -96,7 +96,6 @@ class ReverseShellClient:
         self.listener_thread = threading.Thread(target=self.start_listener)
         self.listener_thread.daemon = True
         self.listener_thread.start()
-        self.socket.close()
         return f"Listener started on {self.host}:{self.port}"
 
     def stop(self):

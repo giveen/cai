@@ -307,7 +307,7 @@ async def prompt_injection_guardrail(
                         },
                         tripwire_triggered=True
                     )
-            except:
+            except Exception:
                 pass
     
     # If we detect obvious patterns, block immediately
@@ -445,7 +445,7 @@ async def command_execution_guardrail(
                         },
                         tripwire_triggered=True
                     )
-            except:
+            except Exception:
                 pass
     
     # Check for base32 decoding commands (PoC5 mitigation)
@@ -471,7 +471,7 @@ async def command_execution_guardrail(
                             },
                             tripwire_triggered=True
                         )
-                except:
+                except Exception:
                     pass
     
     # Check if output contains IP addresses with common exploit patterns
