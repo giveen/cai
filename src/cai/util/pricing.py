@@ -102,7 +102,7 @@ def _close_pricing_debug():
             _PRICING_DEBUG_FILE.write(f"SESSION ENDED - {datetime.now().isoformat()}\n")
             _PRICING_DEBUG_FILE.write(f"{'='*80}\n")
             _PRICING_DEBUG_FILE.close()
-        except:
+        except Exception:
             pass
         _PRICING_DEBUG_FILE = None
 

@@ -506,7 +506,7 @@ def _find_last_model_record_fast(file_path: str) -> Tuple[Dict, Dict]:
     # Parse the best record
     try:
         best_model_record = json_loads(best_line_bytes)
-    except:
+    except (ValueError, KeyError):
         return None, None
 
     # Parse completion record for agent_name
@@ -514,7 +514,7 @@ def _find_last_model_record_fast(file_path: str) -> Tuple[Dict, Dict]:
     if best_next_line_bytes:
         try:
             completion_record = json_loads(best_next_line_bytes)
-        except:
+        except (ValueError, KeyError):
             pass
 
     return best_model_record, completion_record

@@ -815,7 +815,7 @@ class CompactCommand(Command):
                     current_agent = get_agent_by_name(agent_name.lower().replace(" ", "_"))
                     if current_agent:
                         AGENT_MANAGER.set_active_agent(current_agent, agent_name)
-                except:
+                except Exception:
                     # If we can't create the agent, continue anyway
                     # The history might still be accessible
                     pass

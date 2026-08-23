@@ -96,7 +96,7 @@ class GlobalUsageTracker:
                     try:
                         self.usage_file.rename(backup_path)
                         print(f"Corrupted usage.json backed up to {backup_path}")
-                    except:
+                    except OSError:
                         pass
                     break
 
@@ -137,7 +137,7 @@ class GlobalUsageTracker:
                             with self._lock:
                                 self.usage_data = current_file_data
                                 # Now our in-memory data has the latest from file
-                except:
+                except Exception:
                     pass  # If we can't read, continue with save
 
             # Quickly copy data under lock
@@ -191,7 +191,7 @@ class GlobalUsageTracker:
                                             f"Skipping save: file cost ({final_file_cost}) > our cost ({our_cost})"
                                         )
                                     return
-                            except:
+                            except Exception:
                                 pass  # If we can't read, continue with save
 
                         # Atomic rename with retry for concurrent access
@@ -217,7 +217,7 @@ class GlobalUsageTracker:
                         if temp_file.exists():
                             try:
                                 temp_file.unlink()
-                            except:
+                            except OSError:
                                 pass
 
         except KeyboardInterrupt:

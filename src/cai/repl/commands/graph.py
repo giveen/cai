@@ -130,9 +130,9 @@ class GraphCommand(Command):
                         app = App.get_running()
                         if app and not isinstance(app, CAITerminal):
                             app = None
-                    except:
+                    except Exception:
                         pass
-                
+
                 # If we didn't get terminal number from command handler, get the focused terminal
                 if terminal_number is None and app:
                     if hasattr(app, 'terminal_grid') and hasattr(app.terminal_grid, 'get_focused_terminal'):

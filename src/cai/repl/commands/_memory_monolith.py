@@ -381,7 +381,7 @@ class MemoryCommand(Command):
                         if line.startswith("Agent: "):
                             agent_name = line[7:]
                             break
-                except:
+                except Exception:
                     pass
 
                 size = memory_file.stat().st_size
@@ -1022,7 +1022,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                         try:
                             msg_count = int(line.split("Original messages: ")[1].split()[0])
                             total_messages += msg_count
-                        except:
+                        except (ValueError, IndexError):
                             pass
                     elif line.strip() == "## Summary":
                         in_summary = True
@@ -1960,7 +1960,7 @@ CONVERSATION TO ANALYZE:
 
                     if hasattr(cai.cli, "agent"):
                         cai.cli.agent = new_agent
-                except:
+                except Exception:
                     pass
 
             console.print(f"[green]✓ Reloaded agent '{agent_name}' with memory applied[/green]")
