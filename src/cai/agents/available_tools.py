@@ -164,6 +164,11 @@ AVAILABLE_TOOLS = {
         "category": "web",
         "description": "Probe XML endpoints for XXE injection (file read, blind XXE, SSRF via entity resolution)",
     },
+    "sqli_probe": {
+        "import": "from cai.tools.web.sqli_probe import sqli_probe",
+        "category": "web",
+        "description": "Probe query-string parameters for SQL injection (error-based, boolean, time-based blind)",
+    },
 
     # ---------------------------------------------------------------
     # Search
