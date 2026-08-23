@@ -490,6 +490,14 @@ def _clamp_max_chars(value: int) -> int:
     return max(_MAX_CHARS_MIN, min(value, _MAX_CHARS_MAX))
 
 
+async def _check_ssrf_async(url: str, *, allow_internal: bool) -> str:
+    """Async wrapper around ``_check_ssrf`` — offloads blocking DNS to a thread."""
+    import functools
+    return await asyncio.to_thread(
+        functools.partial(_check_ssrf, url, allow_internal=allow_internal)
+    )
+
+
 async def _fetch_with_redirects(
     url: str,
     *,
@@ -505,7 +513,7 @@ async def _fetch_with_redirects(
     """
     current = url
     for _ in range(_MAX_REDIRECTS + 1):
-        ip = _check_ssrf(current, allow_internal=allow_internal)
+        ip = await _check_ssrf_async(current, allow_internal=allow_internal)
         body, ctype, status, location = await _fetch_httpx_pinned(
             current,
             ip,
@@ -588,7 +596,7 @@ async def fetch_url(
     # the redirect chain changed the host.
     if _looks_like_antibot(body, status):
         try:
-            ip = _check_ssrf(final_url, allow_internal=allow_internal)
+            ip = await _check_ssrf_async(final_url, allow_internal=allow_internal)
             body2, ctype2, status2 = await asyncio.to_thread(
                 _fetch_curl_cffi_sync,
                 final_url,
