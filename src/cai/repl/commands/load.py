@@ -168,7 +168,6 @@ class LoadCommand(Command):
                     return self.handle_load_to_agent([f"P{terminal_num}", args[0]])
                 
                 # Fallback to P1
-                console.print(f"[yellow]DEBUG: Fallback to P1 for file load, terminal_id={terminal_id}[/yellow]")
                 return self.handle_load_to_agent(["P1", args[0]])
             else:
                 # Not in TUI mode, load into default session agent (P0)
@@ -336,7 +335,6 @@ class LoadCommand(Command):
                 return self.handle_load_to_agent([p_id, jsonl_file] if jsonl_file else [p_id])
             
             # Fallback to P1 if terminal not detected
-            console.print(f"[yellow]DEBUG: Fallback to P1, terminal_id={terminal_id}[/yellow]")
             return self.handle_load_to_agent(["P1", jsonl_file] if jsonl_file else ["P1"])
 
         if not PARALLEL_CONFIGS:
@@ -486,110 +484,84 @@ class LoadCommand(Command):
                 else:
                     instance_name = agent_display_name
 
-                    # Look for matching messages in various formats
-                    possible_names = [
-                        instance_name,
-                        agent_display_name,
-                        f"{agent_display_name} #1",
-                        f"{agent_display_name} #2",
-                        f"{agent_display_name} #3",
-                        config.agent_name,
-                        # Also check without spaces
-                        agent_display_name.replace(" ", ""),
-                        config.agent_name.replace("_agent", ""),
-                        config.agent_name.replace("_", " ").title(),
-                        # Add pattern-specific names
-                        "Red team manager",
-                        "Bug bounty Triage Agent",
-                        "ThoughtAgent",
-                        "Retester Agent",
-                    ]
+                # Look for matching messages in various formats
+                possible_names = [
+                    instance_name,
+                    agent_display_name,
+                    f"{agent_display_name} #1",
+                    f"{agent_display_name} #2",
+                    f"{agent_display_name} #3",
+                    config.agent_name,
+                    # Also check without spaces
+                    agent_display_name.replace(" ", ""),
+                    config.agent_name.replace("_agent", ""),
+                    config.agent_name.replace("_", " ").title(),
+                    # Add pattern-specific names
+                    "Red team manager",
+                    "Bug bounty Triage Agent",
+                    "ThoughtAgent",
+                    "Retester Agent",
+                ]
 
-                    # Find the longest matching history
-                    best_match = None
-                    best_count = 0
+                # Find the longest matching history
+                best_match = None
+                best_count = 0
 
-                    for name in possible_names:
-                        if (
-                            name in agent_conversations
-                            and len(agent_conversations[name]) > best_count
-                        ):
-                            best_match = name
-                            best_count = len(agent_conversations[name])
+                for name in possible_names:
+                    if (
+                        name in agent_conversations
+                        and len(agent_conversations[name]) > best_count
+                    ):
+                        best_match = name
+                        best_count = len(agent_conversations[name])
 
-                    if best_match:
-                        # Load these messages into the agent's history with the correct instance name
-                        # CRITICAL: We need to get the actual model instance to add messages properly
-                        # Using get_agent_message_history() and appending won't work as it returns a copy
-                        from cai.sdk.agents.models.openai_chatcompletions import (
-                            ACTIVE_MODEL_INSTANCES,
+                if best_match:
+                    from cai.sdk.agents.models.openai_chatcompletions import (
+                        ACTIVE_MODEL_INSTANCES,
+                    )
+
+                    # Find the matching model instance
+                    model_instance = None
+                    for (name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
+                        if name == instance_name:
+                            model = model_ref() if model_ref else None
+                            if model:
+                                model_instance = model
+                                break
+
+                    from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
+
+                    if len(PARALLEL_CONFIGS) >= 2:
+                        PARALLEL_ISOLATION._parallel_mode = True
+
+                    if PARALLEL_ISOLATION.is_parallel_mode():
+                        agent_id = config.id or f"P{idx}"
+                        PARALLEL_ISOLATION.replace_isolated_history(
+                            agent_id, agent_conversations[best_match]
                         )
-
-                        # Find the matching model instance
-                        model_instance = None
-                        for (name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
-                            if name == instance_name:
-                                model = model_ref() if model_ref else None
-                                if model:
-                                    model_instance = model
-                                    break
-
-                        # Check if we're in parallel mode with isolation
-                        from cai.sdk.agents.parallel_isolation import PARALLEL_ISOLATION
-
-                        # Check if we should be in parallel mode based on configs
-                        if len(PARALLEL_CONFIGS) >= 2:
-                            # Ensure parallel mode is enabled
-                            PARALLEL_ISOLATION._parallel_mode = True
-
-                        if PARALLEL_ISOLATION.is_parallel_mode():
-                            # Update the isolated history instead of the main history
-                            agent_id = config.id or f"P{idx}"
-                            # Replace the entire isolated history with the loaded messages
-                            PARALLEL_ISOLATION.replace_isolated_history(
-                                agent_id, agent_conversations[best_match]
+                        AGENT_MANAGER._message_history[instance_name] = list(
+                            agent_conversations[best_match]
+                        )
+                        PARALLEL_ISOLATION.sync_with_agent_manager()
+                    else:
+                        if model_instance:
+                            for msg in agent_conversations[best_match]:
+                                model_instance.add_to_message_history(msg, skip_deduplication=True)
+                        else:
+                            from cai.sdk.agents.models.openai_chatcompletions import (
+                                PERSISTENT_MESSAGE_HISTORIES,
                             )
-
-                            # Verify it was stored
-                            test_history = PARALLEL_ISOLATION.get_isolated_history(agent_id)
-
-                            # Also sync with AGENT_MANAGER for consistency
-                            # Don't use set_message_history or any method that might register the agent
+                            PERSISTENT_MESSAGE_HISTORIES[instance_name] = list(
+                                agent_conversations[best_match]
+                            )
                             AGENT_MANAGER._message_history[instance_name] = list(
                                 agent_conversations[best_match]
                             )
 
-                            # Force sync the isolated histories back to AGENT_MANAGER for display
-                            # This ensures /history and /graph see the loaded data
-                            PARALLEL_ISOLATION.sync_with_agent_manager()
-                        else:
-                            # Normal mode - update as before
-                            if model_instance:
-                                # Add messages directly to the model's message history
-                                # Use skip_deduplication=True to preserve order from JSONL
-                                for msg in agent_conversations[best_match]:
-                                    model_instance.add_to_message_history(msg, skip_deduplication=True)
-                            else:
-                                # No active instance, store in persistent history
-                                from cai.sdk.agents.models.openai_chatcompletions import (
-                                    PERSISTENT_MESSAGE_HISTORIES,
-                                )
-
-                                PERSISTENT_MESSAGE_HISTORIES[instance_name] = list(
-                                    agent_conversations[best_match]
-                                )
-
-                                # CRITICAL: Also update AGENT_MANAGER to ensure consistency
-                                # This ensures the history is available when the agent is created
-                                # Don't use set_message_history or any method that might register the agent
-                                AGENT_MANAGER._message_history[instance_name] = list(
-                                    agent_conversations[best_match]
-                                )
-
-                        console.print(
-                            f"[green]Loaded {best_count} messages into '{instance_name}' [P{idx}][/green]"
-                        )
-                        loaded_count += 1
+                    console.print(
+                        f"[green]Loaded {best_count} messages into '{instance_name}' [P{idx}][/green]"
+                    )
+                    loaded_count += 1
 
             if loaded_count > 0:
                 console.print(

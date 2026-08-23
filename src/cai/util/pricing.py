@@ -468,21 +468,8 @@ class CostTracker:
 
     def update_session_cost(self, new_cost: float) -> None:
         """Add cost to session total and log the update"""
-        # Check price limit before updating
         self.check_price_limit(new_cost)
-
-        old_total = self.session_total_cost
         self.session_total_cost += new_cost
-
-        # Also update the global usage tracker when session cost changes
-        # This ensures consistency between COST_TRACKER and GLOBAL_USAGE_TRACKER
-        try:
-            from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
-            # We don't have model/token details here, so just update the cost
-            # The tokens should have been tracked separately
-            # This is just a safety net to ensure costs are consistent
-        except ImportError:
-            pass
 
     def add_interaction_cost(self, new_cost: float) -> None:
         """
