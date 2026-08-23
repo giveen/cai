@@ -97,14 +97,15 @@ code as many times as you want using `generic_linux_command` tool.
     q_full = shlex.quote(full_filename)
     q_name = shlex.quote(filename)
 
-    # Create code file with content
-    create_cmd = f"cat << 'EOF' > {q_full}\n{code}\nEOF"
-    # Don't stream the file creation and suppress output display
-    result = run_command(
-        create_cmd, ctf=ctf, stream=False, tool_name="_internal_file_creation", workspace_dir=cwd_pass
-    )
-    if "error" in result.lower():
-        return f"Failed to create code file: {result}"
+    # Write code file directly (avoids heredoc EOF delimiter collision when
+    # code itself contains a line that is exactly "EOF").
+    file_dir = cwd_pass or os.getcwd()
+    file_path = os.path.join(file_dir, full_filename)
+    try:
+        with open(file_path, "w", encoding="utf-8") as fh:
+            fh.write(code)
+    except OSError as exc:
+        return f"Failed to create code file: {exc}"
 
     # Prepare execution command based on language
     if language in ["python", "py"]:

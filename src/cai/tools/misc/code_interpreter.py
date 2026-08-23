@@ -40,8 +40,7 @@ def execute_python_code(code: str, context: Optional[str] = None) -> str:
             sys.stdout = sys.__stdout__
 
         output = stdout.getvalue()
-        # Return captured output or last expression value
-        return output if output else str(local_vars.get("__builtins__", {}).get("_", None))
+        return output if output else "(no output)"
 
     except Exception as e:  # pylint: disable=broad-except
         return f"Error executing code: {str(e)}"
