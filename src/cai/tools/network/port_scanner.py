@@ -56,19 +56,21 @@ def _tcp_connect(host: str, port: int, timeout: float) -> PortResult:
         return PortResult(port=port, state="filtered")
 
 
+_WELL_KNOWN_PORTS: dict[int, str] = {
+    21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
+    80: "http", 110: "pop3", 143: "imap", 443: "https",
+    445: "smb", 465: "smtps", 587: "submission", 993: "imaps",
+    995: "pop3s", 1433: "mssql", 1521: "oracle", 3306: "mysql",
+    3389: "rdp", 5432: "postgresql", 5900: "vnc", 6379: "redis",
+    8080: "http-alt", 8443: "https-alt", 8888: "http-proxy",
+    9200: "elasticsearch", 27017: "mongodb",
+}
+
+
 def _guess_service(port: int, banner: str) -> str:
     """Return a best-guess service name from the well-known-ports table or banner."""
-    _WELL_KNOWN: dict[int, str] = {
-        21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
-        80: "http", 110: "pop3", 143: "imap", 443: "https",
-        445: "smb", 465: "smtps", 587: "submission", 993: "imaps",
-        995: "pop3s", 1433: "mssql", 1521: "oracle", 3306: "mysql",
-        3389: "rdp", 5432: "postgresql", 5900: "vnc", 6379: "redis",
-        8080: "http-alt", 8443: "https-alt", 8888: "http-proxy",
-        9200: "elasticsearch", 27017: "mongodb",
-    }
-    if port in _WELL_KNOWN:
-        return _WELL_KNOWN[port]
+    if port in _WELL_KNOWN_PORTS:
+        return _WELL_KNOWN_PORTS[port]
     b = banner.lower()
     if b.startswith("ssh"):
         return "ssh"

@@ -79,7 +79,7 @@ def test_parse_cert_san():
 
 
 def test_parse_cert_expiry_days():
-    future = datetime.datetime.utcnow() + datetime.timedelta(days=100)
+    future = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=100)
     not_after = future.strftime("%b %d %H:%M:%S %Y GMT")
     cert = _make_cert(not_after=not_after)
     info = _parse_cert(cert, "example.com", 443)
@@ -89,7 +89,7 @@ def test_parse_cert_expiry_days():
 
 
 def test_parse_cert_expired():
-    past = datetime.datetime.utcnow() - datetime.timedelta(days=5)
+    past = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(days=5)
     not_after = past.strftime("%b %d %H:%M:%S %Y GMT")
     cert = _make_cert(not_after=not_after)
     info = _parse_cert(cert, "example.com", 443)
@@ -143,7 +143,7 @@ def test_run_ssl_inspect_basic():
 
 
 def test_run_ssl_inspect_expired():
-    past = datetime.datetime.utcnow() - datetime.timedelta(days=10)
+    past = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(days=10)
     not_after = past.strftime("%b %d %H:%M:%S %Y GMT")
     cert = _make_cert(not_after=not_after)
     with _patch_ssl_connect(cert):
@@ -152,7 +152,7 @@ def test_run_ssl_inspect_expired():
 
 
 def test_run_ssl_inspect_expiring_soon():
-    soon = datetime.datetime.utcnow() + datetime.timedelta(days=15)
+    soon = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=15)
     not_after = soon.strftime("%b %d %H:%M:%S %Y GMT")
     cert = _make_cert(not_after=not_after)
     with _patch_ssl_connect(cert):
