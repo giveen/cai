@@ -641,7 +641,7 @@ ADDITIONAL_VARS = {
     'CAI_TELEMETRY': {
         'name': 'CAI_TELEMETRY',
         'description': 'Enable/disable telemetry collection',
-        'default': 'true',
+        'default': 'false',
     },
     'CAI_DISABLE_SESSION_RECORDING': {
         'name': 'CAI_DISABLE_SESSION_RECORDING',
