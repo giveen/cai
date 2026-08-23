@@ -52,8 +52,8 @@ def _format_md_body(text: str) -> str:
     if not text:
         return "*[empty]*\n\n"
     fence = "```"
-    if fence in text:
-        fence = "~~~"
+    while fence in text:
+        fence += "`"
     return f"{fence}\n{text}\n{fence}\n\n"
 
 

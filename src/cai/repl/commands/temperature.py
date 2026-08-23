@@ -144,7 +144,9 @@ class TemperatureCommand(Command):
                     if terminal_number is not None:
                         runner = app.session_manager.terminal_runners.get(terminal_number)
                         if runner and runner.agent and hasattr(runner.agent, 'model'):
-                            current_temp = runner.agent.model.temperature
+                            temp_val = runner.agent.model.temperature
+                            if temp_val is not None:
+                                current_temp = float(temp_val)
                             terminal_info = f" (Terminal {terminal_number})"
             except Exception:
                 pass
