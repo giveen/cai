@@ -222,12 +222,14 @@ def _fetch_cookies(url: str, timeout: float = 8.0) -> tuple[int, bool, list[str]
 
         conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
-        conn.request("GET", path, headers={"User-Agent": "Mozilla/5.0 (compatible; cookie-analyzer/1.0)"})
-        resp = conn.getresponse()
-        resp.read(4096)
-        status = resp.status
-        cookies = [v for k, v in resp.getheaders() if k.lower() == "set-cookie"]
-        conn.close()
+        try:
+            conn.request("GET", path, headers={"User-Agent": "Mozilla/5.0 (compatible; cookie-analyzer/1.0)"})
+            resp = conn.getresponse()
+            resp.read(4096)
+            status = resp.status
+            cookies = [v for k, v in resp.getheaders() if k.lower() == "set-cookie"]
+        finally:
+            conn.close()
         return status, is_https, cookies
     except Exception:
         return -1, False, []

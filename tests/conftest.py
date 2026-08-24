@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 import os
+import pathlib
 
 import pytest
+
+
+def pytest_ignore_collect(collection_path, config):
+    """Skip directories/files whose optional dependencies are missing."""
+    path = pathlib.Path(collection_path)
+    # Skip voice tests when numpy is not available (import would crash collection)
+    if "tests/voice" in str(path):
+        try:
+            import numpy  # noqa: F401
+        except ImportError:
+            return True
+    return None
 
 from cai.sdk.agents.models import _openai_shared
 from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel

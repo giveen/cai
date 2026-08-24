@@ -109,11 +109,14 @@ def _post(url: str, body: str, timeout: float = 8.0) -> tuple[int, str]:
         encoded = body.encode("utf-8")
         hdrs = dict(_HEADERS)
         hdrs["Content-Length"] = str(len(encoded))
-        conn.request("POST", path, body=encoded, headers=hdrs)
-        resp = conn.getresponse()
-        raw = resp.read(32768)
-        conn.close()
-        return resp.status, raw.decode("utf-8", errors="replace")
+        try:
+            conn.request("POST", path, body=encoded, headers=hdrs)
+            resp = conn.getresponse()
+            raw = resp.read(32768)
+            status = resp.status
+        finally:
+            conn.close()
+        return status, raw.decode("utf-8", errors="replace")
     except Exception as exc:
         return -1, str(exc)
 
@@ -132,11 +135,14 @@ def _get(url: str, timeout: float = 8.0) -> tuple[int, str]:
 
         conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
-        conn.request("GET", path, headers={"User-Agent": _HEADERS["User-Agent"], "Accept": "application/json"})
-        resp = conn.getresponse()
-        raw = resp.read(16384)
-        conn.close()
-        return resp.status, raw.decode("utf-8", errors="replace")
+        try:
+            conn.request("GET", path, headers={"User-Agent": _HEADERS["User-Agent"], "Accept": "application/json"})
+            resp = conn.getresponse()
+            raw = resp.read(16384)
+            status = resp.status
+        finally:
+            conn.close()
+        return status, raw.decode("utf-8", errors="replace")
     except Exception as exc:
         return -1, str(exc)
 

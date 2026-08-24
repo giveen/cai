@@ -32,7 +32,7 @@ from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsMo
 from cai.sdk.agents.agent import Agent
 from cai.sdk.agents.run import RunResult
 from cai.sdk.agents.items import MessageOutputItem, ToolCallItem, ReasoningItem
-from cai.agents import get_agent_by_name, get_all_agents
+from cai.agents import get_agent_by_name
 
 
 class MockTerminalOutput:

@@ -103,15 +103,17 @@ def _get(url: str, timeout: float = 15.0) -> tuple[int, float]:
         conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
         t0 = time.monotonic()
-        conn.request("GET", path, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; cmdi-checker/1.0)",
-            "Accept": "*/*",
-        })
-        resp = conn.getresponse()
-        status = resp.status
-        resp.read(4096)
-        elapsed = time.monotonic() - t0
-        conn.close()
+        try:
+            conn.request("GET", path, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; cmdi-checker/1.0)",
+                "Accept": "*/*",
+            })
+            resp = conn.getresponse()
+            status = resp.status
+            resp.read(4096)
+            elapsed = time.monotonic() - t0
+        finally:
+            conn.close()
         return status, elapsed
     except Exception:
         return -1, 0.0

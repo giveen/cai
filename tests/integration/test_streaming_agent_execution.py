@@ -25,11 +25,10 @@ from dataclasses import dataclass
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cai.sdk.agents.agent import Agent
-from cai.sdk.agents.run import Runner, RunResult, StreamChunk
+from cai.sdk.agents.run import Runner, RunResult
 from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from cai.sdk.agents.tool import FunctionTool
 from cai.sdk.agents.items import MessageOutputItem, ToolCallItem, ToolCallOutputItem, ReasoningItem
-from cai.sdk.agents.run_context import RunContext
 from cai.tui.display.streaming_display import StreamingDisplay
 from cai.tui.display.tool_display import ToolDisplay
 from cai.tui.display.agent_display import AgentDisplay
@@ -57,7 +56,7 @@ class MockRunner:
         self.messages = []
         self.stream_chunks = []
         
-    async def run_async(self, messages: List[Dict], stream: bool = True) -> AsyncIterator[StreamChunk]:
+    async def run_async(self, messages: List[Dict], stream: bool = True) -> AsyncIterator[MockStreamChunk]:
         """Simulate async agent execution with streaming."""
         self.messages = messages
         

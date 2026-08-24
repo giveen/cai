@@ -100,14 +100,16 @@ def _get(url: str, timeout: float = 6.0) -> tuple[int, str]:
 
         conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
-        conn.request("GET", path, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; path-traversal-checker/1.0)",
-            "Accept": "*/*",
-        })
-        resp = conn.getresponse()
-        status = resp.status
-        body = resp.read(8192).decode("utf-8", errors="replace").lower()
-        conn.close()
+        try:
+            conn.request("GET", path, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; path-traversal-checker/1.0)",
+                "Accept": "*/*",
+            })
+            resp = conn.getresponse()
+            status = resp.status
+            body = resp.read(8192).decode("utf-8", errors="replace").lower()
+        finally:
+            conn.close()
         return status, body
     except Exception:
         return -1, ""

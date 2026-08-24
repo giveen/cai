@@ -242,19 +242,21 @@ def _fetch(url: str, extra_path: str = "", timeout: float = 8.0) -> tuple[int, d
 
         conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
-        conn.request(
-            "GET",
-            path,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; waf-detector/1.0)",
-                "Accept": "text/html,*/*",
-            },
-        )
-        resp = conn.getresponse()
-        status = resp.status
-        headers_raw = resp.getheaders()
-        body_raw = resp.read(8192)
-        conn.close()
+        try:
+            conn.request(
+                "GET",
+                path,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; waf-detector/1.0)",
+                    "Accept": "text/html,*/*",
+                },
+            )
+            resp = conn.getresponse()
+            status = resp.status
+            headers_raw = resp.getheaders()
+            body_raw = resp.read(8192)
+        finally:
+            conn.close()
 
         headers: dict[str, str] = {}
         cookies: list[str] = []

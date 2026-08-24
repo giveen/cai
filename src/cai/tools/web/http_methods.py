@@ -85,18 +85,20 @@ def _send(url: str, method: str, timeout: float = 6.0) -> int:
 
         conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
-        conn.request(
-            method, path,
-            headers={
-                "Host": host,
-                "User-Agent": "Mozilla/5.0 (compatible; http-methods-checker/1.0)",
-                "Content-Length": "0",
-            },
-        )
-        resp = conn.getresponse()
-        status = resp.status
-        resp.read(512)
-        conn.close()
+        try:
+            conn.request(
+                method, path,
+                headers={
+                    "Host": host,
+                    "User-Agent": "Mozilla/5.0 (compatible; http-methods-checker/1.0)",
+                    "Content-Length": "0",
+                },
+            )
+            resp = conn.getresponse()
+            status = resp.status
+            resp.read(512)
+        finally:
+            conn.close()
         return status
     except Exception:
         return -1
@@ -116,14 +118,16 @@ def _parse_allow_header(url: str, timeout: float) -> list[str]:
 
         conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
-        conn.request("OPTIONS", path, headers={"Host": host, "User-Agent": "http-methods-checker/1.0"})
-        resp = conn.getresponse()
-        resp.read(512)
-        allow_raw = ""
-        for name, value in resp.getheaders():
-            if name.lower() in ("allow", "access-control-allow-methods"):
-                allow_raw += "," + value
-        conn.close()
+        try:
+            conn.request("OPTIONS", path, headers={"Host": host, "User-Agent": "http-methods-checker/1.0"})
+            resp = conn.getresponse()
+            resp.read(512)
+            allow_raw = ""
+            for name, value in resp.getheaders():
+                if name.lower() in ("allow", "access-control-allow-methods"):
+                    allow_raw += "," + value
+        finally:
+            conn.close()
         return [m.strip().upper() for m in allow_raw.split(",") if m.strip()]
     except Exception:
         return []

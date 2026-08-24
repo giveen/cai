@@ -77,18 +77,20 @@ def _get(url: str, timeout: float = 8.0, follow: bool = False) -> tuple[int, dic
 
         conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
-        conn.request(
-            "GET", path,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; open-redirect-checker/1.0)",
-                "Accept": "*/*",
-            },
-        )
-        resp = conn.getresponse()
-        resp.read(1024)  # drain
-        status = resp.status
-        headers = {k.lower(): v for k, v in resp.getheaders()}
-        conn.close()
+        try:
+            conn.request(
+                "GET", path,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; open-redirect-checker/1.0)",
+                    "Accept": "*/*",
+                },
+            )
+            resp = conn.getresponse()
+            resp.read(1024)  # drain
+            status = resp.status
+            headers = {k.lower(): v for k, v in resp.getheaders()}
+        finally:
+            conn.close()
 
         if follow and status in (301, 302, 303, 307, 308) and "location" in headers:
             next_url = headers["location"]

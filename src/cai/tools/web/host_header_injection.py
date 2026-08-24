@@ -89,12 +89,14 @@ def _get(
         if extra_header:
             headers[extra_header[0]] = extra_header[1]
 
-        conn.request("GET", path, headers=headers)
-        resp = conn.getresponse()
-        status = resp.status
-        resp_headers = {k.lower(): v for k, v in resp.getheaders()}
-        body = resp.read(8192).decode("utf-8", errors="replace").lower()
-        conn.close()
+        try:
+            conn.request("GET", path, headers=headers)
+            resp = conn.getresponse()
+            status = resp.status
+            resp_headers = {k.lower(): v for k, v in resp.getheaders()}
+            body = resp.read(8192).decode("utf-8", errors="replace").lower()
+        finally:
+            conn.close()
         return status, resp_headers, body
     except Exception:
         return -1, {}, ""

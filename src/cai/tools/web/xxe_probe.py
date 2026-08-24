@@ -150,20 +150,22 @@ def _post(url: str, body: str, content_type: str, timeout: float) -> tuple[int, 
         body_bytes = body.encode("utf-8")
         conn = conn_cls(host, timeout=timeout, **({"context": ctx} if is_https else {}))
         t0 = time.monotonic()
-        conn.request(
-            "POST", path, body=body_bytes,
-            headers={
-                "Content-Type": content_type,
-                "Content-Length": str(len(body_bytes)),
-                "User-Agent": "Mozilla/5.0 (compatible; xxe-checker/1.0)",
-                "Accept": "*/*",
-            },
-        )
-        resp = conn.getresponse()
-        status = resp.status
-        response_body = resp.read(32768).decode("utf-8", errors="replace").lower()
-        elapsed = time.monotonic() - t0
-        conn.close()
+        try:
+            conn.request(
+                "POST", path, body=body_bytes,
+                headers={
+                    "Content-Type": content_type,
+                    "Content-Length": str(len(body_bytes)),
+                    "User-Agent": "Mozilla/5.0 (compatible; xxe-checker/1.0)",
+                    "Accept": "*/*",
+                },
+            )
+            resp = conn.getresponse()
+            status = resp.status
+            response_body = resp.read(32768).decode("utf-8", errors="replace").lower()
+            elapsed = time.monotonic() - t0
+        finally:
+            conn.close()
         return status, response_body, elapsed
     except Exception:
         return -1, "", 0.0

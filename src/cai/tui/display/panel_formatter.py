@@ -167,6 +167,18 @@ class PanelFormatter:
             else:
                 title_parts.append("][/dim]")
 
+        # Initialise token counters so they're always defined, even when token_info is empty.
+        input_tokens = 0
+        output_tokens = 0
+        interaction_input_cost = 0.0
+        interaction_output_cost = 0.0
+        interaction_cost = 0.0
+        agent_total_input = 0
+        agent_total_output = 0
+        agent_total_cost = 0.0
+        global_total_cost = 0.0
+        context_usage_pct = 0.0
+
         # Add comprehensive token stats if available
         if token_info and (
             token_info.get("interaction_input_tokens", 0) > 0

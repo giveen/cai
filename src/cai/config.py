@@ -91,7 +91,7 @@ class CAIConfig:
     debug: int = 1
     debug_pricing: bool = False
     tracing: bool = True
-    telemetry: bool = True
+    telemetry: bool = False
 
     # --- Auto-compaction ---
     auto_compact: bool = True

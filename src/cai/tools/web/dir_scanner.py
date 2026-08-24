@@ -65,22 +65,29 @@ def _probe(host: str, port: int, use_ssl: bool, path: str, timeout: float) -> _H
     """Issue a HEAD (then GET on 405) request for *path* and return a Hit or None."""
     try:
         conn = _make_connection(host, port, use_ssl, timeout)
-        conn.request("HEAD", path, headers={"User-Agent": "CAI-DirScanner/1.0"})
-        resp = conn.getresponse()
-        status = resp.status
-        size = int(resp.getheader("Content-Length", 0))
-        location = resp.getheader("Location", "")
-        conn.close()
+        try:
+            conn.request("HEAD", path, headers={"User-Agent": "CAI-DirScanner/1.0"})
+            resp = conn.getresponse()
+            status = resp.status
+            try:
+                size = int(resp.getheader("Content-Length", 0))
+            except (ValueError, TypeError):
+                size = 0
+            location = resp.getheader("Location", "")
+        finally:
+            conn.close()
 
         if status == 405:
             conn2 = _make_connection(host, port, use_ssl, timeout)
-            conn2.request("GET", path, headers={"User-Agent": "CAI-DirScanner/1.0"})
-            resp2 = conn2.getresponse()
-            status = resp2.status
-            body = resp2.read(256)
-            size = len(body)
-            location = resp2.getheader("Location", "")
-            conn2.close()
+            try:
+                conn2.request("GET", path, headers={"User-Agent": "CAI-DirScanner/1.0"})
+                resp2 = conn2.getresponse()
+                status = resp2.status
+                body = resp2.read(256)
+                size = len(body)
+                location = resp2.getheader("Location", "")
+            finally:
+                conn2.close()
 
         if status not in (404, 400):
             return _Hit(path=path, status=status, size=size, redirect=location)

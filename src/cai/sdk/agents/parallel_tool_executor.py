@@ -132,6 +132,13 @@ class ParallelToolExecutor:
 
             await asyncio.sleep(0.1)
 
+        # Clean up the orphaned entry so it doesn't leak into pending_calls forever.
+        async with self._lock:
+            call = self.pending_calls.pop(tool_call_id, None)
+            if call is not None:
+                agent_queue = self.agent_queues.get(call.agent_name, [])
+                if tool_call_id in agent_queue:
+                    agent_queue.remove(tool_call_id)
         raise asyncio.TimeoutError(f"Tool call {tool_call_id} timed out after {timeout} seconds")
 
     async def get_agent_results(

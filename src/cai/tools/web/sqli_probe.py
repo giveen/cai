@@ -140,12 +140,14 @@ def _request(
             headers["Content-Length"] = str(len(body.encode("utf-8")))
 
         t0 = time.monotonic()
-        conn.request(method, path, body=body.encode("utf-8") if body else None, headers=headers)
-        resp = conn.getresponse()
-        status = resp.status
-        resp_body = resp.read(32768).decode("utf-8", errors="replace").lower()
-        elapsed = time.monotonic() - t0
-        conn.close()
+        try:
+            conn.request(method, path, body=body.encode("utf-8") if body else None, headers=headers)
+            resp = conn.getresponse()
+            status = resp.status
+            resp_body = resp.read(32768).decode("utf-8", errors="replace").lower()
+            elapsed = time.monotonic() - t0
+        finally:
+            conn.close()
         return status, resp_body, elapsed
     except Exception:
         return -1, "", 0.0
