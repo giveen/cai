@@ -92,6 +92,7 @@ class ShellCommand(Command):
                 )
                 for line in iter(process.stdout.readline, ""):
                     print(line, end="")
+                process.stdout.close()
 
                 process.wait()
 
@@ -125,7 +126,7 @@ class ShellCommand(Command):
             console.print(
                 f"[{GREY_TEXT}]Running in container: {active_container[:12]}...[/]"
             )
-            docker_cmd = f"docker exec -w '{container_workspace}' {active_container} sh -c {original_command!r}"
+            docker_cmd = f"docker exec -w '{container_workspace}' '{active_container}' sh -c {original_command!r}"
             console.print(
                 f"[bold {CAI_GREEN}]Container workspace[/bold {CAI_GREEN}] "
                 f"[{GREY_TEXT}]{container_workspace}[/] — {original_command}"
