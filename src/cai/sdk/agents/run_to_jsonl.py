@@ -149,7 +149,8 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         if os.getenv("CAI_SKIP_NETWORK_CHECK", "false").lower() != "true":
             try:
                 # Quick connection check with minimal traffic
-                socket.create_connection(("1.1.1.1", 53), timeout=1)
+                with socket.create_connection(("1.1.1.1", 53), timeout=1):
+                    pass
 
                 # If connected, try to get public IP
                 try:
