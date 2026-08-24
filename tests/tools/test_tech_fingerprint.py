@@ -161,7 +161,7 @@ def test_probe_paths_false_skips_path_probes():
 
     def _probe_fetch(url, method="GET", headers_arg=None, timeout=10):
         call_count[0] += 1
-        return (200, {}, "")
+        return (200, {}, "", [])
 
     with patch("cai.tools.web.tech_fingerprint._fetch", _probe_fetch):
         _run_tech_fingerprint("https://example.com", probe_paths=False)

@@ -7,7 +7,7 @@ import pytest
 from cai.sdk.agents.models import _openai_shared
 from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from cai.sdk.agents.models.openai_responses import OpenAIResponsesModel
-from cai.sdk.agents.tracing import set_trace_processors
+from cai.sdk.agents.tracing import set_trace_processors, set_tracing_disabled
 from cai.sdk.agents.tracing.setup import GLOBAL_TRACE_PROVIDER
 
 from tests.testing_processor import SPAN_PROCESSOR_TESTING
@@ -40,6 +40,9 @@ def clear_span_processor():
     SPAN_PROCESSOR_TESTING.force_flush()
     SPAN_PROCESSOR_TESTING.shutdown()
     SPAN_PROCESSOR_TESTING.clear()
+    # Re-register and re-enable in case a previous test (e.g. run_cai_cli) replaced/disabled them.
+    set_tracing_disabled(False)
+    set_trace_processors([SPAN_PROCESSOR_TESTING])
 
 
 # This fixture will run before each test

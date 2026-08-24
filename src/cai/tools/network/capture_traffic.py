@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import os
+import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -13,17 +15,23 @@ import paramiko
 from cai.sdk.agents import function_tool
 
 
+_IFACE_RE = re.compile(r'^[A-Za-z0-9.\-_@:]+$')
+
+
 def _capture_remote_traffic_impl(
     ip, username, password, interface, capture_filter="", port=22, timeout=10
 ):
     """Core implementation — returns the FIFO path; caller is responsible for cleanup."""
+    if not _IFACE_RE.match(interface):
+        raise ValueError(f"Invalid interface name: {interface!r}")
+
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
     print(f"Connecting to {ip}:{port} as {username}...")
     client.connect(ip, port=port, username=username, password=password, timeout=timeout)
 
-    _, stdout, stderr = client.exec_command(f"ip link show {interface}")
+    _, stdout, stderr = client.exec_command(f"ip link show {shlex.quote(interface)}")
     if stdout.channel.recv_exit_status() != 0:
         error = stderr.read().decode(errors="replace").strip()
         raise RuntimeError(f"Interface {interface} not found: {error}")
@@ -32,9 +40,9 @@ def _capture_remote_traffic_impl(
     if stdout.channel.recv_exit_status() != 0:
         raise RuntimeError("tcpdump not found on remote system")
 
-    tcpdump_cmd = f"tcpdump -U -i {interface} -w - "
+    tcpdump_cmd = f"tcpdump -U -i {shlex.quote(interface)} -w - "
     if capture_filter:
-        tcpdump_cmd += f"'{capture_filter}'"
+        tcpdump_cmd += shlex.quote(capture_filter)
 
     print(f"Starting capture on {ip}:{interface}...")
     _, stdout, stderr = client.exec_command(tcpdump_cmd)

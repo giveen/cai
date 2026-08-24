@@ -54,6 +54,8 @@ def test_resp_set_default_openai_client():
 
 
 def test_set_default_openai_api():
+    set_default_openai_key("test_key")
+
     assert isinstance(
         OpenAIProvider().get_model(cai_model), OpenAIResponsesModel
     ), "Default should be responses"

@@ -377,6 +377,12 @@ class RunImpl:
         except (KeyboardInterrupt, asyncio.CancelledError) as e:
             interrupt_exception = e
 
+            # Cancel tasks that are still running so they don't orphan
+            if not function_task.done():
+                function_task.cancel()
+            if not computer_task.done():
+                computer_task.cancel()
+
             # Try to get partial results from the tasks
             if function_task.done() and not function_task.cancelled():
                 try:

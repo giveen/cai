@@ -74,6 +74,9 @@ class _NullRecorder:
     def critical(self, *args, **kwargs):
         pass
 
+    def log_session_end(self, *args, **kwargs):
+        pass
+
 
 def get_session_recorder(workspace_name=None):
     """
